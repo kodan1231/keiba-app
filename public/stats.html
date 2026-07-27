@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>集計 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="login-screen" class="screen" hidden>
+  <div class="ticket">
+    <p class="ticket-eyebrow">MEMBERS ONLY</p>
+    <h1 class="ticket-title">馬券帳</h1>
+    <p class="ticket-sub">合言葉を入力して入場してください</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit">入場する</button>
+    </form>
+    <p id="login-error" class="error-text" hidden></p>
+  </div>
+</div>
+
+<div id="app-screen" class="screen" hidden>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="masthead-title">馬券帳</h1>
+      <nav class="masthead-nav">
+        <a href="buy.html" class="nav-link">馬券購入</a>
+        <a href="index.html" class="nav-link">購入履歴</a>
+        <a href="stats.html" class="nav-link active">集計</a>
+        <a href="races.html" class="nav-link">レース管理</a>
+      </nav>
+    </div>
+    <div class="masthead-actions">
+      <button id="logout-btn" class="ghost-btn">退場</button>
+    </div>
+  </header>
+
+  <main class="stats-main">
+
+    <nav class="stats-tabs">
+      <button type="button" class="stats-tab active" data-tab="overall">総合成績</button>
+      <button type="button" class="stats-tab" data-tab="race">レース別</button>
+      <button type="button" class="stats-tab" data-tab="track">競馬場別</button>
+      <button type="button" class="stats-tab" data-tab="jockey">騎手別</button>
+    </nav>
+
+    <section class="stats-section stats-panel" data-panel="overall">
+      <h2 class="stats-heading">総合成績</h2>
+      <div class="overall-grid" id="overall-summary"></div>
+    </section>
+
+    <section class="stats-section stats-panel" data-panel="race" hidden>
+      <h2 class="stats-heading">レース別収支</h2>
+      <div class="table-wrap"><table class="stats-table" id="race-table"></table></div>
+    </section>
+
+    <section class="stats-section stats-panel" data-panel="track" hidden>
+      <h2 class="stats-heading">競馬場別収支</h2>
+      <div class="table-wrap"><table class="stats-table" id="track-table"></table></div>
+    </section>
+
+    <section class="stats-section stats-panel" data-panel="jockey" hidden>
+      <h2 class="stats-heading">騎手別収支</h2>
+      <p class="stats-note">
+        1枚の馬券に複数の騎手が関わる場合(馬連・三連単など)、関係する騎手それぞれに購入金額・払戻金の全額を計上しています。
+        そのため合計は購入履歴全体の総額と一致しません。
+      </p>
+      <div class="table-wrap"><table class="stats-table" id="jockey-table"></table></div>
+    </section>
+
+  </main>
+
+</div>
+
+<script src="bettypes.js"></script>
+<script src="auth.js"></script>
+<script src="stats.js"></script>
+</body>
+</html>

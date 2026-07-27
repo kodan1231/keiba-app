@@ -1,0 +1,950 @@
+:root {
+  --paper: #eeece4;
+  --paper-raised: #f7f6f0;
+  --ink: #1c1b18;
+  --ink-soft: #55524a;
+  --rule: #c9c5b8;
+  --rule-strong: #1c1b18;
+  --hanko: #b5231c;
+  --hanko-soft: #e9d9d6;
+  --win: #2f7a3d;
+  --lose: #b5231c;
+
+  /* 枠番カラー(JRA公式に準拠) */
+  --waku-1: #ffffff; --waku-1-ink: #1c1b18;
+  --waku-2: #1c1b18; --waku-2-ink: #ffffff;
+  --waku-3: #d0231c; --waku-3-ink: #ffffff;
+  --waku-4: #1c4e9c; --waku-4-ink: #ffffff;
+  --waku-5: #f2c40f; --waku-5-ink: #1c1b18;
+  --waku-6: #2f8a3e; --waku-6-ink: #ffffff;
+  --waku-7: #e6791a; --waku-7-ink: #ffffff;
+  --waku-8: #e893b8; --waku-8-ink: #1c1b18;
+
+  --font-display: "Shippori Mincho", serif;
+  --font-body: "Noto Sans JP", sans-serif;
+  --font-mono: "Roboto Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(28,27,24,0.035) 0px, rgba(28,27,24,0.035) 1px, transparent 1px, transparent 28px);
+}
+
+.screen { min-height: 100vh; }
+
+.profit-plus { color: var(--win); }
+.profit-minus { color: var(--lose); }
+
+/* ---------- ログイン画面 ---------- */
+#login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+#login-screen[hidden] { display: none; }
+
+.ticket {
+  width: 100%;
+  max-width: 360px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 40px 32px;
+  text-align: center;
+  position: relative;
+}
+
+.ticket::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px dashed var(--rule);
+  pointer-events: none;
+}
+
+.ticket-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--hanko);
+  margin: 0 0 12px;
+}
+
+.ticket-title {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  letter-spacing: 0.06em;
+}
+
+.ticket-sub {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0 0 28px;
+}
+
+#login-form { display: flex; flex-direction: column; gap: 12px; }
+
+#login-form input {
+  font-family: var(--font-body);
+  font-size: 15px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule-strong);
+  background: #fff;
+  color: var(--ink);
+}
+
+.error-text { color: var(--hanko); font-size: 13px; margin-top: 14px; }
+
+/* ---------- 共通ボタン ---------- */
+button { font-family: var(--font-body); cursor: pointer; }
+
+.stamp-btn {
+  background: var(--hanko);
+  color: #fff;
+  border: 1px solid var(--hanko);
+  border-radius: 999px;
+  padding: 11px 22px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.stamp-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 0 rgba(0,0,0,0.15); }
+.stamp-btn:active { transform: translateY(0); box-shadow: none; }
+
+.ghost-btn {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+}
+.ghost-btn:hover { background: rgba(28,27,24,0.06); }
+
+/* ---------- マストヘッド ---------- */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 22px 20px 16px;
+  border-bottom: 3px double var(--rule-strong);
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.masthead-inner { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; }
+
+.masthead-title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: 0.08em;
+}
+
+.masthead-nav { display: flex; gap: 4px; }
+
+.nav-link {
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+}
+.nav-link.active {
+  color: var(--ink);
+  font-weight: 700;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+}
+.nav-link:not(.active):hover { text-decoration: underline; }
+
+.masthead-actions { display: flex; gap: 10px; }
+
+/* ---------- サマリーバー ---------- */
+.summary-bar {
+  max-width: 960px;
+  margin: 18px auto 0;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.summary-item {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-label { font-size: 11px; color: var(--ink-soft); }
+.summary-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+
+/* ---------- レース一覧 ---------- */
+.race-list {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.race-card { background: var(--paper-raised); border: 1px solid var(--rule-strong); }
+
+.race-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: repeating-linear-gradient(135deg, rgba(28,27,24,0.03) 0 8px, transparent 8px 16px);
+  cursor: pointer;
+}
+.race-card-head:hover { background: rgba(28,27,24,0.06); }
+
+.race-card-body { display: flex; flex-direction: column; }
+.race-card-body[hidden] { display: none; }
+
+.race-total {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.race-card-head .r-num, .result-head-line .r-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 18px;
+  background: var(--ink);
+  color: #fff;
+  padding: 2px 9px;
+}
+.race-card-head .track, .result-head-line .track { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
+.race-card-head .race-name, .result-head-line .race-name { color: var(--ink-soft); font-size: 13px; }
+.race-card-head .race-date, .result-head-line .race-date { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+
+/* ---------- 購入(チケット)ごとの行 ---------- */
+.ticket-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.ticket-row:last-child { border-bottom: none; }
+
+.bet-badge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  border: 1px solid var(--rule-strong);
+  padding: 5px 4px;
+  background: #fff;
+}
+
+.ticket-info { min-width: 0; }
+
+.sel-line { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 14px; font-weight: 600; }
+
+.sel-item { display: inline-flex; align-items: center; gap: 5px; }
+
+.sel-dash, .sel-arrow { color: var(--ink-soft); font-size: 12px; margin: 0 2px; }
+
+.mini-waku {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sel-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  padding: 0 4px;
+}
+
+.sel-jockey { font-size: 11px; color: var(--ink-soft); }
+.sel-result { font-size: 11px; color: var(--hanko); font-family: var(--font-mono); }
+
+.ticket-memo { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+
+.ticket-money { text-align: right; font-size: 12px; white-space: nowrap; }
+.money-line { display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-mono); }
+.money-label { color: var(--ink-soft); font-family: var(--font-body); }
+.money-line.profit { font-weight: 700; font-size: 13px; }
+
+.row-actions { display: flex; gap: 6px; }
+
+.icon-btn {
+  border: 1px solid var(--rule-strong);
+  background: #fff;
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:hover { background: rgba(28,27,24,0.06); }
+.icon-btn.delete { color: var(--hanko); }
+
+.empty-state {
+  max-width: 960px;
+  margin: 60px auto;
+  text-align: center;
+  color: var(--ink-soft);
+  padding: 0 20px;
+}
+
+/* ---------- モーダル ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28,27,24,0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 10;
+}
+.modal-overlay[hidden] { display: none; }
+
+.modal {
+  background: var(--paper-raised);
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 26px 22px 22px;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.modal h2 { font-family: var(--font-display); font-size: 20px; margin: 0 0 18px; }
+
+#entry-form { display: flex; flex-direction: column; gap: 14px; }
+
+.form-row { display: flex; gap: 12px; }
+.form-row label { flex: 1; }
+
+label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--ink-soft); }
+label.full { width: 100%; }
+
+input, select, textarea {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--rule-strong);
+  background: #fff;
+  color: var(--ink);
+}
+textarea { resize: vertical; }
+
+/* 選択馬の行(馬券登録フォーム内) */
+.selection-rows { display: flex; flex-direction: column; gap: 8px; }
+
+.selection-row {
+  display: grid;
+  grid-template-columns: 44px 64px 56px 1fr 80px 56px;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--rule);
+  padding: 6px;
+}
+
+.selection-row-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.selection-row input, .selection-row select { padding: 6px 6px; font-size: 12.5px; }
+
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+
+/* ---------- 集計ページ ---------- */
+.stats-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+.stats-heading {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--rule-strong);
+}
+
+.stats-note { font-size: 12px; color: var(--ink-soft); margin: -6px 0 12px; }
+
+.overall-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.overall-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.overall-label { font-size: 12px; color: var(--ink-soft); }
+.overall-value { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+
+.table-wrap { overflow-x: auto; background: var(--paper-raised); border: 1px solid var(--rule-strong); }
+
+.stats-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.stats-table th {
+  text-align: left;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--rule-strong);
+  background: repeating-linear-gradient(135deg, rgba(28,27,24,0.03) 0 8px, transparent 8px 16px);
+}
+.stats-table td { padding: 9px 12px; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); }
+.stats-table td.table-name { font-family: var(--font-body); font-weight: 600; }
+.stats-table tr:last-child td { border-bottom: none; }
+.table-empty { text-align: center; color: var(--ink-soft); padding: 20px; font-family: var(--font-body); }
+
+/* ---------- レスポンシブ(スマホ) ---------- */
+@media (max-width: 700px) {
+  .summary-bar { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .masthead { padding: 18px 16px 12px; flex-direction: column; align-items: flex-start; }
+  .masthead-title { font-size: 24px; }
+
+  .ticket-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "badge money" "info info" "actions actions";
+    row-gap: 8px;
+  }
+  .bet-badge { grid-area: badge; justify-self: start; }
+  .ticket-info { grid-area: info; }
+  .ticket-money { grid-area: money; }
+  .row-actions { grid-area: actions; justify-content: flex-end; }
+
+  .modal { padding: 22px 16px 18px; }
+  .form-row { flex-direction: column; }
+  .selection-row { grid-template-columns: 1fr 1fr; }
+
+  .entry-form-row {
+    grid-template-columns: 46px 50px 1fr 60px 50px;
+    gap: 4px;
+  }
+  .entry-form-row input, .entry-form-row select { padding: 5px 3px; font-size: 11px; }
+}
+
+/* ---------- 馬券購入ページ ---------- */
+.buy-main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.buy-step-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+.buy-hint { font-size: 13px; color: var(--ink-soft); margin-top: 10px; }
+.buy-hint a { color: var(--hanko); }
+
+#race-select {
+  width: 100%;
+  max-width: 480px;
+}
+
+.picker-hint { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 8px; }
+
+.horse-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.horse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--rule-strong);
+  padding: 7px 10px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+}
+.horse-chip:hover { background: rgba(28,27,24,0.05); }
+.horse-chip.selected { background: var(--ink); color: #fff; border-color: var(--ink); }
+.horse-chip.selected .chip-jockey { color: rgba(255,255,255,0.7); }
+.horse-chip.disabled-chip { opacity: 0.3; pointer-events: none; }
+
+.chip-order {
+  background: var(--hanko);
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chip-num { font-family: var(--font-mono); font-weight: 700; }
+.chip-jockey { font-size: 11px; color: var(--ink-soft); }
+
+.axis-position {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.radio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  border: 1px solid var(--rule);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#amount-input { max-width: 200px; }
+
+.preview-area { margin-bottom: 16px; }
+
+.preview-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  padding: 12px 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  margin-bottom: 12px;
+}
+.preview-total { font-weight: 700; font-size: 18px; color: var(--hanko); }
+
+.preview-combo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 1400px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.preview-combo {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.preview-combo:last-child { border-bottom: none; }
+.preview-num { font-weight: 700; }
+
+.submit-message { margin-top: 12px; font-size: 13px; }
+.submit-message.success { color: var(--win); }
+.submit-message.error { color: var(--lose); }
+
+/* ---------- レース管理ページ ---------- */
+.races-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 20px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.race-list-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.race-list-card .track { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.race-list-card .meta { font-size: 12px; color: var(--ink-soft); }
+.race-list-card .entry-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.race-list-card .settled-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); }
+.race-list-card .settled-badge.done { background: var(--win); color: #fff; border-color: var(--win); }
+.race-list-card .card-actions { margin-left: auto; display: flex; gap: 6px; }
+
+.entry-form-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+
+.entry-form-row {
+  display: grid;
+  grid-template-columns: 60px 70px 1fr 100px 70px;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--rule);
+  padding: 6px;
+}
+.entry-form-row input, .entry-form-row select { padding: 6px; font-size: 12.5px; }
+
+/* ---------- 購入履歴一覧(グループ表示) ---------- */
+.group-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+}
+
+.group-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+.group-card-head:hover { background: rgba(28,27,24,0.03); }
+
+.group-card-head .bet-badge { font-family: var(--font-display); font-weight: 700; font-size: 13px; }
+.method-badge { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--rule); padding: 2px 7px; }
+.point-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.group-card-head .group-money { margin-left: auto; font-family: var(--font-mono); font-size: 13px; text-align: right; }
+.group-card-head .status-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); }
+.group-card-head .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* ---------- 結果・払戻入力ページ ---------- */
+.result-main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 20px 100px;
+}
+
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+.back-link:hover { text-decoration: underline; }
+
+.result-head {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.result-head-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.result-head-line + .result-head-line { margin-top: 8px; }
+
+.result-rows { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+
+.result-row {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.result-row-money { display: flex; align-items: center; gap: 14px; }
+
+.payout-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.payout-input { width: 110px; font-family: var(--font-mono); }
+
+.result-actions { display: flex; gap: 12px; align-items: center; }
+
+/* ---------- 出走馬テキスト貼り付け・開催日程一括登録 ---------- */
+.paste-box { border: 1px dashed var(--rule); padding: 10px; }
+.paste-box textarea { width: 100%; margin: 8px 0; font-family: var(--font-mono); font-size: 12px; }
+
+.schedule-preview-list {
+  list-style: none;
+  margin: 10px 0;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.schedule-preview-list li { padding: 3px 0; border-bottom: 1px dashed var(--rule); }
+.schedule-preview-list li:last-child { border-bottom: none; }
+
+#schedule-modal textarea { width: 100%; font-family: var(--font-mono); font-size: 12px; }
+#schedule-modal label { margin-top: 10px; }
+
+.result-ticket-group {
+  border: 1px solid var(--rule);
+  background: #fff;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.result-ticket-group .result-head-line { margin-bottom: 8px; }
+.result-ticket-group .result-row {
+  background: var(--paper);
+  border-color: var(--rule);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+/* ---------- レース選択グリッド(日付×競馬場×R) ---------- */
+.race-grid { margin: 14px 0; overflow-x: auto; }
+
+.race-grid-table { border-collapse: collapse; }
+.race-grid-table th, .race-grid-table td { padding: 3px; text-align: center; }
+.race-grid-table thead th { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); font-weight: 400; }
+.race-grid-table tbody th { font-family: var(--font-display); font-size: 13px; font-weight: 700; text-align: right; padding-right: 8px; white-space: nowrap; }
+
+.grid-cell {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--rule);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.grid-cell:hover { border-color: var(--ink); }
+.grid-cell.has-entries { background: var(--paper-raised); border-color: var(--rule-strong); font-weight: 700; }
+.grid-cell.empty-race { background: #fff; border-style: dashed; color: var(--ink-soft); }
+.grid-cell.no-race { color: var(--rule); }
+.grid-cell.selected { background: var(--hanko); color: #fff; border-color: var(--hanko); }
+
+.grid-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 8px;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--rule);
+  margin-left: 10px;
+}
+.legend-swatch.has-entries { background: var(--paper-raised); border-color: var(--rule-strong); }
+.legend-swatch.empty-race { background: #fff; border-style: dashed; }
+.legend-swatch.no-race { background: #fff; }
+
+.manual-race-area {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--rule);
+}
+
+.static-chip { cursor: default; }
+.static-chip:hover { background: #fff; }
+
+.manual-inline { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; margin-right: 14px; }
+.manual-inline input { width: 70px; }
+
+.preview-combo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--rule);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.preview-combo-row:last-child { border-bottom: none; }
+.preview-combo-amount { width: 90px; font-family: var(--font-mono); }
+
+/* ---------- 馬券式別の払戻入力 ---------- */
+.payout-by-type { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+
+.payout-type-block {
+  border: 1px solid var(--rule-strong);
+  background: #fff;
+  padding: 12px 14px;
+}
+.payout-type-block .result-head-line { margin-bottom: 10px; }
+
+.payout-rate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.payout-rate-row:last-child { border-bottom: none; }
+.payout-rate-input { width: 110px; font-family: var(--font-mono); }
+
+/* ---------- 購入履歴: 展開して金額修正・削除 ---------- */
+.expand-arrow { color: var(--ink-soft); font-size: 11px; width: 12px; }
+
+.group-detail { border-top: 1px dashed var(--rule); padding: 10px 18px 14px; background: var(--paper); }
+
+.group-detail-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+
+.group-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid var(--rule);
+  padding: 8px 12px;
+}
+
+.amount-edit-input { width: 100px; font-family: var(--font-mono); }
+.detail-payout { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-soft); margin-left: auto; }
+
+.group-detail-actions { display: flex; justify-content: flex-end; }
+
+/* ---------- 集計ページ: タブ ---------- */
+.stats-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 2px solid var(--rule-strong);
+  margin-bottom: 4px;
+}
+
+.stats-tab {
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-bottom: none;
+  padding: 9px 18px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  position: relative;
+  top: 2px;
+}
+.stats-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 11px; }
+
+/* ---------- レース管理: 日付→競馬場→R の3階層アコーディオン ---------- */
+.date-group { border: 1px solid var(--rule-strong); background: var(--paper-raised); }
+.date-group + .date-group { margin-top: 14px; }
+
+.date-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: repeating-linear-gradient(135deg, rgba(28,27,24,0.03) 0 8px, transparent 8px 16px);
+}
+.date-group-head:hover { background: rgba(28,27,24,0.06); }
+.date-label { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.date-meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); margin-left: auto; }
+
+.date-group-body { border-top: 1px solid var(--rule); padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.date-group-body[hidden] { display: none; }
+
+.track-group { border: 1px solid var(--rule); background: #fff; }
+
+.track-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.track-group-head:hover { background: rgba(28,27,24,0.04); }
+.track-label { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+.track-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); margin-left: auto; }
+
+.track-group-body { border-top: 1px dashed var(--rule); display: flex; flex-direction: column; }
+.track-group-body[hidden] { display: none; }
+.track-group-body .race-list-card { border: none; border-bottom: 1px solid var(--rule); background: transparent; }
+.track-group-body .race-list-card:last-child { border-bottom: none; }
+
+.entries-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); color: var(--ink-soft); }
+.entries-badge.done { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* ---------- 出走馬・騎手(縦一列 + 予想印) ---------- */
+.entries-vertical-list { display: flex; flex-direction: column; gap: 6px; }
+
+.entries-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--rule);
+}
+
+.entries-row-name { font-weight: 700; font-size: 13.5px; min-width: 120px; }
+.entries-row-jockey { font-size: 12px; color: var(--ink-soft); margin-right: auto; }
+
+.mark-select {
+  width: 56px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 2px;
+}

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>レース管理 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="login-screen" class="screen" hidden>
+  <div class="ticket">
+    <p class="ticket-eyebrow">MEMBERS ONLY</p>
+    <h1 class="ticket-title">馬券帳</h1>
+    <p class="ticket-sub">合言葉を入力して入場してください</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit">入場する</button>
+    </form>
+    <p id="login-error" class="error-text" hidden></p>
+  </div>
+</div>
+
+<div id="app-screen" class="screen" hidden>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="masthead-title">馬券帳</h1>
+      <nav class="masthead-nav">
+        <a href="buy.html" class="nav-link">馬券購入</a>
+        <a href="index.html" class="nav-link">購入履歴</a>
+        <a href="stats.html" class="nav-link">集計</a>
+        <a href="races.html" class="nav-link active">レース管理</a>
+      </nav>
+    </div>
+    <div class="masthead-actions">
+      <button id="schedule-btn" class="ghost-btn">開催日程を一括登録</button>
+      <button id="new-race-btn" class="stamp-btn">＋ レースを登録</button>
+      <button id="logout-btn" class="ghost-btn">退場</button>
+    </div>
+  </header>
+
+  <main class="races-main" id="races-main"></main>
+
+</div>
+
+<!-- レース登録・編集モーダル -->
+<div id="race-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="race-modal-title">レースを登録</h2>
+    <form id="race-form">
+      <input type="hidden" id="race-id" />
+
+      <div class="form-row">
+        <label>開催日<input type="date" id="r-race-date" required /></label>
+        <label>競馬場<input type="text" id="r-track" placeholder="例: 東京" required /></label>
+      </div>
+      <div class="form-row">
+        <label>R(レース番号)
+          <select id="r-race-number" required></select>
+        </label>
+        <label>レース名(任意)<input type="text" id="r-race-name" placeholder="例: 日本ダービー" /></label>
+      </div>
+
+      <label>出走頭数
+        <select id="r-horse-count"></select>
+      </label>
+
+      <div class="paste-box">
+        <button type="button" id="toggle-paste-btn" class="ghost-btn">テキストから出走馬を一括入力</button>
+        <div id="paste-area" hidden>
+          <p class="picker-hint">netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けてください(改行区切り、うまく読み取れない場合は下の欄で直接修正できます)。</p>
+          <textarea id="entries-paste" rows="6" placeholder="例:&#10;1　サンプルホース　田中太郎&#10;2　サンプルホース2　鈴木次郎"></textarea>
+          <button type="button" id="apply-paste-btn" class="stamp-btn">読み込む</button>
+        </div>
+      </div>
+
+      <div>
+        <p class="picker-hint" style="margin-bottom:6px">出走馬(枠番・馬番・馬名・騎手・着順)</p>
+        <div id="entry-rows" class="entry-form-rows"></div>
+      </div>
+
+      <div id="race-tickets-section"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="race-cancel-btn" class="ghost-btn">キャンセル</button>
+        <button type="submit" class="stamp-btn">保存する</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 開催日程 一括登録モーダル -->
+<div id="schedule-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>開催日程を一括登録</h2>
+    <p class="picker-hint">
+      JRA公式サイト等からコピーした開催日程のテキスト(日付と競馬場が含まれる行)を貼り付けてください。
+      各日付×競馬場につき、1〜12Rの空レース(出走馬未登録)がまとめて作成されます。
+    </p>
+    <label>年
+      <select id="schedule-year"></select>
+    </label>
+    <label>貼り付けテキスト
+      <textarea id="schedule-paste" rows="8" placeholder="例:&#10;8/2(土) 新潟&#10;8/3(日) 新潟・札幌"></textarea>
+    </label>
+    <button type="button" id="schedule-parse-btn" class="ghost-btn">解析する</button>
+    <div id="schedule-preview"></div>
+    <div class="modal-actions">
+      <button type="button" id="schedule-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="schedule-submit-btn" class="stamp-btn" disabled>この内容で登録する</button>
+    </div>
+    <p id="schedule-message" class="submit-message" hidden></p>
+  </div>
+</div>
+
+<script src="bettypes.js"></script>
+<script src="parse.js"></script>
+<script src="payout.js"></script>
+<script src="auth.js"></script>
+<script src="races.js"></script>
+</body>
+</html>

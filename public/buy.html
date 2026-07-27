@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>馬券購入 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="login-screen" class="screen" hidden>
+  <div class="ticket">
+    <p class="ticket-eyebrow">MEMBERS ONLY</p>
+    <h1 class="ticket-title">馬券帳</h1>
+    <p class="ticket-sub">合言葉を入力して入場してください</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit">入場する</button>
+    </form>
+    <p id="login-error" class="error-text" hidden></p>
+  </div>
+</div>
+
+<div id="app-screen" class="screen" hidden>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="masthead-title">馬券帳</h1>
+      <nav class="masthead-nav">
+        <a href="buy.html" class="nav-link active">馬券購入</a>
+        <a href="index.html" class="nav-link">購入履歴</a>
+        <a href="stats.html" class="nav-link">集計</a>
+        <a href="races.html" class="nav-link">レース管理</a>
+      </nav>
+    </div>
+    <div class="masthead-actions">
+      <button id="logout-btn" class="ghost-btn">退場</button>
+    </div>
+  </header>
+
+  <main class="buy-main">
+
+    <section class="buy-step">
+      <h2 class="buy-step-title">① レースを選ぶ</h2>
+      <label style="max-width:220px">開催日
+        <input type="date" id="date-input" />
+      </label>
+      <div id="race-grid" class="race-grid"></div>
+      <p class="buy-hint" id="no-race-hint" hidden>
+        この日に登録済みのレースがありません。<a href="races.html">レース管理</a>から登録するか、下記から直接指定できます。
+      </p>
+      <button type="button" id="manual-toggle-btn" class="ghost-btn">登録されていないレースを直接指定する</button>
+      <div id="manual-race-area" class="manual-race-area" hidden>
+        <div class="form-row">
+          <label>競馬場<input type="text" id="manual-track" placeholder="例: 東京" /></label>
+          <label>R<select id="manual-race-number"></select></label>
+        </div>
+        <button type="button" id="manual-confirm-btn" class="stamp-btn">このレースで購入する</button>
+      </div>
+    </section>
+
+    <section class="buy-step" id="entries-step" hidden>
+      <h2 class="buy-step-title">出走馬・騎手</h2>
+      <div id="entries-list"></div>
+    </section>
+
+    <section class="buy-step" id="bet-step" hidden>
+      <h2 class="buy-step-title">② 馬券種類・購入方式</h2>
+      <div class="form-row">
+        <label>馬券種類
+          <select id="bet-type-select">
+            <option value="tan">単勝</option>
+            <option value="fuku">複勝</option>
+            <option value="wakuren">枠連</option>
+            <option value="umaren">馬連</option>
+            <option value="wide">ワイド</option>
+            <option value="umatan">馬単</option>
+            <option value="sanrenpuku">三連複</option>
+            <option value="sanrentan">三連単</option>
+          </select>
+        </label>
+        <label>購入方式
+          <select id="method-select">
+            <option value="normal">通常</option>
+            <option value="box">ボックス</option>
+            <option value="nagashi">流し</option>
+            <option value="formation">フォーメーション</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="buy-step" id="picker-step" hidden>
+      <h2 class="buy-step-title">③ 馬を選ぶ</h2>
+      <div id="picker-area"></div>
+    </section>
+
+    <section class="buy-step" id="amount-step" hidden>
+      <h2 class="buy-step-title">④ 金額</h2>
+      <label style="max-width:220px">一括金額(円・全組み合わせに適用)
+        <input type="number" id="amount-input" min="100" step="100" value="100" />
+      </label>
+      <button type="button" id="apply-amount-btn" class="ghost-btn">全組み合わせに反映</button>
+    </section>
+
+    <section class="buy-step" id="preview-step" hidden>
+      <h2 class="buy-step-title">確認(金額は個別に変更できます)</h2>
+      <div id="preview-area" class="preview-area"></div>
+      <button id="submit-btn" class="stamp-btn" disabled>この内容で購入する</button>
+      <p id="submit-message" class="submit-message" hidden></p>
+    </section>
+
+  </main>
+
+</div>
+
+<script src="bettypes.js"></script>
+<script src="combos.js"></script>
+<script src="auth.js"></script>
+<script src="buy.js"></script>
+</body>
+</html>
