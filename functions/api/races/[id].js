@@ -49,6 +49,8 @@ export async function onRequestDelete(context) {
   const { env, params } = context;
   // このレースに紐づく購入履歴も一緒に削除する(参照整合性を保つため)
   await env.DB.batch([
+    env.DB.prepare(`DELETE FROM prediction_marks WHERE race_id = ?`).bind(params.id),
+    env.DB.prepare(`DELETE FROM prediction_notes WHERE race_id = ?`).bind(params.id),
     env.DB.prepare(`DELETE FROM tickets WHERE race_id = ?`).bind(params.id),
     env.DB.prepare(`DELETE FROM races WHERE id = ?`).bind(params.id),
   ]);

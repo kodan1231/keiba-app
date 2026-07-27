@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>予想 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="login-screen" class="screen" hidden>
+  <div class="ticket">
+    <p class="ticket-eyebrow">MEMBERS ONLY</p>
+    <h1 class="ticket-title">馬券帳</h1>
+    <p class="ticket-sub">合言葉を入力して入場してください</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit">入場する</button>
+    </form>
+    <p id="login-error" class="error-text" hidden></p>
+  </div>
+</div>
+
+<div id="app-screen" class="screen" hidden>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="masthead-title">馬券帳</h1>
+      <nav class="masthead-nav">
+        <a href="buy.html" class="nav-link">馬券購入</a>
+        <a href="index.html" class="nav-link">購入履歴</a>
+        <a href="stats.html" class="nav-link">集計</a>
+        <a href="races.html" class="nav-link">レース管理</a>
+        <a href="prediction.html" class="nav-link active">予想</a>
+      </nav>
+    </div>
+    <div class="masthead-actions">
+      <button id="logout-btn" class="ghost-btn">退場</button>
+    </div>
+  </header>
+
+  <main class="prediction-main">
+    <section class="prediction-toolbar">
+      <label class="prediction-race-select">
+        対象レース
+        <select id="race-select">
+          <option value="">レースを選択してください</option>
+        </select>
+      </label>
+      <a href="races.html" class="ghost-btn prediction-back">レース管理へ</a>
+    </section>
+
+    <section id="prediction-empty" class="empty-state">
+      レースを選択してください。
+    </section>
+
+    <section id="prediction-panel" class="prediction-panel" hidden>
+      <div id="prediction-race-header" class="prediction-race-header"></div>
+
+      <div class="prediction-help">
+        各馬の印をタップして予想を入力してください。印を外す場合は「印なし」を選択します。
+      </div>
+
+      <div id="prediction-horses" class="prediction-horses"></div>
+
+      <label class="prediction-memo-label">
+        予想メモ
+        <textarea id="prediction-memo" rows="6" maxlength="5000" placeholder="展開予想、本命理由、気になる馬などを自由に記録できます。"></textarea>
+      </label>
+
+      <div class="prediction-actions">
+        <span id="prediction-message" class="submit-message" hidden></span>
+        <button id="save-prediction-btn" class="stamp-btn">予想を保存する</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="auth.js"></script>
+<script src="prediction.js"></script>
+</body>
+</html>

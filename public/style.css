@@ -948,3 +948,257 @@ textarea { resize: vertical; }
   text-align: center;
   padding: 4px 2px;
 }
+
+
+/* ---------- Phase 1: 予想画面 ---------- */
+.prediction-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+}
+
+.prediction-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.prediction-race-select {
+  flex: 1;
+  max-width: 680px;
+}
+
+.prediction-race-select select {
+  width: 100%;
+}
+
+.prediction-back {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.prediction-panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+}
+
+.prediction-race-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 18px;
+  border-bottom: 2px solid var(--rule-strong);
+  background: repeating-linear-gradient(135deg, rgba(28,27,24,0.03) 0 8px, transparent 8px 16px);
+}
+
+.prediction-race-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.prediction-race-title .r-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 18px;
+  background: var(--ink);
+  color: #fff;
+  padding: 2px 9px;
+}
+
+.prediction-race-title .track {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.prediction-race-title .race-name {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.prediction-race-meta {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.prediction-help {
+  padding: 12px 18px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.prediction-horses {
+  display: flex;
+  flex-direction: column;
+}
+
+.prediction-horse {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.prediction-horse-info {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.prediction-horse-info .mini-waku {
+  flex: 0 0 auto;
+}
+
+.prediction-horse-number {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  width: 24px;
+  text-align: center;
+}
+
+.prediction-horse-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prediction-horse-name strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prediction-horse-name small {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.prediction-mark-buttons {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.prediction-mark-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  padding: 0;
+}
+
+.prediction-mark-btn:hover {
+  background: rgba(28,27,24,0.08);
+}
+
+.prediction-mark-btn.selected {
+  background: var(--hanko);
+  color: #fff;
+  border-color: var(--hanko);
+}
+
+.prediction-mark-btn.clear-mark {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.prediction-memo-label {
+  padding: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.prediction-memo-label textarea {
+  width: 100%;
+  min-height: 120px;
+}
+
+.prediction-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.prediction-no-entries {
+  padding: 28px 18px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.prediction-race-btn {
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.prediction-race-btn:hover {
+  background: rgba(28,27,24,0.06);
+}
+
+@media (max-width: 600px) {
+  .prediction-main {
+    padding: 18px 12px 60px;
+  }
+
+  .prediction-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prediction-race-select {
+    max-width: none;
+  }
+
+  .prediction-back {
+    text-align: center;
+  }
+
+  .prediction-horse {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .prediction-horse-info {
+    width: 100%;
+  }
+
+  .prediction-mark-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .prediction-mark-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .prediction-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prediction-actions .stamp-btn {
+    width: 100%;
+  }
+}
