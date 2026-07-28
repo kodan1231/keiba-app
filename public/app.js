@@ -247,9 +247,22 @@ function renderGroupRow(group) {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       if (!confirm("この購入を削除しますか？")) return;
-      const id = btn.closest(".group-detail-row").dataset.id;
-      await authedFetch(`/api/tickets/${id}`, { method: "DELETE" });
-      loadTickets();
+      
+      try {
+        const id = btn.closest(".group-detail-row").dataset.id;
+        const res = await authedFetch(`/api/tickets/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        
+        if (!res.ok) {
+          alert(data.error || "削除に失敗しました。");
+          return;
+        }
+        
+        alert("購入を削除しました。");
+        loadTickets();
+      } catch (e) {
+        alert("削除に失敗しました: " + (e.message || e));
+      }
     });
   });
 

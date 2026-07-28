@@ -153,8 +153,36 @@ function renderRaceRow(r) {
 
 async function deleteRace(id) {
   if (!confirm("このレースを削除しますか？関連する購入履歴も削除されます。")) return;
-  await authedFetch(`/api/races/${id}`, { method: "DELETE" });
-  loadRaces();
+  
+  try {
+    const res = await authedFetch(`/api/races/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    
+    if (!res.ok) {
+      // 409: 確認が必要なケース
+      if (res.status === 409 && data.requires_confirmation) {
+        const message = `${data.error}\n\n削除を強制実行しますか？`;
+        if (confirm(message)) {
+          const forceRes = await authedFetch(`/api/races/${id}?force=1`, { method: "DELETE" });
+          const forceData = await forceRes.json().catch(() => ({}));
+          if (forceRes.ok) {
+            alert("レースを削除しました。");
+            loadRaces();
+          } else {
+            alert(forceData.error || "削除に失敗しました。");
+          }
+        }
+        return;
+      }
+      alert(data.error || "削除に失敗しました。");
+      return;
+    }
+    
+    alert("レースを削除しました。");
+    loadRaces();
+  } catch (e) {
+    alert("削除に失敗しました: " + (e.message || e));
+  }
 }
 
 // ---------- 出走馬の行 ----------
