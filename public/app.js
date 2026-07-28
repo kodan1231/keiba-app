@@ -281,17 +281,4 @@ csvImportInput?.addEventListener("change", async () => {
   }
 });
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" });
-}
-
 setupAuth(loadTickets);
