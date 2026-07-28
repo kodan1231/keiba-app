@@ -24,10 +24,27 @@ function ordered(type){return type==='umatan'||type==='sanrentan';}
 function parseNumbers(s){return clean(s).replace(/[()（）]/g,'').split(/\s*(?:→|->|＞|>|,|、|\-|\s)\s*/).map(x=>Number(x)).filter(Number.isInteger).filter(n=>n>0);}
 function splitCombinations(text,type){
   const raw=clean(text); if(!raw)return [];
-  // A single ordered/unordered combination is the common case. Multiple hits are split by ; / newline.
-  const parts=raw.split(/[;；\n]+/).map(clean).filter(Boolean);
+  // Handle formation/nagashi: "05／04；11；13；16" or "01；05；10／01；05；10"
+  if(raw.includes('/')){
+    const parts=raw.split('/').map(clean);
+    if(parts.length===2){
+      const axis=parseNumbers(parts[0]);
+      const partners=parseNumbers(parts[1]);
+      if(axis.length>0&&partners.length>0){
+        const out=[];
+        for(const a of axis){
+          for(const p of partners){
+            if(a!==p) out.push([a,p]);
+          }
+        }
+        if(out.length>0) return out;
+      }
+    }
+  }
+  // Standard: split by semicolon for multiple individual combinations
+  const partsSemi=raw.split(/[;；\n]+/).map(clean).filter(Boolean);
   const out=[];
-  for(const part of parts){
+  for(const part of partsSemi){
     const nums=parseNumbers(part); if(!nums.length) continue;
     const n=type==='tan'||type==='fuku'?1:type==='wakuren'||type==='umaren'||type==='wide'||type==='umatan'?2:3;
     if(nums.length===n) out.push(nums);
@@ -56,8 +73,11 @@ export async function onRequestPost(context){
       const raw={};headers.forEach((h,i)=>raw[clean(h)]=clean(row[i]));
       const raceDate=cols.raceDate>=0?clean(row[cols.raceDate]):''; const track=cols.venue>=0?normalizeTrack(row[cols.venue]):''; const raceNumber=cols.raceNumber>=0?toInt(row[cols.raceNumber]):0;
       const receipt=cols.receipt>=0?clean(row[cols.receipt]):''; const sequence=cols.sequence>=0?clean(row[cols.sequence]):''; const sourceKey=receipt&&sequence?`${receipt}:${sequence}`:JSON.stringify(raw);
-      const type=betType(cols.betType>=0?row[cols.betType]:''); const comboText=cols.combination>=0?clean(row[cols.combination]):''; const hitComboText=cols.hitCombination>=0?clean(row[cols.hitCombination]):'';
-      const totalAmount=cols.purchaseAmount>=0?toInt(row[cols.purchaseAmount]):0; const refund=cols.refundAmount>=0?toInt(row[cols.refundAmount]):(cols.refundUnit>=0?toInt(row[cols.refundUnit]):0); const hit=cols.hit>=0?clean(row[cols.hit]):'';
+       const type=betType(cols.betType>=0?row[cols.betType]:''); const comboText=cols.combination>=0?clean(row[cols.combination]):''; 
+       const hitText=cols.hit>=0?clean(row[cols.hit]):'';
+       let hitComboText='';
+       if(/^的中/.test(hitText)){hitComboText=hitText.replace(/^的中/,'');}
+       const totalAmount=cols.purchaseAmount>=0?toInt(row[cols.purchaseAmount]):0; const refund=cols.refundAmount>=0?toInt(row[cols.refundAmount]):(cols.refundUnit>=0?toInt(row[cols.refundUnit]):0); const hit=hitText;
       const existing=await db.prepare('SELECT id FROM imported_tickets WHERE source=? AND ((?<>\'\' AND receipt_number=? AND sequence_number=?) OR (?=\'\' AND raw_csv=?)) LIMIT 1').bind('club_jra_net',receipt,receipt,sequence,receipt,JSON.stringify(raw)).first();
       if(existing){skipped++;continue;}
       // Preserve raw row as the authoritative imported source record.
