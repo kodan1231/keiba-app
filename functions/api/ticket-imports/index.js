@@ -94,7 +94,6 @@ export async function onRequestGet(context){
     // Backward compatibility: show legacy rows imported before v10 even if they have not been normalized yet.
     const legacy=(await db.prepare(`SELECT * FROM imported_tickets ORDER BY race_date DESC,id DESC`).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||null,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
-    }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }
