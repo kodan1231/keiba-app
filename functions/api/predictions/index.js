@@ -22,11 +22,9 @@ function normalizeMarks(marks) {
     if (!ALLOWED_MARKS.has(mark)) {
       return null;
     }
-    if (seen.has(horseNumber)) {
-      return null;
-    }
-
-    seen.add(horseNumber);
+    const key = `${horseNumber}:${mark}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     normalized.push({ horse_number: horseNumber, mark });
   }
 

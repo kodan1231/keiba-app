@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   race_number INTEGER NOT NULL,
   race_name TEXT,
   bet_type TEXT NOT NULL,         -- tan/fuku/wakuren/umaren/wide/umatan/sanrenpuku/sanrentan
-  method TEXT NOT NULL DEFAULT 'normal', -- normal/box/nagashi/formation (表示用)
+  method TEXT NOT NULL DEFAULT 'normal', -- normal/box/nagashi/axis1/axis2/multi/axis2_multi/formation (表示用)
   selections TEXT NOT NULL,       -- JSON配列 [{horse_number, waku_number, horse_name, jockey}] (購入時点のスナップショット)
   amount INTEGER NOT NULL,        -- この1点の購入金額(円)
   payout INTEGER,                 -- この1点の払戻金額(円)。未確定はNULL
@@ -58,9 +58,81 @@ CREATE TABLE IF NOT EXISTS prediction_marks (
   mark TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
-  UNIQUE(race_id, horse_number),
+  UNIQUE(race_id, horse_number, mark),
   FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id
   ON prediction_marks(race_id);
+
+
+-- Phase 2: 馬単位の継続メモ
+CREATE TABLE IF NOT EXISTS horse_notes (
+  horse_name TEXT PRIMARY KEY,
+  memo TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+
+-- Club JRA-Net等の外部購入履歴CSVを保持するテーブル
+CREATE TABLE IF NOT EXISTS imported_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  source TEXT NOT NULL DEFAULT 'club_jra_net',
+  race_date TEXT,
+  receipt_number TEXT,
+  sequence_number TEXT,
+  venue TEXT,
+  race_number TEXT,
+  bet_type TEXT,
+  combination TEXT,
+  purchase_amount INTEGER DEFAULT 0,
+  hit_refund TEXT,
+  refund_unit INTEGER DEFAULT 0,
+  refund_amount INTEGER DEFAULT 0,
+  return_amount INTEGER DEFAULT 0,
+  raw_csv TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_imported_tickets_date ON imported_tickets(race_date);
+CREATE INDEX IF NOT EXISTS idx_imported_tickets_receipt_number ON imported_tickets(receipt_number);
+
+
+-- Import normalized purchase groups / individual ticket items
+CREATE TABLE IF NOT EXISTS imported_ticket_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL DEFAULT 'club_jra_net',
+  source_row_id INTEGER,
+  race_id INTEGER,
+  group_key TEXT NOT NULL,
+  race_date TEXT,
+  track TEXT,
+  race_number INTEGER,
+  race_name TEXT,
+  bet_type TEXT NOT NULL,
+  method TEXT NOT NULL DEFAULT 'import',
+  total_amount INTEGER NOT NULL DEFAULT 0,
+  total_payout INTEGER,
+  status TEXT NOT NULL DEFAULT 'unsettled',
+  raw_json TEXT,
+  imported_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (race_id) REFERENCES races(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_group_source_key ON imported_ticket_groups(source, group_key);
+
+CREATE TABLE IF NOT EXISTS imported_ticket_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL,
+  race_id INTEGER,
+  bet_type TEXT NOT NULL,
+  selections TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  payout INTEGER,
+  is_hit INTEGER NOT NULL DEFAULT 0,
+  result_inferred INTEGER NOT NULL DEFAULT 0,
+  source_key TEXT,
+  FOREIGN KEY (group_id) REFERENCES imported_ticket_groups(id) ON DELETE CASCADE,
+  FOREIGN KEY (race_id) REFERENCES races(id)
+);
+CREATE INDEX IF NOT EXISTS idx_imported_items_group ON imported_ticket_items(group_id);
+CREATE INDEX IF NOT EXISTS idx_imported_items_race ON imported_ticket_items(race_id);

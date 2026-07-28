@@ -15,15 +15,18 @@ document.querySelectorAll(".stats-tab").forEach((tab) => {
 // グループ(レース/競馬場/騎手)ごとの購入・払戻・収支を計算する共通関数。
 // 未確定の馬券も購入額はすでに支払い済みとして収支に反映する(結果が出るまでは暫定的にマイナス計上)。
 function computeGroupStats(tickets) {
-  const totalAmount = tickets.reduce((s, t) => s + t.amount, 0);
+  // 未確定馬券は回収率・収支の対象外。確定した買い目だけを分母/分子に使う。
   const settled = tickets.filter((t) => t.payout !== null && t.payout !== undefined);
-  const settledPayout = settled.reduce((s, t) => s + t.payout, 0);
-  const profit = settledPayout - totalAmount;
-  const rate = totalAmount > 0 ? Math.round((settledPayout / totalAmount) * 1000) / 10 : null;
+  const settledAmount = settled.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalAmount = tickets.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const settledPayout = settled.reduce((s, t) => s + Number(t.payout || 0), 0);
+  const profit = settledPayout - settledAmount;
+  const rate = settledAmount > 0 ? Math.round((settledPayout / settledAmount) * 1000) / 10 : null;
   const hit = computeHitRate(tickets);
   return {
     count: tickets.length,
     totalAmount,
+    settledAmount,
     settledCount: settled.length,
     unsettledCount: tickets.length - settled.length,
     settledPayout,
@@ -170,14 +173,29 @@ function renderJockeyTable(items) {
   renderTable("jockey-table", rows, "騎手");
 }
 
+
+async function fetchImportedTicketHistory() {
+  try {
+    const res = await authedFetch("/api/ticket-imports");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+  } catch {
+    return [];
+  }
+}
+
 async function loadAndRender() {
-  const res = await authedFetch("/api/tickets");
-  if (!res.ok) return;
-  const items = await res.json();
-  renderOverall(items);
-  renderRaceTable(items);
-  renderTrackTable(items);
-  renderJockeyTable(items);
+  const [ticketRes, importedRes] = await Promise.all([authedFetch("/api/tickets"), authedFetch("/api/ticket-imports")]);
+  if (!ticketRes.ok) return;
+  const items = await ticketRes.json();
+  const importedPayload = importedRes.ok ? await importedRes.json() : {items: []};
+  const imported = Array.isArray(importedPayload.items) ? importedPayload.items : [];
+  const all = [...(Array.isArray(items) ? items : []), ...imported];
+  renderOverall(all);
+  renderRaceTable(all);
+  renderTrackTable(all);
+  renderJockeyTable(all);
 }
 
 function escapeHtml(str) {

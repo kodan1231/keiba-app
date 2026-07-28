@@ -134,7 +134,8 @@ function renderRaceRow(r) {
     <span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>
     <span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>
     <span class="card-actions">
-      <a class="icon-btn prediction-race-btn" href="prediction.html?race=${r.id}" title="予想">◎</a>
+      ${hasEntries ? `<a class="stamp-btn compact-buy-btn" href="prediction.html?race=${encodeURIComponent(r.id)}">馬券購入</a>` : ""}
+
       <button class="icon-btn edit-race-btn" data-id="${r.id}" title="編集">✎</button>
       <button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>
     </span>

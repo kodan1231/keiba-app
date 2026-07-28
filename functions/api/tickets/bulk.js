@@ -1,7 +1,7 @@
 const VALID_BET_TYPES = [
   "tan", "fuku", "wakuren", "umaren", "wide", "umatan", "sanrenpuku", "sanrentan",
 ];
-const VALID_METHODS = ["normal", "box", "nagashi", "formation"];
+const VALID_METHODS = ["normal", "box", "nagashi", "axis1", "axis2", "multi", "axis2_multi", "formation"];
 
 export async function onRequestPost(context) {
   const { request, env } = context;

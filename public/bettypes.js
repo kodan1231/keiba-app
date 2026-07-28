@@ -17,14 +17,27 @@ const METHODS = {
   normal: { label: "通常" },
   box: { label: "ボックス" },
   nagashi: { label: "流し" },
+  axis1: { label: "1頭軸" },
+  axis2: { label: "2頭軸" },
+  multi: { label: "マルチ" },
+  axis2_multi: { label: "2頭軸マルチ" },
   formation: { label: "フォーメーション" },
 };
 
-// n=1(単勝・複勝)は組み合わせという概念がないため「通常」のみ選択可能
 function availableMethods(betType) {
   const def = BET_TYPES[betType];
   if (!def || def.n === 1) return ["normal"];
-  return ["normal", "box", "nagashi", "formation"];
+
+  if (betType === "sanrentan") {
+    return ["normal", "box", "nagashi", "axis1", "axis2", "multi", "axis2_multi", "formation"];
+  }
+  if (betType === "sanrenpuku") {
+    return ["normal", "box", "nagashi", "axis1", "axis2", "formation"];
+  }
+  if (def.ordered) {
+    return ["normal", "box", "nagashi", "axis1", "formation"];
+  }
+  return ["normal", "box", "nagashi", "axis1", "formation"];
 }
 
 function betTypeLabel(key) {
@@ -35,8 +48,6 @@ function methodLabel(key) {
   return METHODS[key] ? METHODS[key].label : key;
 }
 
-// 着順指定のあるなしで、選択位置のラベルを変える
-// (馬単・三連単は着順そのものが的中条件なので「1着」「2着」…と明示する)
 function selectionLabel(betType, index) {
   const def = BET_TYPES[betType];
   if (!def) return `${index + 1}`;
@@ -46,7 +57,6 @@ function selectionLabel(betType, index) {
   return ["1頭目", "2頭目", "3頭目"][index] || `${index + 1}頭目`;
 }
 
-// 選択馬の配列を「3-5」「3→5→7」のような短い表記にする(一覧表示用)
 function formatSelections(betType, selections) {
   const def = BET_TYPES[betType];
   const nums = selections.map((s) => s.horse_number ?? "?");

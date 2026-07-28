@@ -1,92 +1,75 @@
 let races = [];
 let selectedRace = null;
-let prediction = { marks: [], memo: "" };
-
-const raceSelect = document.getElementById("race-select");
+let prediction = { marks: [] };
+let horseNotes = {};
 const emptyState = document.getElementById("prediction-empty");
 const panel = document.getElementById("prediction-panel");
 const raceHeader = document.getElementById("prediction-race-header");
 const horsesEl = document.getElementById("prediction-horses");
-const memoEl = document.getElementById("prediction-memo");
-const saveBtn = document.getElementById("save-prediction-btn");
+const buyBtn = document.getElementById("buy-race-btn");
 const messageEl = document.getElementById("prediction-message");
-
 const MARKS = ["◎", "○", "▲", "△", "☆"];
 
 async function loadRaces() {
   const res = await authedFetch("/api/races");
-  if (!res.ok) return;
-
-  races = await res.json();
-
-  const sorted = [...races].sort((a, b) => {
-    const dateCompare = String(b.race_date).localeCompare(String(a.race_date));
-    if (dateCompare !== 0) return dateCompare;
-    const trackCompare = String(a.track).localeCompare(String(b.track), "ja");
-    if (trackCompare !== 0) return trackCompare;
-    return Number(a.race_number) - Number(b.race_number);
-  });
-
-  raceSelect.innerHTML = `<option value="">レースを選択してください</option>` +
-    sorted.map((race) => `
-      <option value="${race.id}">
-        ${escapeHtml(formatDate(race.race_date))} ${escapeHtml(race.track)} ${race.race_number}R${race.race_name ? ` ${escapeHtml(race.race_name)}` : ""}
-      </option>
-    `).join("");
-
-  const queryRaceId = Number(new URLSearchParams(window.location.search).get("race"));
-  const initial = Number.isInteger(queryRaceId) && queryRaceId > 0
-    ? sorted.find((r) => r.id === queryRaceId)
-    : null;
-
-  if (initial) {
-    raceSelect.value = String(initial.id);
-    await selectRace(initial.id);
-  }
-}
-
-raceSelect.addEventListener("change", async () => {
-  const raceId = Number(raceSelect.value);
-  if (!raceId) {
-    selectedRace = null;
-    panel.hidden = true;
-    emptyState.hidden = false;
+  if (!res.ok) {
+    showEmpty("レース情報の取得に失敗しました。");
     return;
   }
-  await selectRace(raceId);
-});
+  races = await res.json();
+  const raceId = Number(new URLSearchParams(location.search).get("race"));
+  if (!Number.isInteger(raceId) || raceId <= 0) {
+    showEmpty("レースが指定されていません。レース一覧から対象レースを選択してください。");
+    return;
+  }
+  selectedRace = races.find(r => Number(r.id) === raceId);
+  if (!selectedRace) {
+    showEmpty("指定されたレースが見つかりません。");
+    return;
+  }
+  await selectRace();
+}
 
-async function selectRace(raceId) {
-  selectedRace = races.find((race) => race.id === raceId);
-  if (!selectedRace) return;
+function showEmpty(message) {
+  emptyState.hidden = false;
+  emptyState.textContent = message;
+  panel.hidden = true;
+}
 
+async function selectRace() {
   emptyState.hidden = true;
   panel.hidden = false;
-  messageEl.hidden = true;
-  saveBtn.disabled = true;
-
   renderRaceHeader();
   renderHorses();
-  memoEl.value = "";
 
-  const res = await authedFetch(`/api/predictions?race_id=${encodeURIComponent(raceId)}`);
-  if (res.ok) {
-    prediction = await res.json();
-    applyPrediction();
+  const [predRes, noteRes] = await Promise.all([
+    authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
+    authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`)
+  ]);
+
+  // 予想印はDBのprediction_marksを唯一の正とする。
+  // APIが失敗した場合だけ、既存entries内のmarkを互換用に読み込む。
+  if (predRes.ok) {
+    prediction = await predRes.json();
   } else {
-    prediction = { marks: [], memo: "" };
-    memoEl.value = "";
-    showMessage("既存の予想を読み込めませんでした。", false);
+    prediction = {
+      marks: (selectedRace.entries || [])
+        .filter(e => MARKS.includes(e.mark))
+        .map(e => ({ horse_number: Number(e.horse_number), mark: e.mark }))
+    };
   }
 
-  saveBtn.disabled = false;
+  horseNotes = noteRes.ok ? await noteRes.json() : {};
+  applyPrediction();
+  applyHorseNotes();
+  buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
 }
 
 function renderRaceHeader() {
   raceHeader.innerHTML = `
     <div class="prediction-race-title">
-      <span class="r-num">${selectedRace.race_number}R</span>
       <span class="track">${escapeHtml(selectedRace.track)}</span>
+      <span class="r-num">${selectedRace.race_number}R</span>
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
     </div>
     <div class="prediction-race-meta">
@@ -96,125 +79,154 @@ function renderRaceHeader() {
 }
 
 function renderHorses() {
-  const entries = [...selectedRace.entries].sort((a, b) =>
-    Number(a.horse_number) - Number(b.horse_number)
-  );
-
-  if (entries.length === 0) {
-    horsesEl.innerHTML = `<p class="prediction-no-entries">このレースにはまだ出走馬が登録されていません。先にレース管理から出走馬を登録してください。</p>`;
-    saveBtn.disabled = true;
+  const entries = [...selectedRace.entries].sort((a,b) => Number(a.horse_number) - Number(b.horse_number));
+  if (!entries.length) {
+    horsesEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
     return;
   }
 
-  saveBtn.disabled = false;
-
-  horsesEl.innerHTML = entries.map((entry) => {
-    const horseNumber = Number(entry.horse_number);
+  horsesEl.innerHTML = entries.map(e => {
+    const n = Number(e.horse_number);
+    const note = horseNotes[e.horse_name] || {};
     return `
-      <article class="prediction-horse" data-horse-number="${horseNumber}">
-        <div class="prediction-horse-info">
-          <span class="mini-waku waku-${entry.waku_number || 0}">${entry.waku_number || "-"}</span>
-          <span class="prediction-horse-number">${horseNumber}</span>
-          <div class="prediction-horse-name">
-            <strong>${escapeHtml(entry.horse_name || "馬名未登録")}</strong>
-            ${entry.jockey ? `<small>${escapeHtml(entry.jockey)}</small>` : ""}
-          </div>
+      <article class="prediction-horse horse-note-card"
+        data-horse-number="${n}"
+        data-horse-name="${escapeAttr(e.horse_name || "")}">
+        <div class="horse-note-toggle" role="button" tabindex="0">
+          <span class="mini-waku waku-${e.waku_number || 0}">${e.waku_number || "-"}</span>
+          <span class="prediction-horse-number">${n}</span>
+          <span class="prediction-horse-name">
+            <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+            ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
+            ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">メモ: ${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
+          </span>
+          <span class="prediction-mark-inline" aria-label="予想印">
+            ${MARKS.map(m => `<button type="button" class="prediction-mark-btn" data-mark="${m}" aria-label="${m}">${m}</button>`).join("")}
+            <button type="button" class="prediction-mark-btn clear-mark" data-mark="" aria-label="印なし">−</button>
+          </span>
+          <span class="note-chevron">＋</span>
         </div>
-        <div class="prediction-mark-buttons" role="group" aria-label="${horseNumber}番の予想印">
-          ${MARKS.map((mark) => `
-            <button type="button" class="prediction-mark-btn" data-mark="${mark}" aria-label="${mark}">
-              ${mark}
-            </button>
-          `).join("")}
-          <button type="button" class="prediction-mark-btn clear-mark" data-mark="" aria-label="印なし">−</button>
+        <div class="horse-note-editor" hidden>
+          <label class="horse-memo-label">
+            この馬についてのメモ
+            <textarea class="horse-memo" rows="3" maxlength="5000"
+              placeholder="次回以降も参照したい、この馬固有のメモを入力">${escapeHtml(note.memo || "")}</textarea>
+          </label>
+          <span class="horse-note-status" hidden></span>
         </div>
       </article>
     `;
   }).join("");
 
-  horsesEl.querySelectorAll(".prediction-mark-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const row = btn.closest(".prediction-horse");
-      const horseNumber = Number(row.dataset.horseNumber);
-      const mark = btn.dataset.mark;
+  // 馬名行のクリックでメモだけ展開。印ボタンのクリックでは展開を切り替えない。
+  horsesEl.querySelectorAll(".horse-note-toggle").forEach(btn => {
+    btn.addEventListener("click", (event) => {
+      if (event.target.closest(".prediction-mark-inline")) return;
+      const card = btn.closest(".horse-note-card");
+      const editor = card.querySelector(".horse-note-editor");
+      editor.hidden = !editor.hidden;
+      btn.querySelector(".note-chevron").textContent = editor.hidden ? "＋" : "−";
+    });
+  });
 
-      row.querySelectorAll(".prediction-mark-btn").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-
-      prediction.marks = prediction.marks.filter((item) => Number(item.horse_number) !== horseNumber);
+  horsesEl.querySelectorAll(".prediction-mark-btn").forEach(btn => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const card = btn.closest(".horse-note-card");
+      const n = Number(card.dataset.horseNumber);
+      const mark = btn.dataset.mark || "";
+      const existing = (prediction.marks || []).some(x => Number(x.horse_number) === n && x.mark === mark);
       if (mark) {
-        prediction.marks.push({ horse_number: horseNumber, mark });
+        if (existing) {
+          prediction.marks = (prediction.marks || []).filter(x => !(Number(x.horse_number) === n && x.mark === mark));
+        } else {
+          prediction.marks = [...(prediction.marks || []), { horse_number: n, mark }];
+        }
+      } else {
+        prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
       }
+      await savePredictionMarks();
+    });
+  });
+
+  // メモは入力変更後に自動保存。短時間の連続入力はデバウンスする。
+  horsesEl.querySelectorAll(".horse-memo").forEach(textarea => {
+    let timer;
+    textarea.addEventListener("input", () => {
+      clearTimeout(timer);
+      const card = textarea.closest(".horse-note-card");
+      timer = setTimeout(() => saveHorseNote(card), 500);
     });
   });
 }
 
-function applyPrediction() {
-  memoEl.value = prediction.memo || "";
-
-  const markMap = new Map(
-    (prediction.marks || []).map((item) => [Number(item.horse_number), item.mark])
-  );
-
-  horsesEl.querySelectorAll(".prediction-horse").forEach((row) => {
-    const horseNumber = Number(row.dataset.horseNumber);
-    const mark = markMap.get(horseNumber) || "";
-    const target = row.querySelector(`.prediction-mark-btn[data-mark="${CSS.escape(mark)}"]`)
-      || row.querySelector(".clear-mark");
-
-    row.querySelectorAll(".prediction-mark-btn").forEach((btn) => btn.classList.remove("selected"));
-    if (target) target.classList.add("selected");
+async function saveHorseNote(card) {
+  const name = normalizeHorseName(card.dataset.horseName);
+  if (!name) return;
+  const memo = card.querySelector(".horse-memo").value.trim();
+  const status = card.querySelector(".horse-note-status");
+  const res = await authedFetch("/api/horse-notes", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ horse_name: name, memo })
   });
+  status.hidden = false;
+  status.textContent = res.ok ? "自動保存済み" : "保存に失敗しました";
+  status.className = `horse-note-status ${res.ok ? "success" : "error"}`;
+  if (res.ok) {
+    horseNotes[name] = { memo };
+  }
 }
 
-saveBtn.addEventListener("click", async () => {
+async function savePredictionMarks() {
   if (!selectedRace) return;
-
-  saveBtn.disabled = true;
-  messageEl.hidden = true;
-
   const res = await authedFetch("/api/predictions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      race_id: selectedRace.id,
-      marks: prediction.marks,
-      memo: memoEl.value,
-    }),
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ race_id: selectedRace.id, marks: prediction.marks || [], memo: "" })
   });
-
-  if (res.ok) {
-    prediction = await res.json();
-    showMessage("予想を保存しました。", true);
-  } else {
-    const data = await res.json().catch(() => ({}));
-    showMessage(data.error || "予想の保存に失敗しました。", false);
-  }
-
-  saveBtn.disabled = false;
-});
-
-function showMessage(message, success) {
   messageEl.hidden = false;
-  messageEl.className = `submit-message ${success ? "success" : "error"}`;
-  messageEl.textContent = message;
+  messageEl.className = `submit-message ${res.ok ? "success" : "error"}`;
+  messageEl.textContent = res.ok ? "印を自動保存しました" : "印の保存に失敗しました";
+  if (res.ok) {
+    setTimeout(() => { messageEl.hidden = true; }, 1200);
+  }
 }
+
+function applyPrediction() {
+  const map = new Map();
+  for (const x of (prediction.marks || [])) {
+    const n = Number(x.horse_number);
+    if (!map.has(n)) map.set(n, new Set());
+    map.get(n).add(x.mark);
+  }
+  horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
+    const marks = map.get(Number(card.dataset.horseNumber)) || new Set();
+    card.querySelectorAll(".prediction-mark-btn").forEach(btn => {
+      const mark = btn.dataset.mark || "";
+      btn.classList.toggle("selected", mark ? marks.has(mark) : marks.size === 0);
+    });
+  });
+}
+
+function applyHorseNotes() {
+  horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
+    const name = normalizeHorseName(card.dataset.horseName);
+    const note = horseNotes[normalizeHorseName(name)]?.memo || "";
+    const textarea = card.querySelector(".horse-memo");
+    if (textarea) textarea.value = note;
+  });
+}
+
+function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+/g, " ").trim(); }
 
 function escapeHtml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
-
-function formatDate(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return d.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    weekday: "short",
+function escapeAttr(str) { return escapeHtml(str).replace(/'/g,"&#39;"); }
+function formatDate(s) {
+  return new Date(`${s}T00:00:00`).toLocaleDateString("ja-JP", {
+    year:"numeric", month:"numeric", day:"numeric", weekday:"short"
   });
 }
 

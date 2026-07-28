@@ -6,14 +6,19 @@ let expandedRaces = new Set();
 let races = [];
 
 async function loadTickets() {
-  const [ticketsRes, racesRes] = await Promise.all([
+  const [ticketsRes, racesRes, importedRes] = await Promise.all([
     authedFetch("/api/tickets"),
     authedFetch("/api/races"),
+    authedFetch("/api/ticket-imports"),
   ]);
   if (!ticketsRes.ok) return;
   const items = await ticketsRes.json();
+  const importedPayload = importedRes.ok ? await importedRes.json() : { items: [] };
+    const imported = Array.isArray(importedPayload)
+      ? importedPayload
+      : (Array.isArray(importedPayload.items) ? importedPayload.items : []);
   races = racesRes.ok ? await racesRes.json() : [];
-  render(items);
+  render([...(Array.isArray(items) ? items : []), ...(Array.isArray(imported) ? imported : [])]);
 }
 
 function groupByRace(items) {
@@ -176,19 +181,22 @@ function renderGroupRow(group) {
           return `
             <div class="group-detail-row" data-id="${t.id}">
               <div class="sel-line">${selHtml}</div>
-              <label class="payout-label">購入額
-                <input type="number" class="amount-edit-input" min="100" step="100" value="${t.amount}" />
-              </label>
+              ${t.imported
+                ? `<span class="import-source-badge">CSV取込</span><label class="payout-label">購入額 <input type="number" class="amount-edit-input import-edit-input" min="0" step="100" value="${t.amount}" /></label><label class="payout-label">払戻 <input type="number" class="payout-edit-input import-edit-input" min="0" step="1" value="${t.payout ?? ""}" placeholder="未確定" /></label>`
+                : `<label class="payout-label">購入額
+                    <input type="number" class="amount-edit-input" min="100" step="100" value="${t.amount}" />
+                  </label>`
+              }
               <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `払戻¥${t.payout.toLocaleString()}` : "未確定"}</span>
-              <button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>
+              ${t.imported && !t.legacy_import ? `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>` : (t.imported ? "" : `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>`)}
             </div>
           `;
         })
         .join("")}
     </div>
-    <div class="group-detail-actions">
+    ${first.imported ? "" : `<div class="group-detail-actions">
       <a href="races.html?edit=${encodeURIComponent(first.race_id)}" class="ghost-btn">払戻を編集(レース管理へ)</a>
-    </div>
+    </div>`}
   `;
   wrap.appendChild(detail);
 
@@ -200,7 +208,18 @@ function renderGroupRow(group) {
     head.querySelector(".expand-arrow").textContent = detail.hidden ? "▸" : "▾";
   });
 
-  detail.querySelectorAll(".amount-edit-input").forEach((input) => {
+  detail.querySelectorAll(".import-edit-input").forEach((input) => {
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("change", async () => {
+      const row = input.closest(".group-detail-row"); const id = row?.dataset.id; if (!id || String(id).startsWith("legacy-import-")) return;
+      const amount = row.querySelector(".amount-edit-input")?.value; const payoutInput = row.querySelector(".payout-edit-input");
+      const payout = payoutInput && payoutInput.value !== "" ? Number(payoutInput.value) : null;
+      await authedFetch(`/api/ticket-imports/${encodeURIComponent(id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount:Number(amount),payout})});
+      loadTickets();
+    });
+  });
+
+  detail.querySelectorAll(".amount-edit-input:not(.import-edit-input)").forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
     input.addEventListener("change", async () => {
       const id = input.closest(".group-detail-row").dataset.id;
@@ -236,6 +255,31 @@ function renderGroupRow(group) {
 
   return wrap;
 }
+
+const csvImportBtn = document.getElementById("csv-import-btn");
+const csvImportInput = document.getElementById("csv-import-input");
+csvImportBtn?.addEventListener("click", () => csvImportInput?.click());
+csvImportInput?.addEventListener("change", async () => {
+  const file = csvImportInput.files?.[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("file", file);
+  csvImportBtn.disabled = true;
+  csvImportBtn.textContent = "取込中…";
+  try {
+    const res = await authedFetch("/api/ticket-imports", { method:"POST", body:form });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || "CSVの取り込みに失敗しました");
+    alert(`${result.imported || 0}件の購入履歴を取り込みました。`);
+    await loadTickets();
+  } catch (e) {
+    alert(e.message || "CSVの取り込みに失敗しました");
+  } finally {
+    csvImportBtn.disabled = false;
+    csvImportBtn.textContent = "CSVインポート";
+    csvImportInput.value = "";
+  }
+});
 
 function escapeHtml(str) {
   return String(str)
