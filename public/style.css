@@ -649,6 +649,18 @@ textarea { resize: vertical; }
 .race-list-card .settled-badge.done { background: var(--win); color: #fff; border-color: var(--win); }
 .race-list-card .card-actions { margin-left: auto; display: flex; gap: 6px; }
 
+/* レース管理画面: 競馬場カラム内に収めるための調整(横並びカラムでは1カラムの幅が
+   狭いため、バッジ類を折り返しさせつつコンパクトにする) */
+.race-track-column .race-list-card {
+  border: none;
+  border-top: 1px solid rgba(0,0,0,.08);
+  border-radius: 0;
+  padding: 8px 12px;
+  gap: 6px;
+}
+.race-track-column .race-list-card:first-of-type { border-top: none; }
+.race-track-column .track-meta { font-size: 11px; color: var(--ink-soft); font-weight: 400; }
+
 .entry-form-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
 
 .entry-form-row {
@@ -1057,6 +1069,28 @@ textarea { resize: vertical; }
   color: var(--ink-soft);
   font-size: 12px;
   border-bottom: 1px solid var(--rule);
+}
+
+.prediction-tickets {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prediction-tickets[hidden] { display: none; }
+
+.prediction-tickets-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prediction-tickets-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
 }
 
 .prediction-horses {
@@ -1474,6 +1508,30 @@ body.modal-open { overflow: hidden; }
   background:currentColor;
 }
 .calendar-day.empty{border:0;background:transparent;cursor:default}
+
+.history-calendar-toggle-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:10px 0;
+}
+.history-filter-label{
+  font-size:.82rem;
+  color:#777;
+}
+.calendar-day.money-cell{
+  min-height:56px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+}
+.calendar-day-money{
+  font-size:.68rem;
+  font-weight:800;
+  font-family:var(--font-mono);
+}
 
 .race-column-row{
   grid-template-columns:48px minmax(0,1fr) auto;

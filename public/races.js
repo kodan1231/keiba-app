@@ -30,7 +30,6 @@ async function loadRaces() {
 }
 
 let expandedDates = new Set();
-let expandedTracks = new Set();
 
 function renderRaceList() {
   if (races.length === 0) {
@@ -67,47 +66,39 @@ function renderRaceList() {
     dateBody.className = "date-group-body";
     dateBody.hidden = !dateExpanded;
 
+    // 競馬場は横に並べ、その下にR1〜12を縦に並べる(予想ページの「馬券購入」カレンダー選択後と同じレイアウト)。
     const byTrack = new Map();
     dateRaces.forEach((r) => {
       if (!byTrack.has(r.track)) byTrack.set(r.track, []);
       byTrack.get(r.track).push(r);
     });
 
+    const columnsWrap = document.createElement("div");
+    columnsWrap.className = "race-columns";
+
     for (const [track, trackRaces] of byTrack) {
-      const trackKey = `${date}__${track}`;
-      const trackExpanded = expandedTracks.has(trackKey);
       const trackSettled = trackRaces.filter((r) => r.finish_order).length;
+      const byNumber = new Map(trackRaces.map((r) => [r.race_number, r]));
 
-      const trackWrap = document.createElement("div");
-      trackWrap.className = "track-group";
+      const col = document.createElement("section");
+      col.className = "race-track-column";
+      col.innerHTML = `<h3>${escapeHtml(track)} <span class="track-meta">結果確定 ${trackSettled}/${trackRaces.length}</span></h3>`;
 
-      const trackHead = document.createElement("div");
-      trackHead.className = "track-group-head";
-      trackHead.innerHTML = `
-        <span class="expand-arrow">${trackExpanded ? "▾" : "▸"}</span>
-        <span class="track-label">${escapeHtml(track)}</span>
-        <span class="track-meta">${trackRaces.length}レース ・ 結果確定 ${trackSettled}/${trackRaces.length}</span>
-      `;
-
-      const trackBody = document.createElement("div");
-      trackBody.className = "track-group-body";
-      trackBody.hidden = !trackExpanded;
-
-      trackRaces
-        .sort((a, b) => a.race_number - b.race_number)
-        .forEach((r) => trackBody.appendChild(renderRaceRow(r)));
-
-      trackHead.addEventListener("click", () => {
-        const nowHidden = !trackBody.hidden;
-        trackBody.hidden = nowHidden;
-        if (nowHidden) expandedTracks.delete(trackKey); else expandedTracks.add(trackKey);
-        trackHead.querySelector(".expand-arrow").textContent = trackBody.hidden ? "▸" : "▾";
-      });
-
-      trackWrap.appendChild(trackHead);
-      trackWrap.appendChild(trackBody);
-      dateBody.appendChild(trackWrap);
+      for (let n = 1; n <= 12; n++) {
+        const r = byNumber.get(n);
+        if (!r) {
+          const empty = document.createElement("div");
+          empty.className = "race-column-row no-race";
+          empty.innerHTML = `<b>${n}R</b><span>未登録</span>`;
+          col.appendChild(empty);
+          continue;
+        }
+        col.appendChild(renderRaceRow(r));
+      }
+      columnsWrap.appendChild(col);
     }
+
+    dateBody.appendChild(columnsWrap);
 
     dateHead.addEventListener("click", () => {
       const nowHidden = !dateBody.hidden;

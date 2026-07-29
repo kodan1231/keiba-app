@@ -22,6 +22,7 @@ const METHODS = {
   multi: { label: "マルチ" },
   axis2_multi: { label: "2頭軸マルチ" },
   formation: { label: "フォーメーション" },
+  import: { label: "CSV取込" },
 };
 
 function availableMethods(betType) {

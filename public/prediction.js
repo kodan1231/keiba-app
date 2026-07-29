@@ -6,6 +6,7 @@ const emptyState = document.getElementById("prediction-empty");
 const panel = document.getElementById("prediction-panel");
 const raceHeader = document.getElementById("prediction-race-header");
 const horsesEl = document.getElementById("prediction-horses");
+const ticketsEl = document.getElementById("prediction-tickets");
 const buyBtn = document.getElementById("buy-race-btn");
 const messageEl = document.getElementById("prediction-message");
 const MARKS = ["◎", "○", "▲", "△", "☆"];
@@ -36,6 +37,78 @@ function showEmpty(message) {
   panel.hidden = true;
 }
 
+// CSVインポートで作成されたレースには出走馬表(馬名)がないことがあるため、
+// 予想印とは別に「このレースで購入した馬券」を馬番ベースで一覧表示する。
+// 馬名が分からなくても、買い目・購入金額・払戻金額は把握できるようにするため。
+async function loadRaceTickets() {
+  const [ticketsRes, importedRes] = await Promise.all([
+    authedFetch("/api/tickets"),
+    authedFetch("/api/ticket-imports"),
+  ]);
+  const tickets = ticketsRes.ok ? await ticketsRes.json() : [];
+  const importedPayload = importedRes.ok ? await importedRes.json() : { items: [] };
+  const imported = Array.isArray(importedPayload) ? importedPayload : (importedPayload.items || []);
+  const all = [...(Array.isArray(tickets) ? tickets : []), ...(Array.isArray(imported) ? imported : [])];
+  return all.filter((t) => Number(t.race_id) === Number(selectedRace.id));
+}
+
+function renderPurchasedTickets(items) {
+  if (!items.length) {
+    ticketsEl.innerHTML = "";
+    ticketsEl.hidden = true;
+    return;
+  }
+  ticketsEl.hidden = false;
+  const groups = new Map();
+  for (const t of items) {
+    if (!groups.has(t.group_id)) groups.set(t.group_id, []);
+    groups.get(t.group_id).push(t);
+  }
+  const totalAmount = items.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const hasSettled = items.some((t) => t.payout !== null && t.payout !== undefined);
+  const settledPayout = items
+    .filter((t) => t.payout !== null && t.payout !== undefined)
+    .reduce((s, t) => s + Number(t.payout || 0), 0);
+
+  ticketsEl.innerHTML = `
+    <div class="prediction-tickets-head">
+      <h2 class="prediction-tickets-title">このレースの購入馬券</h2>
+      <span class="group-money">購入¥${totalAmount.toLocaleString()}${hasSettled ? ` / 払戻¥${settledPayout.toLocaleString()}` : ""}</span>
+    </div>
+    ${Array.from(groups.values())
+      .map((group) => {
+        const first = group[0];
+        return `
+          <div class="group-card">
+            <div class="group-card-head">
+              <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
+              <span class="method-badge">${methodLabel(first.method)}</span>
+              <span class="point-count">${group.length}点</span>
+              ${first.imported ? `<span class="import-source-badge">CSV取込</span>` : ""}
+            </div>
+            <div class="group-detail-rows">
+              ${group
+                .map(
+                  (t) => `
+                <div class="group-detail-row">
+                  <div class="sel-line">${formatSelections(t.bet_type, t.selections)}</div>
+                  <span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
+                    t.payout !== null && t.payout !== undefined
+                      ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
+                      : " / 未確定"
+                  }</span>
+                </div>
+              `
+                )
+                .join("")}
+            </div>
+          </div>
+        `;
+      })
+      .join("")}
+  `;
+}
+
 async function selectRace() {
   emptyState.hidden = true;
   panel.hidden = false;
@@ -44,7 +117,7 @@ async function selectRace() {
 
   const [predRes, noteRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
-    authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`)
+    authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
   ]);
 
   // 予想印はDBのprediction_marksを唯一の正とする。
@@ -63,6 +136,12 @@ async function selectRace() {
   applyPrediction();
   applyHorseNotes();
   buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
+
+  // 購入馬券セクションは独立して読み込む。ここで失敗しても、予想印の保存や
+  // 購入ページへの遷移など他の機能に影響させない。
+  loadRaceTickets()
+    .then(renderPurchasedTickets)
+    .catch(() => { ticketsEl.innerHTML = ""; ticketsEl.hidden = true; });
 }
 
 function renderRaceHeader() {
@@ -145,6 +224,7 @@ function renderHorses() {
       } else {
         prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
       }
+      applyPrediction(); // クリック直後に見た目へ反映する(保存を待たず即時反映)
       await savePredictionMarks();
     });
   });

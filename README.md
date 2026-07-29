@@ -58,10 +58,17 @@ functions/
   api/auth/                  ... ログイン/ログアウト/認証確認
   api/races/                 ... レースの一覧・登録・編集・削除・一括登録(bulk)
   api/tickets/                ... 購入履歴の一覧・一括登録(bulk・組み合わせごとの金額対応)・払戻更新・削除
-schema.sql                   ... D1データベースのテーブル定義(新規セットアップ用)
-migrate_v3.sql                ... v2以前からの移行用SQL(テーブル構造自体は今回変更なし)
+schema.sql                   ... D1データベースの最新版テーブル定義(新規セットアップ用)
+latest1.sql                  ... 既存DBを最新版(v10相当)へ更新する統合マイグレーション
+archive/migrations/          ... 過去の番号付きmigration(v2～v10)のアーカイブ(通常は実行しない)
+docs/DESIGN.md                ... データ構造・データフロー・集計ルールなどの設計方針(生きたドキュメント)
+docs/TESTING.md                ... 手動テストチェックリスト(生きたドキュメント)
 wrangler.toml
 ```
+
+このREADME、`docs/DESIGN.md`、`docs/TESTING.md`はいずれも常に現状を反映する
+「生きたドキュメント」として管理します。過去の作業ログ・修正メモの類は
+ファイルとして残さず、コミットメッセージ側に記録する方針です。
 
 ## データの考え方
 
@@ -72,60 +79,37 @@ wrangler.toml
 - 騎手別の収支は、1枚の馬券に複数騎手が関わる場合、関係する騎手それぞれに購入金額・払戻金の**全額**を
   計上する(按分しない)。そのため騎手別の合計は購入履歴全体の合計と一致しない
 
-## 既にデプロイ済みの環境をアップデートする場合
+## DBマイグレーション方針
 
-**今回は`races`テーブルに払戻率保存用の列(`payouts`)を追加しました。** 以下のマイグレーションを実行してから再デプロイしてください(データは失われません)。
+DBスキーマは最新版を基準に管理します。
+
+- **新規DBの構築**: `schema.sql` を1回実行します。
+- **既存DBの最新版への更新**: `latest1.sql` を1回実行します。
+- `migrate_v2.sql` ～ `migrate_v10.sql` は過去の変更履歴として `archive/migrations/` に保管しています。通常のセットアップ・更新では使用しません。
+
+`latest1.sql` は、番号付きmigrationを順番に適用した結果の最終状態(v10相当)へ既存DBを更新するための統合migrationです。
+
+### 既存のリモートDBを最新版へ更新
 
 ```bash
-wrangler d1 execute keiba-yosou-db --remote --file=./migrate_v4.sql
-wrangler pages deploy public --project-name=keiba-yosou-app
+npx wrangler d1 execute keiba-yosou-db --remote --file=./latest1.sql
 ```
 
-(v2以前の古いバージョンから直接アップデートする場合は、先にv3相当のテーブル作成が必要です。ご連絡ください。)
+### 既存のローカルDBを最新版へ更新
+
+```bash
+npx wrangler d1 execute keiba-yosou-db --local --file=./latest1.sql
+```
+
+更新後に再デプロイします。
+
+```bash
+npx wrangler pages deploy public --project-name=keiba-yosou-app
+```
+
+> 注意: `latest1.sql` は既存DBを最新版へ更新するためのものです。新規DBは `schema.sql` を使用してください。
 
 ## セットアップ手順(新規の場合)
-
-### 1. Wranglerのインストール・ログイン
-
-```bash
-npm install -g wrangler
-wrangler login
-```
-
-### 2. D1データベースを作成
-
-```bash
-wrangler d1 create keiba-yosou-db
-```
-
-実行結果に表示される `database_id` をコピーし、`wrangler.toml` の
-`database_id = "ここに..."` の部分に貼り付けてください。
-
-### 3. テーブルを作成
-
-```bash
-wrangler d1 execute keiba-yosou-db --remote --file=./schema.sql
-```
-
-### 4. Cloudflare Pagesにデプロイ
-
-```bash
-wrangler pages deploy public --project-name=keiba-yosou-app
-```
-
-### 5. 環境変数(パスワード)とD1バインディングをダッシュボードで設定
-
-Cloudflareダッシュボード → Workers & Pages → keiba-yosou-app → Settings で以下を設定:
-
-- **Variables and secrets**: `APP_PASSWORD` に好きなパスワードを設定(Secret推奨)
-- **Bindings**: D1 database の変数名を `DB` にして `keiba-yosou-db` を紐付け
-
-設定後、もう一度手順4のコマンドを実行すると反映されます。
-
-### 6. 完成
-
-発行されたURLにPC・スマホからアクセスし、設定したパスワードでログインすれば利用開始できます。
-
 
 ### 1. Wranglerのインストール・ログイン
 

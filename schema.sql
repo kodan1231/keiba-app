@@ -1,4 +1,4 @@
--- 疑似馬券購入シミュレーター データベース スキーマ (v3)
+-- 疑似馬券購入シミュレーター データベース スキーマ (latest / v10相当)
 
 -- レースマスター: 出走馬表(枠・馬番・馬名・騎手)と、確定後のレース結果(着順)を保持
 CREATE TABLE IF NOT EXISTS races (
@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS races (
   race_name TEXT,                 -- レース名(任意)
   entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark}]
   finish_order TEXT,              -- JSON配列 [horse_number, ...] 着順順(1着から)。未確定はNULL
-  payouts TEXT,                   -- JSON { 馬券式: [{combo:[馬番...], rate:100円あたり払戻}, ...] }
   created_at TEXT DEFAULT (datetime('now')),
+  payouts TEXT,                   -- JSON { 馬券式: [{combo:[馬番...], rate:100円あたり払戻}, ...] }
   UNIQUE(race_date, track, race_number)
 );
 
@@ -94,11 +94,16 @@ CREATE TABLE IF NOT EXISTS imported_tickets (
   return_amount INTEGER DEFAULT 0,
   raw_csv TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_imported_tickets_date ON imported_tickets(race_date);
+CREATE INDEX IF NOT EXISTS idx_imported_tickets_race_date ON imported_tickets(race_date);
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_receipt_number ON imported_tickets(receipt_number);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
+  ON imported_tickets(source, receipt_number, sequence_number)
+  WHERE receipt_number IS NOT NULL AND receipt_number <> ''
+    AND sequence_number IS NOT NULL AND sequence_number <> '';
 
--- Import normalized purchase groups / individual ticket items
+
+-- 最新版: Import normalized purchase groups / individual ticket items
 CREATE TABLE IF NOT EXISTS imported_ticket_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source TEXT NOT NULL DEFAULT 'club_jra_net',

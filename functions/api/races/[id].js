@@ -63,11 +63,22 @@ export async function onRequestDelete(context) {
   if ((hasRelated || hasResult) && !force) {
     return Response.json({ error: "購入履歴または結果が紐付いたレースです。削除する場合は明示的に確認してください。", requires_confirmation: true, has_related: hasRelated, has_result: hasResult }, { status: 409 });
   }
+  // imported_ticket_groups が参照している imported_tickets(CSV原本)のIDを先に取得しておく。
+  // これを削除しないと、レースを消してもCSV原本だけが「孤立した購入履歴」として
+  // 一覧に残り続け、しかも同じCSVを再取込する際に重複扱いされて再取込できなくなる。
+  const importedSourceRows = (await env.DB.prepare(
+    "SELECT source_row_id FROM imported_ticket_groups WHERE race_id = ? AND source_row_id IS NOT NULL"
+  ).bind(id).all()).results || [];
+  const sourceRowIds = importedSourceRows.map((r) => r.source_row_id).filter((v) => v !== null && v !== undefined);
+
   await env.DB.batch([
     env.DB.prepare("DELETE FROM prediction_marks WHERE race_id = ?").bind(id),
     env.DB.prepare("DELETE FROM prediction_notes WHERE race_id = ?").bind(id),
     env.DB.prepare("DELETE FROM imported_ticket_items WHERE race_id = ?").bind(id),
     env.DB.prepare("DELETE FROM imported_ticket_groups WHERE race_id = ?").bind(id),
+    ...(sourceRowIds.length
+      ? [env.DB.prepare(`DELETE FROM imported_tickets WHERE id IN (${sourceRowIds.map(() => "?").join(",")})`).bind(...sourceRowIds)]
+      : []),
     env.DB.prepare("DELETE FROM tickets WHERE race_id = ?").bind(id),
     env.DB.prepare("DELETE FROM races WHERE id = ?").bind(id),
   ]);

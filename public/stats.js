@@ -15,13 +15,15 @@ document.querySelectorAll(".stats-tab").forEach((tab) => {
 // グループ(レース/競馬場/騎手)ごとの購入・払戻・収支を計算する共通関数。
 // 未確定の馬券も購入額はすでに支払い済みとして収支に反映する(結果が出るまでは暫定的にマイナス計上)。
 function computeGroupStats(tickets) {
-  // 未確定馬券は回収率・収支の対象外。確定した買い目だけを分母/分子に使う。
+  // 未確定(払戻未入力)の馬券も、購入した時点で金額を支払い済みとして収支に反映する。
+  // 実際の財布・口座残高のイメージ: 結果が出るまでは実質マイナス表示になり、
+  // 払戻が確定するごとにプラス方向へ補正されていく(README「収支・回収率の考え方」参照)。
   const settled = tickets.filter((t) => t.payout !== null && t.payout !== undefined);
   const settledAmount = settled.reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalAmount = tickets.reduce((s, t) => s + Number(t.amount || 0), 0);
   const settledPayout = settled.reduce((s, t) => s + Number(t.payout || 0), 0);
-  const profit = settledPayout - settledAmount;
-  const rate = settledAmount > 0 ? Math.round((settledPayout / settledAmount) * 1000) / 10 : null;
+  const profit = settledPayout - totalAmount;
+  const rate = totalAmount > 0 ? Math.round((settledPayout / totalAmount) * 1000) / 10 : null;
   const hit = computeHitRate(tickets);
   return {
     count: tickets.length,
@@ -39,19 +41,32 @@ function computeGroupStats(tickets) {
 }
 
 // 的中率(クラブJRA-netと同じ考え方): レース単位で、購入したいずれかの馬券が的中(払戻>0)していれば「的中」とみなす。
-// 払戻を1件も入力していないレースは、まだ判定できないため分母に含めない。
+// 判定対象(分母)に含めるのは、購入履歴に払戻が入力されている場合に加えて、
+// 着順(finish_order)またはレース払戻(payouts)のいずれかが確定しているレース。
+// 着順だけ確定していて払戻レート未入力の場合、勝ち馬券の判定はできないが
+// 「結果は出ている」ため分母には含める(payoutが入っていない=このレースでは不的中として扱う)。
 function computeHitRate(tickets) {
   const byRace = groupBy(tickets, (t) => t.race_id);
   let judgedRaces = 0;
   let hitRaces = 0;
   for (const raceTickets of byRace.values()) {
-    const judged = raceTickets.some((t) => t.payout !== null && t.payout !== undefined);
+    const t0 = raceTickets[0];
+    const hasTicketPayout = raceTickets.some((t) => t.payout !== null && t.payout !== undefined);
+    const raceResultKnown = hasRaceResult(t0?.race_finish_order) || hasRaceResult(t0?.race_payouts);
+    const judged = hasTicketPayout || raceResultKnown;
     if (!judged) continue;
     judgedRaces++;
     if (raceTickets.some((t) => t.payout !== null && t.payout !== undefined && t.payout > 0)) hitRaces++;
   }
   const rate = judgedRaces > 0 ? Math.round((hitRaces / judgedRaces) * 1000) / 10 : null;
   return { judgedRaces, hitRaces, rate };
+}
+
+// JSON文字列(TEXT列)として保存されたfinish_order/payoutsが実質的な値を持つか判定する。
+function hasRaceResult(value) {
+  if (value === null || value === undefined || value === "") return false;
+  if (value === "[]" || value === "{}") return false;
+  return true;
 }
 
 function groupBy(items, keyFn) {

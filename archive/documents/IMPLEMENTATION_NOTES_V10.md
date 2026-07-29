@@ -29,4 +29,6 @@
 レース的中率は結果が判定可能なレースのみ分母に含める。
 
 ## DB
-既存DBは `migrate_v10.sql` を適用する。
+- 新規DBは `schema.sql` を1回実行して最新版(v10相当)を構築する。
+- 既存DBは `latest1.sql` を1回実行して最新版(v10相当)へ更新する。
+- `migrate_v2.sql` ～ `migrate_v10.sql` は `archive/migrations/` に履歴として保管し、通常のセットアップ・更新では使用しない。

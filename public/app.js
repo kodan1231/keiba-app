@@ -4,6 +4,99 @@ const summaryBar = document.getElementById("summary-bar");
 let expandedGroups = new Set();
 let expandedRaces = new Set();
 let races = [];
+let allItems = [];
+let selectedHistoryDate = null;
+let historyCalendarMonth = new Date();
+historyCalendarMonth.setDate(1);
+
+const historyCalendarToggle = document.getElementById("history-calendar-toggle");
+const historyCalendar = document.getElementById("history-calendar");
+const historyCalendarGrid = document.getElementById("history-calendar-grid");
+const historyCalendarMonthLabel = document.getElementById("history-calendar-month-label");
+const historyFilterLabel = document.getElementById("history-filter-label");
+
+historyCalendarToggle?.addEventListener("click", () => {
+  historyCalendar.hidden = !historyCalendar.hidden;
+});
+document.getElementById("history-prev-month-btn")?.addEventListener("click", () => {
+  historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() - 1);
+  renderHistoryCalendar();
+});
+document.getElementById("history-next-month-btn")?.addEventListener("click", () => {
+  historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() + 1);
+  renderHistoryCalendar();
+});
+document.getElementById("history-today-btn")?.addEventListener("click", () => {
+  const now = new Date();
+  historyCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  renderHistoryCalendar();
+});
+document.getElementById("history-clear-filter-btn")?.addEventListener("click", () => {
+  selectedHistoryDate = null;
+  renderHistoryCalendar();
+  applyHistoryFilter();
+});
+
+// 日付ごとの購入金額・払戻金額・収支を集計する。
+// 収支の考え方はREADME/集計ページと同じく「未確定分も購入時点で支払い済みとして計上」する。
+function computeDailyTotals(items) {
+  const byDate = new Map();
+  for (const t of items) {
+    const date = t.race_date;
+    if (!date) continue;
+    if (!byDate.has(date)) byDate.set(date, { amount: 0, payout: 0 });
+    const d = byDate.get(date);
+    d.amount += Number(t.amount || 0);
+    if (t.payout !== null && t.payout !== undefined) d.payout += Number(t.payout || 0);
+  }
+  return byDate;
+}
+
+function renderHistoryCalendar() {
+  if (!historyCalendarGrid || !historyCalendarMonthLabel) return;
+  const year = historyCalendarMonth.getFullYear();
+  const month = historyCalendarMonth.getMonth();
+  historyCalendarMonthLabel.textContent = `${year}年${month + 1}月`;
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const dailyTotals = computeDailyTotals(allItems);
+
+  const headers = ["日", "月", "火", "水", "木", "金", "土"];
+  let html = headers.map((h) => `<span class="calendar-weekday">${h}</span>`).join("");
+  for (let i = 0; i < firstDay; i++) html += `<span class="calendar-day empty"></span>`;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const totals = dailyTotals.get(key);
+    const profit = totals ? totals.payout - totals.amount : null;
+    const moneyHtml = totals
+      ? `<span class="calendar-day-money ${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}${Math.round(profit / 1000)}k</span>`
+      : "";
+    html += `<button type="button" class="calendar-day money-cell ${key === selectedHistoryDate ? "selected" : ""} ${totals ? "has-race" : ""}" data-date="${key}">
+      <span>${d}</span>${moneyHtml}
+    </button>`;
+  }
+  historyCalendarGrid.innerHTML = html;
+  historyCalendarGrid.querySelectorAll("button[data-date]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectedHistoryDate = selectedHistoryDate === btn.dataset.date ? null : btn.dataset.date;
+      renderHistoryCalendar();
+      applyHistoryFilter();
+    });
+  });
+}
+
+function applyHistoryFilter() {
+  if (selectedHistoryDate) {
+    historyFilterLabel.hidden = false;
+    historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
+    render(allItems.filter((t) => t.race_date === selectedHistoryDate));
+  } else {
+    historyFilterLabel.hidden = true;
+    render(allItems);
+  }
+}
 
 async function loadTickets() {
   const [ticketsRes, racesRes, importedRes] = await Promise.all([
@@ -18,7 +111,9 @@ async function loadTickets() {
       ? importedPayload
       : (Array.isArray(importedPayload.items) ? importedPayload.items : []);
   races = racesRes.ok ? await racesRes.json() : [];
-  render([...(Array.isArray(items) ? items : []), ...(Array.isArray(imported) ? imported : [])]);
+  allItems = [...(Array.isArray(items) ? items : []), ...(Array.isArray(imported) ? imported : [])];
+  renderHistoryCalendar();
+  applyHistoryFilter();
 }
 
 function groupByRace(items) {
@@ -174,12 +269,14 @@ function renderGroupRow(group) {
     <div class="group-detail-rows">
       ${group
         .map((t) => {
-          const def = BET_TYPES[t.bet_type];
+          // 不正/未知の bet_type (壊れたインポートデータ等)でも描画がクラッシュしないよう
+          // フォールバック値を用意する。
+          const def = BET_TYPES[t.bet_type] || { ordered: false };
           const selHtml = t.selections
             .map((s) => `<span class="sel-item"><span class="sel-num">${s.horse_number}</span>${escapeHtml(s.horse_name || "")}</span>`)
             .join(def.ordered ? '<span class="sel-arrow">→</span>' : '<span class="sel-dash">-</span>');
           return `
-            <div class="group-detail-row" data-id="${t.id}">
+            <div class="group-detail-row" data-id="${t.id}" data-imported="${t.imported ? "1" : ""}">
               <div class="sel-line">${selHtml}</div>
               ${t.imported
                 ? `<span class="import-source-badge">CSV取込</span><label class="payout-label">購入額 <input type="number" class="amount-edit-input import-edit-input" min="0" step="100" value="${t.amount}" /></label><label class="payout-label">払戻 <input type="number" class="payout-edit-input import-edit-input" min="0" step="1" value="${t.payout ?? ""}" placeholder="未確定" /></label>`
@@ -247,10 +344,14 @@ function renderGroupRow(group) {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       if (!confirm("この購入を削除しますか？")) return;
-      
+
       try {
-        const id = btn.closest(".group-detail-row").dataset.id;
-        const res = await authedFetch(`/api/tickets/${id}`, { method: "DELETE" });
+        const row = btn.closest(".group-detail-row");
+        const id = row.dataset.id;
+        const isImported = row.dataset.imported === "1";
+        // CSV取込分は imported_ticket_items テーブル管理のため、通常購入とはAPIエンドポイントが異なる。
+        const endpoint = isImported ? `/api/ticket-imports/${encodeURIComponent(id)}` : `/api/tickets/${id}`;
+        const res = await authedFetch(endpoint, { method: "DELETE" });
         const data = await res.json().catch(() => ({}));
         
         if (!res.ok) {

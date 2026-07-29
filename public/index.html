@@ -40,6 +40,22 @@
 
   <div class="summary-bar" id="summary-bar"></div>
 
+  <div class="history-calendar-toggle-row">
+    <button type="button" id="history-calendar-toggle" class="ghost-btn">📅 日付から選ぶ</button>
+    <span id="history-filter-label" class="history-filter-label" hidden></span>
+  </div>
+
+  <div id="history-calendar" class="race-calendar" hidden>
+    <div class="race-calendar-toolbar">
+      <button type="button" id="history-prev-month-btn" class="ghost-btn">‹</button>
+      <strong id="history-calendar-month-label"></strong>
+      <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
+      <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
+      <button type="button" id="history-clear-filter-btn" class="ghost-btn">すべて表示</button>
+    </div>
+    <div id="history-calendar-grid" class="calendar-grid money-calendar"></div>
+  </div>
+
   <main id="race-list" class="race-list"></main>
 
   <p id="empty-state" class="empty-state" hidden>
