@@ -97,8 +97,11 @@ CREATE TABLE IF NOT EXISTS imported_tickets (
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_race_date ON imported_tickets(race_date);
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_receipt_number ON imported_tickets(receipt_number);
 
+-- 受付番号は開催日ごとに採番がリセットされることがあるため、日付を含めずに
+-- 受付番号+通番だけで一意性を判定すると、別日の正当なデータが重複扱いされてしまう。
+-- そのため race_date も含めて一意性を判定する。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
-  ON imported_tickets(source, receipt_number, sequence_number)
+  ON imported_tickets(source, race_date, receipt_number, sequence_number)
   WHERE receipt_number IS NOT NULL AND receipt_number <> ''
     AND sequence_number IS NOT NULL AND sequence_number <> '';
 

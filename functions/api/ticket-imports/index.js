@@ -119,6 +119,43 @@ function splitCombinations(text,type){
 function selectionsFromNums(nums){return nums.map(horse_number=>({horse_number}));}
 function inferFinish(type, nums){return type==='sanrentan'&&nums.length===3?nums:null;}
 
+// 「的中／返還」列は、1行に複数の的中組み合わせがある場合(BOX・ながし等で複数点的中)、
+// "的中02―05／的中02―09／的中05―09" のように「的中」を各組み合わせの前に繰り返して
+// ／(全角スラッシュ)で連結する。これを的中組み合わせ1件ごとに分解する。
+// (以前は先頭の「的中」だけを取り除いていたため、2件目以降の組み合わせに「的中」の
+//  文字が残ったまま数値解析され、一部の的中組み合わせが正しく認識されないバグがあった)
+function splitHitSegments(hitText){
+  if(!/^的中/.test(hitText)) return [];
+  return hitText.split(/[／\/]/).map(s=>clean(s).replace(/^的中/,'')).map(clean).filter(Boolean);
+}
+// 「払戻単価」列も的中組み合わせと同じ並び順で／連結される(例: "800／680／650")。
+// 100円あたりの払戻額(レート)なので、各組み合わせの購入金額に応じて実際の払戻額を計算する。
+function splitRefundUnits(refundUnitText){
+  const s=clean(refundUnitText); if(!s) return [];
+  return s.split(/[／\/]/).map(toInt);
+}
+// 的中組み合わせごとの払戻額(rate=100円あたりの払戻)を Map<comboKey, rate> として組み立てる。
+// 組み合わせ数と払戻単価の数が一致しない場合(想定外の表記ゆれ)は、安全側に倒して
+// 空Mapを返し、呼び出し側で従来通りの一括判定にフォールバックする。
+function buildHitRateMap(hitText, refundUnitText, type){
+  const segments=splitHitSegments(hitText);
+  if(!segments.length) return { map: new Map(), hitCombos: [] };
+  const rates=splitRefundUnits(refundUnitText);
+  const keyOf=(nums)=>nums.join(type==='sanrentan'?'→':'-');
+  const hitCombos=[];
+  const map=new Map();
+  const sizeOk = rates.length === segments.length;
+  segments.forEach((seg,i)=>{
+    const nums=parseNumbers(seg);
+    const size=comboSize(type);
+    if(nums.length!==size) return; // 解析できない断片は無視する
+    const combo = ordered(type) ? nums : nums.slice().sort((a,b)=>a-b);
+    hitCombos.push(combo);
+    if(sizeOk) map.set(keyOf(combo), rates[i]);
+  });
+  return { map, hitCombos };
+}
+
 export async function onRequestPost(context){
   try{
     const form=await context.request.formData(); const file=form.get('file');
@@ -133,31 +170,47 @@ export async function onRequestPost(context){
     for(const row of dataRows){
       const raw={};headers.forEach((h,i)=>raw[clean(h)]=clean(row[i]));
       const raceDate=cols.raceDate>=0?normalizeDate(row[cols.raceDate]):''; const track=cols.venue>=0?normalizeTrack(row[cols.venue]):''; const raceNumber=cols.raceNumber>=0?toInt(row[cols.raceNumber]):0;
-      const receipt=cols.receipt>=0?clean(row[cols.receipt]):''; const sequence=cols.sequence>=0?clean(row[cols.sequence]):''; const sourceKey=receipt&&sequence?`${receipt}:${sequence}`:JSON.stringify(raw);
+      const receipt=cols.receipt>=0?clean(row[cols.receipt]):''; const sequence=cols.sequence>=0?clean(row[cols.sequence]):'';
+      // 受付番号は日付をまたいで再利用されることがあるため(例: 開催日ごとに0001から採番)、
+      // 日付を含めないキーだと別日の正当なデータが誤って重複扱いされ、スキップされてしまう。
+      const sourceKey=receipt&&sequence?`${raceDate}:${receipt}:${sequence}`:JSON.stringify(raw);
       // 「合計」行などの集計行(日付・受付番号がともに空)は購入データではないためスキップする。
       if(!raceDate&&!receipt) continue;
        const type=betType(cols.betType>=0?row[cols.betType]:''); const comboText=cols.combination>=0?clean(row[cols.combination]):''; 
        const hitText=cols.hit>=0?clean(row[cols.hit]):'';
-       let hitComboText='';
-       if(/^的中/.test(hitText)){hitComboText=hitText.replace(/^的中/,'');}
+       const refundUnitText=cols.refundUnit>=0?clean(row[cols.refundUnit]):'';
        const totalAmount=cols.purchaseAmount>=0?parseAmount(row[cols.purchaseAmount]):0; const refund=cols.refundAmount>=0?toInt(row[cols.refundAmount]):(cols.refundUnit>=0?toInt(row[cols.refundUnit]):0); const hit=hitText;
-      const existing=await db.prepare('SELECT id FROM imported_tickets WHERE source=? AND ((?<>\'\' AND receipt_number=? AND sequence_number=?) OR (?=\'\' AND raw_csv=?)) LIMIT 1').bind('club_jra_net',receipt,receipt,sequence,receipt,JSON.stringify(raw)).first();
+       // 的中組み合わせごとの払戻レート(100円あたり)。複数的中でも組み合わせごとに正しく対応付ける。
+       const { map: hitRateMap, hitCombos } = buildHitRateMap(hitText, refundUnitText, type);
+      const existing=await db.prepare('SELECT id FROM imported_tickets WHERE source=? AND ((?<>\'\' AND race_date=? AND receipt_number=? AND sequence_number=?) OR (?=\'\' AND raw_csv=?)) LIMIT 1').bind('club_jra_net',receipt,raceDate,receipt,sequence,receipt,JSON.stringify(raw)).first();
       if(existing){skipped++;continue;}
       // Preserve raw row as the authoritative imported source record.
       const legacy=await db.prepare(`INSERT INTO imported_tickets(source,race_date,receipt_number,sequence_number,venue,race_number,bet_type,combination,purchase_amount,hit_refund,refund_unit,refund_amount,return_amount,raw_csv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',raceDate,receipt,sequence,track,String(raceNumber||''),type,comboText,totalAmount,hit,cols.refundUnit>=0?toInt(row[cols.refundUnit]):0,refund,cols.returnAmount>=0?toInt(row[cols.returnAmount]):0,JSON.stringify(raw)).run();
       // Resolve or create the race. Entries remain empty if the CSV cannot provide them.
       let race=await db.prepare('SELECT * FROM races WHERE race_date=? AND track=? AND race_number=?').bind(raceDate,track,raceNumber).first();
       if(!race&&raceDate&&track&&raceNumber){const ins=await db.prepare('INSERT INTO races(race_date,track,race_number,race_name,entries) VALUES(?,?,?,?,?)').bind(raceDate,track,raceNumber,cols.raceName>=0?clean(row[cols.raceName]):null,'[]').run();race=await db.prepare('SELECT * FROM races WHERE id=?').bind(ins.meta.last_row_id).first();}
-      const combos=splitCombinations(comboText,type); const hitCombos=splitCombinations(hitComboText,type);
+      const combos=splitCombinations(comboText,type);
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
       const group=await db.prepare(`INSERT INTO imported_ticket_groups(source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||null,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
       const groupId=group.meta.last_row_id; const items=combos.length?combos:[[]]; const perAmount=items.length&&totalAmount?Math.floor(totalAmount/items.length):0;
       const statements=[];
       for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const isHit=hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1);const inferred=inferFinish(type,nums);
         // Club JRA-Net購入履歴CSVは既に決着済みの購入履歴であり、「未確定(結果待ち)」は存在しない。
-        // 的中/返還列に値がある(空でない)行は、的中buyoutならrefund、非的中なら0円確定として扱う。
-        // (旧実装は非的中をnull=未確定のままにしてしまい、CSV取込分が永久に未確定表示になるバグがあった)
-        const payout=hitText===''?null:(isHit?(refund||0):0);
+        // 的中/返還列に値がある(空でない)行は、的中買い目はrefundを、非的中買い目は0円をpayoutとする。
+        // 的中買い目の払戻額は、組み合わせごとの払戻レート(100円あたり)×その買い目の購入金額で計算する。
+        // (以前は1行に複数の的中組み合わせがある場合、組み合わせを区別せず行全体のrefundを1件だけに
+        //  誤って計上していたため、複数点的中時に金額が合わなくなるバグがあった)
+        // レートが個別に取得できない場合は、的中1件のみなら従来通りrefund全額、複数件なら均等割りにフォールバックする。
+        let payout=null;
+        if(hitText!==''){
+          if(isHit){
+            if(hitRateMap.has(key)) payout=Math.round((perAmount/100)*hitRateMap.get(key));
+            else if(hitCombos.length<=1) payout=refund||0;
+            else payout=Math.round((refund||0)/hitCombos.length);
+          } else {
+            payout=0;
+          }
+        }
         const statement=db.prepare(`INSERT INTO imported_ticket_items(group_id,race_id,bet_type,selections,amount,payout,is_hit,result_inferred,source_key) VALUES(?,?,?,?,?,?,?,?,?)`).bind(groupId,race?.id||null,type,JSON.stringify(selectionsFromNums(nums)),perAmount,payout,isHit?1:0,inferred?1:0,`${sourceKey}:${key}`);
         statements.push(statement);}
       if(statements.length) await db.batch(statements);

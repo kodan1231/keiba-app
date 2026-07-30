@@ -100,6 +100,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
   WHERE receipt_number IS NOT NULL AND receipt_number <> ''
     AND sequence_number IS NOT NULL AND sequence_number <> '';
 
+-- v11: 受付番号は開催日ごとに採番がリセットされることがあるため、日付を含めずに
+-- 受付番号+通番だけで一意性を判定すると、別日の正当なデータが重複扱いされ
+-- CSV再取込時に誤ってスキップされてしまうバグがあった。race_date を含めて再定義する。
+-- (IF NOT EXISTSでは既存インデックスの定義は更新されないため、明示的に作り直す)
+DROP INDEX IF EXISTS uq_imported_tickets_club_jra;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
+  ON imported_tickets(source, race_date, receipt_number, sequence_number)
+  WHERE receipt_number IS NOT NULL AND receipt_number <> ''
+    AND sequence_number IS NOT NULL AND sequence_number <> '';
+
 -- v10: CSV購入グループ
 CREATE TABLE IF NOT EXISTS imported_ticket_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
