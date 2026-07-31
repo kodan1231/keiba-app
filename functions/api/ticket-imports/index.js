@@ -156,6 +156,54 @@ function buildHitRateMap(hitText, refundUnitText, type){
   return { map, hitCombos };
 }
 
+// races.finish_order (JSON配列, 例: [3,1,7]) の現在値と、今回の行から分かった
+// 着順情報(1件のみ的中かつ順序が一意に定まる場合のみ)をマージする。
+// sanrentan(3着まで確定)を最も信頼できる情報源として扱い、他の情報で上書きしない。
+// tan(1着のみ)・umatan(1・2着)は、まだ何も分かっていない着順スロットのみを埋める。
+function mergeFinishOrder(existingJson, type, hitCombos){
+  if(hitCombos.length!==1) return null;
+  const combo=hitCombos[0];
+  let partial=null, authoritative=false;
+  if(type==='sanrentan'&&combo.length===3){ partial=combo; authoritative=true; }
+  else if(type==='umatan'&&combo.length===2){ partial=combo; }
+  else if(type==='tan'&&combo.length===1){ partial=combo; }
+  if(!partial) return null;
+
+  let existing=null;
+  try{ const parsed=existingJson?JSON.parse(existingJson):null; if(Array.isArray(parsed)) existing=parsed; }catch{}
+  const merged=existing?existing.slice():[];
+  let changed=false;
+  for(let i=0;i<partial.length;i++){
+    if(authoritative || merged[i]===undefined || merged[i]===null){
+      if(merged[i]!==partial[i]){ merged[i]=partial[i]; changed=true; }
+    }
+  }
+  return changed?merged:null;
+}
+
+// races.payouts (JSON, 例: {"wide":[{"combo":[2,9],"rate":680}, ...]}) へ、
+// 今回の行で分かった的中組み合わせごとの払戻レート(100円あたり)をマージする。
+// 同じ式別・同じ組み合わせが既にあれば新しい値で上書きし、無ければ追加する。
+function mergePayouts(existingJson, type, hitCombos, hitRateMap){
+  if(!hitCombos.length||!hitRateMap.size) return null;
+  let payouts={};
+  try{ const parsed=existingJson?JSON.parse(existingJson):{}; if(parsed&&typeof parsed==='object') payouts=parsed; }catch{}
+  const list=Array.isArray(payouts[type])?payouts[type].slice():[];
+  const byKey=new Map(list.map(c=>[JSON.stringify(c.combo),c]));
+  let changed=false;
+  for(const combo of hitCombos){
+    const key=combo.join(type==='sanrentan'?'→':'-');
+    if(!hitRateMap.has(key)) continue;
+    const rate=hitRateMap.get(key);
+    const comboKey=JSON.stringify(combo);
+    const current=byKey.get(comboKey);
+    if(!current||current.rate!==rate){ byKey.set(comboKey,{combo,rate}); changed=true; }
+  }
+  if(!changed) return null;
+  payouts[type]=Array.from(byKey.values());
+  return payouts;
+}
+
 export async function onRequestPost(context){
   try{
     const form=await context.request.formData(); const file=form.get('file');
@@ -214,8 +262,23 @@ export async function onRequestPost(context){
         const statement=db.prepare(`INSERT INTO imported_ticket_items(group_id,race_id,bet_type,selections,amount,payout,is_hit,result_inferred,source_key) VALUES(?,?,?,?,?,?,?,?,?)`).bind(groupId,race?.id||null,type,JSON.stringify(selectionsFromNums(nums)),perAmount,payout,isHit?1:0,inferred?1:0,`${sourceKey}:${key}`);
         statements.push(statement);}
       if(statements.length) await db.batch(statements);
-      // Add inferred 3連単 finish order only when it is unambiguous from the hit combination.
-      if(race&&type==='sanrentan'&&hitCombos.length===1&&hitCombos[0].length===3){await db.prepare('UPDATE races SET finish_order=COALESCE(finish_order,?) WHERE id=?').bind(JSON.stringify(hitCombos[0]),race.id).run();}
+      // CSV取込結果のうち、着順が一意に定まる情報(単勝1着/馬単1・2着/三連単3着まで)は
+      // races.finish_order へ、的中組み合わせごとの払戻レートは races.payouts へ反映する。
+      if(race){
+        const newFinishOrder=mergeFinishOrder(race.finish_order,type,hitCombos);
+        const newPayouts=mergePayouts(race.payouts,type,hitCombos,hitRateMap);
+        if(newFinishOrder||newPayouts){
+          await db.prepare('UPDATE races SET finish_order=?, payouts=? WHERE id=?')
+            .bind(
+              newFinishOrder?JSON.stringify(newFinishOrder):race.finish_order,
+              newPayouts?JSON.stringify(newPayouts):race.payouts,
+              race.id
+            ).run();
+          // 同一レースの後続行を処理する際に最新状態を参照できるよう、ローカルの race も更新しておく。
+          if(newFinishOrder) race.finish_order=JSON.stringify(newFinishOrder);
+          if(newPayouts) race.payouts=JSON.stringify(newPayouts);
+        }
+      }
       const dup=await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups WHERE race_date=? AND track=? AND race_number=? AND bet_type=? AND total_amount=? AND id<>? ORDER BY id DESC LIMIT 10`).bind(raceDate,track,raceNumber,type,totalAmount,groupId).all();
       if((dup.results||[]).length) duplicateCandidates.push({group_id:groupId,candidates:dup.results});
       imported++;

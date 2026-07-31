@@ -9,15 +9,13 @@ let selectedHistoryDate = null;
 let historyCalendarMonth = new Date();
 historyCalendarMonth.setDate(1);
 
-const historyCalendarToggle = document.getElementById("history-calendar-toggle");
 const historyCalendar = document.getElementById("history-calendar");
 const historyCalendarGrid = document.getElementById("history-calendar-grid");
 const historyCalendarMonthLabel = document.getElementById("history-calendar-month-label");
 const historyFilterLabel = document.getElementById("history-filter-label");
+const historyEmptyHint = document.getElementById("history-empty-hint");
+const historyClearFilterBtn = document.getElementById("history-clear-filter-btn");
 
-historyCalendarToggle?.addEventListener("click", () => {
-  historyCalendar.hidden = !historyCalendar.hidden;
-});
 document.getElementById("history-prev-month-btn")?.addEventListener("click", () => {
   historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() - 1);
   renderHistoryCalendar();
@@ -31,7 +29,7 @@ document.getElementById("history-today-btn")?.addEventListener("click", () => {
   historyCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   renderHistoryCalendar();
 });
-document.getElementById("history-clear-filter-btn")?.addEventListener("click", () => {
+historyClearFilterBtn?.addEventListener("click", () => {
   selectedHistoryDate = null;
   renderHistoryCalendar();
   applyHistoryFilter();
@@ -87,14 +85,23 @@ function renderHistoryCalendar() {
   });
 }
 
+// 初期表示(日付未選択)ではサマリー(総購入・総払戻・収支・回収率)とカレンダーのみを表示し、
+// 個々の購入履歴はカレンダーで日付を選択したときだけ表示する。
+// サマリーの集計は常に全期間(全購入)を対象とする(選択日だけの集計ではない)。
 function applyHistoryFilter() {
+  renderSummary(allItems);
+  historyClearFilterBtn.hidden = !selectedHistoryDate;
+
   if (selectedHistoryDate) {
     historyFilterLabel.hidden = false;
     historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
-    render(allItems.filter((t) => t.race_date === selectedHistoryDate));
+    historyEmptyHint.hidden = true;
+    renderList(allItems.filter((t) => t.race_date === selectedHistoryDate));
   } else {
     historyFilterLabel.hidden = true;
-    render(allItems);
+    raceList.innerHTML = "";
+    emptyState.hidden = true;
+    historyEmptyHint.hidden = false;
   }
 }
 
@@ -144,11 +151,9 @@ function groupByGroupId(tickets) {
   return Array.from(map.values());
 }
 
-function render(items) {
+function renderList(items) {
   raceList.innerHTML = "";
   emptyState.hidden = items.length !== 0;
-
-  renderSummary(items);
 
   const raceGroups = groupByRace(items);
 

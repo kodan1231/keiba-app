@@ -1,3 +1,5 @@
+import { backfillHorseNamesForRace } from "../_shared.js";
+
 export async function onRequestPut(context) {
   const { request, env, params } = context;
 
@@ -41,6 +43,12 @@ export async function onRequestPut(context) {
   await env.DB.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`)
     .bind(...values)
     .run();
+
+  // 出走馬表(馬名・騎手)が更新された場合、同じレースを参照しているCSV取込データ・
+  // 購入履歴のうち、馬番だけで馬名・騎手が空になっているものへ反映(バックフィル)する。
+  if ("entries" in data) {
+    await backfillHorseNamesForRace(env.DB, Number(params.id), data.entries);
+  }
 
   return Response.json({ ok: true });
 }

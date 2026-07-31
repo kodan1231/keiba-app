@@ -1,8 +1,14 @@
 let races = [];
 let currentHorseCount = 8;
 let currentTickets = [];
+let selectedRaceDate = null;
+let racesCalendarMonth = new Date();
+racesCalendarMonth.setDate(1);
 
 const racesMain = document.getElementById("races-main");
+const racesCalendarGrid = document.getElementById("races-calendar-grid");
+const racesCalendarMonthLabel = document.getElementById("races-calendar-month-label");
+const racesClearFilterBtn = document.getElementById("races-clear-filter-btn");
 const raceModal = document.getElementById("race-modal");
 const raceForm = document.getElementById("race-form");
 const raceModalTitle = document.getElementById("race-modal-title");
@@ -10,15 +16,20 @@ const entryRows = document.getElementById("entry-rows");
 const horseCountSelect = document.getElementById("r-horse-count");
 const raceNumberSelect = document.getElementById("r-race-number");
 const ticketsSection = document.getElementById("race-tickets-section");
+const finish1Select = document.getElementById("r-finish-1");
+const finish2Select = document.getElementById("r-finish-2");
+const finish3Select = document.getElementById("r-finish-3");
 
 // ---------- 初期化: セレクトの選択肢を用意 ----------
 raceNumberSelect.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}R</option>`).join("");
-horseCountSelect.innerHTML = Array.from({ length: 18 }, (_, i) => `<option value="${i + 1}">${i + 1}頭</option>`).join("");
+// 出走頭数は最低5頭・最大18頭(JRAの実運用上の範囲)。
+horseCountSelect.innerHTML = Array.from({ length: 14 }, (_, i) => i + 5).map((n) => `<option value="${n}">${n}頭</option>`).join("");
 
 async function loadRaces() {
   const res = await authedFetch("/api/races");
   if (!res.ok) return;
   races = await res.json();
+  renderRaceCalendar();
   renderRaceList();
 
   const editId = new URLSearchParams(window.location.search).get("edit");
@@ -29,6 +40,67 @@ async function loadRaces() {
   }
 }
 
+// ---------- カレンダーから日付を選ぶ ----------
+// レースが登録されている日をカレンダー上でマークし、クリックするとその日だけに絞り込む。
+// (以前は登録済みの全日付を上から下へスクロールして探す必要があった)
+function renderRaceCalendar() {
+  if (!racesCalendarGrid || !racesCalendarMonthLabel) return;
+  const year = racesCalendarMonth.getFullYear();
+  const month = racesCalendarMonth.getMonth();
+  racesCalendarMonthLabel.textContent = `${year}年${month + 1}月`;
+
+  const byDate = new Map();
+  races.forEach((r) => {
+    if (!byDate.has(r.race_date)) byDate.set(r.race_date, []);
+    byDate.get(r.race_date).push(r);
+  });
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const headers = ["日", "月", "火", "水", "木", "金", "土"];
+  let html = headers.map((h) => `<span class="calendar-weekday">${h}</span>`).join("");
+  for (let i = 0; i < firstDay; i++) html += `<span class="calendar-day empty"></span>`;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const dateRaces = byDate.get(key);
+    const settledCount = dateRaces ? dateRaces.filter((r) => r.finish_order).length : 0;
+    html += `<button type="button" class="calendar-day ${key === selectedRaceDate ? "selected" : ""} ${dateRaces ? "has-race" : ""}" data-date="${key}">
+      <span>${d}</span>
+      ${dateRaces ? `<span class="calendar-day-count">${settledCount}/${dateRaces.length}</span>` : ""}
+    </button>`;
+  }
+  racesCalendarGrid.innerHTML = html;
+  racesCalendarGrid.querySelectorAll("button[data-date]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectedRaceDate = selectedRaceDate === btn.dataset.date ? null : btn.dataset.date;
+      expandedDates.add(selectedRaceDate);
+      renderRaceCalendar();
+      renderRaceList();
+    });
+  });
+}
+
+document.getElementById("races-prev-month-btn")?.addEventListener("click", () => {
+  racesCalendarMonth.setMonth(racesCalendarMonth.getMonth() - 1);
+  renderRaceCalendar();
+});
+document.getElementById("races-next-month-btn")?.addEventListener("click", () => {
+  racesCalendarMonth.setMonth(racesCalendarMonth.getMonth() + 1);
+  renderRaceCalendar();
+});
+document.getElementById("races-today-btn")?.addEventListener("click", () => {
+  const now = new Date();
+  racesCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  renderRaceCalendar();
+});
+racesClearFilterBtn?.addEventListener("click", () => {
+  selectedRaceDate = null;
+  renderRaceCalendar();
+  renderRaceList();
+});
+
 let expandedDates = new Set();
 
 function renderRaceList() {
@@ -37,6 +109,8 @@ function renderRaceList() {
     return;
   }
 
+  racesClearFilterBtn.hidden = !selectedRaceDate;
+
   racesMain.innerHTML = "";
 
   const byDate = new Map();
@@ -44,7 +118,16 @@ function renderRaceList() {
     if (!byDate.has(r.race_date)) byDate.set(r.race_date, []);
     byDate.get(r.race_date).push(r);
   });
-  const dates = [...byDate.keys()].sort().reverse();
+  let dates = [...byDate.keys()].sort().reverse();
+
+  // カレンダーで日付が選択されている場合は、その日だけに絞り込む。
+  if (selectedRaceDate) {
+    dates = dates.filter((d) => d === selectedRaceDate);
+    if (dates.length === 0) {
+      racesMain.innerHTML = `<p class="empty-state">この日に登録されているレースはありません。「＋ レースを登録」から追加できます。</p>`;
+      return;
+    }
+  }
 
   for (const date of dates) {
     const dateRaces = byDate.get(date);
@@ -125,8 +208,6 @@ function renderRaceRow(r) {
     <span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>
     <span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>
     <span class="card-actions">
-      ${hasEntries ? `<a class="stamp-btn compact-buy-btn" href="prediction.html?race=${encodeURIComponent(r.id)}">馬券購入</a>` : ""}
-
       <button class="icon-btn edit-race-btn" data-id="${r.id}" title="編集">✎</button>
       <button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>
     </span>
@@ -176,16 +257,61 @@ async function deleteRace(id) {
   }
 }
 
+// 出走頭数から、枠番の初期値を計算する。JRAの正式な枠番決定ルール(抽選)とは異なるが、
+// 「頭数が決まればおおよその枠番の目安はつく」というリクエストに対する簡易な初期値であり、
+// 実際の枠番と異なる場合は手動で選び直せる(あくまで入力の手間を減らすための初期値)。
+// 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける(余りは若い枠番から+1頭ずつ)。
+function defaultWakuNumber(horseNumber, horseCount) {
+  const base = Math.floor(horseCount / 8);
+  const remainder = horseCount % 8;
+  let n = horseNumber;
+  for (let waku = 1; waku <= 8; waku++) {
+    const size = waku <= remainder ? base + 1 : base;
+    if (n <= size) return waku;
+    n -= size;
+  }
+  return 8;
+}
+
+// ---------- 着順(1〜3着)セレクト ----------
+// 出走馬表(馬名)が未登録でも、馬番だけで払戻計算に必要な上位3着を入力できるようにする。
+function renderFinishSelects(horseCount, finishOrder) {
+  const options = (selected) =>
+    `<option value="">-</option>` +
+    Array.from({ length: horseCount }, (_, i) => i + 1)
+      .map((n) => `<option value="${n}" ${selected == n ? "selected" : ""}>${n}番</option>`)
+      .join("");
+  const f = finishOrder || [];
+  finish1Select.innerHTML = options(f[0] ?? "");
+  finish2Select.innerHTML = options(f[1] ?? "");
+  finish3Select.innerHTML = options(f[2] ?? "");
+}
+
+// 1〜3着セレクトの現在値から finish_order (先頭が空なら以降も無視。歯抜けは詰めない) を組み立てる。
+function readFinishTop3() {
+  const vals = [finish1Select.value, finish2Select.value, finish3Select.value].map((v) => (v ? Number(v) : null));
+  const order = [];
+  for (const v of vals) {
+    if (v === null) break; // 1着が未入力なら2着以降は無視、2着が未入力なら3着は無視
+    order.push(v);
+  }
+  return order.length > 0 ? order : null;
+}
+
 // ---------- 出走馬の行 ----------
-function renderEntryRows(entries, horseCount, finishByNumber) {
+function renderEntryRows(entries, horseCount) {
   currentHorseCount = horseCount;
   const rows = [];
   for (let i = 0; i < horseCount; i++) {
-    rows.push(entries[i] || { waku_number: null, horse_number: i + 1, horse_name: "", jockey: "" });
+    // 既存データ(entries[i])に枠番があればそれを尊重し、無い新規行だけ初期値を自動設定する。
+    const existing = entries[i];
+    const waku_number = (existing?.waku_number ?? null) !== null
+      ? existing.waku_number
+      : defaultWakuNumber(i + 1, horseCount);
+    rows.push(existing ? { ...existing, waku_number } : { waku_number, horse_number: i + 1, horse_name: "", jockey: "" });
   }
   entryRows.innerHTML = rows
     .map((e, i) => {
-      const finish = finishByNumber ? finishByNumber[e.horse_number] : (e.finish || null);
       return `
         <div class="entry-form-row" data-row="${i}">
           <select class="e-waku">
@@ -197,10 +323,6 @@ function renderEntryRows(entries, horseCount, finishByNumber) {
           </select>
           <input type="text" class="e-horse-name" placeholder="馬名" value="${escapeAttr(e.horse_name ?? "")}" />
           <input type="text" class="e-jockey" placeholder="騎手" value="${escapeAttr(e.jockey ?? "")}" />
-          <select class="e-finish">
-            <option value="">着-</option>
-            ${Array.from({ length: horseCount }, (_, n) => n + 1).map((n) => `<option value="${n}" ${finish == n ? "selected" : ""}>${n}着</option>`).join("")}
-          </select>
         </div>
       `;
     })
@@ -210,8 +332,17 @@ function renderEntryRows(entries, horseCount, finishByNumber) {
 horseCountSelect.addEventListener("change", () => {
   const newCount = Number(horseCountSelect.value);
   const current = readEntryRows();
+  const finishOrder = readFinishTop3();
   renderEntryRows(current, newCount);
+  // 頭数変更時、既存の着順選択が新しい頭数の範囲を超えていれば維持できないため、
+  // 範囲内に収まるものだけ保持する。
+  renderFinishSelects(newCount, (finishOrder || []).filter((n) => n <= newCount));
+  renderPayoutBlocks();
 });
+
+finish1Select.addEventListener("change", renderPayoutBlocks);
+finish2Select.addEventListener("change", renderPayoutBlocks);
+finish3Select.addEventListener("change", renderPayoutBlocks);
 
 function readEntryRows() {
   return Array.from(entryRows.querySelectorAll(".entry-form-row")).map((row) => ({
@@ -219,7 +350,6 @@ function readEntryRows() {
     horse_number: Number(row.querySelector(".e-horse-number").value),
     horse_name: row.querySelector(".e-horse-name").value,
     jockey: row.querySelector(".e-jockey").value || null,
-    finish: row.querySelector(".e-finish").value ? Number(row.querySelector(".e-finish").value) : null,
   }));
 }
 
@@ -236,7 +366,7 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     alert("読み取れる行が見つかりませんでした。書式をご確認のうえ、直接入力欄で修正してください。");
     return;
   }
-  const count = Math.max(parsed.length, currentHorseCount);
+  const count = Math.max(parsed.length, currentHorseCount, 5);
   horseCountSelect.value = count;
   // 馬番が読み取れていればその番号順に、読み取れなければ出現順に並べる
   const withNumbers = parsed.filter((p) => p.horse_number);
@@ -244,87 +374,108 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     ? [...parsed].sort((a, b) => a.horse_number - b.horse_number)
     : parsed.map((p, i) => ({ ...p, horse_number: p.horse_number || i + 1 }));
   renderEntryRows(ordered, count);
+  renderFinishSelects(count, readFinishTop3());
+  renderPayoutBlocks();
   document.getElementById("paste-area").hidden = true;
 });
 
 // ---------- 払戻金額入力(馬券式別) ----------
-async function renderTicketsSection(race) {
-  if (!race) {
-    ticketsSection.innerHTML = "";
+// 表示中の払戻レート入力値(未保存分もこの中に保持する)。着順セレクトの変更等で再描画しても消えないようにする。
+let currentRacePayouts = {};
+
+const REQUIRED_TOP = { tan: 1, fuku: 3, wakuren: 2, umaren: 2, umatan: 2, wide: 3, sanrenpuku: 3, sanrentan: 3 };
+
+async function loadTicketsForRace(raceId) {
+  if (!raceId) {
+    currentTickets = [];
+    renderPayoutBlocks();
     return;
   }
   const res = await authedFetch("/api/tickets");
-  if (!res.ok) return;
+  if (!res.ok) { currentTickets = []; renderPayoutBlocks(); return; }
   const allTickets = await res.json();
-  const tickets = allTickets.filter((t) => t.race_id === race.id);
-  currentTickets = tickets;
+  currentTickets = allTickets.filter((t) => t.race_id === raceId);
+  renderPayoutBlocks();
+}
 
-  if (!race.finish_order) {
-    ticketsSection.innerHTML = `<p class="buy-hint" style="margin-top:16px">着順を入力すると、ここで馬券式ごとに払戻金額を入力できるようになります。</p>`;
-    return;
-  }
+// 出走馬表(馬名)や着順が未登録でも、常に払戻金額を入力できるようにする。
+// 1〜3着セレクトで着順が入力されている式別だけ、的中組み合わせを表示して入力欄を出す
+// (何着まで必要かは式別により異なる。例: 単勝は1着のみ、三連単は3着まで)。
+// 未入力の式別は「◯着まで入力すると表示されます」という案内のみ表示し、画面全体は常に表示したままにする。
+function renderPayoutBlocks() {
+  captureEnteredRatesIntoState();
 
-  const betTypesUsed = BET_TYPE_ORDER;
+  const finishOrder = readFinishTop3();
+  const entries = readEntryRows();
 
   ticketsSection.innerHTML = `
-    <p class="picker-hint" style="margin-top:16px">払戻金額(100円あたり)。購入金額に応じて自動計算されます。</p>
+    <p class="picker-hint" style="margin-top:16px">払戻金額(100円あたり)。購入金額に応じて自動計算されます。上の1〜3着を入力すると、的中する組み合わせが表示されます。</p>
     <div class="payout-by-type">
-      ${betTypesUsed
-        .map((betType) => {
-          const combos = computeWinningCombos(betType, race.finish_order, race.entries);
-          const betTickets = tickets.filter((t) => t.bet_type === betType);
-          return `
-            <div class="payout-type-block" data-bet-type="${betType}">
-              <div class="result-head-line"><span class="bet-badge">${betTypeLabel(betType)}</span><span class="point-count">${betTickets.length}点購入</span></div>
-              ${combos
-                .map((c) => {
-                  const rate = findStoredRate(race.payouts, betType, c.combo);
-                  return `
-                    <label class="payout-rate-row" data-combo='${escapeAttr(JSON.stringify(c.combo))}'>
-                      ${c.label}の払戻(100円あたり)
-                      <input type="number" class="payout-rate-input" min="0" step="10" value="${rate !== null ? rate : ""}" ${c.combo ? "" : "disabled"} placeholder="未確定" />
-                    </label>
-                  `;
-                })
-                .join("")}
-            </div>
-          `;
-        })
-        .join("")}
+      ${BET_TYPE_ORDER.map((betType) => {
+        const betTickets = currentTickets.filter((t) => t.bet_type === betType);
+        const required = REQUIRED_TOP[betType];
+        const enoughInfo = finishOrder && finishOrder.length >= required;
+        const combos = enoughInfo ? computeWinningCombos(betType, finishOrder, entries) : [];
+        return `
+          <div class="payout-type-block" data-bet-type="${betType}">
+            <div class="result-head-line"><span class="bet-badge">${betTypeLabel(betType)}</span>${betTickets.length > 0 ? `<span class="point-count">${betTickets.length}点購入</span>` : ""}</div>
+            ${!enoughInfo
+              ? `<p class="buy-hint">${required}着まで入力すると表示されます。</p>`
+              : combos
+                  .map((c) => {
+                    const rate = findStoredRate(currentRacePayouts, betType, c.combo);
+                    return `
+                      <label class="payout-rate-row" data-combo='${escapeAttr(JSON.stringify(c.combo))}'>
+                        ${c.label}の払戻(100円あたり)
+                        <input type="number" class="payout-rate-input" min="0" step="10" value="${rate !== null ? rate : ""}" ${c.combo ? "" : "disabled"} placeholder="未確定" />
+                      </label>
+                    `;
+                  })
+                  .join("")}
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
 
-// 入力フォームから (1) racesに保存する払戻率データ (2) 各チケットに反映する払戻金額 の両方を組み立てる
-function readPayoutForm() {
+// 再描画で消えてしまう前に、今表示されている入力値をstateへ退避する。
+// まだ着順不足で表示されていない式別(hint表示のみ)は、以前の値をそのまま保持する。
+function captureEnteredRatesIntoState() {
+  ticketsSection.querySelectorAll(".payout-type-block").forEach((block) => {
+    const betType = block.dataset.betType;
+    const rows = Array.from(block.querySelectorAll(".payout-rate-row"));
+    if (rows.length === 0) return;
+    const combos = rows
+      .map((row) => ({
+        combo: row.dataset.combo === "null" ? null : JSON.parse(row.dataset.combo),
+        rate: row.querySelector(".payout-rate-input").value === "" ? null : Number(row.querySelector(".payout-rate-input").value),
+      }))
+      .filter((c) => c.combo && c.rate !== null);
+    currentRacePayouts = { ...currentRacePayouts, [betType]: combos };
+  });
+}
+
+// フォーム送信時: (1) racesに保存する払戻率データ (2) 各チケットに反映する払戻金額 の両方を組み立てる
+function buildPayoutSubmission() {
+  captureEnteredRatesIntoState();
   const payoutsPayload = {};
   const ticketUpdates = [];
 
-  ticketsSection.querySelectorAll(".payout-type-block").forEach((block) => {
-    const betType = block.dataset.betType;
+  for (const betType of BET_TYPE_ORDER) {
+    const combos = currentRacePayouts[betType] || [];
+    if (combos.length > 0) payoutsPayload[betType] = combos;
+
     const betTickets = currentTickets.filter((t) => t.bet_type === betType);
-    const rows = Array.from(block.querySelectorAll(".payout-rate-row"));
-
-    const combos = rows.map((row) => ({
-      combo: row.dataset.combo === "null" ? null : JSON.parse(row.dataset.combo),
-      rate: row.querySelector(".payout-rate-input").value === "" ? null : Number(row.querySelector(".payout-rate-input").value),
-    }));
-
-    const enteredCombos = combos.filter((c) => c.combo && c.rate !== null);
-    if (enteredCombos.length > 0) {
-      payoutsPayload[betType] = enteredCombos.map((c) => ({ combo: c.combo, rate: c.rate }));
-    }
-
     betTickets.forEach((t) => {
-      const match = combos.find((c) => ticketMatchesCombo(t, c.combo) && c.rate !== null);
+      const match = combos.find((c) => ticketMatchesCombo(t, c.combo));
       if (match) {
         ticketUpdates.push({ id: t.id, payout: Math.round((t.amount / 100) * match.rate) });
       } else {
-        const anyRateEntered = combos.some((c) => c.rate !== null);
-        ticketUpdates.push({ id: t.id, payout: anyRateEntered ? 0 : null });
+        ticketUpdates.push({ id: t.id, payout: combos.length > 0 ? 0 : null });
       }
     });
-  });
+  }
 
   return { payoutsPayload, ticketUpdates };
 }
@@ -347,21 +498,21 @@ function openModal(race) {
     raceNumberSelect.value = race.race_number;
     document.getElementById("r-race-name").value = race.race_name || "";
 
-    const count = Math.max(race.entries.length, 1);
+    const count = Math.max(race.entries.length, 5);
     horseCountSelect.value = count;
 
-    const finishByNumber = {};
-    if (race.finish_order) {
-      race.finish_order.forEach((horseNumber, idx) => { finishByNumber[horseNumber] = idx + 1; });
-    }
-    renderEntryRows(race.entries, count, finishByNumber);
-    renderTicketsSection(race);
+    renderEntryRows(race.entries, count);
+    renderFinishSelects(count, race.finish_order);
+    currentRacePayouts = race.payouts || {};
+    loadTicketsForRace(race.id);
   } else {
     document.getElementById("r-race-date").value = new Date().toISOString().slice(0, 10);
     raceNumberSelect.value = "1";
     horseCountSelect.value = "8";
     renderEntryRows([], 8);
-    renderTicketsSection(null);
+    renderFinishSelects(8, null);
+    currentRacePayouts = {};
+    loadTicketsForRace(null);
   }
 
   raceModal.hidden = false;
@@ -375,13 +526,10 @@ raceForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const id = document.getElementById("race-id").value;
-  const rows = readEntryRows();
+  const entries = readEntryRows();
+  const finish_order = readFinishTop3();
 
-  const entries = rows.map(({ finish, ...rest }) => rest);
-  const finishRows = rows.filter((r) => r.finish).sort((a, b) => a.finish - b.finish);
-  const finish_order = finishRows.length > 0 ? finishRows.map((r) => r.horse_number) : null;
-
-  const { payoutsPayload, ticketUpdates } = readPayoutForm();
+  const { payoutsPayload, ticketUpdates } = buildPayoutSubmission();
 
   const payload = {
     race_date: document.getElementById("r-race-date").value,

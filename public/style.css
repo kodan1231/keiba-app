@@ -119,6 +119,11 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .stamp-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 0 rgba(0,0,0,0.15); }
 .stamp-btn:active { transform: translateY(0); box-shadow: none; }
+.stamp-btn.is-settled {
+  background: #fff;
+  color: var(--hanko);
+  border: 1px solid var(--hanko);
+}
 
 .ghost-btn {
   background: transparent;
@@ -441,6 +446,8 @@ textarea { resize: vertical; }
 .stats-table td { padding: 9px 12px; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); }
 .stats-table td.table-name { font-family: var(--font-body); font-weight: 600; }
 .stats-table tr:last-child td { border-bottom: none; }
+.stats-table th.sortable-th { cursor: pointer; user-select: none; }
+.stats-table th.sortable-th:hover { background: rgba(28,27,24,0.08); }
 .table-empty { text-align: center; color: var(--ink-soft); padding: 20px; font-family: var(--font-body); }
 
 /* ---------- レスポンシブ(スマホ) ---------- */
@@ -665,7 +672,7 @@ textarea { resize: vertical; }
 
 .entry-form-row {
   display: grid;
-  grid-template-columns: 60px 70px 1fr 100px 70px;
+  grid-template-columns: 60px 70px 1fr 100px;
   gap: 6px;
   align-items: center;
   background: #fff;
@@ -673,6 +680,22 @@ textarea { resize: vertical; }
   padding: 6px;
 }
 .entry-form-row input, .entry-form-row select { padding: 6px; font-size: 12.5px; }
+
+.finish-top3-box {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.finish-top3-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.finish-top3-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.finish-top3-row select { padding: 6px 8px; font-size: 13px; min-width: 90px; }
 
 /* ---------- 購入履歴一覧(グループ表示) ---------- */
 .group-card {
@@ -1509,13 +1532,9 @@ body.modal-open { overflow: hidden; }
 }
 .calendar-day.empty{border:0;background:transparent;cursor:default}
 
-.history-calendar-toggle-row{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  margin:10px 0;
-}
 .history-filter-label{
+  display:block;
+  margin:10px 0;
   font-size:.82rem;
   color:#777;
 }
@@ -1530,6 +1549,19 @@ body.modal-open { overflow: hidden; }
 .calendar-day-money{
   font-size:.68rem;
   font-weight:800;
+  font-family:var(--font-mono);
+}
+.calendar-day.has-race{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+}
+.calendar-day-count{
+  font-size:.62rem;
+  font-weight:700;
+  color:#777;
   font-family:var(--font-mono);
 }
 
@@ -1613,10 +1645,35 @@ body.modal-open { overflow: hidden; }
   gap: 2px;
   margin-left: auto;
 }
-.prediction-mark-inline .prediction-mark-btn {
-  width: 28px;
-  height: 28px;
-  padding: 0;
+.prediction-mark-select {
+  width: 76px;
+  height: 32px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 4px;
+}
+.prediction-horse-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.prediction-horse-name-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.prediction-horse-name-line small {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  font-size: 11px;
 }
 .horse-note-toggle {
   cursor: pointer;
@@ -1665,33 +1722,7 @@ body.modal-open { overflow: hidden; }
 .control-label { font-size:0; }
 .control-label input { font-size:initial; }
 
-/* 2頭軸は2列の独立したラジオ選択 */
-.axis-two-columns {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:12px;
-  margin-bottom:12px;
-}
-.axis-column-title {
-  font-weight:700;
-  font-size:13px;
-  margin:0 0 6px;
-}
-.axis-two-columns .bet-horse-table-head,
-.axis-two-columns .bet-horse-row,
-.nagashi-partners .bet-horse-table-head,
-.nagashi-partners .bet-horse-row {
-  grid-template-columns:30px 38px minmax(120px,1fr) minmax(70px,.6fr) 42px 34px;
-}
-.axis-two-columns .bet-horse-row,
-.nagashi-partners .bet-horse-row { padding:4px 7px; }
-.axis-two-columns .bet-horse-jockey,
-.nagashi-partners .bet-horse-jockey { display:none; }
-.axis-two-columns .bet-horse-mark,
-.nagashi-partners .bet-horse-mark { text-align:center; }
-.nagashi-partners { margin-top:10px; }
-
-/* 予想画面：既存メモを馬名横に表示 */
+/* 予想画面:既存メモを馬名横に表示 */
 .horse-note-preview {
   display:block;
   color:var(--ink-soft);
@@ -1731,11 +1762,6 @@ body.modal-open { overflow: hidden; }
   .bet-horse-jockey { display:none; }
   .bet-horse-mark { grid-column:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
-  .axis-two-columns { grid-template-columns:1fr 1fr; gap:8px; }
-  .axis-two-columns .bet-horse-row,
-  .nagashi-partners .bet-horse-row {
-    grid-template-columns:26px 32px minmax(70px,1fr) 34px 30px;
-  }
   .horse-note-preview { max-width:150px; }
 }
 
@@ -1746,20 +1772,16 @@ body.modal-open { overflow: hidden; }
 .race-list-card .r-num{min-width:34px}.race-list-card .meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:700px){.race-list-card{padding:4px 7px;gap:5px}.race-list-card .entries-badge,.race-list-card .settled-badge{font-size:.68rem}.compact-buy-btn{padding:3px 6px}}
 
-/* 2026-07-28: compact method controls and JRA-like 2-axis selector */
+/* 2026-07-28: compact method controls */
 #method-buttons{display:flex;flex-wrap:wrap;gap:6px}
 #method-buttons .choice-button{min-height:36px;padding:5px 10px;font-size:13px}
-.axis-jra-panel,.axis-jra-partners{border:1px solid rgba(0,0,0,.12);border-radius:8px;background:rgba(0,0,0,.015);padding:10px;margin-bottom:10px}
-.axis-jra-head{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:7px}
-.axis-jra-head.single{grid-template-columns:1fr}
-.axis-jra-head>div{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:6px}
-.axis-jra-head strong{font-size:.9rem}.axis-jra-head span{font-size:.72rem;color:#777}
-.axis-two-columns{gap:10px;margin-bottom:0}
-.axis-jra-column{min-width:0}
-.axis-jra-panel .bet-horse-row,.axis-jra-partners .bet-horse-row{grid-template-columns:30px 38px minmax(100px,1fr) 42px 34px}
-.axis-jra-panel .bet-horse-row{background:#fff;border-bottom:1px solid rgba(0,0,0,.06)}
-.axis-jra-panel .bet-horse-row:hover,.axis-jra-partners .bet-horse-row:hover{background:rgba(0,0,0,.04)}
-@media(max-width:700px){.axis-jra-head{gap:6px}.axis-jra-panel,.axis-jra-partners{padding:7px}.axis-jra-panel .bet-horse-row,.axis-jra-partners .bet-horse-row{grid-template-columns:26px 32px minmax(70px,1fr) 34px 30px}}
+
+/* 2026-07-31: 2頭軸(JRA/netkeiba風)は1リストに「軸」「相手」チェックを並べる形式。
+   最後の見出し列は通常フォントサイズ0(操作列に文字を出さないため)だが、
+   このモードだけ2つの子ラベルとして復活させる。 */
+.bet-horse-table-head > span:last-child .axis2-head-cols { font-size: .8rem; }
+.axis2-head-cols { display:flex; gap:6px; }
+.axis2-head-cols span { min-width:24px; text-align:center; }
 
 .import-source-badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#eee;font-size:.72rem;color:#666}
 .import-raw-selection{font-size:.78rem;color:#666}

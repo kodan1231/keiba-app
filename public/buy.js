@@ -10,7 +10,6 @@ const state = {
   boxSet: new Set(),
   singleSet: new Set(),
   axisSet: new Set(),
-  axisPair: [null, null],
   axisPlacement: "12",
   nagashiFixedSlot: 0,
   partnerSet: new Set(),
@@ -31,6 +30,8 @@ const modal = document.getElementById("purchase-modal");
 const titleEl = document.getElementById("purchase-dialog-title");
 const summaryEl = document.getElementById("purchase-race-summary");
 const betButtons = document.getElementById("bet-type-buttons");
+const betTypeSection = document.getElementById("bet-type-section");
+const raceSettledBlock = document.getElementById("race-settled-block");
 const methodSection = document.getElementById("method-section");
 const methodButtons = document.getElementById("method-buttons");
 const methodOptions = document.getElementById("method-options");
@@ -175,7 +176,6 @@ function resetState() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
-  state.axisPair = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -208,6 +208,14 @@ async function openPurchase(race) {
   `;
   modal.hidden = false;
   document.body.classList.add("modal-open");
+
+  // レースの着順 or 払戻が確定済みでも、購入履歴の登録し忘れに対応できるよう
+  // 購入自体は引き続きできるようにする(2026-07-30〜。以前は購入自体をブロックしていた)。
+  // 確定済みであることが分かるよう、案内バナーのみ表示する(購入UIはブロックしない)。
+  const settled = !!race.finish_order || !!(race.payouts && Object.keys(race.payouts).length > 0);
+  raceSettledBlock.hidden = !settled;
+  betTypeSection.hidden = false;
+
   renderBetTypes();
   hideDownstream();
 }
@@ -253,7 +261,6 @@ function resetBetSelections() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
-  state.axisPair = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -296,7 +303,6 @@ function resetMethodSelections() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
-  state.axisPair = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -430,31 +436,24 @@ function renderPicker() {
     )).join("");
   } else if (state.method === "nagashi") {
     if (state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
-      const axis1 = entries.map(e => horseRow(e,
-        `<label class="check-inline"><input type="radio" name="axis-pair-1" class="axis-pair-1" value="${e.horse_number}" ${state.axisPair[0]===Number(e.horse_number)?"checked":""}></label>`
-      )).join("");
-      const axis2 = entries.map(e => horseRow(e,
-        `<label class="check-inline"><input type="radio" name="axis-pair-2" class="axis-pair-2" value="${e.horse_number}" ${state.axisPair[1]===Number(e.horse_number)?"checked":""}></label>`
-      )).join("");
-      const partners = entries.map(e => horseRow(e,
-        `<label class="check-inline"><input type="checkbox" class="partner-check" value="${e.horse_number}" ${state.partnerSet.has(e.horse_number)?"checked":""}></label>`
-      )).join("");
-      html = `
-        <div class="axis-jra-panel">
-          <div class="axis-jra-head">
-            <div><strong>軸馬①</strong><span>1頭選択</span></div>
-            <div><strong>軸馬②</strong><span>1頭選択</span></div>
-          </div>
-          <div class="axis-two-columns">
-            <div class="axis-jra-column"><div class="bet-horse-list">${axis1}</div></div>
-            <div class="axis-jra-column"><div class="bet-horse-list">${axis2}</div></div>
-          </div>
-        </div>
-        <div class="nagashi-partners axis-jra-partners">
-          <div class="axis-jra-head single"><div><strong>相手</strong><span>複数選択可</span></div></div>
-          <div class="bet-horse-list">${partners}</div>
-        </div>
-      `;
+      // JRA/netkeiba風の1リスト形式: 各馬の行に「軸」(最大2頭まで)と「相手」のチェックを並べる。
+      // 以前は「軸馬①」「軸馬②」「相手」の3つの縦リスト(全頭分×3)が並んでおり、
+      // 頭数が多いと非常に縦長になる問題があったため、1リストに統合した。
+      const axisFull = state.axisSet.size >= 2;
+      html = entries.map(e => {
+        const n = Number(e.horse_number);
+        const isAxis = state.axisSet.has(n);
+        const isPartner = state.partnerSet.has(n);
+        const axisDisabled = !isAxis && axisFull;
+        return horseRow(e, `
+          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を軸にする">
+            <input type="checkbox" class="axis-check-2" value="${n}" ${isAxis ? "checked" : ""} ${axisDisabled ? "disabled" : ""}>
+          </label>
+          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を相手にする">
+            <input type="checkbox" class="partner-check" value="${n}" ${isPartner ? "checked" : ""} ${isAxis ? "disabled" : ""}>
+          </label>
+        `);
+      }).join("");
     } else {
       html = entries.map(e => {
         const axisControl = `<input type="radio" name="axis-one" class="axis-radio" value="${e.horse_number}" ${state.axisSet.has(e.horse_number)?"checked":""}>`;
@@ -472,17 +471,14 @@ function renderPicker() {
     )).join("");
   }
 
-  if (state.method === "nagashi" && state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
-    // 2頭軸専用レイアウトは見出しを外側に置くため、共通ヘッダーは表示しない。
-    pickerArea.innerHTML = html;
-  } else {
-    pickerArea.innerHTML = `
-      <div class="bet-horse-table-head">
-        <span>枠</span><span>馬番</span><span>馬名</span><span>騎手</span><span>印</span><span></span>
-      </div>
-      <div class="bet-horse-list">${html}</div>
-    `;
-  }
+  const isAxis2Picker = state.method === "nagashi" && state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan");
+  pickerArea.innerHTML = `
+    <div class="bet-horse-table-head">
+      <span>枠</span><span>馬番</span><span>馬名</span><span>騎手</span><span>印</span>
+      <span>${isAxis2Picker ? '<span class="axis2-head-cols"><span>軸</span><span>相手</span></span>' : ""}</span>
+    </div>
+    <div class="bet-horse-list">${html}</div>
+  `;
 
   bindPicker();
   renderPreview();
@@ -517,29 +513,20 @@ function bindPicker() {
     }
   );
 
-  pickerArea.querySelectorAll(".axis-pair-1").forEach(x =>
+  // 2頭軸(1リスト+チェック形式): 「軸」チェックは最大2つまで、「軸」にチェックした馬は
+  // 「相手」に選べない(その逆も同様)。選択状態が変わると有効/無効表示も変わるため、
+  // ピッカー全体を再描画する。
+  pickerArea.querySelectorAll(".axis-check-2").forEach(x =>
     x.onchange = () => {
       const n = Number(x.value);
-      if (state.axisPair[1] === n) {
-        x.checked = false;
-        return;
+      if (x.checked) {
+        if (state.axisSet.size >= 2) { x.checked = false; return; }
+        state.axisSet.add(n);
+        state.partnerSet.delete(n);
+      } else {
+        state.axisSet.delete(n);
       }
-      state.axisPair[0] = n;
-      state.axisSet = new Set(state.axisPair.filter(Boolean));
-      renderPreview();
-    }
-  );
-
-  pickerArea.querySelectorAll(".axis-pair-2").forEach(x =>
-    x.onchange = () => {
-      const n = Number(x.value);
-      if (state.axisPair[0] === n) {
-        x.checked = false;
-        return;
-      }
-      state.axisPair[1] = n;
-      state.axisSet = new Set(state.axisPair.filter(Boolean));
-      renderPreview();
+      renderPicker();
     }
   );
 
@@ -720,9 +707,12 @@ submitBtn.onclick = async () => {
 
   submitMessage.hidden = false;
   submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
-  submitMessage.textContent = res.ok
-    ? `${combos.length}点を購入記録に保存しました。`
-    : "保存に失敗しました。";
+  if (res.ok) {
+    submitMessage.textContent = `${combos.length}点を購入記録に保存しました。`;
+  } else {
+    const data = await res.json().catch(() => ({}));
+    submitMessage.textContent = data.error || "保存に失敗しました。";
+  }
   submitBtn.disabled = !res.ok;
 };
 

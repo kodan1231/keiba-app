@@ -40,23 +40,24 @@
 
   <div class="summary-bar" id="summary-bar"></div>
 
-  <div class="history-calendar-toggle-row">
-    <button type="button" id="history-calendar-toggle" class="ghost-btn">📅 日付から選ぶ</button>
-    <span id="history-filter-label" class="history-filter-label" hidden></span>
-  </div>
-
-  <div id="history-calendar" class="race-calendar" hidden>
+  <div id="history-calendar" class="race-calendar">
     <div class="race-calendar-toolbar">
       <button type="button" id="history-prev-month-btn" class="ghost-btn">‹</button>
       <strong id="history-calendar-month-label"></strong>
       <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
       <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
-      <button type="button" id="history-clear-filter-btn" class="ghost-btn">すべて表示</button>
+      <button type="button" id="history-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
     </div>
     <div id="history-calendar-grid" class="calendar-grid money-calendar"></div>
   </div>
 
+  <p id="history-filter-label" class="history-filter-label" hidden></p>
+
   <main id="race-list" class="race-list"></main>
+
+  <p id="history-empty-hint" class="empty-state">
+    カレンダーから日付を選ぶと、その日の購入履歴が表示されます。
+  </p>
 
   <p id="empty-state" class="empty-state" hidden>
     まだ購入履歴がありません。「馬券購入」ページから最初の1枚を記録しましょう。

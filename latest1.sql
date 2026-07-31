@@ -61,6 +61,36 @@ ALTER TABLE prediction_marks_latest1 RENAME TO prediction_marks;
 CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id
   ON prediction_marks(race_id);
 
+-- v12(2026-07-30): 予想印を再び1頭1印に制限する。
+-- v10でUNIQUE(race_id,horse_number,mark)に広げて複数印を許容したが、
+-- 予想印UIをドロップダウン化し「1頭1印」の仕様に変更したため、
+-- UNIQUE(race_id,horse_number)に戻す。既に複数印が登録済みの場合は、
+-- 同じ(race_id,horse_number)の中でidが最大(=最後に登録された)ものを残す。
+DROP TABLE IF EXISTS prediction_marks_v12;
+CREATE TABLE prediction_marks_v12 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  race_id INTEGER NOT NULL,
+  horse_number INTEGER NOT NULL,
+  mark TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(race_id, horse_number),
+  FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
+);
+
+INSERT OR IGNORE INTO prediction_marks_v12
+  (id, race_id, horse_number, mark, created_at, updated_at)
+SELECT id, race_id, horse_number, mark, created_at, updated_at
+FROM prediction_marks
+GROUP BY race_id, horse_number
+HAVING id = MAX(id);
+
+DROP TABLE prediction_marks;
+ALTER TABLE prediction_marks_v12 RENAME TO prediction_marks;
+
+CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id
+  ON prediction_marks(race_id);
+
 -- v6/v7: 馬単位の継続メモ
 CREATE TABLE IF NOT EXISTS horse_notes (
   horse_name TEXT PRIMARY KEY,

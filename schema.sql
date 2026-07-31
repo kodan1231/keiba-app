@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS prediction_marks (
   mark TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
-  UNIQUE(race_id, horse_number, mark),
+  -- 1頭につき予想印は1つまで(2026-07-30〜)。以前は同一馬に複数の印を登録できたが、
+  -- ドロップダウン選択式のUIに変更したことに合わせて1頭1印に制限した。
+  UNIQUE(race_id, horse_number),
   FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
 );
 

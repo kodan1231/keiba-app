@@ -38,6 +38,17 @@
     </div>
   </header>
 
+  <div id="races-calendar" class="race-calendar">
+    <div class="race-calendar-toolbar">
+      <button type="button" id="races-prev-month-btn" class="ghost-btn">‹</button>
+      <strong id="races-calendar-month-label"></strong>
+      <button type="button" id="races-next-month-btn" class="ghost-btn">›</button>
+      <button type="button" id="races-today-btn" class="ghost-btn">今日</button>
+      <button type="button" id="races-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
+    </div>
+    <div id="races-calendar-grid" class="calendar-grid"></div>
+  </div>
+
   <main class="races-main" id="races-main"></main>
 
 </div>
@@ -64,6 +75,15 @@
         <select id="r-horse-count"></select>
       </label>
 
+      <div class="finish-top3-box">
+        <p class="picker-hint" style="margin-bottom:6px">着順(1〜3着。馬名や出走馬表が未登録でも馬番だけで入力できます)</p>
+        <div class="finish-top3-row">
+          <label>1着<select id="r-finish-1"></select></label>
+          <label>2着<select id="r-finish-2"></select></label>
+          <label>3着<select id="r-finish-3"></select></label>
+        </div>
+      </div>
+
       <div class="paste-box">
         <button type="button" id="toggle-paste-btn" class="ghost-btn">テキストから出走馬を一括入力</button>
         <div id="paste-area" hidden>
@@ -74,7 +94,7 @@
       </div>
 
       <div>
-        <p class="picker-hint" style="margin-bottom:6px">出走馬(枠番・馬番・馬名・騎手・着順)</p>
+        <p class="picker-hint" style="margin-bottom:6px">出走馬(枠番・馬番・馬名・騎手)</p>
         <div id="entry-rows" class="entry-form-rows"></div>
       </div>
 

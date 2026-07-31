@@ -1,4 +1,4 @@
-const ALLOWED_MARKS = new Set(["◎", "○", "▲", "△", "☆"]);
+const ALLOWED_MARKS = new Set(["◎", "○", "▲", "△", "☆", "消"]);
 
 function jsonError(message, status = 400) {
   return new Response(JSON.stringify({ error: message }), {
@@ -9,8 +9,10 @@ function jsonError(message, status = 400) {
 
 function normalizeMarks(marks) {
   if (!Array.isArray(marks)) return null;
-  const seen = new Set();
-  const normalized = [];
+  // 1頭につき予想印は1つまで。同一馬番が複数回渡された場合は、配列内で最後に
+  // 指定されたものを採用する(フロント側はドロップダウンで1頭1印になるよう作られているが、
+  // APIとしても2重に保証しておく)。
+  const byHorse = new Map();
 
   for (const item of marks) {
     const horseNumber = Number(item?.horse_number);
@@ -22,13 +24,10 @@ function normalizeMarks(marks) {
     if (!ALLOWED_MARKS.has(mark)) {
       return null;
     }
-    const key = `${horseNumber}:${mark}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    normalized.push({ horse_number: horseNumber, mark });
+    byHorse.set(horseNumber, mark);
   }
 
-  return normalized;
+  return Array.from(byHorse, ([horse_number, mark]) => ({ horse_number, mark }));
 }
 
 export async function onRequestGet(context) {

@@ -16,14 +16,14 @@ WHERE g.bet_type NOT IN ('tan','fuku','wakuren','umaren','wide','umatan','sanren
 --    最新ロジックで再取込できるようになる。
 -- 実行する場合は、以下のコメントアウトを外して実行してください。
 
- DELETE FROM imported_tickets WHERE id IN (
-   SELECT source_row_id FROM imported_ticket_groups g
-   WHERE g.bet_type NOT IN ('tan','fuku','wakuren','umaren','wide','umatan','sanrenpuku','sanrentan')
-      OR NOT EXISTS (SELECT 1 FROM imported_ticket_items i WHERE i.group_id = g.id AND i.selections <> '[]')
- );
- DELETE FROM imported_ticket_groups
- WHERE bet_type NOT IN ('tan','fuku','wakuren','umaren','wide','umatan','sanrenpuku','sanrentan')
-    OR NOT EXISTS (SELECT 1 FROM imported_ticket_items i WHERE i.group_id = imported_ticket_groups.id AND i.selections <> '[]');
+-- DELETE FROM imported_tickets WHERE id IN (
+--   SELECT source_row_id FROM imported_ticket_groups g
+--   WHERE g.bet_type NOT IN ('tan','fuku','wakuren','umaren','wide','umatan','sanrenpuku','sanrentan')
+--      OR NOT EXISTS (SELECT 1 FROM imported_ticket_items i WHERE i.group_id = g.id AND i.selections <> '[]')
+-- );
+-- DELETE FROM imported_ticket_groups
+-- WHERE bet_type NOT IN ('tan','fuku','wakuren','umaren','wide','umatan','sanrenpuku','sanrentan')
+--    OR NOT EXISTS (SELECT 1 FROM imported_ticket_items i WHERE i.group_id = imported_ticket_groups.id AND i.selections <> '[]');
 
 -- 3) 調査: 孤立した imported_tickets(CSV原本)を一覧表示。
 --    レース削除時にCSV原本が削除されないバグが過去にあったため、
@@ -40,8 +40,8 @@ WHERE NOT EXISTS (
 --    必要であれば該当CSVを再取込できる。
 -- 実行する場合は、以下のコメントアウトを外して実行してください。
 
- DELETE FROM imported_tickets
- WHERE NOT EXISTS (
-   SELECT 1 FROM imported_ticket_groups g WHERE g.source_row_id = imported_tickets.id
- );
+-- DELETE FROM imported_tickets
+-- WHERE NOT EXISTS (
+--   SELECT 1 FROM imported_ticket_groups g WHERE g.source_row_id = imported_tickets.id
+-- );
 

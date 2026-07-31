@@ -79,6 +79,49 @@ function groupBy(items, keyFn) {
   return map;
 }
 
+// ---------- 表の列ソート ----------
+// 各テーブルの現在のソート状態(キー・方向)を保持する。列ヘッダーをクリックするたびに更新する。
+// key: "date"(レース別のみ)/"name"(競馬場別・騎手別)/"amount"/"payout"/"profit"/"rate"/"hitRate"
+const sortState = {
+  race: { key: "date", dir: "desc" },
+  track: { key: "totalAmount", dir: "desc" },
+  jockey: { key: "totalAmount", dir: "desc" },
+};
+
+// ソート対象の行データ(再計算せず並べ替えだけで再描画できるようキャッシュしておく)
+let raceRows = [];
+let trackRows = [];
+let jockeyRows = [];
+
+const STAT_COLUMNS = [
+  { key: "totalAmount", label: "購入" },
+  { key: "settledPayout", label: "払戻(確定)" },
+  { key: "profit", label: "収支" },
+  { key: "rate", label: "回収率" },
+  { key: "hitRate", label: "的中率" },
+];
+
+// nullは常に末尾(方向によらず)、それ以外は指定方向で比較する。
+function compareValues(av, bv, dir) {
+  const factor = dir === "asc" ? 1 : -1;
+  const an = av === null || av === undefined;
+  const bn = bv === null || bv === undefined;
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  if (av < bv) return -1 * factor;
+  if (av > bv) return 1 * factor;
+  return 0;
+}
+
+function sortRows(rows, key, dir) {
+  return [...rows].sort((a, b) => {
+    if (key === "date") return compareValues(a.dateKey, b.dateKey, dir);
+    if (key === "name") return compareValues(a.name, b.name, dir);
+    return compareValues(a.stats[key], b.stats[key], dir);
+  });
+}
+
 function renderOverall(items) {
   const s = computeGroupStats(items);
   const el = document.getElementById("overall-summary");
@@ -103,27 +146,30 @@ function renderOverall(items) {
       <span class="overall-label">的中率(レース単位)</span>
       <span class="overall-value">${s.hitRate !== null ? s.hitRate + "%" : "-"}</span>
     </div>
-    <div class="overall-card">
-      <span class="overall-label">購入枚数(未確定)</span>
-      <span class="overall-value">${s.count}枚(${s.unsettledCount}枚)</span>
-    </div>
   `;
 }
 
-function renderTable(elId, rows, labelHeader) {
+function sortIndicator(tableKey, key) {
+  const state = sortState[tableKey];
+  if (state.key !== key) return "";
+  return state.dir === "asc" ? " ▲" : " ▼";
+}
+
+function renderTable(elId, tableKey, labelHeader, labelKey) {
   const table = document.getElementById(elId);
+  const rowsCache = { race: raceRows, track: trackRows, jockey: jockeyRows }[tableKey];
+  const state = sortState[tableKey];
+  const rows = sortRows(rowsCache, state.key, state.dir);
+
   if (rows.length === 0) {
     table.innerHTML = `<tr><td class="table-empty">データがありません</td></tr>`;
     return;
   }
+
   const head = `
     <tr>
-      <th>${labelHeader}</th>
-      <th>購入</th>
-      <th>払戻(確定)</th>
-      <th>収支</th>
-      <th>回収率</th>
-      <th>的中率</th>
+      <th class="sortable-th" data-sort-key="${labelKey}">${labelHeader}${sortIndicator(tableKey, labelKey)}</th>
+      ${STAT_COLUMNS.map((c) => `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${sortIndicator(tableKey, c.key)}</th>`).join("")}
       <th>未確定</th>
     </tr>
   `;
@@ -143,29 +189,41 @@ function renderTable(elId, rows, labelHeader) {
     )
     .join("");
   table.innerHTML = head + body;
+
+  table.querySelectorAll(".sortable-th").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sortKey;
+      if (state.key === key) {
+        state.dir = state.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.key = key;
+        // 金額・率などの数値列は「大きい順」から見たい場合が多いため降順を初期方向にする。
+        // 日付・名前(文字列)列は昇順を初期方向にする。
+        state.dir = key === "date" || key === "name" ? "asc" : "desc";
+      }
+      renderTable(elId, tableKey, labelHeader, labelKey);
+    });
+  });
 }
 
 function renderRaceTable(items) {
   const groups = groupBy(items, (t) => `${t.race_date}__${t.track}__${t.race_number}`);
-  const rows = Array.from(groups.entries())
-    .map(([key, tickets]) => {
-      const t0 = tickets[0];
-      return {
-        name: `${formatDate(t0.race_date)} ${t0.track} ${t0.race_number}R${t0.race_name ? " " + t0.race_name : ""}`,
-        sortKey: t0.race_date,
-        stats: computeGroupStats(tickets),
-      };
-    })
-    .sort((a, b) => (a.sortKey < b.sortKey ? 1 : -1));
-  renderTable("race-table", rows, "レース");
+  raceRows = Array.from(groups.entries()).map(([key, tickets]) => {
+    const t0 = tickets[0];
+    return {
+      name: `${formatDate(t0.race_date)} ${t0.track} ${t0.race_number}R${t0.race_name ? " " + t0.race_name : ""}`,
+      // 初期表示は「日付・競馬場・レース番号」の順でソートするため、この3つを連結したキーで比較する。
+      dateKey: `${t0.race_date}_${t0.track}_${String(t0.race_number).padStart(2, "0")}`,
+      stats: computeGroupStats(tickets),
+    };
+  });
+  renderTable("race-table", "race", "レース", "date");
 }
 
 function renderTrackTable(items) {
   const groups = groupBy(items, (t) => t.track);
-  const rows = Array.from(groups.entries())
-    .map(([track, tickets]) => ({ name: track, stats: computeGroupStats(tickets) }))
-    .sort((a, b) => b.stats.totalAmount - a.stats.totalAmount);
-  renderTable("track-table", rows, "競馬場");
+  trackRows = Array.from(groups.entries()).map(([track, tickets]) => ({ name: track, stats: computeGroupStats(tickets) }));
+  renderTable("track-table", "track", "競馬場", "name");
 }
 
 function renderJockeyTable(items) {
@@ -182,10 +240,8 @@ function renderJockeyTable(items) {
       jockeyMap.get(jockey).push(ticket);
     }
   }
-  const rows = Array.from(jockeyMap.entries())
-    .map(([jockey, tickets]) => ({ name: jockey, stats: computeGroupStats(tickets) }))
-    .sort((a, b) => b.stats.totalAmount - a.stats.totalAmount);
-  renderTable("jockey-table", rows, "騎手");
+  jockeyRows = Array.from(jockeyMap.entries()).map(([jockey, tickets]) => ({ name: jockey, stats: computeGroupStats(tickets) }));
+  renderTable("jockey-table", "jockey", "騎手", "name");
 }
 
 

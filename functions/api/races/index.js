@@ -1,3 +1,5 @@
+import { backfillHorseNamesForRace } from "../_shared.js";
+
 export async function onRequestGet(context) {
   const { env } = context;
   const { results } = await env.DB.prepare(
@@ -51,6 +53,10 @@ export async function onRequestPost(context) {
         payouts && Object.keys(payouts).length ? JSON.stringify(payouts) : null
       )
       .run();
+
+    // CSVインポート等で既に馬番だけの購入履歴が紐付いている可能性は低いが、
+    // 念のため新規登録時もバックフィルを実行しておく(PUTでの編集時が主なユースケース)。
+    await backfillHorseNamesForRace(env.DB, result.meta.last_row_id, entries);
 
     return Response.json({ ok: true, id: result.meta.last_row_id });
   } catch (e) {

@@ -9,7 +9,7 @@ const horsesEl = document.getElementById("prediction-horses");
 const ticketsEl = document.getElementById("prediction-tickets");
 const buyBtn = document.getElementById("buy-race-btn");
 const messageEl = document.getElementById("prediction-message");
-const MARKS = ["◎", "○", "▲", "△", "☆"];
+const MARKS = ["◎", "○", "▲", "△", "☆", "消"];
 
 async function loadRaces() {
   const res = await authedFetch("/api/races");
@@ -135,7 +135,20 @@ async function selectRace() {
   horseNotes = noteRes.ok ? await noteRes.json() : {};
   applyPrediction();
   applyHorseNotes();
+  // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
+  // 購入自体は引き続きできるようにする(2026-07-30〜。以前は購入自体をブロックしていた)。
+  // ボタンのラベルだけ「結果確定済」に変え、確定済みであることがひと目でわかるようにする。
   buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
+  const settled = !!selectedRace.finish_order || !!(selectedRace.payouts && Object.keys(selectedRace.payouts).length > 0);
+  if (settled) {
+    buyBtn.textContent = "結果確定済(購入する)";
+    buyBtn.classList.add("is-settled");
+    buyBtn.title = "このレースは結果確定済みですが、購入履歴の登録は引き続き行えます";
+  } else {
+    buyBtn.textContent = "このレースの馬券を購入";
+    buyBtn.classList.remove("is-settled");
+    buyBtn.removeAttribute("title");
+  }
 
   // 購入馬券セクションは独立して読み込む。ここで失敗しても、予想印の保存や
   // 購入ページへの遷移など他の機能に影響させない。
@@ -175,13 +188,17 @@ function renderHorses() {
           <span class="mini-waku waku-${e.waku_number || 0}">${e.waku_number || "-"}</span>
           <span class="prediction-horse-number">${n}</span>
           <span class="prediction-horse-name">
-            <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
-            ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
+            <span class="prediction-horse-name-line">
+              <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+              ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
+            </span>
             ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">メモ: ${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
-            ${MARKS.map(m => `<button type="button" class="prediction-mark-btn" data-mark="${m}" aria-label="${m}">${m}</button>`).join("")}
-            <button type="button" class="prediction-mark-btn clear-mark" data-mark="" aria-label="印なし">−</button>
+            <select class="prediction-mark-select" aria-label="予想印を選択">
+              <option value="">−</option>
+              ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
+            </select>
           </span>
           <span class="note-chevron">＋</span>
         </div>
@@ -197,7 +214,7 @@ function renderHorses() {
     `;
   }).join("");
 
-  // 馬名行のクリックでメモだけ展開。印ボタンのクリックでは展開を切り替えない。
+  // 馬名行のクリックでメモだけ展開。印セレクトのクリックでは展開を切り替えない。
   horsesEl.querySelectorAll(".horse-note-toggle").forEach(btn => {
     btn.addEventListener("click", (event) => {
       if (event.target.closest(".prediction-mark-inline")) return;
@@ -208,23 +225,18 @@ function renderHorses() {
     });
   });
 
-  horsesEl.querySelectorAll(".prediction-mark-btn").forEach(btn => {
-    btn.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      const card = btn.closest(".horse-note-card");
+  // 予想印は1頭につき1つまで。ドロップダウンで選択するとその馬の印を置き換える。
+  horsesEl.querySelectorAll(".prediction-mark-select").forEach(select => {
+    select.addEventListener("click", (event) => event.stopPropagation());
+    select.addEventListener("change", async () => {
+      const card = select.closest(".horse-note-card");
       const n = Number(card.dataset.horseNumber);
-      const mark = btn.dataset.mark || "";
-      const existing = (prediction.marks || []).some(x => Number(x.horse_number) === n && x.mark === mark);
+      const mark = select.value || "";
+      prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
       if (mark) {
-        if (existing) {
-          prediction.marks = (prediction.marks || []).filter(x => !(Number(x.horse_number) === n && x.mark === mark));
-        } else {
-          prediction.marks = [...(prediction.marks || []), { horse_number: n, mark }];
-        }
-      } else {
-        prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
+        prediction.marks.push({ horse_number: n, mark });
       }
-      applyPrediction(); // クリック直後に見た目へ反映する(保存を待たず即時反映)
+      applyPrediction(); // 変更直後に見た目へ反映する(保存を待たず即時反映)
       await savePredictionMarks();
     });
   });
@@ -276,16 +288,12 @@ async function savePredictionMarks() {
 function applyPrediction() {
   const map = new Map();
   for (const x of (prediction.marks || [])) {
-    const n = Number(x.horse_number);
-    if (!map.has(n)) map.set(n, new Set());
-    map.get(n).add(x.mark);
+    map.set(Number(x.horse_number), x.mark);
   }
   horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
-    const marks = map.get(Number(card.dataset.horseNumber)) || new Set();
-    card.querySelectorAll(".prediction-mark-btn").forEach(btn => {
-      const mark = btn.dataset.mark || "";
-      btn.classList.toggle("selected", mark ? marks.has(mark) : marks.size === 0);
-    });
+    const mark = map.get(Number(card.dataset.horseNumber)) || "";
+    const select = card.querySelector(".prediction-mark-select");
+    if (select) select.value = mark;
   });
 }
 
