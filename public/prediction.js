@@ -7,8 +7,6 @@ const panel = document.getElementById("prediction-panel");
 const raceHeader = document.getElementById("prediction-race-header");
 const horsesEl = document.getElementById("prediction-horses");
 const ticketsEl = document.getElementById("prediction-tickets");
-const buyBtn = document.getElementById("buy-race-btn");
-const messageEl = document.getElementById("prediction-message");
 const MARKS = ["◎", "○", "▲", "△", "☆", "消"];
 
 async function loadRaces() {
@@ -115,6 +113,8 @@ async function selectRace() {
   renderRaceHeader();
   renderHorses();
 
+  const buyBtn = document.getElementById("buy-race-btn");
+
   const [predRes, noteRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
     authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
@@ -157,17 +157,56 @@ async function selectRace() {
     .catch(() => { ticketsEl.innerHTML = ""; ticketsEl.hidden = true; });
 }
 
+// 予想登録画面から購入画面のカレンダーへ戻る手段がなかったため、同じ開催日内であれば
+// 競馬場・レース番号のセレクトからページ遷移なしで別レースへ切り替えられるようにする。
+function racesOnSameDate() {
+  return races.filter(r => r.race_date === selectedRace.race_date);
+}
+
+function switchToRace(raceId) {
+  const target = races.find(r => Number(r.id) === Number(raceId));
+  if (!target) return;
+  selectedRace = target;
+  history.replaceState(null, "", `prediction.html?race=${encodeURIComponent(raceId)}`);
+  selectRace();
+}
+
 function renderRaceHeader() {
+  const sameDate = racesOnSameDate();
+  const tracks = [...new Set(sameDate.map(r => r.track))];
+  const racesForTrack = sameDate
+    .filter(r => r.track === selectedRace.track)
+    .sort((a, b) => Number(a.race_number) - Number(b.race_number));
+
+  // ヘッダーの表示順は「日付・競馬場名・レース番号・レース名・頭数」の順。
+  // 「このレースの馬券を購入」ボタンはレース名の近く(ヘッダー上部)に配置し、
+  // 出走頭数が多いレースでも下までスクロールせずに購入画面へ進めるようにする。
   raceHeader.innerHTML = `
     <div class="prediction-race-title">
-      <span class="track">${escapeHtml(selectedRace.track)}</span>
-      <span class="r-num">${selectedRace.race_number}R</span>
+      <span class="prediction-date">${escapeHtml(formatDate(selectedRace.race_date))}</span>
+      <select id="prediction-track-select" class="prediction-select" aria-label="競馬場を選択">
+        ${tracks.map(t => `<option value="${escapeAttr(t)}" ${t === selectedRace.track ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
+      </select>
+      <select id="prediction-racenum-select" class="prediction-select" aria-label="レース番号を選択">
+        ${racesForTrack.map(r => `<option value="${r.id}" ${Number(r.id) === Number(selectedRace.id) ? "selected" : ""}>${r.race_number}R</option>`).join("")}
+      </select>
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
+      <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
+      <a id="buy-race-btn" class="stamp-btn" href="#">このレースの馬券を購入</a>
     </div>
-    <div class="prediction-race-meta">
-      ${escapeHtml(formatDate(selectedRace.race_date))} ・ ${selectedRace.entries.length}頭
-    </div>
+    <span id="prediction-message" class="submit-message" hidden></span>
   `;
+
+  document.getElementById("prediction-track-select").addEventListener("change", (e) => {
+    const newTrack = e.target.value;
+    const candidates = sameDate
+      .filter(r => r.track === newTrack)
+      .sort((a, b) => Number(a.race_number) - Number(b.race_number));
+    if (candidates.length) switchToRace(candidates[0].id);
+  });
+  document.getElementById("prediction-racenum-select").addEventListener("change", (e) => {
+    switchToRace(Number(e.target.value));
+  });
 }
 
 function renderHorses() {
@@ -272,11 +311,13 @@ async function saveHorseNote(card) {
 
 async function savePredictionMarks() {
   if (!selectedRace) return;
+  const messageEl = document.getElementById("prediction-message");
   const res = await authedFetch("/api/predictions", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ race_id: selectedRace.id, marks: prediction.marks || [], memo: "" })
   });
+  if (!messageEl) return;
   messageEl.hidden = false;
   messageEl.className = `submit-message ${res.ok ? "success" : "error"}`;
   messageEl.textContent = res.ok ? "印を自動保存しました" : "印の保存に失敗しました";

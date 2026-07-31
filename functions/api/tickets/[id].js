@@ -1,7 +1,7 @@
 const EDITABLE_FIELDS = ["payout", "amount", "memo"];
 
 async function getTicket(env, id) {
-  return env.DB.prepare(`SELECT t.id, t.race_id, t.payout, r.finish_order, r.payouts FROM tickets t LEFT JOIN races r ON r.id=t.race_id WHERE t.id = ?`).bind(id).first();
+  return env.DB.prepare(`SELECT id, race_id, payout FROM tickets WHERE id = ?`).bind(id).first();
 }
 
 export async function onRequestPut(context) {
@@ -9,10 +9,7 @@ export async function onRequestPut(context) {
   let data; try { data = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
   const ticket = await getTicket(env, params.id);
   if (!ticket) return Response.json({ error: "購入履歴が見つかりません" }, { status: 404 });
-  // Once either result-side payout or a payout value has been recorded, the ticket is locked.
-  if (ticket.payout !== null && ticket.payout !== undefined || ticket.finish_order !== null && ticket.finish_order !== undefined || ticket.payouts !== null && ticket.payouts !== undefined) {
-    return Response.json({ error: "着順または払戻が確定した馬券は変更できません" }, { status: 409 });
-  }
+  // ロック仕様は2026-07-31に全面撤廃。着順・払戻確定後でも変更できる(docs/DESIGN.md「ロック仕様」参照)。
   const fields=[]; const values=[];
   for (const key of EDITABLE_FIELDS) {
     if (key in data) {
@@ -31,7 +28,7 @@ export async function onRequestDelete(context) {
   const { env, params } = context;
   const ticket = await getTicket(env, params.id);
   if (!ticket) return Response.json({ error: "購入履歴が見つかりません" }, { status: 404 });
-  if (ticket.payout !== null && ticket.payout !== undefined || ticket.finish_order !== null && ticket.finish_order !== undefined || ticket.payouts !== null && ticket.payouts !== undefined) return Response.json({ error: "着順または払戻が確定した馬券は削除できません" }, { status: 409 });
+  // ロック仕様は2026-07-31に全面撤廃。着順・払戻確定後でも削除できる(docs/DESIGN.md「ロック仕様」参照)。
   await env.DB.prepare(`DELETE FROM tickets WHERE id = ?`).bind(params.id).run();
   return Response.json({ ok: true });
 }
