@@ -214,7 +214,21 @@ export async function onRequestPost(context){
       raceDate:findColumn(headers,['日付','購入日','開催日']), receipt:findColumn(headers,['受付番号']), sequence:findColumn(headers,['通番']), venue:findColumn(headers,['場名','競馬場']), raceNumber:findColumn(headers,['レース','レース番号']), raceName:findColumn(headers,['レース名']), betType:findColumn(headers,['式別','式別名称']), combination:findColumn(headers,['馬／組番','馬/組番','馬組番','組番','買い目']), purchaseAmount:findColumn(headers,['購入金額','購入額']), hit:findColumn(headers,['的中／返還','的中/返還','的中']), refundUnit:findColumn(headers,['払戻単価']), refundAmount:findColumn(headers,['払戻金額','払戻']), returnAmount:findColumn(headers,['返還金額','返還']), hitCombination:findColumn(headers,['的中買い目','的中組合せ','的中組み合わせ'])
     };
     const db=context.env.DB; if(!db)return Response.json({ok:false,error:'D1 binding が見つかりません。'},{status:500});
-    let imported=0, skipped=0, duplicateCandidates=[];
+    let imported=0, skipped=0;
+
+    // 以前はCSVの行ごとに「既存チェック」「重複候補検出」を個別クエリしており、
+    // レース参照(SELECT/INSERT)も行ごとに発行していたため、行数の多いCSVを取り込むと
+    // Cloudflare Workersのサブリクエスト数上限(1リクエストあたりのD1呼び出し数)に
+    // 抵触して「Too many API requests by single Worker invocation」エラーになっていた
+    // (2026-07-31)。既存チェックはリクエスト開始時に1回だけ取得してメモリ上で照合し、
+    // 同一レースへの参照は初回のみDBに問い合わせてキャッシュし、重複候補検出は
+    // 全行の取込完了後に1回だけ行うように変更する。
+    const existingRows=(await db.prepare(`SELECT race_date, receipt_number, sequence_number, raw_csv FROM imported_tickets WHERE source=?`).bind('club_jra_net').all()).results||[];
+    const existingKeyed=new Set(); const existingRaw=new Set();
+    for(const r of existingRows){ if(r.receipt_number) existingKeyed.add(`${r.race_date}:${r.receipt_number}:${r.sequence_number}`); else existingRaw.add(r.raw_csv); }
+    const raceCache=new Map(); // key: `${race_date}|${track}|${race_number}` -> race row | null
+    const newGroups=[]; // このリクエストで新規作成したグループ({groupId, race_date, track, race_number, bet_type, total_amount})
+
     for(const row of dataRows){
       const raw={};headers.forEach((h,i)=>raw[clean(h)]=clean(row[i]));
       const raceDate=cols.raceDate>=0?normalizeDate(row[cols.raceDate]):''; const track=cols.venue>=0?normalizeTrack(row[cols.venue]):''; const raceNumber=cols.raceNumber>=0?toInt(row[cols.raceNumber]):0;
@@ -230,13 +244,25 @@ export async function onRequestPost(context){
        const totalAmount=cols.purchaseAmount>=0?parseAmount(row[cols.purchaseAmount]):0; const refund=cols.refundAmount>=0?toInt(row[cols.refundAmount]):(cols.refundUnit>=0?toInt(row[cols.refundUnit]):0); const hit=hitText;
        // 的中組み合わせごとの払戻レート(100円あたり)。複数的中でも組み合わせごとに正しく対応付ける。
        const { map: hitRateMap, hitCombos } = buildHitRateMap(hitText, refundUnitText, type);
-      const existing=await db.prepare('SELECT id FROM imported_tickets WHERE source=? AND ((?<>\'\' AND race_date=? AND receipt_number=? AND sequence_number=?) OR (?=\'\' AND raw_csv=?)) LIMIT 1').bind('club_jra_net',receipt,raceDate,receipt,sequence,receipt,JSON.stringify(raw)).first();
-      if(existing){skipped++;continue;}
+      const isDup = receipt&&sequence ? existingKeyed.has(sourceKey) : existingRaw.has(sourceKey);
+      if(isDup){skipped++;continue;}
       // Preserve raw row as the authoritative imported source record.
       const legacy=await db.prepare(`INSERT INTO imported_tickets(source,race_date,receipt_number,sequence_number,venue,race_number,bet_type,combination,purchase_amount,hit_refund,refund_unit,refund_amount,return_amount,raw_csv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',raceDate,receipt,sequence,track,String(raceNumber||''),type,comboText,totalAmount,hit,cols.refundUnit>=0?toInt(row[cols.refundUnit]):0,refund,cols.returnAmount>=0?toInt(row[cols.returnAmount]):0,JSON.stringify(raw)).run();
+      // 同一CSV内に同じ行が複数回含まれるケースにも対応できるよう、取込直後にメモリ上の
+      // 既存チェック用セットへも反映しておく。
+      if(receipt&&sequence) existingKeyed.add(sourceKey); else existingRaw.add(sourceKey);
       // Resolve or create the race. Entries remain empty if the CSV cannot provide them.
-      let race=await db.prepare('SELECT * FROM races WHERE race_date=? AND track=? AND race_number=?').bind(raceDate,track,raceNumber).first();
-      if(!race&&raceDate&&track&&raceNumber){const ins=await db.prepare('INSERT INTO races(race_date,track,race_number,race_name,entries) VALUES(?,?,?,?,?)').bind(raceDate,track,raceNumber,cols.raceName>=0?clean(row[cols.raceName]):null,'[]').run();race=await db.prepare('SELECT * FROM races WHERE id=?').bind(ins.meta.last_row_id).first();}
+      const raceKey=`${raceDate}|${track}|${raceNumber}`;
+      let race=raceCache.has(raceKey)?raceCache.get(raceKey):undefined;
+      if(race===undefined){
+        race=(raceDate&&track&&raceNumber)?await db.prepare('SELECT * FROM races WHERE race_date=? AND track=? AND race_number=?').bind(raceDate,track,raceNumber).first():null;
+        if(!race&&raceDate&&track&&raceNumber){
+          const raceNameVal=cols.raceName>=0?clean(row[cols.raceName]):null;
+          const ins=await db.prepare('INSERT INTO races(race_date,track,race_number,race_name,entries) VALUES(?,?,?,?,?)').bind(raceDate,track,raceNumber,raceNameVal,'[]').run();
+          race={id:ins.meta.last_row_id,race_date:raceDate,track,race_number:raceNumber,race_name:raceNameVal,entries:'[]',finish_order:null,payouts:null};
+        }
+        raceCache.set(raceKey,race||null);
+      }
       const combos=splitCombinations(comboText,type);
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
       const group=await db.prepare(`INSERT INTO imported_ticket_groups(source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||null,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
@@ -274,14 +300,27 @@ export async function onRequestPost(context){
               newPayouts?JSON.stringify(newPayouts):race.payouts,
               race.id
             ).run();
-          // 同一レースの後続行を処理する際に最新状態を参照できるよう、ローカルの race も更新しておく。
+          // 同一レースの後続行を処理する際に最新状態を参照できるよう、キャッシュ上の race も更新しておく。
           if(newFinishOrder) race.finish_order=JSON.stringify(newFinishOrder);
           if(newPayouts) race.payouts=JSON.stringify(newPayouts);
+          raceCache.set(raceKey,race);
         }
       }
-      const dup=await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups WHERE race_date=? AND track=? AND race_number=? AND bet_type=? AND total_amount=? AND id<>? ORDER BY id DESC LIMIT 10`).bind(raceDate,track,raceNumber,type,totalAmount,groupId).all();
-      if((dup.results||[]).length) duplicateCandidates.push({group_id:groupId,candidates:dup.results});
+      newGroups.push({groupId,race_date:raceDate,track,race_number:raceNumber,bet_type:type,total_amount:totalAmount});
       imported++;
+    }
+    // 重複候補の検出は、以前は新規グループ挿入のたびに個別クエリしていたが、
+    // 全行の取込完了後に1回のクエリでまとめて行う。
+    let duplicateCandidates=[];
+    if(newGroups.length){
+      const allGroups=(await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups`).all()).results||[];
+      const byKey=new Map();
+      for(const g of allGroups){ const k=`${g.race_date}|${g.track}|${g.race_number}|${g.bet_type}|${g.total_amount}`; const list=byKey.get(k)||[]; list.push(g); byKey.set(k,list); }
+      for(const ng of newGroups){
+        const k=`${ng.race_date}|${ng.track}|${ng.race_number}|${ng.bet_type}|${ng.total_amount}`;
+        const candidates=(byKey.get(k)||[]).filter(g=>g.id!==ng.groupId).sort((a,b)=>b.id-a.id).slice(0,10);
+        if(candidates.length) duplicateCandidates.push({group_id:ng.groupId,candidates});
+      }
     }
     return Response.json({ok:true,imported,skipped,duplicate_candidates:duplicateCandidates,items:(await db.prepare(`SELECT g.*, (SELECT COUNT(*) FROM imported_ticket_items i WHERE i.group_id=g.id) AS item_count FROM imported_ticket_groups g ORDER BY g.race_date DESC,g.id DESC`).all()).results||[]});
   }catch(error){console.error(error);return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
@@ -291,9 +330,16 @@ export async function onRequestGet(context){
   try{
     const db=context.env.DB; const out=[];
     const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups ORDER BY race_date DESC,id DESC`).all()).results||[];
+    // 以前はグループ毎にimported_ticket_itemsを個別クエリしていたため、取込件数が増えると
+    // Cloudflare Workersのサブリクエスト数上限(1リクエストあたりのD1呼び出し数)に抵触し、
+    // 一覧取得自体が500エラーになっていた(2026-07-31)。全アイテムを1回のクエリで
+    // まとめて取得し、メモリ上でグループごとに振り分ける方式に変更する。
+    const allItems=(await db.prepare(`SELECT * FROM imported_ticket_items ORDER BY group_id, id`).all()).results||[];
+    const itemsByGroup=new Map();
+    for(const item of allItems){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     const represented=new Set();
     for(const g of groups){
-      const items=(await db.prepare(`SELECT * FROM imported_ticket_items WHERE group_id=? ORDER BY id`).bind(g.id).all()).results||[];
+      const items=itemsByGroup.get(g.id)||[];
       for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // Backward compatibility: show legacy rows imported before v10 even if they have not been normalized yet.
