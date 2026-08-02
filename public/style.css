@@ -1766,7 +1766,7 @@ body.modal-open { overflow: hidden; }
    縦に並んでしまう・馬名が折り返る、といった崩れをさらに詰めて解消する */
 @media(max-width:430px){
   .bet-horse-row {
-    grid-template-columns:20px 24px minmax(60px,1fr) 22px minmax(88px,auto);
+    grid-template-columns:18px 22px minmax(96px,1fr) 18px 84px;
     gap:4px;
     padding:4px 4px;
   }
@@ -1776,22 +1776,23 @@ body.modal-open { overflow: hidden; }
     text-overflow:ellipsis;
   }
   .bet-horse-mark {
-    font-size:.85rem;
+    font-size:.8rem;
     padding:0;
   }
   .bet-horse-control {
     flex-wrap:nowrap;
-    gap:4px;
+    gap:3px;
+    justify-content:flex-end;
   }
   .bet-horse-control .check-inline,
   .bet-horse-control .control-label,
   .bet-horse-control .radio-inline {
-    min-width:20px;
+    min-width:18px;
   }
   .mini-waku {
-    width:16px;
-    height:16px;
-    font-size:8px;
+    width:15px;
+    height:15px;
+    font-size:7px;
   }
 }
 
