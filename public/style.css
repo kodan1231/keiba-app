@@ -1756,6 +1756,43 @@ body.modal-open { overflow: hidden; }
   .bet-horse-mark { grid-column:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
   .horse-note-preview { max-width:150px; }
+  /* 2026-08-02: CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
+  #csv-import-btn { display:none; }
+}
+
+/* 2026-08-02: iPhone SE3等の小型端末(430px以下)向け追加対応。
+   700px以下のルールに重ねて適用し、430px超(PC含む)のレイアウトは変更しない。
+   組み合わせ選択表(単勝〜三連単・2頭軸まで共通)のチェックボックスが
+   縦に並んでしまう・馬名が折り返る、といった崩れをさらに詰めて解消する */
+@media(max-width:430px){
+  .bet-horse-row {
+    grid-template-columns:20px 24px minmax(60px,1fr) 22px minmax(88px,auto);
+    gap:4px;
+    padding:4px 4px;
+  }
+  .bet-horse-name {
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .bet-horse-mark {
+    font-size:.85rem;
+    padding:0;
+  }
+  .bet-horse-control {
+    flex-wrap:nowrap;
+    gap:4px;
+  }
+  .bet-horse-control .check-inline,
+  .bet-horse-control .control-label,
+  .bet-horse-control .radio-inline {
+    min-width:20px;
+  }
+  .mini-waku {
+    width:16px;
+    height:16px;
+    font-size:8px;
+  }
 }
 
 /* 2026-07-28: race list compact + purchase shortcut */
