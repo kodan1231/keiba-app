@@ -1753,7 +1753,9 @@ body.modal-open { overflow: hidden; }
     padding:4px 6px;
   }
   .bet-horse-jockey { display:none; }
-  .bet-horse-mark { grid-column:auto; }
+  /* 2026-08-02: 旧ルール(grid-row:1)の残骸により印列が先頭に来て
+     馬番/馬名が1列ずつ右にズレる不具合があったため、grid-rowも明示的にリセット */
+  .bet-horse-mark { grid-column:auto; grid-row:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
   .horse-note-preview { max-width:150px; }
   /* 2026-08-02: CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
