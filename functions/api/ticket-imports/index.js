@@ -214,6 +214,7 @@ export async function onRequestPost(context){
       raceDate:findColumn(headers,['日付','購入日','開催日']), receipt:findColumn(headers,['受付番号']), sequence:findColumn(headers,['通番']), venue:findColumn(headers,['場名','競馬場']), raceNumber:findColumn(headers,['レース','レース番号']), raceName:findColumn(headers,['レース名']), betType:findColumn(headers,['式別','式別名称']), combination:findColumn(headers,['馬／組番','馬/組番','馬組番','組番','買い目']), purchaseAmount:findColumn(headers,['購入金額','購入額']), hit:findColumn(headers,['的中／返還','的中/返還','的中']), refundUnit:findColumn(headers,['払戻単価']), refundAmount:findColumn(headers,['払戻金額','払戻']), returnAmount:findColumn(headers,['返還金額','返還']), hitCombination:findColumn(headers,['的中買い目','的中組合せ','的中組み合わせ'])
     };
     const db=context.env.DB; if(!db)return Response.json({ok:false,error:'D1 binding が見つかりません。'},{status:500});
+    const userId=context.data.userId;
     let imported=0, skipped=0;
 
     // 以前はCSVの行ごとに「既存チェック」「重複候補検出」を個別クエリしており、
@@ -223,7 +224,9 @@ export async function onRequestPost(context){
     // (2026-07-31)。既存チェックはリクエスト開始時に1回だけ取得してメモリ上で照合し、
     // 同一レースへの参照は初回のみDBに問い合わせてキャッシュし、重複候補検出は
     // 全行の取込完了後に1回だけ行うように変更する。
-    const existingRows=(await db.prepare(`SELECT race_date, receipt_number, sequence_number, raw_csv FROM imported_tickets WHERE source=?`).bind('club_jra_net').all()).results||[];
+    // 2026-08-01: 複数ユーザー対応により、既存チェック・重複候補検出はいずれも
+    // ログインユーザー自身のデータのみを対象にする(他ユーザーのCSVとは重複判定しない)。
+    const existingRows=(await db.prepare(`SELECT race_date, receipt_number, sequence_number, raw_csv FROM imported_tickets WHERE source=? AND user_id=?`).bind('club_jra_net',userId).all()).results||[];
     const existingKeyed=new Set(); const existingRaw=new Set();
     for(const r of existingRows){ if(r.receipt_number) existingKeyed.add(`${r.race_date}:${r.receipt_number}:${r.sequence_number}`); else existingRaw.add(r.raw_csv); }
     const raceCache=new Map(); // key: `${race_date}|${track}|${race_number}` -> race row | null
@@ -247,25 +250,25 @@ export async function onRequestPost(context){
       const isDup = receipt&&sequence ? existingKeyed.has(sourceKey) : existingRaw.has(sourceKey);
       if(isDup){skipped++;continue;}
       // Preserve raw row as the authoritative imported source record.
-      const legacy=await db.prepare(`INSERT INTO imported_tickets(source,race_date,receipt_number,sequence_number,venue,race_number,bet_type,combination,purchase_amount,hit_refund,refund_unit,refund_amount,return_amount,raw_csv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',raceDate,receipt,sequence,track,String(raceNumber||''),type,comboText,totalAmount,hit,cols.refundUnit>=0?toInt(row[cols.refundUnit]):0,refund,cols.returnAmount>=0?toInt(row[cols.returnAmount]):0,JSON.stringify(raw)).run();
+      const legacy=await db.prepare(`INSERT INTO imported_tickets(user_id,source,race_date,receipt_number,sequence_number,venue,race_number,bet_type,combination,purchase_amount,hit_refund,refund_unit,refund_amount,return_amount,raw_csv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',raceDate,receipt,sequence,track,String(raceNumber||''),type,comboText,totalAmount,hit,cols.refundUnit>=0?toInt(row[cols.refundUnit]):0,refund,cols.returnAmount>=0?toInt(row[cols.returnAmount]):0,JSON.stringify(raw)).run();
       // 同一CSV内に同じ行が複数回含まれるケースにも対応できるよう、取込直後にメモリ上の
       // 既存チェック用セットへも反映しておく。
       if(receipt&&sequence) existingKeyed.add(sourceKey); else existingRaw.add(sourceKey);
-      // Resolve or create the race. Entries remain empty if the CSV cannot provide them.
+      // レースを参照する。2026-08-01より、レースの新規登録は管理者のみが行える方針になった
+      // ため、CSV取込側での自動作成(該当レースが無ければINSERTする処理)は廃止した。
+      // 該当レースが未登録の場合は race_id を null のまま取り込み、日付・競馬場・
+      // レース番号・レース名はグループ側にそのまま保持する(管理者向けの「未登録レース一覧」
+      // 画面から、後日そのレースが登録されれば紐付く)。
       const raceKey=`${raceDate}|${track}|${raceNumber}`;
       let race=raceCache.has(raceKey)?raceCache.get(raceKey):undefined;
       if(race===undefined){
         race=(raceDate&&track&&raceNumber)?await db.prepare('SELECT * FROM races WHERE race_date=? AND track=? AND race_number=?').bind(raceDate,track,raceNumber).first():null;
-        if(!race&&raceDate&&track&&raceNumber){
-          const raceNameVal=cols.raceName>=0?clean(row[cols.raceName]):null;
-          const ins=await db.prepare('INSERT INTO races(race_date,track,race_number,race_name,entries) VALUES(?,?,?,?,?)').bind(raceDate,track,raceNumber,raceNameVal,'[]').run();
-          race={id:ins.meta.last_row_id,race_date:raceDate,track,race_number:raceNumber,race_name:raceNameVal,entries:'[]',finish_order:null,payouts:null};
-        }
         raceCache.set(raceKey,race||null);
       }
+      const raceNameForGroup=cols.raceName>=0?clean(row[cols.raceName]):null;
       const combos=splitCombinations(comboText,type);
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
-      const group=await db.prepare(`INSERT INTO imported_ticket_groups(source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||null,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
+      const group=await db.prepare(`INSERT INTO imported_ticket_groups(user_id,source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||raceNameForGroup,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
       const groupId=group.meta.last_row_id; const items=combos.length?combos:[[]]; const perAmount=items.length&&totalAmount?Math.floor(totalAmount/items.length):0;
       const statements=[];
       for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const isHit=hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1);const inferred=inferFinish(type,nums);
@@ -310,10 +313,10 @@ export async function onRequestPost(context){
       imported++;
     }
     // 重複候補の検出は、以前は新規グループ挿入のたびに個別クエリしていたが、
-    // 全行の取込完了後に1回のクエリでまとめて行う。
+    // 全行の取込完了後に1回のクエリでまとめて行う。ユーザー自身のグループのみを対象にする。
     let duplicateCandidates=[];
     if(newGroups.length){
-      const allGroups=(await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups`).all()).results||[];
+      const allGroups=(await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups WHERE user_id=?`).bind(userId).all()).results||[];
       const byKey=new Map();
       for(const g of allGroups){ const k=`${g.race_date}|${g.track}|${g.race_number}|${g.bet_type}|${g.total_amount}`; const list=byKey.get(k)||[]; list.push(g); byKey.set(k,list); }
       for(const ng of newGroups){
@@ -322,28 +325,32 @@ export async function onRequestPost(context){
         if(candidates.length) duplicateCandidates.push({group_id:ng.groupId,candidates});
       }
     }
-    return Response.json({ok:true,imported,skipped,duplicate_candidates:duplicateCandidates,items:(await db.prepare(`SELECT g.*, (SELECT COUNT(*) FROM imported_ticket_items i WHERE i.group_id=g.id) AS item_count FROM imported_ticket_groups g ORDER BY g.race_date DESC,g.id DESC`).all()).results||[]});
+    return Response.json({ok:true,imported,skipped,duplicate_candidates:duplicateCandidates,items:(await db.prepare(`SELECT g.*, (SELECT COUNT(*) FROM imported_ticket_items i WHERE i.group_id=g.id) AS item_count FROM imported_ticket_groups g WHERE g.user_id=? ORDER BY g.race_date DESC,g.id DESC`).bind(userId).all()).results||[]});
   }catch(error){console.error(error);return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }
 
 export async function onRequestGet(context){
   try{
     const db=context.env.DB; const out=[];
-    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups ORDER BY race_date DESC,id DESC`).all()).results||[];
+    const userId=context.data.userId;
+    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     // 以前はグループ毎にimported_ticket_itemsを個別クエリしていたため、取込件数が増えると
     // Cloudflare Workersのサブリクエスト数上限(1リクエストあたりのD1呼び出し数)に抵触し、
     // 一覧取得自体が500エラーになっていた(2026-07-31)。全アイテムを1回のクエリで
     // まとめて取得し、メモリ上でグループごとに振り分ける方式に変更する。
+    // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
+    //  作り、それに含まれるitemsだけを対象にする)
+    const groupIds=new Set(groups.map(g=>g.id));
     const allItems=(await db.prepare(`SELECT * FROM imported_ticket_items ORDER BY group_id, id`).all()).results||[];
     const itemsByGroup=new Map();
-    for(const item of allItems){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
+    for(const item of allItems){ if(!groupIds.has(item.group_id)) continue; const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     const represented=new Set();
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
       for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // Backward compatibility: show legacy rows imported before v10 even if they have not been normalized yet.
-    const legacy=(await db.prepare(`SELECT * FROM imported_tickets ORDER BY race_date DESC,id DESC`).all()).results||[];
+    const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||null,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}

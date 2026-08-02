@@ -185,3 +185,101 @@ CREATE INDEX IF NOT EXISTS idx_imported_items_group
 
 CREATE INDEX IF NOT EXISTS idx_imported_items_race
   ON imported_ticket_items(race_id);
+
+-- v13(2026-08-01): 複数ユーザー対応
+-- ログイン画面から自己登録できるユーザーアカウントを追加し、購入履歴・
+-- インポート履歴・予想印/メモ・馬メモをユーザー単位で分離する。
+-- レース情報(races)は引き続き全ユーザー共有。管理者判定は環境変数
+-- ADMIN_USERNAMES(カンマ区切り)で行うため、usersテーブルに管理者フラグは持たせない。
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 初期管理者アカウント: username=admin, password=password
+-- ログイン後、Cloudflare Pagesの環境変数 ADMIN_USERNAMES に "admin" を追加すると
+-- 管理者として扱われる(README参照)。
+INSERT OR IGNORE INTO users (username, password_hash) VALUES (
+  'admin',
+  'pbkdf2$100000$MStroT20U7oSgAlutNgvkw==$gkB+N7Q6VHmvVWx94Bs7oBqlHUk9DnWJRr9YnMasMS8='
+);
+
+-- tickets / imported_tickets / imported_ticket_groups に user_id を追加。
+-- 追加直後は既存行のuser_idはすべてNULL。管理者アカウント作成後、
+-- assign_existing_data_to_admin.sql を1回実行して割り当てる(README参照)。
+-- 注意: このALTER文は非冪等(再実行するとエラーになる)。既にv13を適用済みのDBに対して
+-- latest1.sqlを再実行する場合は、このv13セクションだけ手動で除外すること。
+ALTER TABLE tickets ADD COLUMN user_id INTEGER;
+ALTER TABLE imported_tickets ADD COLUMN user_id INTEGER;
+ALTER TABLE imported_ticket_groups ADD COLUMN user_id INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_imported_tickets_user_id ON imported_tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_imported_groups_user_id ON imported_ticket_groups(user_id);
+
+-- uq_imported_tickets_club_jra にuser_idを含めて再定義する
+-- (ユーザーが異なれば別々のCSV=別々のJRA会員である可能性が高いため)。
+DROP INDEX IF EXISTS uq_imported_tickets_club_jra;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
+  ON imported_tickets(source, user_id, race_date, receipt_number, sequence_number)
+  WHERE receipt_number IS NOT NULL AND receipt_number <> ''
+    AND sequence_number IS NOT NULL AND sequence_number <> '';
+
+-- prediction_notes: 1レースにつき1件(全ユーザー共通)だったメモを、ユーザーごとに
+-- 複数持てるように主キーをrace_idからid連番+UNIQUE(race_id,user_id)へ変更する。
+-- 既存行のuser_idはNULLのまま移行する(後で管理者に割り当てる)。
+DROP TABLE IF EXISTS prediction_notes_v13;
+CREATE TABLE prediction_notes_v13 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  race_id INTEGER NOT NULL,
+  user_id INTEGER,
+  memo TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(race_id, user_id),
+  FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
+);
+INSERT INTO prediction_notes_v13 (race_id, user_id, memo, created_at, updated_at)
+SELECT race_id, NULL, memo, created_at, updated_at FROM prediction_notes;
+DROP TABLE prediction_notes;
+ALTER TABLE prediction_notes_v13 RENAME TO prediction_notes;
+CREATE INDEX IF NOT EXISTS idx_prediction_notes_race_id ON prediction_notes(race_id);
+
+-- prediction_marks: UNIQUE(race_id,horse_number)にuser_idを加える。
+DROP TABLE IF EXISTS prediction_marks_v13;
+CREATE TABLE prediction_marks_v13 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  race_id INTEGER NOT NULL,
+  user_id INTEGER,
+  horse_number INTEGER NOT NULL,
+  mark TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(race_id, horse_number, user_id),
+  FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
+);
+INSERT INTO prediction_marks_v13 (id, race_id, user_id, horse_number, mark, created_at, updated_at)
+SELECT id, race_id, NULL, horse_number, mark, created_at, updated_at FROM prediction_marks;
+DROP TABLE prediction_marks;
+ALTER TABLE prediction_marks_v13 RENAME TO prediction_marks;
+CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id ON prediction_marks(race_id);
+
+-- horse_notes: horse_name単一PKから、(horse_name, user_id)の組み合わせへ変更する。
+DROP TABLE IF EXISTS horse_notes_v13;
+CREATE TABLE horse_notes_v13 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  horse_name TEXT NOT NULL,
+  user_id INTEGER,
+  memo TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(horse_name, user_id)
+);
+INSERT INTO horse_notes_v13 (horse_name, user_id, memo, created_at, updated_at)
+SELECT horse_name, NULL, memo, created_at, updated_at FROM horse_notes;
+DROP TABLE horse_notes;
+ALTER TABLE horse_notes_v13 RENAME TO horse_notes;
+CREATE INDEX IF NOT EXISTS idx_horse_notes_horse_name ON horse_notes(horse_name);

@@ -175,7 +175,8 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .nav-link:not(.active):hover { text-decoration: underline; }
 
-.masthead-actions { display: flex; gap: 10px; }
+.masthead-actions { display: flex; gap: 10px; align-items: center; }
+.current-username { font-size: .85em; color: var(--ink-soft, #55524a); margin-right: 4px; }
 
 /* ---------- サマリーバー ---------- */
 .summary-bar {

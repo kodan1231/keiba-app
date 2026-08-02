@@ -12,8 +12,39 @@
 | CSV原本(Club JRA-Net等) | `imported_tickets` | 外部CSVの原本をそのまま保持 |
 | CSV購入グループ | `imported_ticket_groups` | CSVの1行=1購入グループ |
 | CSV個別買い目 | `imported_ticket_items` | 組み合わせを個別買い目へ分解したもの |
-| 予想印 | `prediction_marks` | **1頭につき1つまで**(2026-07-30〜。ドロップダウン選択式に変更。以前は複数登録可能だった)。印の種類: ◎○▲△☆消 |
-| 馬メモ | `horse_notes` | 馬名をキーに継続管理。馬名はtrim/空白正規化して保存 |
+| 予想印 | `prediction_marks` | **1頭につき1つまで**(2026-07-30〜。ドロップダウン選択式に変更。以前は複数登録可能だった)。印の種類: ◎○▲△☆消。2026-08-01よりユーザーごとに分離(`UNIQUE(race_id, horse_number, user_id)`) |
+| 馬メモ | `horse_notes` | 馬名をキーに継続管理。馬名はtrim/空白正規化して保存。2026-08-01よりユーザーごとに分離(`UNIQUE(horse_name, user_id)`) |
+| ユーザーアカウント | `users` | 2026-08-01追加。ログイン画面から自己登録できる(招待コード等の制限なし) |
+
+## 認証・複数ユーザー対応(2026-08-01)
+
+- 個別ログイン: ログイン画面の「新規ユーザー登録」から、誰でもユーザー名+パスワードで
+  アカウントを自己登録できる(招待コード等の承認フローは無い)
+- 管理者判定: DBにフラグを持たせず、Cloudflare Pagesの環境変数`ADMIN_USERNAMES`
+  (カンマ区切りのユーザー名リスト)に含まれるユーザー名でログインした人だけを
+  管理者として扱う。`functions/api/_shared.js`の`isAdminUsername()`で判定し、
+  `functions/_middleware.js`がリクエストごとに`context.data.isAdmin`へセットする
+- セッション: Cookieのペイロードに`user_id`・`username`・有効期限を含め、
+  `env.APP_PASSWORD`をHMAC署名鍵として利用する(ログイン用パスワードとしては
+  使わなくなったが、署名鍵としては流用している)
+- データの所有者(user_id)を持つテーブル: `tickets`・`imported_tickets`・
+  `imported_ticket_groups`・`prediction_notes`・`prediction_marks`・`horse_notes`。
+  いずれも全APIハンドラで`WHERE user_id = ?`のフィルタ、新規作成時の`user_id`セットを
+  行っており、他ユーザーのデータは常に「存在しない(404)」として扱う
+  (`imported_ticket_items`自体はuser_idを持たず、`imported_ticket_groups`との
+  JOIN経由で所有者を判定する)
+- `races`(レース情報)は全ユーザー共有のデータであり、user_idを持たない。
+  登録・編集・削除・開催日程の一括登録は管理者のみが行える
+  (`functions/api/races/*`で`requireAdmin()`によりガードしている)
+- CSVインポート時のレース自動作成は廃止した(2026-08-01)。レースが未登録のまま
+  取り込まれたデータ(`imported_ticket_groups.race_id IS NULL`)は、管理画面
+  (`admin.html`)の「未登録レース一覧」から確認でき、管理者がそのレースを登録すると
+  `linkUnregisteredImportsToRace()`により自動的に紐付く
+- 既存データ(個別ログイン導入前のデータ)の扱い: DBマイグレーション直後はuser_idが
+  NULLのままなので、管理者アカウント作成後に`assign_existing_data_to_admin.sql`を
+  1回実行して管理者アカウントへ一括で割り当てる運用とする(README参照)。
+  「所有者を変更」する機能は用意していない(導入後は新規データが自動的に正しいユーザーへ
+  紐づくため、変更する必要が無いと判断したため)
 
 ## データフロー
 

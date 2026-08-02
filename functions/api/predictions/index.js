@@ -32,6 +32,7 @@ function normalizeMarks(marks) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
+  const userId = context.data.userId;
   const url = new URL(request.url);
   const raceId = Number(url.searchParams.get("race_id"));
 
@@ -49,11 +50,11 @@ export async function onRequestGet(context) {
 
   const [note, marksResult] = await Promise.all([
     env.DB.prepare(
-      "SELECT memo, created_at, updated_at FROM prediction_notes WHERE race_id = ?"
-    ).bind(raceId).first(),
+      "SELECT memo, created_at, updated_at FROM prediction_notes WHERE race_id = ? AND user_id = ?"
+    ).bind(raceId, userId).first(),
     env.DB.prepare(
-      "SELECT horse_number, mark, created_at, updated_at FROM prediction_marks WHERE race_id = ? ORDER BY horse_number"
-    ).bind(raceId).all(),
+      "SELECT horse_number, mark, created_at, updated_at FROM prediction_marks WHERE race_id = ? AND user_id = ? ORDER BY horse_number"
+    ).bind(raceId, userId).all(),
   ]);
 
   return Response.json({
@@ -66,6 +67,7 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const userId = context.data.userId;
 
   let data;
   try {
@@ -116,20 +118,20 @@ export async function onRequestPost(context) {
   const now = new Date().toISOString();
 
   const statements = [
-    env.DB.prepare("DELETE FROM prediction_marks WHERE race_id = ?").bind(raceId),
+    env.DB.prepare("DELETE FROM prediction_marks WHERE race_id = ? AND user_id = ?").bind(raceId, userId),
     env.DB.prepare(
-      `INSERT INTO prediction_notes (race_id, memo, created_at, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(race_id) DO UPDATE SET memo = excluded.memo, updated_at = excluded.updated_at`
-    ).bind(raceId, memo || null, now, now),
+      `INSERT INTO prediction_notes (race_id, user_id, memo, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(race_id, user_id) DO UPDATE SET memo = excluded.memo, updated_at = excluded.updated_at`
+    ).bind(raceId, userId, memo || null, now, now),
   ];
 
   for (const item of marks) {
     statements.push(
       env.DB.prepare(
-        `INSERT INTO prediction_marks (race_id, horse_number, mark, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`
-      ).bind(raceId, item.horse_number, item.mark, now, now)
+        `INSERT INTO prediction_marks (race_id, user_id, horse_number, mark, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(raceId, userId, item.horse_number, item.mark, now, now)
     );
   }
 

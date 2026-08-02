@@ -296,7 +296,7 @@ function renderGroupRow(group) {
         })
         .join("")}
     </div>
-    ${first.imported ? "" : `<div class="group-detail-actions">
+    ${first.imported || !(window.currentUser && window.currentUser.isAdmin) ? "" : `<div class="group-detail-actions">
       <a href="races.html?edit=${encodeURIComponent(first.race_id)}" class="ghost-btn">払戻を編集(レース管理へ)</a>
     </div>`}
   `;

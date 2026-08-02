@@ -35,7 +35,21 @@ async function loadRaces() {
   const editId = new URLSearchParams(window.location.search).get("edit");
   if (editId) {
     const target = races.find((r) => r.id === Number(editId));
-    if (target) openModal(target);
+    if (target && window.currentUser && window.currentUser.isAdmin) openModal(target);
+    history.replaceState(null, "", "races.html");
+    return;
+  }
+
+  // admin.html の「未登録レース一覧」から「登録する」で遷移してきた場合、
+  // 日付・競馬場・レース番号を事前入力した状態で新規登録モーダルを開く。
+  const params = new URLSearchParams(window.location.search);
+  const newDate = params.get("new_date");
+  if (newDate && window.currentUser && window.currentUser.isAdmin) {
+    openModal(null, {
+      race_date: newDate,
+      track: params.get("new_track") || "",
+      race_number: params.get("new_race_number") || "1",
+    });
     history.replaceState(null, "", "races.html");
   }
 }
@@ -199,6 +213,7 @@ function renderRaceList() {
 function renderRaceRow(r) {
   const settled = !!r.finish_order;
   const hasEntries = r.entries.length > 0;
+  const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
 
   const row = document.createElement("div");
   row.className = "race-list-card";
@@ -208,18 +223,20 @@ function renderRaceRow(r) {
     <span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>
     <span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>
     <span class="card-actions">
-      <button class="icon-btn edit-race-btn" data-id="${r.id}" title="編集">✎</button>
-      <button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>
+      ${isAdmin ? `<button class="icon-btn edit-race-btn" data-id="${r.id}" title="編集">✎</button>` : ""}
+      ${isAdmin ? `<button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>` : ""}
     </span>
   `;
-  row.querySelector(".edit-race-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    openModal(races.find((x) => x.id === r.id));
-  });
-  row.querySelector(".delete-race-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    deleteRace(r.id);
-  });
+  if (isAdmin) {
+    row.querySelector(".edit-race-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openModal(races.find((x) => x.id === r.id));
+    });
+    row.querySelector(".delete-race-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteRace(r.id);
+    });
+  }
   return row;
 }
 
@@ -485,7 +502,7 @@ document.getElementById("new-race-btn").addEventListener("click", () => openModa
 document.getElementById("race-cancel-btn").addEventListener("click", closeModal);
 raceModal.addEventListener("click", (e) => { if (e.target === raceModal) closeModal(); });
 
-function openModal(race) {
+function openModal(race, prefill) {
   raceForm.reset();
   document.getElementById("paste-area").hidden = true;
   document.getElementById("entries-paste").value = "";
@@ -506,8 +523,11 @@ function openModal(race) {
     currentRacePayouts = race.payouts || {};
     loadTicketsForRace(race.id);
   } else {
-    document.getElementById("r-race-date").value = new Date().toISOString().slice(0, 10);
-    raceNumberSelect.value = "1";
+    // admin.html の「未登録レース一覧」から遷移してきた場合、日付・競馬場・レース番号を
+    // 事前入力しておく(?new_date=&new_track=&new_race_number= のクエリパラメータ経由)。
+    document.getElementById("r-race-date").value = (prefill && prefill.race_date) || new Date().toISOString().slice(0, 10);
+    document.getElementById("r-track").value = (prefill && prefill.track) || "";
+    raceNumberSelect.value = (prefill && prefill.race_number) || "1";
     horseCountSelect.value = "8";
     renderEntryRows([], 8);
     renderFinishSelects(8, null);

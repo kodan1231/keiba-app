@@ -5,6 +5,7 @@ const VALID_METHODS = ["normal", "box", "nagashi", "axis1", "axis2", "multi", "a
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const userId = context.data.userId;
 
   let data;
   try {
@@ -36,9 +37,10 @@ export async function onRequestPost(context) {
   const stmts = combos.map((c) =>
     env.DB.prepare(
       `INSERT INTO tickets
-        (group_id, race_id, race_date, track, race_number, race_name, bet_type, method, selections, amount, memo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (user_id, group_id, race_id, race_date, track, race_number, race_name, bet_type, method, selections, amount, memo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
+      userId,
       groupId,
       race_id,
       race_date,

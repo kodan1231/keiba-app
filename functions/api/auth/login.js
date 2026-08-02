@@ -1,17 +1,7 @@
-function strToBase64url(str) {
-  return btoa(unescape(encodeURIComponent(str)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
+import { verifyPassword, createSessionToken } from "../_shared.js";
 
-function bufToBase64url(buf) {
-  const bin = String.fromCharCode(...new Uint8Array(buf));
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-const SESSION_DAYS = 30;
-
+// 2026-08-01 複数ユーザー対応: 全員共通のAPP_PASSWORDと照合する方式から、
+// usersテーブルに登録された個別のユーザー名+パスワードと照合する方式に変更。
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -29,34 +19,27 @@ export async function onRequestPost(context) {
     return new Response(JSON.stringify({ error: "リクエストが不正です" }), { status: 400 });
   }
 
-  if (body.password !== env.APP_PASSWORD) {
-    return new Response(JSON.stringify({ error: "パスワードが違います" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+  if (!username || !password) {
+    return Response.json({ error: "ユーザー名とパスワードを入力してください" }, { status: 400 });
   }
 
-  const exp = Date.now() + 1000 * 60 * 60 * 24 * SESSION_DAYS;
-  const payloadB64 = strToBase64url(JSON.stringify({ exp }));
+  const user = await env.DB.prepare(
+    "SELECT id, username, password_hash FROM users WHERE username = ?"
+  ).bind(username).first();
 
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(env.APP_PASSWORD),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(payloadB64));
-  const token = `${payloadB64}.${bufToBase64url(sig)}`;
+  if (!user || !(await verifyPassword(password, user.password_hash))) {
+    return Response.json({ error: "ユーザー名またはパスワードが違います" }, { status: 401 });
+  }
+
+  const { token, maxAgeSeconds } = await createSessionToken(env, { userId: user.id, username: user.username });
 
   const headers = new Headers({ "Content-Type": "application/json" });
   headers.append(
     "Set-Cookie",
-    `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${
-      60 * 60 * 24 * SESSION_DAYS
-    }`
+    `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}`
   );
 
-  return new Response(JSON.stringify({ ok: true }), { headers });
+  return new Response(JSON.stringify({ ok: true, username: user.username }), { headers });
 }

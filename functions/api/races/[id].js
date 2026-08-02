@@ -1,6 +1,10 @@
-import { backfillHorseNamesForRace } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin } from "../_shared.js";
 
+// PUT(編集)・DELETE(削除)ともに 2026-08-01より管理者のみ実行可能。
 export async function onRequestPut(context) {
+  const deny = requireAdmin(context);
+  if (deny) return deny;
+
   const { request, env, params } = context;
 
   let data;
@@ -49,11 +53,20 @@ export async function onRequestPut(context) {
   if ("entries" in data) {
     await backfillHorseNamesForRace(env.DB, Number(params.id), data.entries);
   }
+  // 日付・競馬場・レース番号のいずれかが変わった(または初めて確定した)可能性があるため、
+  // 未紐付けのCSV取込データが無いか毎回確認して紐付ける。
+  if ("race_date" in data || "track" in data || "race_number" in data) {
+    const race = await env.DB.prepare("SELECT race_date, track, race_number FROM races WHERE id = ?").bind(params.id).first();
+    if (race) await linkUnregisteredImportsToRace(env.DB, Number(params.id), race.race_date, race.track, race.race_number);
+  }
 
   return Response.json({ ok: true });
 }
 
 export async function onRequestDelete(context) {
+  const deny = requireAdmin(context);
+  if (deny) return deny;
+
   const { env, params } = context;
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "IDが不正です" }, { status: 400 });

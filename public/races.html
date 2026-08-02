@@ -15,12 +15,15 @@
   <div class="ticket">
     <p class="ticket-eyebrow">MEMBERS ONLY</p>
     <h1 class="ticket-title">馬券帳</h1>
-    <p class="ticket-sub">合言葉を入力して入場してください</p>
+    <p class="ticket-sub">ユーザー名とパスワードを入力して入場してください</p>
     <form id="login-form">
+      <input type="text" id="login-username" placeholder="ユーザー名" autocomplete="username" required />
       <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
-      <button type="submit">入場する</button>
+      <button type="submit" id="login-submit-btn">入場する</button>
     </form>
     <p id="login-error" class="error-text" hidden></p>
+    <p id="login-mode-hint" class="ticket-sub" style="font-size:.8em"></p>
+    <button type="button" id="login-mode-toggle" class="ghost-btn">初めての方はこちら(新規登録)</button>
   </div>
 </div>
 
@@ -29,14 +32,19 @@
   <header class="masthead">
     <div class="masthead-inner">
       <h1 class="masthead-title">馬券帳</h1>
-      <nav class="masthead-nav"><a href="buy.html" class="nav-link">馬券購入</a><a href="index.html" class="nav-link">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link active">レース管理</a></nav>
+      <nav class="masthead-nav"><a href="buy.html" class="nav-link">馬券購入</a><a href="index.html" class="nav-link">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link active">レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav>
     </div>
     <div class="masthead-actions">
-      <button id="schedule-btn" class="ghost-btn">開催日程を一括登録</button>
-      <button id="new-race-btn" class="stamp-btn">＋ レースを登録</button>
+      <span id="current-username" class="current-username"></span>
+      <button id="schedule-btn" class="ghost-btn" data-admin-only hidden>開催日程を一括登録</button>
+      <button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>
       <button id="logout-btn" class="ghost-btn">退場</button>
     </div>
   </header>
+
+  <p id="races-readonly-notice" class="ticket-sub" data-nonadmin-only hidden style="padding:0 16px">
+    レース情報の登録・編集は管理者のみ行えます。ここでは閲覧のみできます。
+  </p>
 
   <div id="races-calendar" class="race-calendar">
     <div class="race-calendar-toolbar">

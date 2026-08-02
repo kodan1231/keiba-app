@@ -1,5 +1,6 @@
-import { backfillHorseNamesForRace } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin } from "../_shared.js";
 
+// GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 export async function onRequestGet(context) {
   const { env } = context;
   const { results } = await env.DB.prepare(
@@ -16,7 +17,11 @@ export async function onRequestGet(context) {
   return Response.json(items);
 }
 
+// POST(新規登録): 2026-08-01より管理者のみ実行可能。
 export async function onRequestPost(context) {
+  const deny = requireAdmin(context);
+  if (deny) return deny;
+
   const { request, env } = context;
 
   let data;
@@ -54,11 +59,15 @@ export async function onRequestPost(context) {
       )
       .run();
 
-    // CSVインポート等で既に馬番だけの購入履歴が紐付いている可能性は低いが、
-    // 念のため新規登録時もバックフィルを実行しておく(PUTでの編集時が主なユースケース)。
-    await backfillHorseNamesForRace(env.DB, result.meta.last_row_id, entries);
+    const raceId = result.meta.last_row_id;
 
-    return Response.json({ ok: true, id: result.meta.last_row_id });
+    // CSV自動レース登録の廃止(2026-08-01)に伴い、このレースが未登録の間に取り込まれた
+    // CSVデータ(race_id未紐付け)があれば、ここで紐付ける。
+    await linkUnregisteredImportsToRace(env.DB, raceId, race_date, track, race_number);
+    // 出走馬表(馬名・騎手)が分かったので、紐付いた購入履歴のselectionsへ反映する。
+    await backfillHorseNamesForRace(env.DB, raceId, entries);
+
+    return Response.json({ ok: true, id: raceId });
   } catch (e) {
     if (String(e).includes("UNIQUE")) {
       return new Response(
