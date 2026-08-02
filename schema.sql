@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS races (
   track TEXT NOT NULL,            -- 競馬場
   race_number INTEGER NOT NULL,   -- レース番号 (1-12)
   race_name TEXT,                 -- レース名(任意)
+  course_type TEXT,               -- コース種別: 芝/ダート/障害(任意入力・2026-08-02追加)
+  distance INTEGER,               -- 距離(メートル・任意入力・2026-08-02追加)
   entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark}]
   finish_order TEXT,              -- JSON配列 [horse_number, ...] 着順順(1着から)。未確定はNULL
   created_at TEXT DEFAULT (datetime('now')),

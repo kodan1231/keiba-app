@@ -78,6 +78,17 @@
         </label>
         <label>レース名(任意)<input type="text" id="r-race-name" placeholder="例: 日本ダービー" /></label>
       </div>
+      <div class="form-row">
+        <label>コース種別(任意)
+          <select id="r-course-type">
+            <option value="">未設定</option>
+            <option value="芝">芝</option>
+            <option value="ダート">ダート</option>
+            <option value="障害">障害</option>
+          </select>
+        </label>
+        <label>距離(m・任意)<input type="number" id="r-distance" placeholder="例: 2000" min="0" step="1" /></label>
+      </div>
 
       <label>出走頭数
         <select id="r-horse-count"></select>

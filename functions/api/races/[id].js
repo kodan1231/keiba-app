@@ -17,7 +17,7 @@ export async function onRequestPut(context) {
   const fields = [];
   const values = [];
 
-  for (const key of ["race_date", "track", "race_number", "race_name"]) {
+  for (const key of ["race_date", "track", "race_number", "race_name", "course_type", "distance"]) {
     if (key in data) {
       fields.push(`${key} = ?`);
       values.push(data[key]);

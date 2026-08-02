@@ -210,16 +210,26 @@ function renderRaceList() {
   }
 }
 
+function courseTypeShort(courseType) {
+  if (courseType === "芝") return "芝";
+  if (courseType === "ダート") return "ダ";
+  if (courseType === "障害") return "障";
+  return "";
+}
+
 function renderRaceRow(r) {
   const settled = !!r.finish_order;
   const hasEntries = r.entries.length > 0;
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
+  const courseLabel = courseTypeShort(r.course_type);
+  const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
 
   const row = document.createElement("div");
   row.className = "race-list-card";
   row.innerHTML = `
     <span class="r-num">${r.race_number}R</span>
     ${r.race_name ? `<span class="meta">${escapeHtml(r.race_name)}</span>` : ""}
+    ${courseText ? `<span class="meta course-meta">${escapeHtml(courseText)}</span>` : ""}
     <span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>
     <span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>
     <span class="card-actions">
@@ -514,6 +524,8 @@ function openModal(race, prefill) {
     document.getElementById("r-track").value = race.track;
     raceNumberSelect.value = race.race_number;
     document.getElementById("r-race-name").value = race.race_name || "";
+    document.getElementById("r-course-type").value = race.course_type || "";
+    document.getElementById("r-distance").value = race.distance || "";
 
     const count = Math.max(race.entries.length, 5);
     horseCountSelect.value = count;
@@ -528,6 +540,8 @@ function openModal(race, prefill) {
     document.getElementById("r-race-date").value = (prefill && prefill.race_date) || new Date().toISOString().slice(0, 10);
     document.getElementById("r-track").value = (prefill && prefill.track) || "";
     raceNumberSelect.value = (prefill && prefill.race_number) || "1";
+    document.getElementById("r-course-type").value = "";
+    document.getElementById("r-distance").value = "";
     horseCountSelect.value = "8";
     renderEntryRows([], 8);
     renderFinishSelects(8, null);
@@ -556,6 +570,8 @@ raceForm.addEventListener("submit", async (e) => {
     track: document.getElementById("r-track").value,
     race_number: Number(raceNumberSelect.value),
     race_name: document.getElementById("r-race-name").value || null,
+    course_type: document.getElementById("r-course-type").value || null,
+    distance: document.getElementById("r-distance").value ? Number(document.getElementById("r-distance").value) : null,
     entries,
     finish_order,
     payouts: payoutsPayload,

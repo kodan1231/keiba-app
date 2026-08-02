@@ -115,6 +115,21 @@ npx wrangler pages deploy public --project-name=keiba-yosou-app
 > `assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに割り当ててください
 > (下記「複数ユーザー対応について」参照)。
 
+### 単発の追加マイグレーション(v13適用済みDB向け)
+
+`latest1.sql`は「まっさらなDBに1回だけ実行する」累積migrationのため、既に運用中のDBに対して
+繰り返し実行することはできません(DROP TABLE等が既に適用済みでエラーになります)。
+v13適用後に追加された小さなスキーマ変更は、都度これとは別の単発マイグレーションファイルとして
+用意します。現時点で存在するもの:
+
+- `add_course_type_distance.sql`(2026-08-02): `races`にコース種別(`course_type`)・距離
+  (`distance`)を追加。既存DBには1回だけ実行してください。
+
+```bash
+npx wrangler d1 execute keiba-yosou-db --remote --file=./add_course_type_distance.sql
+```
+
+
 ## セットアップ手順(新規の場合)
 
 ### 1. Wranglerのインストール・ログイン
