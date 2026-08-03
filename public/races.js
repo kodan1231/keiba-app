@@ -514,6 +514,15 @@ raceModal.addEventListener("click", (e) => { if (e.target === raceModal) closeMo
 
 function openModal(race, prefill) {
   raceForm.reset();
+  // 2026-08-02: raceForm.reset() は残留していた払戻入力欄(#race-tickets-section内)の
+  // 値も空にリセットするが、その残留DOMがまだ画面に残ったままになる。この直後に
+  // currentRacePayouts へ正しいデータをセットしても、非同期のloadTicketsForRace()完了後に
+  // renderPayoutBlocks() → captureEnteredRatesIntoState() が「今リセットされたばかりの
+  // 残留DOM」を読み取ってしまい、正しくセットしたcurrentRacePayoutsを空で上書きしてしまう
+  // 不具合があった(同一ページ内で2回目以降モーダルを開いたときに再現)。
+  // 残留DOMを即座に空にしておくことで、captureEnteredRatesIntoState()が誤って
+  // 上書きしないようにする。
+  ticketsSection.innerHTML = "";
   document.getElementById("paste-area").hidden = true;
   document.getElementById("entries-paste").value = "";
   document.getElementById("race-id").value = race ? race.id : "";

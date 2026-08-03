@@ -59,8 +59,8 @@ functions/
   api/races/                 ... レースの一覧・登録・編集・削除・一括登録(bulk)
   api/tickets/                ... 購入履歴の一覧・一括登録(bulk・組み合わせごとの金額対応)・払戻更新・削除
 schema.sql                   ... D1データベースの最新版テーブル定義(新規セットアップ用)
-latest1.sql                  ... 既存DBを最新版(v10相当)へ更新する統合マイグレーション
-archive/migrations/          ... 過去の番号付きmigration(v2～v10)のアーカイブ(通常は実行しない)
+latest1.sql                  ... 既存DBを最新版へ更新する統合マイグレーション(未適用分のみ)
+archive/migrations/          ... 過去の番号付きmigration・過去のlatest1.sqlのアーカイブ(通常は実行しない)
 docs/DESIGN.md                ... データ構造・データフロー・集計ルールなどの設計方針(生きたドキュメント)
 docs/TESTING.md                ... 手動テストチェックリスト(生きたドキュメント)
 docs/BACKLOG.md                 ... 承認済みだが未実装のタスクの引継ぎメモ
@@ -86,23 +86,47 @@ wrangler.toml
 
 DBスキーマは最新版を基準に管理します。
 
-- **新規DBの構築**: `schema.sql` を1回実行します。
-- **既存DBの最新版への更新**: `latest1.sql` を1回実行します。
-- `migrate_v2.sql` ～ `migrate_v10.sql` は過去の変更履歴として `archive/migrations/` に保管しています。通常のセットアップ・更新では使用しません。
+**運用ルール(2026-08-03〜。node不要・wranglerコマンドのみで手動運用)**
+- **初期セットアップ(まっさらな新規DB)のときだけ`schema.sql`を1回実行する。**
+  それ以外(=日々の変更適用)では`schema.sql`は使わない
+- **本番は既に運用中でユーザーの実データが入っている。テーブルやデータを削除する
+  ような変更(`DROP TABLE`、`DELETE`、既存データを上書き/巻き戻すような`UPDATE`等)は
+  極力行わない。** カラムの追加(`ALTER TABLE ADD COLUMN`)や新規テーブルの追加
+  (`CREATE TABLE IF NOT EXISTS`)など、既存データに影響しない変更のみを基本とする。
+  どうしても削除的な変更が必要な場合は、影響範囲(消えるデータ・対象範囲)を明示した
+  上で、**必ず作業前に承認を得ること**
+- `latest1.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、末尾に
+  `-- @STEP: 名前`ブロックとして追記していく。適用が完了したブロックは、
+  ファイルからは削除し(内容は`schema.sql`に反映し、必要なら
+  `archive/migrations/`へ退避する)、常に「これから適用すべき差分だけ」が
+  ファイルに残っている状態を保つ
 
-`latest1.sql` は、番号付きmigrationを順番に適用した結果の最終状態(v10相当)へ既存DBを更新するための統合migrationです。
+### スキーマ変更の適用手順(手動・wranglerのみ)
 
-### 既存のリモートDBを最新版へ更新
+1. `latest1.sql`に新しい`-- @STEP: 名前`ブロックを追記する
+2. そのブロックのSQLだけを一時ファイル(例: `step.sql`)にコピーし、まず`--local`で試す
 
-```bash
-npx wrangler d1 execute keiba-yosou-db --remote --file=./latest1.sql
-```
+   ```bash
+   npx wrangler d1 execute keiba-yosou-db --local --file=step.sql
+   ```
+3. 問題なければ`--remote`(本番)に適用する
 
-### 既存のローカルDBを最新版へ更新
+   ```bash
+   npx wrangler d1 execute keiba-yosou-db --remote --file=step.sql
+   ```
+4. 成功したら`schema_migrations`に適用記録を追加する
 
-```bash
-npx wrangler d1 execute keiba-yosou-db --local --file=./latest1.sql
-```
+   ```bash
+   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('新しいステップ名');"
+   ```
+5. `latest1.sql`から該当ブロックを削除し、`schema.sql`へ内容を反映する(新規DBでも
+   最初から最新構造になるように)
+
+途中で失敗した場合は、`ALTER TABLE ADD COLUMN`のような非破壊的な変更なら
+「既に列がある」旨のエラーで気づけるので、`PRAGMA table_info`等で実際に
+どこまで反映されているかを確認してから、schema_migrationsへの記録や
+残りのSQLを個別に対応する。`DROP`/`RENAME`を伴う変更は再実行すると
+データを壊す恐れがあるため、特に慎重に確認すること。
 
 更新後に再デプロイします。
 
@@ -112,22 +136,8 @@ npx wrangler pages deploy public --project-name=keiba-yosou-app
 
 > 注意: `latest1.sql` は既存DBを最新版へ更新するためのものです。新規DBは `schema.sql` を使用してください。
 > 既存DBに `latest1.sql` のv13(複数ユーザー対応)を適用した場合は、管理者アカウント作成後に
-> `assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに割り当ててください
+> `archive/migrations/assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに割り当ててください
 > (下記「複数ユーザー対応について」参照)。
-
-### 単発の追加マイグレーション(v13適用済みDB向け)
-
-`latest1.sql`は「まっさらなDBに1回だけ実行する」累積migrationのため、既に運用中のDBに対して
-繰り返し実行することはできません(DROP TABLE等が既に適用済みでエラーになります)。
-v13適用後に追加された小さなスキーマ変更は、都度これとは別の単発マイグレーションファイルとして
-用意します。現時点で存在するもの:
-
-- `add_course_type_distance.sql`(2026-08-02): `races`にコース種別(`course_type`)・距離
-  (`distance`)を追加。既存DBには1回だけ実行してください。
-
-```bash
-npx wrangler d1 execute keiba-yosou-db --remote --file=./add_course_type_distance.sql
-```
 
 
 ## セットアップ手順(新規の場合)
@@ -201,10 +211,10 @@ Cloudflareダッシュボード → Workers & Pages → keiba-yosou-app → Sett
   登録すると自動的に紐付きます
 - 個別ログイン導入前に登録されていた購入履歴・CSVインポート履歴・予想印・予想メモ・馬メモは、
   DBマイグレーション直後は「誰のものか」の情報を持たない(user_idがNULL)状態になっています。
-  管理者アカウントを作成した後、`assign_existing_data_to_admin.sql` を1回実行すると、
-  それらすべてが管理者アカウントの所有として割り当てられます
+  管理者アカウントを作成した後、`archive/migrations/assign_existing_data_to_admin.sql` を
+  1回実行すると、それらすべてが管理者アカウントの所有として割り当てられます
   ```bash
-  wrangler d1 execute keiba-yosou-db --remote --file=./assign_existing_data_to_admin.sql
+  wrangler d1 execute keiba-yosou-db --remote --file=./archive/migrations/assign_existing_data_to_admin.sql
   ```
   (管理者のユーザー名を `admin` から変更した場合は、ファイル内の `'admin'` を実際の
   ユーザー名に書き換えてから実行してください)
