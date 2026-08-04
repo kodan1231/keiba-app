@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=202608041200" />
+<link rel="stylesheet" href="style.css?v=202608041430" />
 </head>
 <body>
 
@@ -37,6 +37,7 @@
     <div class="masthead-actions">
       <span id="current-username" class="current-username"></span>
       <button id="schedule-btn" class="ghost-btn" data-admin-only hidden>開催日程を一括登録</button>
+      <button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>
       <button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>
       <button id="logout-btn" class="ghost-btn">退場</button>
     </div>
@@ -149,6 +150,24 @@
   </div>
 </div>
 
+<!-- JRAレース結果PDFインポートモーダル -->
+<div id="jra-result-import-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>JRAレース結果PDFを一括登録</h2>
+    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは既存データを確認したうえで更新できます。</p>
+    <label>PDFファイル
+      <input type="file" id="jra-result-pdf-file" accept="application/pdf,.pdf" />
+    </label>
+    <button type="button" id="jra-result-parse-btn" class="ghost-btn">PDFを解析する</button>
+    <div id="jra-result-import-preview"></div>
+    <div class="modal-actions">
+      <button type="button" id="jra-result-import-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="jra-result-import-submit-btn" class="stamp-btn" disabled>この内容で一括登録する</button>
+    </div>
+    <p id="jra-result-import-message" class="submit-message" hidden></p>
+  </div>
+</div>
+
 <!-- 開催日程 一括登録モーダル -->
 <div id="schedule-modal" class="modal-overlay" hidden>
   <div class="modal">
@@ -176,6 +195,7 @@
 <script src="utils.js"></script>
 <script src="bettypes.js"></script>
 <script src="parse.js"></script>
+<script src="jra-result-pdf.js?v=202608060001"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
 <script src="races.js"></script>

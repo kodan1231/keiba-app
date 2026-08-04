@@ -1863,3 +1863,5 @@ body.modal-open { overflow: hidden; }
 
 .import-source-badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#eee;font-size:.72rem;color:#666}
 .import-raw-selection{font-size:.78rem;color:#666}
+
+.import-preview-list{max-height:320px;overflow:auto;margin:12px 0;border:1px solid #ddd;border-radius:8px}.import-preview-row{padding:8px 10px;border-bottom:1px solid #eee;font-size:.9em}.import-preview-row:last-child{border-bottom:0}.import-preview-row span{float:right;opacity:.75}
