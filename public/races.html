@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=202608020540" />
+<link rel="stylesheet" href="style.css?v=202608041200" />
 </head>
 <body>
 
@@ -52,7 +52,6 @@
       <strong id="races-calendar-month-label"></strong>
       <button type="button" id="races-next-month-btn" class="ghost-btn">›</button>
       <button type="button" id="races-today-btn" class="ghost-btn">今日</button>
-      <button type="button" id="races-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
     </div>
     <div id="races-calendar-grid" class="calendar-grid"></div>
   </div>
@@ -61,12 +60,12 @@
 
 </div>
 
-<!-- レース登録・編集モーダル -->
-<div id="race-modal" class="modal-overlay" hidden>
+<!-- 出走馬表 登録・編集モーダル -->
+<div id="race-entries-modal" class="modal-overlay" hidden>
   <div class="modal">
-    <h2 id="race-modal-title">レースを登録</h2>
-    <form id="race-form">
-      <input type="hidden" id="race-id" />
+    <h2 id="race-entries-modal-title">レースを登録</h2>
+    <form id="race-entries-form">
+      <input type="hidden" id="entries-race-id" />
 
       <div class="form-row">
         <label>開催日<input type="date" id="r-race-date" required /></label>
@@ -94,17 +93,11 @@
         <select id="r-horse-count"></select>
       </label>
 
-      <div class="finish-top3-box">
-        <p class="picker-hint" style="margin-bottom:6px">着順(1〜3着。馬名や出走馬表が未登録でも馬番だけで入力できます)</p>
-        <div class="finish-top3-row">
-          <label>1着<select id="r-finish-1"></select></label>
-          <label>2着<select id="r-finish-2"></select></label>
-          <label>3着<select id="r-finish-3"></select></label>
-        </div>
-      </div>
-
       <div class="paste-box">
-        <button type="button" id="toggle-paste-btn" class="ghost-btn">テキストから出走馬を一括入力</button>
+        <div class="paste-box-actions">
+          <button type="button" id="toggle-paste-btn" class="ghost-btn">テキストから出走馬を一括入力</button>
+          <button type="submit" class="stamp-btn">保存する</button>
+        </div>
         <div id="paste-area" hidden>
           <p class="picker-hint">netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けてください(改行区切り、うまく読み取れない場合は下の欄で直接修正できます)。</p>
           <textarea id="entries-paste" rows="6" placeholder="例:&#10;1　サンプルホース　田中太郎&#10;2　サンプルホース2　鈴木次郎"></textarea>
@@ -117,10 +110,39 @@
         <div id="entry-rows" class="entry-form-rows"></div>
       </div>
 
+      <div class="modal-actions">
+        <button type="button" id="entries-cancel-btn" class="ghost-btn">キャンセル</button>
+        <button type="submit" class="stamp-btn">保存する</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 払戻 登録・編集モーダル -->
+<div id="race-payout-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="race-payout-modal-title">払戻を登録</h2>
+    <p id="payout-race-info" class="picker-hint payout-race-info"></p>
+    <form id="race-payout-form">
+      <input type="hidden" id="payout-race-id" />
+
+      <label>出走頭数(着順選択肢の範囲。出走馬表登録済みなら自動設定されます)
+        <select id="rp-horse-count"></select>
+      </label>
+
+      <div class="finish-top3-box">
+        <p class="picker-hint" style="margin-bottom:6px">着順(1〜3着。馬名や出走馬表が未登録でも馬番だけで入力できます)</p>
+        <div class="finish-top3-row">
+          <label>1着<select id="r-finish-1"></select></label>
+          <label>2着<select id="r-finish-2"></select></label>
+          <label>3着<select id="r-finish-3"></select></label>
+        </div>
+      </div>
+
       <div id="race-tickets-section"></div>
 
       <div class="modal-actions">
-        <button type="button" id="race-cancel-btn" class="ghost-btn">キャンセル</button>
+        <button type="button" id="payout-cancel-btn" class="ghost-btn">キャンセル</button>
         <button type="submit" class="stamp-btn">保存する</button>
       </div>
     </form>

@@ -1,5 +1,6 @@
 let races = [];
-let currentHorseCount = 8;
+let currentEntriesHorseCount = 8; // 出走馬表モーダル内の頭数(entry-rows描画用)
+let currentPayoutHorseCount = 8; // 払戻モーダル内の頭数(着順選択肢の範囲用)
 let currentTickets = [];
 let selectedRaceDate = null;
 let racesCalendarMonth = new Date();
@@ -8,22 +9,35 @@ racesCalendarMonth.setDate(1);
 const racesMain = document.getElementById("races-main");
 const racesCalendarGrid = document.getElementById("races-calendar-grid");
 const racesCalendarMonthLabel = document.getElementById("races-calendar-month-label");
-const racesClearFilterBtn = document.getElementById("races-clear-filter-btn");
-const raceModal = document.getElementById("race-modal");
-const raceForm = document.getElementById("race-form");
-const raceModalTitle = document.getElementById("race-modal-title");
+
+// 出走馬表モーダル
+const entriesModal = document.getElementById("race-entries-modal");
+const entriesForm = document.getElementById("race-entries-form");
+const entriesModalTitle = document.getElementById("race-entries-modal-title");
 const entryRows = document.getElementById("entry-rows");
 const horseCountSelect = document.getElementById("r-horse-count");
 const raceNumberSelect = document.getElementById("r-race-number");
+
+// 払戻モーダル
+const payoutModal = document.getElementById("race-payout-modal");
+const payoutForm = document.getElementById("race-payout-form");
+const payoutModalTitle = document.getElementById("race-payout-modal-title");
+const payoutRaceInfo = document.getElementById("payout-race-info");
+const payoutHorseCountSelect = document.getElementById("rp-horse-count");
 const ticketsSection = document.getElementById("race-tickets-section");
 const finish1Select = document.getElementById("r-finish-1");
 const finish2Select = document.getElementById("r-finish-2");
 const finish3Select = document.getElementById("r-finish-3");
 
+// 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
+let currentPayoutEntries = [];
+
 // ---------- 初期化: セレクトの選択肢を用意 ----------
 raceNumberSelect.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}R</option>`).join("");
 // 出走頭数は最低5頭・最大18頭(JRAの実運用上の範囲)。
-horseCountSelect.innerHTML = Array.from({ length: 14 }, (_, i) => i + 5).map((n) => `<option value="${n}">${n}頭</option>`).join("");
+const HORSE_COUNT_OPTIONS = Array.from({ length: 14 }, (_, i) => i + 5).map((n) => `<option value="${n}">${n}頭</option>`).join("");
+horseCountSelect.innerHTML = HORSE_COUNT_OPTIONS;
+payoutHorseCountSelect.innerHTML = HORSE_COUNT_OPTIONS;
 
 async function loadRaces() {
   const res = await authedFetch("/api/races");
@@ -32,20 +46,21 @@ async function loadRaces() {
   renderRaceCalendar();
   renderRaceList();
 
+  // app.js の「払戻を編集(レース管理へ)」リンク(?edit=)は払戻モーダルを直接開く。
   const editId = new URLSearchParams(window.location.search).get("edit");
   if (editId) {
     const target = races.find((r) => r.id === Number(editId));
-    if (target && window.currentUser && window.currentUser.isAdmin) openModal(target);
+    if (target && window.currentUser && window.currentUser.isAdmin) openPayoutModal(target);
     history.replaceState(null, "", "races.html");
     return;
   }
 
   // admin.html の「未登録レース一覧」から「登録する」で遷移してきた場合、
-  // 日付・競馬場・レース番号を事前入力した状態で新規登録モーダルを開く。
+  // 日付・競馬場・レース番号を事前入力した状態で出走馬表登録モーダルを開く。
   const params = new URLSearchParams(window.location.search);
   const newDate = params.get("new_date");
   if (newDate && window.currentUser && window.currentUser.isAdmin) {
-    openModal(null, {
+    openEntriesModal(null, {
       race_date: newDate,
       track: params.get("new_track") || "",
       race_number: params.get("new_race_number") || "1",
@@ -88,6 +103,7 @@ function renderRaceCalendar() {
   racesCalendarGrid.innerHTML = html;
   racesCalendarGrid.querySelectorAll("button[data-date]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      // 同じ日付を再クリックすると絞り込みを解除する(その月全体の表示に戻る)。
       selectedRaceDate = selectedRaceDate === btn.dataset.date ? null : btn.dataset.date;
       expandedDates.add(selectedRaceDate);
       renderRaceCalendar();
@@ -99,18 +115,16 @@ function renderRaceCalendar() {
 document.getElementById("races-prev-month-btn")?.addEventListener("click", () => {
   racesCalendarMonth.setMonth(racesCalendarMonth.getMonth() - 1);
   renderRaceCalendar();
+  renderRaceList();
 });
 document.getElementById("races-next-month-btn")?.addEventListener("click", () => {
   racesCalendarMonth.setMonth(racesCalendarMonth.getMonth() + 1);
   renderRaceCalendar();
+  renderRaceList();
 });
 document.getElementById("races-today-btn")?.addEventListener("click", () => {
   const now = new Date();
   racesCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  renderRaceCalendar();
-});
-racesClearFilterBtn?.addEventListener("click", () => {
-  selectedRaceDate = null;
   renderRaceCalendar();
   renderRaceList();
 });
@@ -123,8 +137,6 @@ function renderRaceList() {
     return;
   }
 
-  racesClearFilterBtn.hidden = !selectedRaceDate;
-
   racesMain.innerHTML = "";
 
   const byDate = new Map();
@@ -134,11 +146,20 @@ function renderRaceList() {
   });
   let dates = [...byDate.keys()].sort().reverse();
 
-  // カレンダーで日付が選択されている場合は、その日だけに絞り込む。
   if (selectedRaceDate) {
+    // カレンダーで特定の日付が選択されている場合は、その日だけに絞り込む。
     dates = dates.filter((d) => d === selectedRaceDate);
     if (dates.length === 0) {
       racesMain.innerHTML = `<p class="empty-state">この日に登録されているレースはありません。「＋ レースを登録」から追加できます。</p>`;
+      return;
+    }
+  } else {
+    // 特定の日付が未選択の場合は、カレンダーに表示中の月のレースだけに絞り込む
+    // (全期間を一覧表示すると縦に長くなりすぎるため。2026-08-04〜)。
+    const ym = `${racesCalendarMonth.getFullYear()}-${String(racesCalendarMonth.getMonth() + 1).padStart(2, "0")}`;
+    dates = dates.filter((d) => d.startsWith(ym));
+    if (dates.length === 0) {
+      racesMain.innerHTML = `<p class="empty-state">${racesCalendarMonth.getFullYear()}年${racesCalendarMonth.getMonth() + 1}月に登録されているレースはありません。カレンダーの‹›で他の月を確認できます。</p>`;
       return;
     }
   }
@@ -187,6 +208,11 @@ function renderRaceList() {
           const empty = document.createElement("div");
           empty.className = "race-column-row no-race";
           empty.innerHTML = `<b>${n}R</b><span>未登録</span>`;
+          if (window.currentUser && window.currentUser.isAdmin) {
+            empty.addEventListener("click", () => {
+              openEntriesModal(null, { race_date: date, track, race_number: n });
+            });
+          }
           col.appendChild(empty);
           continue;
         }
@@ -224,23 +250,35 @@ function renderRaceRow(r) {
   const courseLabel = courseTypeShort(r.course_type);
   const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
 
+  // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる
+  // (2026-08-04〜。以前は状態表示のみで、編集は共通の✎ボタン1つ経由だった)。
+  const entriesLabel = hasEntries ? `出走馬表を編集(${r.entries.length}頭)` : "出走馬表を登録";
+  const settledLabel = settled ? "払戻を編集" : "払戻を登録";
+
   const row = document.createElement("div");
   row.className = "race-list-card";
   row.innerHTML = `
     <span class="r-num">${r.race_number}R</span>
     ${r.race_name ? `<span class="meta">${escapeHtml(r.race_name)}</span>` : ""}
     ${courseText ? `<span class="meta course-meta">${escapeHtml(courseText)}</span>` : ""}
-    <span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>
-    <span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>
+    ${isAdmin
+      ? `<button type="button" class="entries-badge ${hasEntries ? "done" : ""}" data-id="${r.id}">${entriesLabel}</button>`
+      : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>`}
+    ${isAdmin
+      ? `<button type="button" class="settled-badge ${settled ? "done" : ""}" data-id="${r.id}">${settledLabel}</button>`
+      : `<span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>`}
     <span class="card-actions">
-      ${isAdmin ? `<button class="icon-btn edit-race-btn" data-id="${r.id}" title="編集">✎</button>` : ""}
       ${isAdmin ? `<button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>` : ""}
     </span>
   `;
   if (isAdmin) {
-    row.querySelector(".edit-race-btn").addEventListener("click", (e) => {
+    row.querySelector(".entries-badge").addEventListener("click", (e) => {
       e.stopPropagation();
-      openModal(races.find((x) => x.id === r.id));
+      openEntriesModal(races.find((x) => x.id === r.id));
+    });
+    row.querySelector(".settled-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPayoutModal(races.find((x) => x.id === r.id));
     });
     row.querySelector(".delete-race-btn").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -300,7 +338,7 @@ function defaultWakuNumber(horseNumber, horseCount) {
   return 8;
 }
 
-// ---------- 着順(1〜3着)セレクト ----------
+// ---------- 着順(1〜3着)セレクト(払戻モーダル) ----------
 // 出走馬表(馬名)が未登録でも、馬番だけで払戻計算に必要な上位3着を入力できるようにする。
 function renderFinishSelects(horseCount, finishOrder) {
   const options = (selected) =>
@@ -325,9 +363,9 @@ function readFinishTop3() {
   return order.length > 0 ? order : null;
 }
 
-// ---------- 出走馬の行 ----------
+// ---------- 出走馬の行(出走馬表モーダル) ----------
 function renderEntryRows(entries, horseCount) {
-  currentHorseCount = horseCount;
+  currentEntriesHorseCount = horseCount;
   const rows = [];
   for (let i = 0; i < horseCount; i++) {
     // 既存データ(entries[i])に枠番があればそれを尊重し、無い新規行だけ初期値を自動設定する。
@@ -359,17 +397,8 @@ function renderEntryRows(entries, horseCount) {
 horseCountSelect.addEventListener("change", () => {
   const newCount = Number(horseCountSelect.value);
   const current = readEntryRows();
-  const finishOrder = readFinishTop3();
   renderEntryRows(current, newCount);
-  // 頭数変更時、既存の着順選択が新しい頭数の範囲を超えていれば維持できないため、
-  // 範囲内に収まるものだけ保持する。
-  renderFinishSelects(newCount, (finishOrder || []).filter((n) => n <= newCount));
-  renderPayoutBlocks();
 });
-
-finish1Select.addEventListener("change", renderPayoutBlocks);
-finish2Select.addEventListener("change", renderPayoutBlocks);
-finish3Select.addEventListener("change", renderPayoutBlocks);
 
 function readEntryRows() {
   return Array.from(entryRows.querySelectorAll(".entry-form-row")).map((row) => ({
@@ -380,7 +409,21 @@ function readEntryRows() {
   }));
 }
 
-// ---------- テキスト貼り付けで出走馬を一括入力 ----------
+payoutHorseCountSelect.addEventListener("change", () => {
+  const newCount = Number(payoutHorseCountSelect.value);
+  const finishOrder = readFinishTop3();
+  currentPayoutHorseCount = newCount;
+  // 頭数変更時、既存の着順選択が新しい頭数の範囲を超えていれば維持できないため、
+  // 範囲内に収まるものだけ保持する。
+  renderFinishSelects(newCount, (finishOrder || []).filter((n) => n <= newCount));
+  renderPayoutBlocks();
+});
+
+finish1Select.addEventListener("change", renderPayoutBlocks);
+finish2Select.addEventListener("change", renderPayoutBlocks);
+finish3Select.addEventListener("change", renderPayoutBlocks);
+
+// ---------- テキスト貼り付けで出走馬を一括入力(出走馬表モーダル) ----------
 document.getElementById("toggle-paste-btn").addEventListener("click", () => {
   const area = document.getElementById("paste-area");
   area.hidden = !area.hidden;
@@ -393,7 +436,7 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     alert("読み取れる行が見つかりませんでした。書式をご確認のうえ、直接入力欄で修正してください。");
     return;
   }
-  const count = Math.max(parsed.length, currentHorseCount, 5);
+  const count = Math.max(parsed.length, currentEntriesHorseCount, 5);
   horseCountSelect.value = count;
   // 馬番が読み取れていればその番号順に、読み取れなければ出現順に並べる
   const withNumbers = parsed.filter((p) => p.horse_number);
@@ -401,12 +444,10 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     ? [...parsed].sort((a, b) => a.horse_number - b.horse_number)
     : parsed.map((p, i) => ({ ...p, horse_number: p.horse_number || i + 1 }));
   renderEntryRows(ordered, count);
-  renderFinishSelects(count, readFinishTop3());
-  renderPayoutBlocks();
   document.getElementById("paste-area").hidden = true;
 });
 
-// ---------- 払戻金額入力(馬券式別) ----------
+// ---------- 払戻金額入力(馬券式別・払戻モーダル) ----------
 // 表示中の払戻レート入力値(未保存分もこの中に保持する)。着順セレクトの変更等で再描画しても消えないようにする。
 let currentRacePayouts = {};
 
@@ -433,7 +474,7 @@ function renderPayoutBlocks() {
   captureEnteredRatesIntoState();
 
   const finishOrder = readFinishTop3();
-  const entries = readEntryRows();
+  const entries = currentPayoutEntries;
 
   ticketsSection.innerHTML = `
     <p class="picker-hint" style="margin-top:16px">払戻金額(100円あたり)。購入金額に応じて自動計算されます。上の1〜3着を入力すると、的中する組み合わせが表示されます。</p>
@@ -448,7 +489,7 @@ function renderPayoutBlocks() {
             <div class="result-head-line"><span class="bet-badge">${betTypeLabel(betType)}</span>${betTickets.length > 0 ? `<span class="point-count">${betTickets.length}点購入</span>` : ""}</div>
             ${!enoughInfo
               ? `<p class="buy-hint">${required}着まで入力すると表示されます。</p>`
-              : combos
+              : `<div class="payout-rate-rows">${combos
                   .map((c) => {
                     const rate = findStoredRate(currentRacePayouts, betType, c.combo);
                     return `
@@ -458,7 +499,7 @@ function renderPayoutBlocks() {
                       </label>
                     `;
                   })
-                  .join("")}
+                  .join("")}</div>`}
           </div>
         `;
       }).join("")}
@@ -507,26 +548,19 @@ function buildPayoutSubmission() {
   return { payoutsPayload, ticketUpdates };
 }
 
-// ---------- モーダル(登録・編集) ----------
-document.getElementById("new-race-btn").addEventListener("click", () => openModal());
-document.getElementById("race-cancel-btn").addEventListener("click", closeModal);
-raceModal.addEventListener("click", (e) => { if (e.target === raceModal) closeModal(); });
+// ---------- 出走馬表モーダル(登録・編集) ----------
+document.getElementById("new-race-btn").addEventListener("click", () => openEntriesModal());
+document.getElementById("entries-cancel-btn").addEventListener("click", closeEntriesModal);
+entriesModal.addEventListener("click", (e) => { if (e.target === entriesModal) closeEntriesModal(); });
 
-function openModal(race, prefill) {
-  raceForm.reset();
-  // 2026-08-02: raceForm.reset() は残留していた払戻入力欄(#race-tickets-section内)の
-  // 値も空にリセットするが、その残留DOMがまだ画面に残ったままになる。この直後に
-  // currentRacePayouts へ正しいデータをセットしても、非同期のloadTicketsForRace()完了後に
-  // renderPayoutBlocks() → captureEnteredRatesIntoState() が「今リセットされたばかりの
-  // 残留DOM」を読み取ってしまい、正しくセットしたcurrentRacePayoutsを空で上書きしてしまう
-  // 不具合があった(同一ページ内で2回目以降モーダルを開いたときに再現)。
-  // 残留DOMを即座に空にしておくことで、captureEnteredRatesIntoState()が誤って
-  // 上書きしないようにする。
-  ticketsSection.innerHTML = "";
+function openEntriesModal(race, prefill) {
+  entriesForm.reset();
   document.getElementById("paste-area").hidden = true;
   document.getElementById("entries-paste").value = "";
-  document.getElementById("race-id").value = race ? race.id : "";
-  raceModalTitle.textContent = race ? "レースを編集" : "レースを登録";
+  document.getElementById("entries-race-id").value = race ? race.id : "";
+  entriesModalTitle.textContent = race
+    ? (race.entries.length > 0 ? "出走馬表を編集" : "出走馬表を登録")
+    : "レースを登録";
 
   if (race) {
     document.getElementById("r-race-date").value = race.race_date;
@@ -538,11 +572,7 @@ function openModal(race, prefill) {
 
     const count = Math.max(race.entries.length, 5);
     horseCountSelect.value = count;
-
     renderEntryRows(race.entries, count);
-    renderFinishSelects(count, race.finish_order);
-    currentRacePayouts = race.payouts || {};
-    loadTicketsForRace(race.id);
   } else {
     // admin.html の「未登録レース一覧」から遷移してきた場合、日付・競馬場・レース番号を
     // 事前入力しておく(?new_date=&new_track=&new_race_number= のクエリパラメータ経由)。
@@ -553,26 +583,23 @@ function openModal(race, prefill) {
     document.getElementById("r-distance").value = "";
     horseCountSelect.value = "8";
     renderEntryRows([], 8);
-    renderFinishSelects(8, null);
-    currentRacePayouts = {};
-    loadTicketsForRace(null);
   }
 
-  raceModal.hidden = false;
+  entriesModal.hidden = false;
+  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする(2026-08-04〜)。
+  const modalBox = entriesModal.querySelector(".modal");
+  if (modalBox) modalBox.scrollTop = 0;
 }
 
-function closeModal() {
-  raceModal.hidden = true;
+function closeEntriesModal() {
+  entriesModal.hidden = true;
 }
 
-raceForm.addEventListener("submit", async (e) => {
+entriesForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const id = document.getElementById("race-id").value;
+  const id = document.getElementById("entries-race-id").value;
   const entries = readEntryRows();
-  const finish_order = readFinishTop3();
-
-  const { payoutsPayload, ticketUpdates } = buildPayoutSubmission();
 
   const payload = {
     race_date: document.getElementById("r-race-date").value,
@@ -582,8 +609,6 @@ raceForm.addEventListener("submit", async (e) => {
     course_type: document.getElementById("r-course-type").value || null,
     distance: document.getElementById("r-distance").value ? Number(document.getElementById("r-distance").value) : null,
     entries,
-    finish_order,
-    payouts: payoutsPayload,
   };
 
   const res = id
@@ -604,6 +629,67 @@ raceForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  closeEntriesModal();
+  loadRaces();
+});
+
+// ---------- 払戻モーダル(登録・編集) ----------
+document.getElementById("payout-cancel-btn").addEventListener("click", closePayoutModal);
+payoutModal.addEventListener("click", (e) => { if (e.target === payoutModal) closePayoutModal(); });
+
+function openPayoutModal(race) {
+  if (!race) return;
+  payoutForm.reset();
+  ticketsSection.innerHTML = "";
+  document.getElementById("payout-race-id").value = race.id;
+  payoutModalTitle.textContent = race.finish_order ? "払戻を編集" : "払戻を登録";
+
+  const courseLabel = courseTypeShort(race.course_type);
+  const courseText = courseLabel ? `・${courseLabel}${race.distance ? race.distance + "m" : ""}` : "";
+  payoutRaceInfo.textContent = `${formatDate(race.race_date)} ${race.track} ${race.race_number}R${race.race_name ? "・" + race.race_name : ""}${courseText}`;
+
+  currentPayoutEntries = race.entries || [];
+  const count = Math.max(race.entries.length, 8);
+  currentPayoutHorseCount = count;
+  payoutHorseCountSelect.value = count;
+  renderFinishSelects(count, race.finish_order);
+  currentRacePayouts = race.payouts || {};
+  loadTicketsForRace(race.id);
+
+  payoutModal.hidden = false;
+  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする(2026-08-04〜)。
+  const modalBox = payoutModal.querySelector(".modal");
+  if (modalBox) modalBox.scrollTop = 0;
+}
+
+function closePayoutModal() {
+  payoutModal.hidden = true;
+}
+
+payoutForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const id = document.getElementById("payout-race-id").value;
+  const finish_order = readFinishTop3();
+  const { payoutsPayload, ticketUpdates } = buildPayoutSubmission();
+
+  const payload = {
+    finish_order,
+    payouts: payoutsPayload,
+  };
+
+  const res = await authedFetch(`/api/races/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || "保存に失敗しました");
+    return;
+  }
+
   // 払戻金額もあわせて保存(馬券式別に入力された払戻率から自動計算)
   await Promise.all(
     ticketUpdates.map((u) =>
@@ -615,7 +701,7 @@ raceForm.addEventListener("submit", async (e) => {
     )
   );
 
-  closeModal();
+  closePayoutModal();
   loadRaces();
 });
 

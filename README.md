@@ -74,6 +74,7 @@ functions/
 schema.sql                   ... D1データベースの最新版テーブル定義(新規セットアップ用)
 latest1.sql                  ... 既存DBを最新版へ更新する統合マイグレーション(未適用分のみ)
 archive/migrations/          ... 過去の番号付きmigration・過去のlatest1.sqlのアーカイブ(通常は実行しない)
+archive/documents/           ... 過去の作業ログ・調査メモ・完了済みタスクの経緯のアーカイブ(通常は参照しない)
 docs/DESIGN.md                ... データ構造・データフロー・集計ルールなどの設計方針(生きたドキュメント)
 docs/TESTING.md                ... 手動テストチェックリスト(生きたドキュメント)
 docs/BACKLOG.md                 ... 承認済みだが未実装のタスクの引継ぎメモ
@@ -85,6 +86,8 @@ wrangler.toml
 ファイルとして残さず、コミットメッセージ側に記録する方針です。
 `docs/BACKLOG.md`のみ例外で、「現状」ではなく「承認済みだが未着手のタスク」を
 引き継ぐためのドキュメントです。着手時に該当項目を削除し、他の生きたドキュメントへ反映します。
+`docs/BACKLOG.md`内で完了したタスクの詳細な作業経緯は、肥大化を防ぐため
+`archive/documents/BACKLOG_HISTORY.md`へ適宜退避します。
 
 ## データの考え方
 

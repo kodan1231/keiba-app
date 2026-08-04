@@ -653,8 +653,19 @@ textarea { resize: vertical; }
 .race-list-card .track { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
 .race-list-card .meta { font-size: 12px; color: var(--ink-soft); }
 .race-list-card .entry-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
-.race-list-card .settled-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); }
+.race-list-card .settled-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); background: #fff; }
 .race-list-card .settled-badge.done { background: var(--win); color: #fff; border-color: var(--win); }
+/* 管理者向けにentries-badge/settled-badgeがbutton要素(出走馬表・払戻の登録/編集への入口)になる場合の見た目調整
+   (2026-08-04〜。以前は状態表示のみで、編集は共通の✎ボタン1つ経由だった) */
+button.entries-badge, button.settled-badge {
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+button.entries-badge:hover, button.settled-badge:hover { background: rgba(28,27,24,0.06); }
+button.entries-badge.done:hover { background: var(--ink); opacity: 0.85; }
+button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .race-list-card .card-actions { margin-left: auto; display: flex; gap: 6px; }
 
 /* レース管理画面: 競馬場カラム内に収めるための調整(横並びカラムでは1カラムの幅が
@@ -781,6 +792,9 @@ textarea { resize: vertical; }
 /* ---------- 出走馬テキスト貼り付け・開催日程一括登録 ---------- */
 .paste-box { border: 1px dashed var(--rule); padding: 10px; }
 .paste-box textarea { width: 100%; margin: 8px 0; font-family: var(--font-mono); font-size: 12px; }
+/* 「テキストから出走馬を一括入力」ボタンの横に「保存する」ボタンを複製配置(2026-08-04〜)。
+   一括入力→保存までモーダル下部にスクロールしなくても完結できるようにするため。 */
+.paste-box-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .schedule-preview-list {
   list-style: none;
@@ -881,15 +895,30 @@ textarea { resize: vertical; }
 .preview-combo-row:last-child { border-bottom: none; }
 .preview-combo-amount { width: 90px; font-family: var(--font-mono); }
 
-/* ---------- 馬券式別の払戻入力 ---------- */
-.payout-by-type { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+/* ---------- 馬券式別の払戻入力 ----------
+   2026-08-04〜: モーダル幅を活かして横に並べることで縦スクロール量を減らす
+   (以前は式別ブロック・組み合わせ行とも常に縦1列で、幅は余っているのに縦に長かった)。
+   auto-fitにより、幅が狭い画面では自動的に1列に折り返される。 */
+.payout-by-type {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 14px;
+  margin-top: 10px;
+  align-items: start;
+}
 
 .payout-type-block {
   border: 1px solid var(--rule-strong);
   background: #fff;
-  padding: 12px 14px;
+  padding: 10px 14px;
 }
-.payout-type-block .result-head-line { margin-bottom: 10px; }
+.payout-type-block .result-head-line { margin-bottom: 8px; }
+
+.payout-rate-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 2px 14px;
+}
 
 .payout-rate-row {
   display: flex;
@@ -897,11 +926,13 @@ textarea { resize: vertical; }
   justify-content: space-between;
   gap: 10px;
   font-size: 13px;
-  padding: 6px 0;
+  padding: 5px 0;
   border-bottom: 1px dashed var(--rule);
 }
 .payout-rate-row:last-child { border-bottom: none; }
-.payout-rate-input { width: 110px; font-family: var(--font-mono); }
+.payout-rate-input { width: 90px; font-family: var(--font-mono); }
+
+.payout-race-info { margin-top: -8px; margin-bottom: 14px; }
 
 /* ---------- 購入履歴: 展開して金額修正・削除 ---------- */
 .expand-arrow { color: var(--ink-soft); font-size: 11px; width: 12px; }
@@ -1540,9 +1571,10 @@ body.modal-open { overflow: hidden; }
   gap:2px;
 }
 .calendar-day-money{
-  font-size:.68rem;
+  font-size:.6rem;
   font-weight:800;
   font-family:var(--font-mono);
+  white-space:nowrap;
 }
 .calendar-day.has-race{
   display:flex;
@@ -1795,6 +1827,10 @@ body.modal-open { overflow: hidden; }
     width:15px;
     height:15px;
     font-size:7px;
+  }
+  /* 購入履歴カレンダー: K表記→実数表示化に伴い、桁数増加分を縮小して収める */
+  .calendar-day-money {
+    font-size:.52rem;
   }
   /* 予想登録画面: 枠番・馬番と馬名の間の余白を詰める(馬名自体は既に見えている) */
   .horse-note-toggle {

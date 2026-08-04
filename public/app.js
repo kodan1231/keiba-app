@@ -27,7 +27,9 @@ document.getElementById("history-next-month-btn")?.addEventListener("click", () 
 document.getElementById("history-today-btn")?.addEventListener("click", () => {
   const now = new Date();
   historyCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  selectedHistoryDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   renderHistoryCalendar();
+  applyHistoryFilter();
 });
 historyClearFilterBtn?.addEventListener("click", () => {
   selectedHistoryDate = null;
@@ -69,7 +71,7 @@ function renderHistoryCalendar() {
     const totals = dailyTotals.get(key);
     const profit = totals ? totals.payout - totals.amount : null;
     const moneyHtml = totals
-      ? `<span class="calendar-day-money ${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}${Math.round(profit / 1000)}k</span>`
+      ? `<span class="calendar-day-money ${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}${profit.toLocaleString()}</span>`
       : "";
     html += `<button type="button" class="calendar-day money-cell ${key === selectedHistoryDate ? "selected" : ""} ${totals ? "has-race" : ""}" data-date="${key}">
       <span>${d}</span>${moneyHtml}
@@ -139,7 +141,12 @@ function groupByRace(items) {
     }
     map.get(key).tickets.push(item);
   }
-  return Array.from(map.values()).sort((a, b) => (a.race_date < b.race_date ? 1 : -1));
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.race_date !== b.race_date) return a.race_date < b.race_date ? 1 : -1;
+    const trackCompare = String(a.track ?? "").localeCompare(String(b.track ?? ""), "ja");
+    if (trackCompare !== 0) return trackCompare;
+    return Number(a.race_number ?? 0) - Number(b.race_number ?? 0);
+  });
 }
 
 function groupByGroupId(tickets) {
@@ -364,7 +371,6 @@ function renderGroupRow(group) {
           return;
         }
         
-        alert("購入を削除しました。");
         loadTickets();
       } catch (e) {
         alert("削除に失敗しました: " + (e.message || e));
