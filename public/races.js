@@ -691,14 +691,7 @@ scheduleSubmitBtn.addEventListener("click", async () => {
 });
 
 // ---------- ユーティリティ ----------
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-function escapeAttr(str) { return escapeHtml(str).replace(/'/g, "&#39;"); }
+// escapeHtml / escapeAttr は utils.js のものを使用する(2026-08-04: 重複定義を統合)
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);

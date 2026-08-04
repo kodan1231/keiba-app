@@ -215,7 +215,14 @@ export async function onRequestPost(context){
     };
     const db=context.env.DB; if(!db)return Response.json({ok:false,error:'D1 binding が見つかりません。'},{status:500});
     const userId=context.data.userId;
-    let imported=0, skipped=0;
+    let imported=0, skipped=0, conflicted=0;
+    // 2026-08-04: imported_ticket_groups の一意制約(uq_imported_group_source_key)は
+    // user_id を含まない設計(docs/DESIGN.md「CSV取込の仕様」参照)。本アプリは同じ
+    // JRA-Netアカウントを複数ユーザーが共有する想定をしていないため、通常は起こらないが、
+    // 万が一 group_key が別ユーザーの既存データと衝突した場合はUNIQUE制約違反となる。
+    // 従来はこれが未ハンドリングのままリクエスト全体を500エラーで中断させていたため、
+    // 該当行だけをスキップしてconflictedとして数え、他の行の取込は継続するようにする。
+    const conflicts=[];
 
     // 以前はCSVの行ごとに「既存チェック」「重複候補検出」を個別クエリしており、
     // レース参照(SELECT/INSERT)も行ごとに発行していたため、行数の多いCSVを取り込むと
@@ -268,7 +275,21 @@ export async function onRequestPost(context){
       const raceNameForGroup=cols.raceName>=0?clean(row[cols.raceName]):null;
       const combos=splitCombinations(comboText,type);
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
-      const group=await db.prepare(`INSERT INTO imported_ticket_groups(user_id,source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||raceNameForGroup,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
+      let group;
+      try{
+        group=await db.prepare(`INSERT INTO imported_ticket_groups(user_id,source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||raceNameForGroup,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
+      }catch(insertError){
+        const msg=insertError?.message||String(insertError);
+        if(/UNIQUE constraint failed/i.test(msg)){
+          // group_keyが別ユーザーの既存データと衝突。CSV原本(imported_tickets)は既に
+          // 保存済みだが、正規化後のグループ・買い目は作成できないため、この行はスキップして
+          // 他の行の取込を継続する。原因不明のエラーとして見えないよう、分かりやすい理由を添える。
+          conflicted++;
+          conflicts.push({race_date:raceDate,track,race_number:raceNumber||null,bet_type:type,combination:comboText,reason:'別のユーザーが登録済みのデータと衝突したため、この行は取り込めませんでした。'});
+          continue;
+        }
+        throw insertError;
+      }
       const groupId=group.meta.last_row_id; const items=combos.length?combos:[[]]; const perAmount=items.length&&totalAmount?Math.floor(totalAmount/items.length):0;
       const statements=[];
       for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const isHit=hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1);const inferred=inferFinish(type,nums);
@@ -325,7 +346,7 @@ export async function onRequestPost(context){
         if(candidates.length) duplicateCandidates.push({group_id:ng.groupId,candidates});
       }
     }
-    return Response.json({ok:true,imported,skipped,duplicate_candidates:duplicateCandidates,items:(await db.prepare(`SELECT g.*, (SELECT COUNT(*) FROM imported_ticket_items i WHERE i.group_id=g.id) AS item_count FROM imported_ticket_groups g WHERE g.user_id=? ORDER BY g.race_date DESC,g.id DESC`).bind(userId).all()).results||[]});
+    return Response.json({ok:true,imported,skipped,conflicted,conflicts,duplicate_candidates:duplicateCandidates,items:(await db.prepare(`SELECT g.*, (SELECT COUNT(*) FROM imported_ticket_items i WHERE i.group_id=g.id) AS item_count FROM imported_ticket_groups g WHERE g.user_id=? ORDER BY g.race_date DESC,g.id DESC`).bind(userId).all()).results||[]});
   }catch(error){console.error(error);return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }
 

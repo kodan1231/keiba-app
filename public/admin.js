@@ -3,11 +3,7 @@
 // 日付・競馬場・レース番号を一覧表示し、レース登録画面へ事前入力付きで遷移できる。
 // 「登録ユーザー一覧」: users テーブルの閲覧のみ(編集・削除機能は無し)。
 
-function escapeHtml(str) {
-  return String(str ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
-}
+// escapeHtml は utils.js のものを使用する(2026-08-04: 重複定義を統合)
 function formatDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);

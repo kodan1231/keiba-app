@@ -349,10 +349,7 @@ function applyHorseNotes() {
 
 function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+/g, " ").trim(); }
 
-function escapeHtml(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-function escapeAttr(str) { return escapeHtml(str).replace(/'/g,"&#39;"); }
+// escapeHtml / escapeAttr は utils.js のものを使用する(2026-08-04: 重複定義を統合)
 function formatDate(s) {
   return new Date(`${s}T00:00:00`).toLocaleDateString("ja-JP", {
     year:"numeric", month:"numeric", day:"numeric", weekday:"short"

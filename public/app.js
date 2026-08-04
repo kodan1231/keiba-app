@@ -389,7 +389,11 @@ csvImportInput?.addEventListener("change", async () => {
     const res = await authedFetch("/api/ticket-imports", { method:"POST", body:form });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || "CSVの取り込みに失敗しました");
-    alert(`${result.imported || 0}件の購入履歴を取り込みました。`);
+    let message = `${result.imported || 0}件の購入履歴を取り込みました。`;
+    if (result.conflicted) {
+      message += `\n${result.conflicted}件は別のユーザーが登録済みのデータと衝突したため取り込めませんでした。`;
+    }
+    alert(message);
     await loadTickets();
   } catch (e) {
     alert(e.message || "CSVの取り込みに失敗しました");
