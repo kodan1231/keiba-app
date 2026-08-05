@@ -17,8 +17,46 @@ function jraResultNormalizeLine(s) {
   return jraResultNormalizeUnit(s).replace(/\s+/g, " ").trim();
 }
 
+// ---------- 行内テキストの連結(2026-08-07: ギャップ実測方式に変更) ----------
+// PDF.jsが返す各テキスト断片は、見た目の間隔(スペースの有無)と1対1で対応しない。
+// 以前は同一行と判定された断片を間隔の大小を見ずに一律タブで連結していたため、
+// 「発」と「走」の間、「２０２６」と「年」の間のように、本来隙間なく続く1つの
+// 単語の途中にもタブが挿入されてしまい、「文字同士が隙間なく連続している」ことを
+// 前提とする正規表現(発走時刻・年月日・開催回など)が軒並み不一致になる不具合があった
+// (実機診断ログで「発走時刻」候補=0、日付候補=0、開催情報候補=0という形で確認済み)。
+// 直前の要素の右端から今回の要素の左端までの実際の隙間(gap)を計測し、
+//   - 隙間がごく小さい(同一単語内の文字とみなせる) → 連結(区切り文字なし)
+//   - 隙間が単語区切り相当           → 半角スペースで連結
+//   - 隙間が列区切り相当(表組みのセル間など) → タブで連結(表構造の解析に必要)
+// の3段階に振り分ける。
+const JRA_GAP_SPACE_RATIO = 0.3; // 直前文字幅に対し、これを超える隙間はスペース区切りとみなす
+const JRA_GAP_TAB_RATIO = 1.2;   // 直前文字幅に対し、これを超える隙間は列(タブ)区切りとみなす
+const JRA_GAP_SPACE_MIN = 1.0;   // 直前文字幅が極小(記号1文字等)の場合の、スペース判定の最低基準(pt)
+const JRA_GAP_TAB_MIN = 6.0;     // 同上、タブ判定の最低基準(pt)
+
+function jraResultJoinRowItems(items) {
+  let text = "";
+  const gaps = []; // 閾値調整・診断用: 各要素間の実測ギャップと判定結果
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (i > 0) {
+      const prev = items[i - 1];
+      const gap = item.x - (prev.x + (prev.w || 0));
+      const spaceThreshold = Math.max((prev.w || 0) * JRA_GAP_SPACE_RATIO, JRA_GAP_SPACE_MIN);
+      const tabThreshold = Math.max((prev.w || 0) * JRA_GAP_TAB_RATIO, JRA_GAP_TAB_MIN);
+      let sep = "";
+      if (gap > tabThreshold) sep = "\t";
+      else if (gap > spaceThreshold) sep = " ";
+      text += sep;
+      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結") });
+    }
+    text += item.str;
+  }
+  return { text, gaps };
+}
+
 function jraResultParseDate(text) {
-  const m = jraResultNormalizeUnit(text).match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  const m = jraResultNormalizeUnit(text).match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
   return m ? `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}` : null;
 }
 
@@ -29,7 +67,7 @@ function jraResultParseTrack(text) {
 
 function jraResultParseCourse(text) {
   const s = jraResultNormalizeUnit(text);
-  const m = s.match(/コース\s*[:：]?\s*([0-9,]+)\s*メートル\s*[（(]\s*(芝|ダート|障害)/);
+  const m = s.match(/コ\s*ー\s*ス\s*[:：]?\s*([0-9,]+)\s*メ\s*ー\s*ト\s*ル\s*[（(]\s*(芝|ダート|障害)/);
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g,"")) } : {course_type:null,distance:null};
 }
 
@@ -120,11 +158,11 @@ function jraResultParseHorseFromResultLine(text) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "7.0.0-diagnostic";
+const JRA_RESULT_PDF_PARSER_VERSION = "8.0.0-gapjoin";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
-  const m = s.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日.*?(\d+)回(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)(\d+)日/);
+  const m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日.*?(\d+)\s*回\s*(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)\s*(\d+)\s*日/);
   if (!m) return null;
   return {
     date: `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`,
@@ -135,7 +173,7 @@ function jraResultFindMeeting(text) {
 
 function jraResultFindMeetingLoose(text) {
   const s = jraResultNormalizeUnit(text);
-  const meeting = s.match(/(\d+)回(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)(\d+)日/);
+  const meeting = s.match(/(\d+)\s*回\s*(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)\s*(\d+)\s*日/);
   const date = jraResultParseDate(s);
   return meeting ? {
     date,
@@ -154,16 +192,16 @@ function jraResultIsStartLabel(text) {
   const s=jraResultNormalizeUnit(text);
   // 「発走時刻を11時55分に変更」「発走時刻2分遅延」などの注記は
   // 新しいレース開始ではないため除外する。
-  if(/発走\s*時刻\s*を/.test(s)) return false;
-  if(/発走\s*時刻\s*\d+\s*分/.test(s)) return false;
-  return /発走\s*時刻/.test(s);
+  if(/発\s*走\s*時\s*刻\s*を/.test(s)) return false;
+  if(/発\s*走\s*時\s*刻\s*\d+\s*分/.test(s)) return false;
+  return /発\s*走\s*時\s*刻/.test(s);
 }
 
 function jraResultParseCourseLoose(text) {
   const s = jraResultNormalizeUnit(text).replace(/\s+/g," ");
-  let m = s.match(/コース\s*[:：]?\s*([0-9,]+)\s*メートル\s*[（(]?\s*(芝|ダート|障害)/);
+  let m = s.match(/コ\s*ー\s*ス\s*[:：]?\s*([0-9,]+)\s*メ\s*ー\s*ト\s*ル\s*[（(]?\s*(芝|ダート|障害)/);
   if (m) return {course_type:m[2],distance:Number(m[1].replace(/,/g,""))};
-  m = s.match(/([0-9,]+)\s*メートル\s*[（(]?\s*(芝|ダート|障害)/);
+  m = s.match(/([0-9,]+)\s*メ\s*ー\s*ト\s*ル\s*[（(]?\s*(芝|ダート|障害)/);
   return m ? {course_type:m[2],distance:Number(m[1].replace(/,/g,""))} : {course_type:null,distance:null};
 }
 
@@ -178,7 +216,8 @@ function jraResultParseExtractedPages(pages) {
         page:pageIndex+1,
         row:rowIndex+1,
         y:typeof row === "object" ? row.y : null,
-        items:typeof row === "object" ? (row.items||[]) : []
+        items:typeof row === "object" ? (row.items||[]) : [],
+        gaps:typeof row === "object" ? (row.gaps||[]) : []
       });
     });
   });
@@ -208,7 +247,8 @@ function jraResultParseExtractedPages(pages) {
     racesWithPayouts:0,
     errors:[],
     headerCandidates:[],
-    rawSamples:[]
+    rawSamples:[],
+    gapSamples:[] // 2026-08-07追加: 行内文字間隔の実測サンプル(連結閾値の調整用)
   };
 
   // 解析前の実データを診断できるよう、各ページ先頭と「発走/日付/開催」候補を保存。
@@ -220,6 +260,16 @@ function jraResultParseExtractedPages(pages) {
   let ctxDate = null, ctxTrack = null;
   for(let i=0;i<lines.length;i++){
     const s=lines[i].text;
+
+    // 行内文字間隔サンプル(閾値調整用)。全行ではなく先頭付近から一定数だけ収集する。
+    if (diagnostics.gapSamples.length < 25 && lines[i].gaps && lines[i].gaps.length) {
+      diagnostics.gapSamples.push({
+        page: lines[i].page, row: lines[i].row,
+        text: lines[i].text.slice(0, 60),
+        gaps: lines[i].gaps
+      });
+    }
+
     const meeting=jraResultFindMeeting(s);
     const looseMeeting=jraResultFindMeetingLoose(s);
     if(meeting || looseMeeting?.track){
@@ -318,15 +368,15 @@ function jraResultParseExtractedPages(pages) {
     // 実レースヘッダーは発走時刻の直後にレース情報が続くが、
     // 「発走時刻変更」「遅延」の注記には通常存在しない。
     const forward=lines.slice(i+1,Math.min(lines.length,i+10));
-    const hasCourse=forward.some(x=>/コース\s*[:：]?/.test(x.text));
-    const hasPrize=forward.some(x=>/本賞金/.test(x.text));
+    const hasCourse=forward.some(x=>/コ\s*ー\s*ス\s*[:：]?/.test(x.text));
+    const hasPrize=forward.some(x=>/本\s*賞\s*金/.test(x.text));
     const hasRaceInfo=hasCourse||hasPrize;
 
     // 注記由来の時刻を明示的に除外。
     const nearbyText=lines.slice(Math.max(0,i-3),Math.min(lines.length,i+4))
       .map(x=>x.text).join(" ");
-    const isChangeNote=/発走\s*時刻\s*を\s*\d{1,2}\s*時\s*\d{1,2}\s*分\s*(?:に)?\s*変更/.test(nearbyText)
-      || /発走\s*時刻\s*\d{1,2}\s*分\s*遅延/.test(nearbyText);
+    const isChangeNote=/発\s*走\s*時\s*刻\s*を\s*\d{1,2}\s*時\s*\d{1,2}\s*分\s*(?:に)?\s*変更/.test(nearbyText)
+      || /発\s*走\s*時\s*刻\s*\d{1,2}\s*分\s*遅延/.test(nearbyText);
 
     if(isChangeNote || !hasRaceInfo){
       diagnostics.rejectedStartTimeCandidates++;
@@ -613,11 +663,18 @@ async function jraResultExtractPdfPages(file, log=()=>{}) {
       if(!row){row={y:item.y,items:[]};rows.push(row);}
       row.items.push(item);
     }
-    pages.push(rows.sort((a,b)=>b.y-a.y).map(r=>({
-      text:r.items.sort((a,b)=>a.x-b.x).map(x=>x.str).join("\t"),
-      y:r.y,
-      items:r.items.map(x=>({str:x.str,x:x.x,w:x.w}))
-    })));
+    // 2026-08-07: 行内の連結方法を「一律タブ」から「間隔の実測に基づく3段階判定」に変更。
+    // 詳細は jraResultJoinRowItems のコメント参照。
+    pages.push(rows.sort((a,b)=>b.y-a.y).map(r=>{
+      const sortedItems=r.items.sort((a,b)=>a.x-b.x);
+      const joined=jraResultJoinRowItems(sortedItems);
+      return {
+        text:joined.text,
+        y:r.y,
+        items:sortedItems.map(x=>({str:x.str,x:x.x,w:x.w})),
+        gaps:joined.gaps
+      };
+    }));
     log(`ページ ${p} 抽出完了 items=${items.length} rows=${rows.length}`);
   }
   return {pages,pdfPages:pdf.numPages};
@@ -633,6 +690,10 @@ function jraResultRenderDiagnostics(d, extracted) {
     `<li>p${x.page}:${x.row} / ${escapeHtml(x.date||"日付なし")} / ${escapeHtml(x.track||"競馬場なし")} / ${escapeHtml(x.time||"時刻なし")} / ${escapeHtml(x.label||"")} ${x.timeSource?` → ${escapeHtml(x.timeSource)}`:""}</li>`
   ).join("");
   const sampleRows=(d.rawSamples||[]).map(x=>`<li>[p${x.page}:${x.row}] ${escapeHtml(x.text||"")}</li>`).join("");
+  const gapRows=(d.gapSamples||[]).map(x=>{
+    const gapsText=(x.gaps||[]).map(g=>`${g.gap}pt→${g.sep}`).join(", ");
+    return `<li>[p${x.page}:${x.row}] "${escapeHtml(x.text||"")}"<br><small>${escapeHtml(gapsText)}</small></li>`;
+  }).join("");
   const rawText=(extracted?.pages||[]).map((p,i)=>`===== PAGE ${i+1} =====\n${p.map(r=>r.text||"").join("\n")}`).join("\n\n");
   return `<details open style="margin-top:10px"><summary>解析診断情報（JRA PDF Parser ${JRA_RESULT_PDF_PARSER_VERSION}）</summary>
   <div class="picker-hint">
@@ -662,6 +723,10 @@ function jraResultRenderDiagnostics(d, extracted) {
     <div style="overflow:auto"><table><thead><tr><th>レース</th><th>ページ</th><th>出走馬</th><th>1〜3着</th><th>払戻項目</th><th>問題</th></tr></thead><tbody>${raceRows||"<tr><td colspan='6'>レース解析結果なし</td></tr>"}</tbody></table></div>
   </details>
   <details><summary>抽出テキスト候補サンプル (${(d.rawSamples||[]).length})</summary><ul>${sampleRows||"<li>なし</li>"}</ul></details>
+  <details><summary>行内文字間隔サンプル・閾値調整用 (${(d.gapSamples||[]).length})</summary>
+    <p class="picker-hint">各行を構成するテキスト断片間の実測ギャップ(pt)と、連結/SPACE/TABどれと判定したかの一覧です。「発走時刻」等が正しく1語として繋がらない場合、ここでどの間隔がどう判定されたか確認できます。</p>
+    <ul>${gapRows||"<li>なし</li>"}</ul>
+  </details>
   <details><summary>PDF全文抽出テキストを表示</summary><textarea readonly rows="18" style="width:100%;font-family:monospace">${escapeHtml(rawText)}</textarea></details>
   </details>`;
 }
