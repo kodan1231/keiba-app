@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace } from "../_shared.js";
 
 // PUT(編集)・DELETE(削除)ともに 2026-08-01より管理者のみ実行可能。
 export async function onRequestPut(context) {
@@ -58,6 +58,20 @@ export async function onRequestPut(context) {
   if ("race_date" in data || "track" in data || "race_number" in data) {
     const race = await env.DB.prepare("SELECT race_date, track, race_number FROM races WHERE id = ?").bind(params.id).first();
     if (race) await linkUnregisteredImportsToRace(env.DB, Number(params.id), race.race_date, race.track, race.race_number);
+  }
+
+  // 着順(finish_order)または払戻(payouts)が更新された場合、このレースを購入した
+  // 「全ユーザーの」tickets.payout を再計算して反映する。
+  // (以前は races.js が払戻モーダルを開いた管理者自身が購入したticketだけをPUTで
+  //  更新しており、他ユーザーの購入履歴に払戻が反映されない不具合があった)
+  if ("finish_order" in data || "payouts" in data) {
+    const race = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(params.id).first();
+    if (race) {
+      const entries = race.entries ? JSON.parse(race.entries) : [];
+      const finishOrder = race.finish_order ? JSON.parse(race.finish_order) : null;
+      const payoutsObj = race.payouts ? JSON.parse(race.payouts) : null;
+      await recomputeTicketPayoutsForRace(env.DB, Number(params.id), finishOrder, payoutsObj, entries);
+    }
   }
 
   return Response.json({ ok: true });

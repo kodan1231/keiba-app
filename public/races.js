@@ -470,6 +470,13 @@ async function loadTicketsForRace(raceId) {
 // 1〜3着セレクトで着順が入力されている式別だけ、的中組み合わせを表示して入力欄を出す
 // (何着まで必要かは式別により異なる。例: 単勝は1着のみ、三連単は3着まで)。
 // 未入力の式別は「◯着まで入力すると表示されます」という案内のみ表示し、画面全体は常に表示したままにする。
+//
+// 注: ここで入力・保存されるのは「レースの払戻レート」(races.payouts)のみ。
+// 各ユーザーの購入履歴(tickets.payout)への反映は、保存後にサーバー側
+// (functions/api/races/[id].js の recomputeTicketPayoutsForRace)が
+// 全ユーザー分まとめて再計算する(2026-08〜。以前はここで管理者自身が購入した
+// currentTickets だけを個別PUTしていたため、他ユーザーの購入履歴に払戻が
+// 反映されない不具合があった)。currentTickets はこの画面での「◯点購入」表示にのみ使う。
 function renderPayoutBlocks() {
   captureEnteredRatesIntoState();
 
@@ -524,28 +531,20 @@ function captureEnteredRatesIntoState() {
   });
 }
 
-// フォーム送信時: (1) racesに保存する払戻率データ (2) 各チケットに反映する払戻金額 の両方を組み立てる
+// フォーム送信時: racesに保存する払戻率データを組み立てる。
+// 各購入履歴(tickets.payout)への反映はサーバー側で全ユーザー分まとめて行われるため、
+// ここではticket個別の更新は組み立てない(2026-08〜の変更。上のrenderPayoutBlocksの
+// コメント参照)。
 function buildPayoutSubmission() {
   captureEnteredRatesIntoState();
   const payoutsPayload = {};
-  const ticketUpdates = [];
 
   for (const betType of BET_TYPE_ORDER) {
     const combos = currentRacePayouts[betType] || [];
     if (combos.length > 0) payoutsPayload[betType] = combos;
-
-    const betTickets = currentTickets.filter((t) => t.bet_type === betType);
-    betTickets.forEach((t) => {
-      const match = combos.find((c) => ticketMatchesCombo(t, c.combo));
-      if (match) {
-        ticketUpdates.push({ id: t.id, payout: Math.round((t.amount / 100) * match.rate) });
-      } else {
-        ticketUpdates.push({ id: t.id, payout: combos.length > 0 ? 0 : null });
-      }
-    });
   }
 
-  return { payoutsPayload, ticketUpdates };
+  return { payoutsPayload };
 }
 
 // ---------- 出走馬表モーダル(登録・編集) ----------
@@ -671,7 +670,7 @@ payoutForm.addEventListener("submit", async (e) => {
 
   const id = document.getElementById("payout-race-id").value;
   const finish_order = readFinishTop3();
-  const { payoutsPayload, ticketUpdates } = buildPayoutSubmission();
+  const { payoutsPayload } = buildPayoutSubmission();
 
   const payload = {
     finish_order,
@@ -690,16 +689,11 @@ payoutForm.addEventListener("submit", async (e) => {
     return;
   }
 
-  // 払戻金額もあわせて保存(馬券式別に入力された払戻率から自動計算)
-  await Promise.all(
-    ticketUpdates.map((u) =>
-      authedFetch(`/api/tickets/${u.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payout: u.payout }),
-      })
-    )
-  );
+  // 各購入履歴(tickets.payout)への反映は、上のPUTを受けたサーバー側
+  // (functions/api/races/[id].js)が全ユーザー分まとめて再計算・保存する。
+  // (2026-08〜。以前はここでticketごとに個別PUTしていたが、管理者自身が
+  //  購入したticketしか更新できず、他ユーザーの購入履歴に払戻が反映されない
+  //  不具合があった)
 
   closePayoutModal();
   loadRaces();

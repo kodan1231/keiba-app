@@ -229,3 +229,102 @@ export async function backfillHorseNamesForRace(db, raceId, entries) {
 
   return { updated };
 }
+
+// ---- 払戻確定時の全ユーザーticket反映(2026-08 追加) ----
+// races.finish_order / races.payouts が確定した際、そのレースを購入した
+// 全ユーザーの tickets.payout を再計算して反映する。以前は races.js が
+// 「払戻モーダルを開いた管理者自身が購入したticket」しか更新できず、
+// 他ユーザーの購入履歴に払戻が反映されない不具合があった。
+// (ロジックは public/payout.js の computeWinningCombos 等をサーバー側へ移植したもの。
+//  クライアント側と実装がずれないよう、変更する際は両方を確認すること)
+
+const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
+
+function computeWinningCombos(betType, finishOrder, entries) {
+  if (!finishOrder || finishOrder.length === 0) return [];
+  const wakuOf = (h) => {
+    const e = (entries || []).find((x) => x.horse_number === h);
+    return e ? e.waku_number : null;
+  };
+  const sorted = (arr) => [...arr].sort((a, b) => a - b);
+  const top = (n) => finishOrder.slice(0, n);
+
+  if (betType === "tan") return [{ combo: [top(1)[0]] }];
+  if (betType === "fuku") return top(3).map((h) => ({ combo: [h] }));
+  if (betType === "umaren") { const t = top(2); return [{ combo: sorted(t) }]; }
+  if (betType === "wide") {
+    const t3 = top(3);
+    return [[t3[0], t3[1]], [t3[0], t3[2]], [t3[1], t3[2]]].map((p) => ({ combo: sorted(p) }));
+  }
+  if (betType === "umatan") { const t = top(2); return [{ combo: t }]; }
+  if (betType === "sanrenpuku") { const t = top(3); return [{ combo: sorted(t) }]; }
+  if (betType === "sanrentan") { const t = top(3); return [{ combo: t }]; }
+  if (betType === "wakuren") {
+    const t = top(2);
+    const w = [wakuOf(t[0]), wakuOf(t[1])];
+    if (w.some((x) => x === null || x === undefined)) return [{ combo: null }];
+    return [{ combo: sorted(w) }];
+  }
+  return [];
+}
+
+function ticketMatchesComboServer(betType, selections, combo) {
+  if (!combo) return false;
+  if (betType === "wakuren") {
+    const w = selections
+      .map((s) => s.waku_number)
+      .filter((x) => x !== null && x !== undefined)
+      .sort((a, b) => a - b);
+    return JSON.stringify(w) === JSON.stringify(combo);
+  }
+  const nums = selections.map((s) => s.horse_number);
+  const target = ORDERED_BET_TYPES.has(betType) ? nums : [...nums].sort((a, b) => a - b);
+  return JSON.stringify(target) === JSON.stringify(combo);
+}
+
+function findStoredRateServer(payouts, betType, combo) {
+  if (!payouts || !payouts[betType] || !combo) return null;
+  const found = payouts[betType].find((p) => JSON.stringify(p.combo) === JSON.stringify(combo));
+  return found ? found.rate : null;
+}
+
+// レースの着順・払戻レートが確定/更新された際、そのレースに紐づく
+// 「全ユーザーの」tickets.payout を再計算して反映する(user_idで絞り込まない)。
+// finishOrder / payoutsObj が無い(未確定に戻った)場合は payout を null に戻す。
+export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries) {
+  if (!db || !raceId) return { updated: 0 };
+  const { results } = await db
+    .prepare(`SELECT id, bet_type, selections, amount, payout FROM tickets WHERE race_id = ?`)
+    .bind(raceId)
+    .all();
+  if (!results || !results.length) return { updated: 0 };
+
+  const statements = [];
+  for (const t of results) {
+    let newPayout = null;
+    if (finishOrder && payoutsObj && payoutsObj[t.bet_type]) {
+      let selections;
+      try {
+        selections = JSON.parse(t.selections || "[]");
+      } catch {
+        selections = [];
+      }
+      const combos = computeWinningCombos(t.bet_type, finishOrder, entries);
+      let matchedRate = null;
+      for (const c of combos) {
+        const rate = findStoredRateServer(payoutsObj, t.bet_type, c.combo);
+        if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
+          matchedRate = rate;
+          break;
+        }
+      }
+      newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
+    }
+    const current = t.payout === undefined ? null : t.payout;
+    if (newPayout !== current) {
+      statements.push(db.prepare(`UPDATE tickets SET payout = ? WHERE id = ?`).bind(newPayout, t.id));
+    }
+  }
+  if (statements.length) await db.batch(statements);
+  return { updated: statements.length };
+}
