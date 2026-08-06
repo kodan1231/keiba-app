@@ -1758,6 +1758,24 @@ body.modal-open { overflow: hidden; }
   max-width:260px;
 }
 
+/* 予想画面: メモの有無を、アコーディオン(この馬のメモ欄)を開かなくても一目で
+   分かるようにするバッジ(2026-08-10〜)。以前は薄いグレーのプレビュー文字
+   (.horse-note-preview)だけが頼りで、特に一覧をざっと流し見する際に見落と
+   しやすかった。hankoの赤アクセントを使い、他の状態バッジ
+   (.import-source-badge等)と同程度の視認性を持たせる。 */
+.horse-note-badge {
+  display:inline-block;
+  flex:0 0 auto;
+  font-size:10px;
+  font-weight:700;
+  line-height:1.6;
+  color:var(--hanko);
+  border:1px solid var(--hanko);
+  border-radius:999px;
+  padding:0 6px;
+  white-space:nowrap;
+}
+
 /* 単勝・複勝は複数選択のチェックボックス */
 .single-check { transform:scale(1.05); }
 

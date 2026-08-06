@@ -263,8 +263,9 @@ function renderHorses() {
             <span class="prediction-horse-name-line">
               <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
               ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
+              ${note.memo ? `<span class="horse-note-badge" title="この馬のメモがあります">メモ</span>` : ""}
             </span>
-            ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">メモ: ${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
+            ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
             <select class="prediction-mark-select" aria-label="予想印を選択">
