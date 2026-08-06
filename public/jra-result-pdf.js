@@ -105,9 +105,27 @@ function jraResultAddPayout(r, type, label, rate) {
   (r.payouts[type] ||= []).push({label:String(label), combo, rate});
 }
 
-function jraResultParsePayoutLine(r, rawLine) {
+// 払戻表の式別と組み合わせの頭数(1頭/2頭/3頭)の対応。
+// ラベルの無い継続データがどの式別に属するかを判定する際に使う。
+const JRA_PAYOUT_TYPE_COMBO_SIZE = { tan:1, fuku:1, wakuren:2, wide:2, umaren:2, umatan:2, sanrenpuku:3, sanrentan:3 };
+
+// 払戻表は「単勝/複勝」「枠連/ワイド」「馬連/馬単/3連複/3連単」の3列レイアウトの
+// グリッド構造になっており、複勝・ワイドのように複数行にまたがる式別は、2行目
+// 以降にラベルが再印字されない(例: 複勝の2・3件目は先頭に馬番・金額だけが続き、
+// 「複勝」という文字は無い)。以前は「行内で見つかった最初のラベルより前にある
+// 内容」を単純に捨てる/直前の1つの式別に決め打ちする実装だったが、1行の中に
+// 複数の列の継続データ(例: 複勝の3件目と、ワイドの2件目)が同時に現れる行が
+// あり、単一の「直前の式別」では区別できないことが判明した(2026-08-09確認)。
+// そこで、ラベルの無い継続データは「組み合わせの頭数(1頭/2頭/3頭)」で
+// 直前の式別を引き継ぐ方式にする。単勝・馬連・馬単・3連複・3連単は基本的に
+// 1行で完結する(継続行を持たない)ため、同じ頭数でもラベル無しの継続データは
+// 実質的に複勝・枠連・ワイドのいずれかにしかならない。
+// carryState: {1: 直前の1頭式別, 2: 直前の2頭式別, 3: 直前の3頭式別}
+function jraResultParsePayoutLine(r, rawLine, carryState) {
+  const state = { 1: carryState?.[1] ?? null, 2: carryState?.[2] ?? null, 3: carryState?.[3] ?? null };
   const text = jraResultNormalizeLine(rawLine);
-  if (!text || !/円/.test(text)) return 0;
+  if (!text) return { count: 0, carryState: state };
+
   const labels = [
     ["3連単","sanrentan"],["3連複","sanrenpuku"],["単勝","tan"],["複勝","fuku"],
     ["枠連","wakuren"],["馬連","umaren"],["馬単","umatan"],["ワイド","wide"]
@@ -118,18 +136,51 @@ function jraResultParsePayoutLine(r, rawLine) {
     while (p >= 0) { found.push({label,type,index:p}); p=text.indexOf(label,p+label.length); }
   }
   found.sort((a,b)=>a.index-b.index);
-  let count=0;
+
+  const hasYen = /円/.test(text);
+  let count = 0;
+
+  // ラベルが分からない区間: 組み合わせの頭数から直前の式別を引き継いで判定する。
+  const extractBySize = (segment) => {
+    if (!hasYen) return;
+    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
+    for (const m of matches) {
+      const nums = m[1].replace(/\s+/g,'').split(/[-,、]/).filter(Boolean);
+      const type = state[nums.length];
+      if (!type) continue; // 該当する頭数の式別がまだ判明していない場合は無視(誤爆防止)
+      jraResultAddPayout(r, type, m[1].replace(/\s+/g,''), Number(m[2].replace(/,/g,'')));
+      count++;
+    }
+  };
+
+  // ラベルが分かっている区間: その式別で抽出し、carryStateも更新する。
+  const extractForType = (segment, type) => {
+    const size = JRA_PAYOUT_TYPE_COMBO_SIZE[type];
+    if (size) state[size] = type;
+    if (!hasYen) return;
+    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
+    for (const m of matches) {
+      jraResultAddPayout(r, type, m[1].replace(/\s+/g,''), Number(m[2].replace(/,/g,'')));
+      count++;
+    }
+  };
+
+  if (found.length === 0) {
+    // この行にラベルが1つも無い(継続行)。
+    extractBySize(text);
+    return { count, carryState: state };
+  }
+
+  // 最初のラベルより前にある内容(ラベル無しの継続データ)。
+  const leading = text.slice(0, found[0].index);
+  extractBySize(leading);
+
   for (let i=0;i<found.length;i++) {
     const cur=found[i], next=found[i+1];
     const segment=text.slice(cur.index+cur.label.length, next ? next.index : text.length);
-    // 例: 8 820円 4番人気 / 4-8 780円
-    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
-    for(const m of matches){
-      jraResultAddPayout(r,cur.type,m[1].replace(/\s+/g,""),Number(m[2].replace(/,/g,"")));
-      count++;
-    }
+    extractForType(segment, cur.type);
   }
-  return count;
+  return { count, carryState: state };
 }
 
 function jraResultParseRefund(r, rawLine) {
@@ -487,7 +538,7 @@ function jraResultParseExtractedPages(pages) {
 
       let inResults=false;
       let pendingRank=null;
-      let activePayoutType=null;
+      let payoutCarryState = { 1:null, 2:null, 3:null };
 
       for(let i=0;i<block.length;i++){
         const line=block[i].text;
@@ -556,22 +607,16 @@ function jraResultParseExtractedPages(pages) {
           if(line.includes(label)){explicitPayoutType=type;break;}
         }
 
-        if(explicitPayoutType){
-          activePayoutType=explicitPayoutType;
-          const count=jraResultParsePayoutLine(current,line);
+        // 2026-08-09: ラベルの有無にかかわらず、円を含む行は常に
+        // jraResultParsePayoutLine で処理する(行内の複数ラベル・ラベル無し
+        // 継続行のいずれにも対応できるよう統一)。payoutCarryStateは頭数
+        // (1頭/2頭/3頭)ごとの直前の式別を保持し、行の処理結果で更新する。
+        const hasCarryState = Object.values(payoutCarryState).some(Boolean);
+        if(explicitPayoutType || (hasCarryState && /円/.test(line))){
+          const { count, carryState } = jraResultParsePayoutLine(current,line,payoutCarryState);
           if(count){diagnostics.payoutLines++;diagnostics.payoutItems+=count;}
+          payoutCarryState = carryState;
           continue;
-        }
-
-        if(activePayoutType && /円/.test(line)){
-          const text=jraResultNormalizeLine(line);
-          const matches=[...text.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
-          let count=0;
-          for(const m of matches){
-            jraResultAddPayout(current,activePayoutType,m[1].replace(/\s+/g,""),Number(m[2].replace(/,/g,"")));
-            count++;
-          }
-          if(count){diagnostics.payoutLines++;diagnostics.payoutItems+=count;}
         }
 
         if(/返還/.test(line)){

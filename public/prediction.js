@@ -2,6 +2,10 @@ let races = [];
 let selectedRace = null;
 let prediction = { marks: [] };
 let horseNotes = {};
+// 「このレースの購入馬券」欄の開閉状態(group_idごと)。app.jsの.group-card開閉パターンと
+// 同じ考え方で、開閉した状態を再描画(selectRace()のたびに呼ばれるrenderPurchasedTickets)
+// をまたいで保持する(2026-08〜。以前は常時全展開だった)。
+let expandedTicketGroups = new Set();
 const emptyState = document.getElementById("prediction-empty");
 const panel = document.getElementById("prediction-panel");
 const raceHeader = document.getElementById("prediction-race-header");
@@ -50,6 +54,20 @@ async function loadRaceTickets() {
   return all.filter((t) => Number(t.race_id) === Number(selectedRace.id));
 }
 
+// グループカード(購入方式単位)の開閉をトグルする。app.jsの.group-card-head
+// クリック時の挙動(expandedGroups Setの更新・矢印の向き変更)と同じパターン。
+function toggleTicketGroup(head) {
+  const detail = head.nextElementSibling;
+  if (!detail) return;
+  const groupId = head.dataset.groupId;
+  const nowHidden = !detail.hidden;
+  detail.hidden = nowHidden;
+  if (nowHidden) expandedTicketGroups.delete(groupId);
+  else expandedTicketGroups.add(groupId);
+  const arrow = head.querySelector(".expand-arrow");
+  if (arrow) arrow.textContent = detail.hidden ? "▸" : "▾";
+}
+
 function renderPurchasedTickets(items) {
   if (!items.length) {
     ticketsEl.innerHTML = "";
@@ -73,38 +91,53 @@ function renderPurchasedTickets(items) {
       <h2 class="prediction-tickets-title">このレースの購入馬券</h2>
       <span class="group-money">購入¥${totalAmount.toLocaleString()}${hasSettled ? ` / 払戻¥${settledPayout.toLocaleString()}` : ""}</span>
     </div>
-    ${Array.from(groups.values())
-      .map((group) => {
+    ${Array.from(groups.entries())
+      .map(([groupId, group]) => {
         const first = group[0];
+        // 開閉状態はgroup_idをキーに保持する(通常購入=UUID、CSV取込=import-<id>等、
+        // いずれも文字列のため型の不一致は起きない)。デフォルトは閉じた状態。
+        const isExpanded = expandedTicketGroups.has(groupId);
         return `
           <div class="group-card">
-            <div class="group-card-head">
+            <div class="group-card-head" data-group-id="${escapeAttr(String(groupId))}">
+              <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
               <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
               <span class="method-badge">${methodLabel(first.method)}</span>
               <span class="point-count">${group.length}点</span>
               ${first.imported ? `<span class="import-source-badge">CSV取込</span>` : ""}
+              <span class="group-money">購入¥${group.reduce((s, t) => s + Number(t.amount || 0), 0).toLocaleString()}${
+                group.some((t) => t.payout !== null && t.payout !== undefined)
+                  ? ` / 払戻¥${group.filter((t) => t.payout !== null && t.payout !== undefined).reduce((s, t) => s + Number(t.payout || 0), 0).toLocaleString()}`
+                  : ""
+              }</span>
             </div>
-            <div class="group-detail-rows">
-              ${group
-                .map(
-                  (t) => `
-                <div class="group-detail-row">
-                  <div class="sel-line">${formatSelections(t.bet_type, t.selections)}</div>
-                  <span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
-                    t.payout !== null && t.payout !== undefined
-                      ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
-                      : " / 未確定"
-                  }</span>
-                </div>
-              `
-                )
-                .join("")}
+            <div class="group-detail" ${isExpanded ? "" : "hidden"}>
+              <div class="group-detail-rows">
+                ${group
+                  .map(
+                    (t) => `
+                  <div class="group-detail-row">
+                    <div class="sel-line">${formatSelections(t.bet_type, t.selections)}</div>
+                    <span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
+                      t.payout !== null && t.payout !== undefined
+                        ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
+                        : " / 未確定"
+                    }</span>
+                  </div>
+                `
+                  )
+                  .join("")}
+              </div>
             </div>
           </div>
         `;
       })
       .join("")}
   `;
+
+  ticketsEl.querySelectorAll(".group-card-head[data-group-id]").forEach((head) => {
+    head.addEventListener("click", () => toggleTicketGroup(head));
+  });
 }
 
 async function selectRace() {
