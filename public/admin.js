@@ -10,11 +10,29 @@ function formatDate(dateStr) {
   if (Number.isNaN(d.getTime())) return String(dateStr);
   return `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
 }
+
+// D1の created_at (datetime('now')) はUTCの "YYYY-MM-DD HH:MM:SS" 形式(タイムゾーン情報なし)
+// で保存されている。この文字列をそのまま new Date() に渡すと、末尾にタイムゾーン指定が
+// 無い形式の解釈がブラウザによって異なり(UTCとして解釈されるとは限らない)、閲覧環境に
+// よって表示時刻がずれる可能性があった。ここでは明示的にUTCとして解釈したうえで、
+// 常に日本時間(JST)に変換して表示する(2026-08-10〜。以前はブラウザのローカル
+// タイムゾーンでの解釈に依存していた)。
 function formatDateTime(s) {
   if (!s) return "";
-  const d = new Date(s);
+  const hasTz = /[Zz]|[+-]\d{2}:?\d{2}$/.test(s);
+  const iso = hasTz ? s : `${s.replace(" ", "T")}Z`;
+  const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(s);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+
+  // 一部環境ではhour12:falseでも24時が"24"表記になることがあるため、"00"に正規化する。
+  const hour = parts.hour === "24" ? "00" : parts.hour;
+  return `${parts.year}/${parts.month}/${parts.day} ${hour}:${parts.minute}`;
 }
 
 async function loadUnregisteredRaces() {
@@ -54,7 +72,7 @@ async function loadUsers() {
   const data = await res.json();
   const items = data.items || [];
   table.innerHTML = `
-    <thead><tr><th>ユーザー名</th><th>登録日時</th></tr></thead>
+    <thead><tr><th>ユーザー名</th><th>登録日時(JST)</th></tr></thead>
     <tbody>
       ${items.map((u) => `
         <tr>
