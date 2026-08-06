@@ -140,10 +140,33 @@ function jraResultParseRefund(r, rawLine) {
   if(nums.length||frames.length) r.refunds.push({horse_numbers:nums,waku_numbers:frames});
 }
 
+// 騎手名の見習い印(▲△☆◇)を取り除く。「▲上里 直汰」→「上里 直汰」。
+function jraResultCleanJockeyName(raw) {
+  const s = String(raw ?? "").replace(/^[▲△☆◇]\s*/, "").trim();
+  return s || null;
+}
+
 function jraResultParseHorseFromResultLine(text) {
   const s=jraResultNormalizeLine(text);
+
+  // 実PDFで確認した基本形式(2026-08-08確認):
+  //   馬番 馬名 性齢 負担重量 騎手名 タイム 着差 ...
+  //   例: "8 クールストラッチン 牝2 55.0 菊沢 一樹 0:57.2 ハナ ..."
+  // 枠番は結果表の数字としては現れないことが多い(JRAが枠番を色付きアイコンで
+  // 表現しているため、テキスト抽出できない)。騎手名は「姓 名」の間にスペースが
+  // 入り、見習い印(▲△☆◇)が付くことがあるため、負担重量の直後・タイム
+  // (M:SS.s形式)の直前という位置関係で切り出すのが最も確実。
+  let m=s.match(/^(\d{1,2})\s+(.+?)\s+(牡|牝|せん|セ|騸)\s*(\d+)\s+[\d.]+\s+(.+?)\s+\d+:\d{2}\.\d/);
+  if(m) return {horse_number:Number(m[1]),horse_name:m[2].trim()||null,jockey:jraResultCleanJockeyName(m[5])};
+
+  // 枠番も数字として現れる形式(PDFの版によっては枠番も文字で抽出できる場合が
+  // あるため、フォールバックとして維持)。
+  m=s.match(/^(\d{1,2})\s+(\d{1,2})\s+(.+?)\s+(牡|牝|せん|セ|騸)\s*(\d+)\s+[\d.]+\s+(.+?)\s+\d+:\d{2}\.\d/);
+  if(m) return {waku_number:Number(m[1]),horse_number:Number(m[2]),horse_name:m[3].trim()||null,jockey:jraResultCleanJockeyName(m[6])};
+
+  // タイムが取得できない場合の簡易フォールバック(騎手名までは取得しない)。
   // 枠番・馬番・馬名・性齢
-  let m=s.match(/^(\d{1,2})\s+(\d{1,2})\s+(.+?)\s+(牡|牝|せん|セ|騸)\s*(\d+)\b/);
+  m=s.match(/^(\d{1,2})\s+(\d{1,2})\s+(.+?)\s+(牡|牝|せん|セ|騸)\s*(\d+)\b/);
   if(m) return {waku_number:Number(m[1]),horse_number:Number(m[2]),horse_name:m[3].trim()||null};
   // 枠番・馬番・性齢（馬名欠落）
   m=s.match(/^(\d{1,2})\s+(\d{1,2})\s+(牡|牝|せん|セ|騸)\s*(\d+)\b/);
@@ -158,7 +181,7 @@ function jraResultParseHorseFromResultLine(text) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "8.0.0-gapjoin";
+const JRA_RESULT_PDF_PARSER_VERSION = "8.1.0-jockey-order-waku";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
@@ -485,7 +508,7 @@ function jraResultParseExtractedPages(pages) {
             if(hh){
               diagnostics.resultRows++;
               if(!current.entries.some(e=>e.horse_number===hh.horse_number)){
-                current.entries.push({waku_number:hh.waku_number||null,horse_number:hh.horse_number,horse_name:hh.horse_name,jockey:null});
+                current.entries.push({waku_number:hh.waku_number??null,horse_number:hh.horse_number,horse_name:hh.horse_name,jockey:hh.jockey??null});
               }
               if(pendingRank>=1&&pendingRank<=3){
                 current.finish_order[pendingRank-1]=hh.horse_number;
@@ -504,7 +527,7 @@ function jraResultParseExtractedPages(pages) {
             if(hh){
               diagnostics.resultRows++;
               if(!current.entries.some(e=>e.horse_number===hh.horse_number)){
-                current.entries.push({waku_number:hh.waku_number||null,horse_number:hh.horse_number,horse_name:hh.horse_name,jockey:null});
+                current.entries.push({waku_number:hh.waku_number??null,horse_number:hh.horse_number,horse_name:hh.horse_name,jockey:hh.jockey??null});
               }
               const rank=Number(rm[1]);
               if(rank>=1&&rank<=3){
@@ -558,6 +581,29 @@ function jraResultParseExtractedPages(pages) {
       }
 
       current.finish_order=current.finish_order.filter(Number.isInteger).slice(0,3);
+
+      // 2026-08-08: 出走馬は着順ではなく馬番順に並べ替える。出走馬表編集画面
+      // (races.js)は「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画する
+      // ため、着順順のまま渡すと表示が総崩れになる不具合があった。
+      current.entries.sort((a,b)=>a.horse_number-b.horse_number);
+
+      // 枠番が結果表から数字として取得できなかった場合(JRAの結果PDFは枠番を
+      // 色付きアイコンで表現していることが多く、テキストとして抽出できない
+      // ことがある)、出走頭数から races.js の defaultWakuNumber() と全く同じ
+      // ロジックで簡易な初期値を計算する。あくまで目安値であり、実際の抽選
+      // 結果と異なる場合は登録後に手動で修正できる(races.jsの新規登録時と
+      // 同じ位置づけ)。races.jsはjra-result-pdf.jsより後に読み込まれるが、
+      // この関数自体はPDF解析ボタン押下時=全スクリプト読み込み後に実行される
+      // ため、参照時点では既にグローバルに定義済みであることを前提にできる。
+      if (typeof defaultWakuNumber === "function") {
+        const horseCount = current.entries.length;
+        for (const e of current.entries) {
+          if (e.waku_number === null || e.waku_number === undefined) {
+            e.waku_number = defaultWakuNumber(e.horse_number, horseCount);
+          }
+        }
+      }
+
       for(const type of Object.keys(current.payouts)){
         const seen=new Set();
         current.payouts[type]=current.payouts[type].filter(x=>{
