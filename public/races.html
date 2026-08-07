@@ -32,11 +32,12 @@
   <header class="masthead">
     <div class="masthead-inner">
       <h1 class="masthead-title">馬券帳</h1>
-      <nav class="masthead-nav"><a href="buy.html" class="nav-link">馬券購入</a><a href="index.html" class="nav-link">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link active" data-admin-only hidden>レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav>
+      <nav class="masthead-nav"><a href="buy.html" class="nav-link">馬券購入</a><a href="index.html" class="nav-link">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link active">レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav>
     </div>
     <div class="masthead-actions">
       <span id="current-username" class="current-username"></span>
       <button id="schedule-btn" class="ghost-btn" data-admin-only hidden>開催日程を一括登録</button>
+      <button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>
       <button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>
       <button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>
       <button id="logout-btn" class="ghost-btn">退場</button>
@@ -150,6 +151,24 @@
   </div>
 </div>
 
+<!-- 出走馬一覧PDFインポートモーダル -->
+<div id="jra-entries-import-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>出走馬一覧PDFを一括登録</h2>
+    <p class="picker-hint">JRAの「出走馬一覧」PDFを選択してください。枠番・馬番が未確定の状態(木曜等)でも、確定後(金曜等)でも同じ機能で取り込めます。既存レースには馬名をキーにマージされ、着順・払戻情報には影響しません。既に確定済みの枠番・馬番と異なる値が来た場合は自動上書きせず警告のみ表示します。</p>
+    <label>PDFファイル
+      <input type="file" id="jra-entries-pdf-file" accept="application/pdf,.pdf" />
+    </label>
+    <button type="button" id="jra-entries-parse-btn" class="ghost-btn">PDFを解析する</button>
+    <div id="jra-entries-import-preview"></div>
+    <div class="modal-actions">
+      <button type="button" id="jra-entries-import-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="jra-entries-import-submit-btn" class="stamp-btn" disabled>この内容で一括登録する</button>
+    </div>
+    <p id="jra-entries-import-message" class="submit-message" hidden></p>
+  </div>
+</div>
+
 <!-- JRAレース結果PDFインポートモーダル -->
 <div id="jra-result-import-modal" class="modal-overlay" hidden>
   <div class="modal">
@@ -195,7 +214,8 @@
 <script src="utils.js"></script>
 <script src="bettypes.js"></script>
 <script src="parse.js"></script>
-<script src="jra-result-pdf.js?v=202608080001"></script>
+<script src="jra-entries-pdf.js?v=202608071200"></script>
+<script src="jra-result-pdf.js?v=202608070001"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
 <script src="races.js"></script>

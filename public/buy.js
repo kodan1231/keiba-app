@@ -32,6 +32,7 @@ const summaryEl = document.getElementById("purchase-race-summary");
 const betButtons = document.getElementById("bet-type-buttons");
 const betTypeSection = document.getElementById("bet-type-section");
 const raceSettledBlock = document.getElementById("race-settled-block");
+const raceUnconfirmedBlock = document.getElementById("race-unconfirmed-block");
 const methodSection = document.getElementById("method-section");
 const methodButtons = document.getElementById("method-buttons");
 const methodOptions = document.getElementById("method-options");
@@ -185,9 +186,38 @@ function resetState() {
   comboAmounts = new Map();
 }
 
+// 出走馬に枠番・馬番が未確定(null)の馬が1頭でも含まれていれば true。
+// 出走馬一覧PDFインポート(枠番なし)の直後はこの状態になりうる(詳細はdocs/DESIGN.md参照)。
+// 枠番・馬番が確定するまで、購入(組み合わせの選択)には使えないためガードする。
+function hasUnconfirmedEntries(race) {
+  return (race.entries || []).length > 0 &&
+    race.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
+}
+
 async function openPurchase(race) {
   selectedRace = race;
   resetState();
+
+  const unconfirmed = hasUnconfirmedEntries(race);
+
+  titleEl.textContent = `${race.track} ${race.race_number}R${race.race_name ? ` ${race.race_name}` : ""}`;
+  summaryEl.innerHTML = `
+    <strong>${escapeHtml(race.track)}</strong>
+    <span>${race.race_number}R</span>
+    ${race.race_name ? `<span>${escapeHtml(race.race_name)}</span>` : ""}
+  `;
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+
+  if (raceUnconfirmedBlock) raceUnconfirmedBlock.hidden = !unconfirmed;
+
+  if (unconfirmed) {
+    // 枠番・馬番が未確定のため、購入UI自体を表示しない(案内のみ表示してブロックする)。
+    raceSettledBlock.hidden = true;
+    betTypeSection.hidden = true;
+    hideDownstream();
+    return;
+  }
 
   // 予想印を購入UIへ引き継ぐ。
   predictionMarks = new Map();
@@ -199,15 +229,6 @@ async function openPurchase(race) {
       for (const x of (data.marks || [])) { const n=Number(x.horse_number); if (!predictionMarks.has(n)) predictionMarks.set(n, []); predictionMarks.get(n).push(x.mark); }
     }
   } catch (_) {}
-
-  titleEl.textContent = `${race.track} ${race.race_number}R${race.race_name ? ` ${race.race_name}` : ""}`;
-  summaryEl.innerHTML = `
-    <strong>${escapeHtml(race.track)}</strong>
-    <span>${race.race_number}R</span>
-    ${race.race_name ? `<span>${escapeHtml(race.race_name)}</span>` : ""}
-  `;
-  modal.hidden = false;
-  document.body.classList.add("modal-open");
 
   // レースの着順 or 払戻が確定済みでも、購入履歴の登録し忘れに対応できるよう
   // 購入自体は引き続きできるようにする(2026-07-30〜。以前は購入自体をブロックしていた)。

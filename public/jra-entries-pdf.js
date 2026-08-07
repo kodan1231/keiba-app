@@ -1,0 +1,424 @@
+// JRA公式サイトの「出走馬一覧」PDF(枠番・馬番確定前/確定後 共通)を解析し、
+// レース情報・出走馬(馬名・騎手・枠番・馬番)を一括登録するインポーター。
+//
+// 木曜(枠番・馬番未確定)/金曜(確定後)のいずれの状態のPDFも同じ形式のため、
+// 同じ解析ロジック・同じインポート機能で対応する。枠番・馬番が印字されていない
+// 場合はnullのままサーバーに送信し、サーバー側(functions/api/races/entries-import.js)
+// で既存の出走馬情報と馬名をキーにマージする(詳細はdocs/DESIGN.md「出走馬一覧PDF
+// インポート」参照)。
+//
+// 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
+// 実機未検証の結果PDFパーサーには手を入れず、独立ファイルとして新規作成している。
+//
+// 【既知の未検証事項】枠番・馬番が確定した状態のPDFの実サンプルが手元になく、
+// 「行頭に枠番→馬番の順で数字が2つ並ぶ」という前提で解析している(既存の結果PDF・
+// 一覧ページの列順「枠 馬番 馬名 …」に基づく推測)。実際に確定後PDFで検証した際、
+// ここが崩れていたら jraEntriesParseHorseRow() の行頭数字解析部分を調整すること。
+// また、調教師名は常に「姓 名」の2トークンという前提で騎手名との境界を判定している
+// (外国人騎手のような1トークン名は騎手側で許容している)。この前提が崩れる表記が
+// 実機で見つかった場合も同様に調整が必要。
+
+const JRA_ENTRIES_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
+
+function jraEntriesNormalizeUnit(s) {
+  return String(s ?? "")
+    .normalize("NFKC")
+    .replace(/\u00a0|\u202F/g, " ")
+    .replace(/[︓﹕]/g, ":")
+    .replace(/[﹣－−―–—]/g, "-");
+}
+function jraEntriesNormalizeLine(s) {
+  return jraEntriesNormalizeUnit(s).replace(/\s+/g, " ").trim();
+}
+
+// 行内テキストの連結。既存 public/jra-result-pdf.js の jraResultJoinRowItems と同じ
+// 考え方(直前要素との実測ギャップにより連結/スペース/タブを判定する)。本パーサーの
+// 正規表現はスペース・タブいずれも \s として扱うため、区別自体の重要性は低いが、
+// 単語内部に余計な区切りが入って正規表現が不一致になる事故を防ぐために踏襲する。
+const JRA_E_GAP_SPACE_RATIO = 0.3;
+const JRA_E_GAP_TAB_RATIO = 1.2;
+const JRA_E_GAP_SPACE_MIN = 1.0;
+const JRA_E_GAP_TAB_MIN = 6.0;
+
+function jraEntriesJoinRowItems(items) {
+  let text = "";
+  const gaps = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (i > 0) {
+      const prev = items[i - 1];
+      const gap = item.x - (prev.x + (prev.w || 0));
+      const spaceThreshold = Math.max((prev.w || 0) * JRA_E_GAP_SPACE_RATIO, JRA_E_GAP_SPACE_MIN);
+      const tabThreshold = Math.max((prev.w || 0) * JRA_E_GAP_TAB_RATIO, JRA_E_GAP_TAB_MIN);
+      let sep = "";
+      if (gap > tabThreshold) sep = "\t";
+      else if (gap > spaceThreshold) sep = " ";
+      text += sep;
+      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結") });
+    }
+    text += item.str;
+  }
+  return { text, gaps };
+}
+
+function jraEntriesFindMeeting(text) {
+  const s = jraEntriesNormalizeUnit(text);
+  const m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日.*?(\d+)\s*回\s*(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)\s*(\d+)\s*日/);
+  if (!m) return null;
+  return { date: `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`, track: m[5] };
+}
+function jraEntriesFindMeetingLoose(text) {
+  const s = jraEntriesNormalizeUnit(text);
+  const meeting = s.match(/(\d+)\s*回\s*(札幌|函館|福島|新潟|東京|中山|中京|京都|阪神|小倉)\s*(\d+)\s*日/);
+  const dateM = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  const date = dateM ? `${dateM[1]}-${String(dateM[2]).padStart(2, "0")}-${String(dateM[3]).padStart(2, "0")}` : null;
+  if (!meeting && !date) return null;
+  return { date, track: meeting ? meeting[2] : null };
+}
+function jraEntriesFindStartTime(text) {
+  const s = jraEntriesNormalizeUnit(text);
+  const m = s.match(/発\s*走\s*時\s*刻\s*[:：]?\s*(\d{1,2})\s*時\s*(\d{1,2})\s*分/);
+  return m ? { hour: Number(m[1]), minute: Number(m[2]) } : null;
+}
+function jraEntriesParseCourse(text) {
+  const s = jraEntriesNormalizeUnit(text).replace(/\s+/g, " ");
+  const m = s.match(/コ\s*ー\s*ス\s*[:：]?\s*([0-9,]+)\s*メ\s*ー\s*ト\s*ル\s*[（(]?\s*(芝|ダート|障害)/);
+  return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g, "")) } : { course_type: null, distance: null };
+}
+
+// 出走馬1行を解析する。
+// 例(枠番・馬番未確定): "アルデバローズ 牝3 55.0kg 横山 琉人 矢野 英一"
+// 例(見習い減量記号)  : "ジーティービキニ 牝3 54.0kg ☆舟山 瑠泉 松下 武士"
+// 例(外国人騎手)      : "アブキールベイ 牝4 55.5kg J.コレット 坂口 智史"
+// 例(枠番・馬番確定後・未検証の想定形式): "1 3 アルデバローズ 牝3 55.0kg 横山 琉人 矢野 英一"
+function jraEntriesParseHorseRow(rawLine) {
+  const s = jraEntriesNormalizeLine(rawLine).replace(/\t/g, " ");
+  if (!s) return null;
+
+  let wakuNumber = null;
+  let horseNumber = null;
+  let rest = s;
+
+  // 行頭の「枠番 馬番」を試みる(未検証の想定形式。上記コメント参照)。
+  const numPrefix2 = rest.match(/^([1-8])\s+(\d{1,2})\s+(.+)$/);
+  if (numPrefix2 && /^(.+?)\s+(牡|牝|せん|セ|騸)\s*\d{1,2}\s+[\d.]+\s*kg/.test(numPrefix2[3])) {
+    wakuNumber = Number(numPrefix2[1]);
+    horseNumber = Number(numPrefix2[2]);
+    rest = numPrefix2[3];
+  } else {
+    // 馬番のみが先頭にあるケースも一応許容する。
+    const numPrefix1 = rest.match(/^(\d{1,2})\s+(.+)$/);
+    if (numPrefix1 && /^(.+?)\s+(牡|牝|せん|セ|騸)\s*\d{1,2}\s+[\d.]+\s*kg/.test(numPrefix1[2])) {
+      horseNumber = Number(numPrefix1[1]);
+      rest = numPrefix1[2];
+    }
+  }
+
+  const m = rest.match(/^(.+?)\s+(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+([\d.]+)\s*kg\s+(.+)$/);
+  if (!m) return null;
+
+  const horseName = m[1].trim();
+  let tail = m[5].trim();
+
+  // 見習い減量記号(☆▲△★◇)を除去。
+  const markMatch = tail.match(/^([☆▲△★◇])\s*(.+)$/);
+  if (markMatch) tail = markMatch[2].trim();
+
+  const tokens = tail.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
+
+  // 調教師名は「姓 名」の2トークンという前提(ファイル冒頭コメント参照)。
+  const trainer = tokens.slice(-2).join(" ");
+  const jockey = tokens.length > 2 ? tokens.slice(0, -2).join(" ") : tokens[0];
+
+  if (!horseName || !jockey) return null;
+
+  return {
+    horse_name: horseName,
+    jockey,
+    trainer, // 2026-08-07時点では保存対象外(entries-import.js側で無視される。次フェーズでentriesに追加予定)
+    waku_number: wakuNumber,
+    horse_number: horseNumber,
+  };
+}
+
+const JRA_ENTRIES_PARSER_VERSION = "1.0.0";
+
+function jraEntriesParseExtractedPages(pages) {
+  const lines = [];
+  pages.forEach((page, pageIndex) => {
+    page.forEach((row, rowIndex) => {
+      const raw = typeof row === "string" ? row : (row?.text || "");
+      const text = jraEntriesNormalizeLine(raw);
+      if (text) lines.push({ text, page: pageIndex + 1, row: rowIndex + 1 });
+    });
+  });
+
+  const diagnostics = {
+    parserVersion: JRA_ENTRIES_PARSER_VERSION,
+    pages: pages.length,
+    rows: lines.length,
+    meetingCandidates: 0,
+    startTimeCandidates: 0,
+    raceHeaders: 0,
+    horseRowsDetected: 0,
+    horseRowsFailed: 0,
+    records: 0,
+    errors: [],
+    raceDiagnostics: [],
+  };
+
+  const headerCandidates = [];
+  let ctxDate = null, ctxTrack = null;
+  for (let i = 0; i < lines.length; i++) {
+    const s = lines[i].text;
+    const meeting = jraEntriesFindMeeting(s) || jraEntriesFindMeetingLoose(s);
+    if (meeting) {
+      diagnostics.meetingCandidates++;
+      if (meeting.date) ctxDate = meeting.date;
+      if (meeting.track) ctxTrack = meeting.track;
+    }
+    const time = jraEntriesFindStartTime(s);
+    if (time) {
+      diagnostics.startTimeCandidates++;
+      headerCandidates.push({ index: i, date: ctxDate, track: ctxTrack });
+    }
+  }
+  diagnostics.raceHeaders = headerCandidates.filter((h) => h.date && h.track).length;
+
+  const records = [];
+  const counters = new Map();
+
+  for (let hIndex = 0; hIndex < headerCandidates.length; hIndex++) {
+    const h = headerCandidates[hIndex];
+    if (!h.date || !h.track) continue;
+    const next = headerCandidates[hIndex + 1];
+    const end = next ? next.index : lines.length;
+    const block = lines.slice(h.index, end);
+    const key = `${h.date}__${h.track}`;
+    const number = (counters.get(key) || 0) + 1;
+    counters.set(key, number);
+
+    const raceDiag = { key: `${h.date} ${h.track} ${number}R`, entries: 0, errors: [] };
+
+    // レース名・コース情報は「出走馬表(枠 馬番 馬名…)」の見出し行より前にしか現れないため、
+    // 探索範囲をその行までに限定する(以前は固定で先頭15行を見ていたため、開催情報の行数が
+    // 少ないレースで出走馬の行を誤ってレース名として拾ってしまう不具合があった)。
+    const tableHeaderIndex = block.findIndex((l) => /^枠\s*馬番\s*馬名/.test(l.text));
+    const metaScanEnd = tableHeaderIndex >= 0 ? tableHeaderIndex : Math.min(block.length, 15);
+    let raceName = null, courseType = null, distance = null;
+    for (let i = 1; i < metaScanEnd; i++) {
+      const s = block[i].text;
+      const course = jraEntriesParseCourse(s);
+      if (course.course_type && !courseType) { courseType = course.course_type; distance = course.distance; }
+      // 「3歳未勝利」「2歳新馬」のように数字+歳で始まるレース名は多いため、
+      // 「◯歳」始まりであること自体では除外しない。条件行(例: 「3歳 未勝利牝［指定］
+      // 馬齢 コース：1,700メートル…」)は「メートル」を含むため、そちらの除外だけで十分。
+      if (
+        !raceName && s.length >= 2 && s.length <= 60 &&
+        !/^(本賞金|枠\s*馬番|馬名|コース|発走)/.test(s) &&
+        !/^\d{4}年/.test(s) && !jraEntriesFindStartTime(s) &&
+        !/メートル/.test(s) &&
+        !jraEntriesParseHorseRow(s) // 出走馬の行を誤ってレース名としない
+      ) {
+        raceName = s;
+      }
+    }
+
+    const entries = [];
+    let inTable = false;
+    for (let i = 0; i < block.length; i++) {
+      const line = block[i].text;
+      if (/^枠\s*馬番\s*馬名/.test(line)) { inTable = true; continue; }
+      if (!inTable) continue;
+      if (/ページトップへ戻る/.test(line) || jraEntriesFindStartTime(line)) { inTable = false; continue; }
+      const horse = jraEntriesParseHorseRow(line);
+      if (horse) {
+        entries.push(horse);
+        diagnostics.horseRowsDetected++;
+      } else if (line) {
+        diagnostics.horseRowsFailed++;
+      }
+    }
+
+    raceDiag.entries = entries.length;
+    raceDiag.raceName = raceName;
+    if (!entries.length) raceDiag.errors.push("出走馬情報を取得できませんでした");
+
+    if (entries.length) {
+      records.push({
+        race_date: h.date, track: h.track, race_number: number,
+        race_name: raceName, course_type: courseType, distance,
+        entries: entries.map(({ trainer, ...rest }) => rest), // trainerは今回のフェーズでは送信しない(BACKLOG参照)
+      });
+    }
+    diagnostics.raceDiagnostics.push(raceDiag);
+  }
+
+  diagnostics.records = records.length;
+  if (!diagnostics.raceHeaders) {
+    diagnostics.errors.push("レース開始(発走時刻)を1件も検出できませんでした。");
+  }
+
+  return { records, diagnostics };
+}
+
+async function jraEntriesExtractPdfPages(file, log = () => {}) {
+  if (!window.pdfjsLib) {
+    log("PDF.js未読込 → CDNから読み込み開始");
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      script.onload = () => { log("PDF.js読み込み成功"); resolve(); };
+      script.onerror = () => reject(new Error("PDF解析ライブラリの読み込みに失敗しました"));
+      document.head.appendChild(script);
+    });
+  }
+  if (!window.pdfjsLib) throw new Error("PDF解析ライブラリを利用できませんでした");
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  log("PDF.jsバージョン=" + (window.pdfjsLib.version || "unknown"));
+  const buffer = await file.arrayBuffer();
+  log("ArrayBuffer取得=" + buffer.byteLength + " bytes");
+  const pdf = await window.pdfjsLib.getDocument({ data: buffer, useWorkerFetch: false, isEvalSupported: true }).promise;
+  log("PDF読み込み成功 pages=" + pdf.numPages);
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    log(`ページ ${p}/${pdf.numPages} 抽出開始`);
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent({ disableCombineTextItems: false });
+    const items = content.items.filter((x) => x.str && x.str.trim()).map((x) => ({
+      str: jraEntriesNormalizeUnit(x.str), x: x.transform[4], y: x.transform[5], w: x.width || 0,
+    }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    const rows = [];
+    for (const item of items) {
+      let row = rows.find((r) => Math.abs(r.y - item.y) < 3.0);
+      if (!row) { row = { y: item.y, items: [] }; rows.push(row); }
+      row.items.push(item);
+    }
+    pages.push(rows.sort((a, b) => b.y - a.y).map((r) => {
+      const sortedItems = r.items.sort((a, b) => a.x - b.x);
+      return { text: jraEntriesJoinRowItems(sortedItems).text, y: r.y };
+    }));
+    log(`ページ ${p} 抽出完了 items=${items.length} rows=${rows.length}`);
+  }
+  return { pages, pdfPages: pdf.numPages };
+}
+
+function jraEntriesRenderDiagnostics(d) {
+  const raceRows = (d.raceDiagnostics || []).map((r) => {
+    const err = r.errors?.length ? `<ul>${r.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : "なし";
+    return `<tr><td>${escapeHtml(r.key)}</td><td>${escapeHtml(r.raceName || "")}</td><td>${r.entries}</td><td>${err}</td></tr>`;
+  }).join("");
+  return `<details open style="margin-top:10px"><summary>解析診断情報（出走馬一覧 Parser ${JRA_ENTRIES_PARSER_VERSION}）</summary>
+  <div class="picker-hint">
+  PDFページ数: ${d.pages}<br>
+  抽出行数: ${d.rows}<br>
+  開催情報候補: ${d.meetingCandidates}<br>
+  発走時刻候補: ${d.startTimeCandidates}<br>
+  レース開始検出: ${d.raceHeaders}<br>
+  出走馬行 検出: ${d.horseRowsDetected} / 解析失敗: ${d.horseRowsFailed}<br>
+  有効レース: ${d.records}
+  </div>
+  ${d.errors?.length ? `<details open><summary>解析エラー・警告 (${d.errors.length})</summary><ul>${d.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul></details>` : ""}
+  <details><summary>レース別解析結果 (${(d.raceDiagnostics || []).length})</summary>
+    <div style="overflow:auto"><table><thead><tr><th>レース</th><th>レース名</th><th>出走馬数</th><th>問題</th></tr></thead><tbody>${raceRows || "<tr><td colspan='4'>解析結果なし</td></tr>"}</tbody></table></div>
+  </details>
+  </details>`;
+}
+
+const jraEntriesImportModal = document.getElementById("jra-entries-import-modal");
+const jraEntriesImportFile = document.getElementById("jra-entries-pdf-file");
+const jraEntriesImportPreview = document.getElementById("jra-entries-import-preview");
+const jraEntriesImportSubmit = document.getElementById("jra-entries-import-submit-btn");
+const jraEntriesImportMessage = document.getElementById("jra-entries-import-message");
+let jraEntriesParsedRecords = [];
+
+document.getElementById("jra-entries-import-btn")?.addEventListener("click", () => {
+  jraEntriesImportFile.value = "";
+  jraEntriesImportPreview.innerHTML = "";
+  jraEntriesImportMessage.hidden = true;
+  jraEntriesImportSubmit.disabled = true;
+  jraEntriesParsedRecords = [];
+  jraEntriesImportModal.hidden = false;
+});
+document.getElementById("jra-entries-import-cancel-btn")?.addEventListener("click", () => { jraEntriesImportModal.hidden = true; });
+jraEntriesImportModal?.addEventListener("click", (e) => { if (e.target === jraEntriesImportModal) jraEntriesImportModal.hidden = true; });
+
+jraEntriesImportFile?.addEventListener("change", () => {
+  jraEntriesImportPreview.innerHTML = "";
+  jraEntriesImportMessage.hidden = true;
+  jraEntriesImportSubmit.disabled = true;
+  jraEntriesParsedRecords = [];
+});
+
+document.getElementById("jra-entries-parse-btn")?.addEventListener("click", async () => {
+  const file = jraEntriesImportFile.files?.[0];
+  if (!file) { alert("PDFファイルを選択してください"); return; }
+  jraEntriesImportSubmit.disabled = true;
+  jraEntriesImportPreview.innerHTML = `<p>解析中です…<br>解析エンジン: ${JRA_ENTRIES_PARSER_VERSION}</p>`;
+  const logs = [];
+  const log = (message) => {
+    logs.push(`[${new Date().toLocaleTimeString()}] ${message}`);
+    console.log("[JRA Entries PDF]", message);
+  };
+  try {
+    log(`START file=${file.name} size=${file.size}`);
+    const extracted = await jraEntriesExtractPdfPages(file, log);
+    log(`EXTRACT DONE pages=${extracted.pdfPages}`);
+    const parsed = jraEntriesParseExtractedPages(extracted.pages);
+    log(`PARSE DONE headers=${parsed.diagnostics.raceHeaders} records=${parsed.records.length}`);
+    jraEntriesParsedRecords = parsed.records;
+
+    const totalHorses = jraEntriesParsedRecords.reduce((s, r) => s + r.entries.length, 0);
+    const confirmedCount = jraEntriesParsedRecords.reduce((s, r) => s + r.entries.filter((e) => e.horse_number !== null).length, 0);
+    const logHtml = logs.map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+
+    jraEntriesImportPreview.innerHTML = `<p>解析結果：<strong>${jraEntriesParsedRecords.length}レース</strong>（出走馬 計${totalHorses}頭、うち枠番・馬番確定済み ${confirmedCount}頭）</p>
+    ${jraEntriesRenderDiagnostics(parsed.diagnostics)}
+    <details><summary>実行ログ (${logs.length})</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>
+    <div class="import-preview-list">${jraEntriesParsedRecords.map((r) => {
+      return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name || "")} <span>出走馬 ${r.entries.length}頭 / 枠番・馬番${r.entries.some((e) => e.horse_number !== null) ? "あり" : "なし"}</span></div>`;
+    }).join("")}</div>`;
+    jraEntriesImportSubmit.disabled = jraEntriesParsedRecords.length === 0;
+  } catch (e) {
+    console.error("[JRA Entries PDF] import failed", e);
+    jraEntriesImportPreview.innerHTML = `<p class="error-text">解析中にエラーが発生しました: ${escapeHtml(e.message || String(e))}</p><details open><summary>実行ログ</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>`;
+  }
+});
+
+jraEntriesImportSubmit?.addEventListener("click", async () => {
+  if (!jraEntriesParsedRecords.length) return;
+  if (!confirm(`${jraEntriesParsedRecords.length}レースの出走馬情報を登録します。既存レースは馬名をキーにマージされます。実行しますか？`)) return;
+  jraEntriesImportSubmit.disabled = true;
+  jraEntriesImportMessage.hidden = false;
+  jraEntriesImportMessage.textContent = "登録中です…";
+  try {
+    const res = await authedFetch("/api/races/entries-import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ races: jraEntriesParsedRecords }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "一括登録に失敗しました");
+
+    const created = (data.results || []).filter((x) => x.status === "created").length;
+    const updated = (data.results || []).filter((x) => x.status === "updated").length;
+    const allConflicts = (data.results || []).flatMap((x) => (x.conflicts || []).map((c) => ({ key: x.key, ...c })));
+
+    let message = `出走馬一覧を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース`;
+    if (allConflicts.length) {
+      const lines = allConflicts.map((c) =>
+        `  ${c.key} / ${c.horse_name}: 既存${c.field === "waku_number" ? "枠番" : "馬番"}=${c.existing} → 取込値=${c.incoming}(競合のため更新していません)`
+      );
+      message += `\n\n⚠️ ${allConflicts.length}件の枠番・馬番の競合がありました(自動更新していません。手動確認してください)：\n${lines.join("\n")}`;
+    }
+    alert(message);
+    jraEntriesImportModal.hidden = true;
+    await loadRaces();
+  } catch (e) {
+    console.error("[JRA Entries PDF] registration failed", e);
+    alert(e.message || String(e));
+    jraEntriesImportSubmit.disabled = false;
+  }
+});

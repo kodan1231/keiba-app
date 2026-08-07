@@ -173,7 +173,16 @@ async function selectRace() {
   // ボタンのラベルだけ「結果確定済」に変え、確定済みであることがひと目でわかるようにする。
   buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
   const settled = !!selectedRace.finish_order || !!(selectedRace.payouts && Object.keys(selectedRace.payouts).length > 0);
-  if (settled) {
+  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定の
+  // レースが存在しうるようになった。未確定の間は buy.js 側で購入自体をブロックするため、
+  // ここでもボタンの見た目を変えて分かるようにする(クリック自体はできる。buy.js側の
+  // 案内バナーで説明する)。
+  const hasUnconfirmedNumbers = (selectedRace.entries || []).some((e) => e.horse_number === null || e.horse_number === undefined);
+  if (hasUnconfirmedNumbers) {
+    buyBtn.textContent = "枠番・馬番未確定(購入不可)";
+    buyBtn.classList.add("is-settled");
+    buyBtn.title = "枠番・馬番が確定するまで購入できません";
+  } else if (settled) {
     buyBtn.textContent = "結果確定済(購入する)";
     buyBtn.classList.add("is-settled");
     buyBtn.title = "このレースは結果確定済みですが、購入履歴の登録は引き続き行えます";
@@ -243,22 +252,29 @@ function renderRaceHeader() {
 }
 
 function renderHorses() {
-  const entries = [...selectedRace.entries].sort((a,b) => Number(a.horse_number) - Number(b.horse_number));
+  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定(null)の
+  // 馬が混在しうるようになった。馬番でのソートができないため、未確定の馬がいる場合は
+  // 馬名(五十音)順にフォールバックする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  const hasUnconfirmedNumbers = selectedRace.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
+  const entries = hasUnconfirmedNumbers
+    ? [...selectedRace.entries].sort((a, b) => String(a.horse_name || "").localeCompare(String(b.horse_name || ""), "ja"))
+    : [...selectedRace.entries].sort((a,b) => Number(a.horse_number) - Number(b.horse_number));
   if (!entries.length) {
     horsesEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
     return;
   }
 
   horsesEl.innerHTML = entries.map(e => {
-    const n = Number(e.horse_number);
+    const hasNumber = e.horse_number !== null && e.horse_number !== undefined;
+    const n = hasNumber ? Number(e.horse_number) : null;
     const note = horseNotes[e.horse_name] || {};
     return `
       <article class="prediction-horse horse-note-card"
-        data-horse-number="${n}"
+        data-horse-number="${n !== null ? n : ""}"
         data-horse-name="${escapeAttr(e.horse_name || "")}">
         <div class="horse-note-toggle" role="button" tabindex="0">
           <span class="mini-waku waku-${e.waku_number || 0}">${e.waku_number || "-"}</span>
-          <span class="prediction-horse-number">${n}</span>
+          <span class="prediction-horse-number">${n !== null ? n : "-"}</span>
           <span class="prediction-horse-name">
             <span class="prediction-horse-name-line">
               <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
@@ -268,7 +284,7 @@ function renderHorses() {
             ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
-            <select class="prediction-mark-select" aria-label="予想印を選択">
+            <select class="prediction-mark-select" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
               <option value="">−</option>
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
             </select>
@@ -299,10 +315,12 @@ function renderHorses() {
   });
 
   // 予想印は1頭につき1つまで。ドロップダウンで選択するとその馬の印を置き換える。
+  // 枠番・馬番未確定の馬(select disabled)はそもそもchangeイベントが発火しないため対象外。
   horsesEl.querySelectorAll(".prediction-mark-select").forEach(select => {
     select.addEventListener("click", (event) => event.stopPropagation());
     select.addEventListener("change", async () => {
       const card = select.closest(".horse-note-card");
+      if (!card.dataset.horseNumber) return; // 念のための二重ガード
       const n = Number(card.dataset.horseNumber);
       const mark = select.value || "";
       prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
@@ -366,6 +384,7 @@ function applyPrediction() {
     map.set(Number(x.horse_number), x.mark);
   }
   horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
+    if (!card.dataset.horseNumber) return; // 枠番・馬番未確定(セレクトはdisabled)
     const mark = map.get(Number(card.dataset.horseNumber)) || "";
     const select = card.querySelector(".prediction-mark-select");
     if (select) select.value = mark;

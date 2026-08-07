@@ -246,13 +246,18 @@ function courseTypeShort(courseType) {
 function renderRaceRow(r) {
   const settled = !!r.finish_order;
   const hasEntries = r.entries.length > 0;
+  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が
+  // 未確定(null)の馬が混在するケースが発生するようになったため、一覧上でも
+  // 分かるようにする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  const hasUnconfirmedNumbers = hasEntries && r.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
   const courseLabel = courseTypeShort(r.course_type);
   const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
 
   // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる
   // (2026-08-04〜。以前は状態表示のみで、編集は共通の✎ボタン1つ経由だった)。
-  const entriesLabel = hasEntries ? `出走馬表を編集(${r.entries.length}頭)` : "出走馬表を登録";
+  const unconfirmedSuffix = hasUnconfirmedNumbers ? "・枠番未確定" : "";
+  const entriesLabel = hasEntries ? `出走馬表を編集(${r.entries.length}頭${unconfirmedSuffix})` : "出走馬表を登録";
   const settledLabel = settled ? "払戻を編集" : "払戻を登録";
 
   const row = document.createElement("div");
@@ -263,7 +268,7 @@ function renderRaceRow(r) {
     ${courseText ? `<span class="meta course-meta">${escapeHtml(courseText)}</span>` : ""}
     ${isAdmin
       ? `<button type="button" class="entries-badge ${hasEntries ? "done" : ""}" data-id="${r.id}">${entriesLabel}</button>`
-      : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭)` : "出走馬未登録"}</span>`}
+      : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭${unconfirmedSuffix})` : "出走馬未登録"}</span>`}
     ${isAdmin
       ? `<button type="button" class="settled-badge ${settled ? "done" : ""}" data-id="${r.id}">${settledLabel}</button>`
       : `<span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>`}
@@ -325,18 +330,13 @@ async function deleteRace(id) {
 // 出走頭数から、枠番の初期値を計算する。JRAの正式な枠番決定ルール(抽選)とは異なるが、
 // 「頭数が決まればおおよその枠番の目安はつく」というリクエストに対する簡易な初期値であり、
 // 実際の枠番と異なる場合は手動で選び直せる(あくまで入力の手間を減らすための初期値)。
-// 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける。JRAでは頭数が8で割り切れない
-// 場合、余りの馬は大きい枠番(7枠・8枠側)から順に1頭ずつ多くなる慣習があるため、
-// 余りは若い枠番ではなく大きい枠番(8枠側)に寄せる。
-// (2026-08-09修正: 以前は`waku <= remainder`で余りを1・2枠側に寄せてしまっており、
-//  実際のJRAの傾向と逆だった。例: 18頭立てで1・2枠が3頭、7・8枠が2頭になっていたが、
-//  正しくは7・8枠が3頭になるべき)
+// 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける(余りは若い枠番から+1頭ずつ)。
 function defaultWakuNumber(horseNumber, horseCount) {
   const base = Math.floor(horseCount / 8);
   const remainder = horseCount % 8;
   let n = horseNumber;
   for (let waku = 1; waku <= 8; waku++) {
-    const size = waku > (8 - remainder) ? base + 1 : base;
+    const size = waku <= remainder ? base + 1 : base;
     if (n <= size) return waku;
     n -= size;
   }
@@ -474,7 +474,7 @@ async function loadTicketsForRace(raceId) {
 // 出走馬表(馬名)や着順が未登録でも、常に払戻金額を入力できるようにする。
 // 1〜3着セレクトで着順が入力されている式別だけ、的中組み合わせを表示して入力欄を出す
 // (何着まで必要かは式別により異なる。例: 単勝は1着のみ、三連単は3着まで)。
-// 未入力の式別は「◯着まで入力すると表示されます」という案内のみを表示し、画面全体は常に表示したままにする。
+// 未入力の式別は「◯着まで入力すると表示されます」という案内のみ表示し、画面全体は常に表示したままにする。
 //
 // 注: ここで入力・保存されるのは「レースの払戻レート」(races.payouts)のみ。
 // 各ユーザーの購入履歴(tickets.payout)への反映は、保存後にサーバー側
