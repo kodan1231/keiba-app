@@ -459,6 +459,27 @@ textarea { resize: vertical; }
 @media (max-width: 600px) {
   .masthead { padding: 18px 16px 12px; flex-direction: column; align-items: flex-start; }
   .masthead-title { font-size: 24px; }
+  /* 2026-08-10: iPhone SE3等の小型スマホで上部ナビ(.masthead-nav)のタブが2行に
+     折り返される不具合の調査・修正。
+     原因: .masthead-inner(タイトル+ナビ)がflex-wrap:wrapのまま・幅未指定だった。
+     親.mastheadがこの幅でflex-direction:column・align-items:flex-startのため、
+     .masthead-innerの幅は「shrink-to-fit(内容に応じた不定幅)」で計算される。
+     この不定幅のせいで、.masthead-navに指定していた max-width:100%
+     (@media(max-width:700px)側で指定)が「画面幅」ではなく「この不定な親幅」を
+     基準にしてしまい、overflow-x:autoによる横スクロールが実機で正しく機能せず、
+     ナビのタブ自体が2行に折り返されていた。
+     対応: .masthead-innerを明示的にflex-direction:column(タイトル→ナビの縦積み)
+     ・width:100%(幅を.mastheadの内側幅に確定)にする。これにより.masthead-navの
+     幅も画面幅を基準に確定し、overflow-x:autoが期待通り機能する(タブが2行に
+     折り返される代わりに、横スクロールになる)。 */
+  .masthead-inner {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: 8px;
+  }
+  .masthead-nav { width: 100%; }
 
   .ticket-row {
     grid-template-columns: 1fr auto;

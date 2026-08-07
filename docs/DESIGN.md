@@ -250,6 +250,25 @@ CSV出力元によって表記ゆれがあるため、以下を吸収して解�
   箇所」が他にも残っている可能性がある(例: 購入履歴カレンダーの「今日」判定等)。
   見つかった場合は同じ考え方(明示的にUTCとしてパース→`Asia/Tokyo`へ変換)で対応する
 
+- **上部ナビ(`.masthead-nav`)が小型スマホで2行に折り返される不具合の修正
+  (2026-08-10〜)**: `600px`以下で`.masthead`を`flex-direction: column`にする際、
+  子要素の`.masthead-inner`(タイトル+ナビ)自体は`flex-wrap: wrap`のまま幅を
+  指定していなかった。親`.masthead`が`align-items: flex-start`のため、
+  `.masthead-inner`の幅は「shrink-to-fit(内容に応じた不定幅)」で計算され、
+  この不定幅を基準にしていた`.masthead-nav`の`max-width:100%`
+  (`@media(max-width:700px)`側で指定)が画面幅を正しく参照できず、
+  `overflow-x:auto`による横スクロールが機能しない状態になっていた
+  (Chromiumのヘッドレス検証で、`.masthead-nav`が画面幅を16px超えてはみ出す
+  ことを実測で確認)。`.masthead-inner`を`600px`以下で明示的に
+  `flex-direction: column`(タイトル→ナビの縦積み)・`width: 100%`(幅を
+  `.masthead`の内側幅に確定)にすることで、`.masthead-nav`の幅が画面幅を
+  基準に確定し、`overflow-x:auto`が期待通り機能するようにした(タブが
+  折り返される代わりに横スクロールになる)。
+  **注意**: 本番のネットワーク制限があるサンドボックス環境ではPlaywrightの
+  WebKit(Safari相当エンジン)を追加インストールできず、Chromiumのヘッドレス
+  検証(`.masthead-nav`のはみ出しが解消されることを実測)のみで確認している。
+  実機(iPhone SE3等の実Safari)での最終確認は引き続き推奨する
+
 ## レスポンシブ対応(2026-08-02〜)
 
 - ブレークポイントは2段階: `700px`以下(タブレット〜大きめスマホ、既存)、
