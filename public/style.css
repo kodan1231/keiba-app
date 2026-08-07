@@ -459,27 +459,15 @@ textarea { resize: vertical; }
 @media (max-width: 600px) {
   .masthead { padding: 18px 16px 12px; flex-direction: column; align-items: flex-start; }
   .masthead-title { font-size: 24px; }
-  /* 2026-08-10: iPhone SE3等の小型スマホで上部ナビ(.masthead-nav)のタブが2行に
-     折り返される不具合の調査・修正。
-     原因: .masthead-inner(タイトル+ナビ)がflex-wrap:wrapのまま・幅未指定だった。
-     親.mastheadがこの幅でflex-direction:column・align-items:flex-startのため、
-     .masthead-innerの幅は「shrink-to-fit(内容に応じた不定幅)」で計算される。
-     この不定幅のせいで、.masthead-navに指定していた max-width:100%
-     (@media(max-width:700px)側で指定)が「画面幅」ではなく「この不定な親幅」を
-     基準にしてしまい、overflow-x:autoによる横スクロールが実機で正しく機能せず、
-     ナビのタブ自体が2行に折り返されていた。
-     対応: .masthead-innerを明示的にflex-direction:column(タイトル→ナビの縦積み)
-     ・width:100%(幅を.mastheadの内側幅に確定)にする。これにより.masthead-navの
-     幅も画面幅を基準に確定し、overflow-x:autoが期待通り機能する(タブが2行に
-     折り返される代わりに、横スクロールになる)。 */
-  .masthead-inner {
-    flex-direction: column;
-    align-items: stretch;
-    flex-wrap: nowrap;
-    width: 100%;
-    gap: 8px;
-  }
-  .masthead-nav { width: 100%; }
+  /* 2026-08-10: 上部ナビ(.masthead-nav)の折り返し対策として、ここに
+     .masthead-inner を flex-direction:column にする対応を追加していたが、
+     同日中にユーザーから改めて「タイトルは非表示・ナビ+ユーザー名+退場ボタンを
+     1行にまとめる」という仕様変更の要望があり、下記(クラスタ12対応)へ
+     一本化した。このブロックには他の要素(.ticket-row等)のスタイルも
+     含まれているため、@media自体は残しつつ .masthead-inner / .masthead-nav
+     関連の記述はここから削除している。最新のmastheadレスポンシブ対応は
+     このファイル末尾の「2026-08-10: モバイル用ヘッダーの高さ削減」ブロックを
+     参照すること。 */
 
   .ticket-row {
     grid-template-columns: 1fr auto;
@@ -1904,3 +1892,76 @@ body.modal-open { overflow: hidden; }
 .import-raw-selection{font-size:.78rem;color:#666}
 
 .import-preview-list{max-height:320px;overflow:auto;margin:12px 0;border:1px solid #ddd;border-radius:8px}.import-preview-row{padding:8px 10px;border-bottom:1px solid #eee;font-size:.9em}.import-preview-row:last-child{border-bottom:0}.import-preview-row span{float:right;opacity:.75}
+
+/* ---------- 2026-08-10: モバイル用ヘッダー(masthead)の高さ削減 ----------
+   実機(Y!mobile経由のアプリ内ブラウザ)で、ページによってブラウザのURLバーの
+   表示/非表示が変わり、見かけの高さがばらつくという報告を受けての対応
+   (docs/BACKLOG.md「クラスタ12」参照)。根本原因(ブラウザのネイティブな
+   アドレスバー表示/非表示の挙動)そのものはCSS/JSから制御できないため、
+   ヘッダー自体の高さを削ってページ間の高さのばらつきを抑える、という
+   現実的な緩和策(完全な解消を保証するものではない)。
+
+   ユーザー確認済み仕様(2026-08-10):
+     1. モバイルでは「馬券帳」のタイトル表記を完全に非表示にする(PCでは維持)
+     2. モバイルでは、ナビ・ユーザー名・退場ボタン等をすべて1つの行にまとめる
+        (現行は「タイトル+ナビ」の行と「ユーザー名+退場ボタン」の行の2行)
+     3. 1行が画面幅に収まりきらない場合は、行全体を横スクロールにする
+        (ナビだけでなくユーザー名・退場ボタンも画面外に隠れることを許容する)
+
+   実装方針: HTML(6画面共通のマークアップ)は変更せず、CSSのみで対応する。
+   .masthead-inner(タイトル+ナビの入れ物)を display:contents にすることで、
+   その子要素であるタイトル・ナビを .masthead 直下の実質的な子要素として扱い、
+   .masthead-actions(ユーザー名+退場ボタン)と同じ1行に横並びさせる。
+   .masthead 自体に overflow-x:auto を指定し、行全体が画面幅に収まらない場合は
+   横スクロールになるようにする(要件3)。タイトルは display:none で非表示に
+   する(要件1)。ナビ自身が個別に持っていた横スクロール(@media(max-width:700px)の
+   .masthead-nav{overflow-x:auto;...})は、二重スクロール領域になって
+   操作感が悪くなるのを避けるため、この幅では明示的に無効化し、
+   親(.masthead)側のスクロールに一本化している。
+
+   display:contents はiOS Safari 12.1以降で利用可能で、この用途では
+   十分に安定している想定だが、実機での最終確認を推奨する(前回の
+   .masthead-nav折り返し修正と同様、この環境からはWebKitエンジンでの
+   自動検証ができないため)。 */
+@media (max-width: 600px) {
+  .masthead {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 14px 16px;
+    gap: 14px;
+  }
+
+  /* タイトル・ナビを.masthead直下の実質的な子要素として扱う(要件2の土台)。 */
+  .masthead-inner {
+    display: contents;
+  }
+
+  /* 要件1: モバイルでは「馬券帳」表記は不要。 */
+  .masthead-title {
+    display: none;
+  }
+
+  /* 要件2・3: ナビ自体は内容に応じた幅(縮まない)にし、個別の横スクロールは
+     無効化する。折り返し(2行化)も起きないよう明示的にnowrapにしておく。 */
+  .masthead-nav {
+    flex: 0 0 auto;
+    width: auto;
+    overflow-x: visible;
+    max-width: none;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+  }
+  .masthead-nav .nav-link {
+    white-space: nowrap;
+  }
+
+  /* ユーザー名・退場ボタンも縮まない幅にする(横スクロールで隠れることは許容)。 */
+  .masthead-actions {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
