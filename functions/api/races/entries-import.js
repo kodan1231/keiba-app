@@ -39,7 +39,14 @@ function sortEntriesByHorseNumber(entries) {
 // - 既存の馬名に既に確定済みの値があり、取込側が異なる値 → 自動上書きせず
 //   競合として報告するのみ(実運用ではまず発生しないイレギュラーな状態と想定)
 function mergeEntries(existingEntries, incomingEntries) {
-  const merged = Array.isArray(existingEntries) ? existingEntries.map((e) => ({ ...e })) : [];
+  // 馬名が空の既存entries項目(手動編集での保存ミスや過去のインポート不具合等で
+  // 紛れ込んだ空行)は、名前をキーにしたマージでは永久にどの馬とも一致せず、
+  // 新しい実データが「別の馬」として追加され続けて重複・空欄混在の原因になる
+  // (2026-08-09確認: 実データで発生を確認した不具合)。マージ前に除去することで、
+  // 次回インポート時に自動的にクリーンアップされるようにする。
+  const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
+    .filter((e) => normalizeHorseName(e?.horse_name));
+  const merged = cleanedExisting.map((e) => ({ ...e }));
   const byName = new Map(merged.map((e, i) => [normalizeHorseName(e.horse_name), i]));
   const conflicts = [];
 
@@ -113,12 +120,14 @@ export async function onRequestPost(context) {
     ).bind(raceDate, track, raceNumber).first();
 
     if (!existing) {
-      const entries = sortEntriesByHorseNumber(item.entries.map((e) => ({
-        horse_name: e.horse_name,
-        waku_number: e.waku_number ?? null,
-        horse_number: e.horse_number ?? null,
-        jockey: e.jockey || null,
-      })));
+      const entries = sortEntriesByHorseNumber(item.entries
+        .filter((e) => normalizeHorseName(e?.horse_name)) // 念のための防御(空馬名は登録しない)
+        .map((e) => ({
+          horse_name: e.horse_name,
+          waku_number: e.waku_number ?? null,
+          horse_number: e.horse_number ?? null,
+          jockey: e.jockey || null,
+        })));
       const ins = await env.DB.prepare(
         `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance, entries)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
