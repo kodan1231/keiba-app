@@ -2,6 +2,11 @@ let races = [];
 let selectedRace = null;
 let comboAmounts = new Map();
 let predictionMarks = new Map();
+// 自分(ログインユーザー)が既に購入済みのレースID(races.id)の集合。
+// 通常購入(tickets)・CSVインポート分(ticket-imports)の両方を対象とする(2026-08-08〜)。
+// GET /api/tickets・GET /api/ticket-imports はいずれもログインユーザー自身のデータのみを
+// 返すため、他ユーザーの購入は含まれない(docs/DESIGN.md「画面仕様」参照)。
+let purchasedRaceIds = new Set();
 
 const state = {
   betType: "tan",
@@ -57,10 +62,42 @@ let calendarMonth = new Date(`${selectedDate}T00:00:00`);
 calendarMonth.setDate(1);
 dateInput.value = selectedDate;
 
+// 自分が既に購入済みのレースID集合を作る(通常購入・CSVインポート分の両方)。
+// レース一覧取得と並行して呼び出す(loadRaces参照)。取得に失敗した場合は
+// バッジ表示を諦めるだけで、レース一覧・購入自体には影響させない。
+async function loadPurchasedRaceIds() {
+  const ids = new Set();
+  try {
+    const [ticketsRes, importedRes] = await Promise.all([
+      authedFetch("/api/tickets"),
+      authedFetch("/api/ticket-imports"),
+    ]);
+    if (ticketsRes.ok) {
+      const tickets = await ticketsRes.json().catch(() => []);
+      (Array.isArray(tickets) ? tickets : []).forEach((t) => {
+        if (t.race_id !== null && t.race_id !== undefined) ids.add(Number(t.race_id));
+      });
+    }
+    if (importedRes.ok) {
+      const payload = await importedRes.json().catch(() => ({}));
+      const items = Array.isArray(payload) ? payload : (Array.isArray(payload.items) ? payload.items : []);
+      items.forEach((t) => {
+        if (t.race_id !== null && t.race_id !== undefined) ids.add(Number(t.race_id));
+      });
+    }
+  } catch (_) {
+    // 取得に失敗してもレース一覧表示自体は継続する(バッジが出ないだけ)。
+  }
+  purchasedRaceIds = ids;
+}
+
 async function loadRaces() {
-  const res = await authedFetch("/api/races");
-  if (!res.ok) return;
-  races = await res.json();
+  const [racesRes] = await Promise.all([
+    authedFetch("/api/races"),
+    loadPurchasedRaceIds(),
+  ]);
+  if (!racesRes.ok) return;
+  races = await racesRes.json();
   renderCalendar();
   renderGrid();
 
@@ -93,12 +130,14 @@ function renderGrid() {
           ${Array.from({length:12}, (_, i) => {
             const r = by[`${track}_${i+1}`];
             if (!r) return `<div class="race-column-row no-race"><b>${i+1}R</b></div>`;
+            const purchased = purchasedRaceIds.has(Number(r.id));
             return `
               <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"}"
                 data-id="${r.id}" type="button">
                 <b>${i+1}R</b>
                 <span>${escapeHtml(r.race_name || "")}</span>
                 <small>${r.entries.length ? `${r.entries.length}頭` : "出走馬未登録"}</small>
+                ${purchased ? `<span class="purchased-badge">購入済み</span>` : ""}
               </button>`;
           }).join("")}
         </section>
@@ -730,6 +769,10 @@ submitBtn.onclick = async () => {
   submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
   if (res.ok) {
     submitMessage.textContent = `${combos.length}点を購入記録に保存しました。`;
+    // 購入済みバッジをこのレースにも反映させるため、購入済みレースID集合を
+    // 更新してレース一覧を再描画する(モーダルは開いたままでよい)。
+    await loadPurchasedRaceIds();
+    renderGrid();
   } else {
     const data = await res.json().catch(() => ({}));
     submitMessage.textContent = data.error || "保存に失敗しました。";
