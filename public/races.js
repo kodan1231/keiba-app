@@ -330,13 +330,19 @@ async function deleteRace(id) {
 // 出走頭数から、枠番の初期値を計算する。JRAの正式な枠番決定ルール(抽選)とは異なるが、
 // 「頭数が決まればおおよその枠番の目安はつく」というリクエストに対する簡易な初期値であり、
 // 実際の枠番と異なる場合は手動で選び直せる(あくまで入力の手間を減らすための初期値)。
-// 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける(余りは若い枠番から+1頭ずつ)。
+// 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける。JRAでは頭数が8で割り切れない
+// 場合、余りの馬は大きい枠番(7枠・8枠側)から順に1頭ずつ多くなる慣習があるため、
+// 余りは若い枠番ではなく大きい枠番(8枠側)に寄せる。
+// (2026-08-08修正: 以前は`waku <= remainder`で余りを1・2枠側に寄せてしまっており、
+//  実際のJRAの傾向と逆だった。例: 14頭立てで1〜6枠が2頭・7,8枠が1頭になっていたが、
+//  正しくは7,8枠が2頭になるべき。出走馬一覧PDFインポート機能で実際にこの逆転現象が
+//  再現することを確認し修正した)
 function defaultWakuNumber(horseNumber, horseCount) {
   const base = Math.floor(horseCount / 8);
   const remainder = horseCount % 8;
   let n = horseNumber;
   for (let waku = 1; waku <= 8; waku++) {
-    const size = waku <= remainder ? base + 1 : base;
+    const size = waku > (8 - remainder) ? base + 1 : base;
     if (n <= size) return waku;
     n -= size;
   }

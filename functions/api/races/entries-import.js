@@ -11,6 +11,26 @@ function normalizeHorseName(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
 }
 
+// entries配列を馬番順に並べ替える。races.js の出走馬表編集画面は
+// 「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画するため(既存の
+// functions/api/races/results-import.js と同じ制約)、マージ後は必ずソートし直す。
+// 枠番・馬番が未確定(null)の間は五十音順(馬名)のままにしておく
+// (2026-08-08確認: 枠番・馬番確定前のインポートでは、そもそもソートすべき
+// 数値情報が無いため馬名順が自然な並びになる)。
+function sortEntriesByHorseNumber(entries) {
+  return [...entries].sort((a, b) => {
+    const an = a.horse_number, bn = b.horse_number;
+    const aNull = an === null || an === undefined;
+    const bNull = bn === null || bn === undefined;
+    if (aNull && bNull) {
+      return normalizeHorseName(a.horse_name).localeCompare(normalizeHorseName(b.horse_name), "ja");
+    }
+    if (aNull) return 1;
+    if (bNull) return -1;
+    return an - bn;
+  });
+}
+
 // 既存entriesと取込entriesを、馬名をキーにマージする。
 // - 新しい馬名 → 追加
 // - 既存の馬名で、取込側の枠番・馬番がnull → 何もしない(確定情報を未確定情報で
@@ -93,12 +113,12 @@ export async function onRequestPost(context) {
     ).bind(raceDate, track, raceNumber).first();
 
     if (!existing) {
-      const entries = item.entries.map((e) => ({
+      const entries = sortEntriesByHorseNumber(item.entries.map((e) => ({
         horse_name: e.horse_name,
         waku_number: e.waku_number ?? null,
         horse_number: e.horse_number ?? null,
         jockey: e.jockey || null,
-      }));
+      })));
       const ins = await env.DB.prepare(
         `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance, entries)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -123,7 +143,11 @@ export async function onRequestPost(context) {
     let currentEntries = [];
     try { currentEntries = JSON.parse(existing.entries || "[]"); } catch { currentEntries = []; }
 
-    const { entries: mergedEntries, conflicts } = mergeEntries(currentEntries, item.entries);
+    const { entries: mergedEntriesRaw, conflicts } = mergeEntries(currentEntries, item.entries);
+    // 木曜(馬番なし)→金曜(馬番あり)の更新で、entries配列の並びが最初のインポート時
+    // (五十音順)のまま残ってしまう不具合があったため、マージ後は必ず馬番順に
+    // ソートし直す(2026-08-08修正)。
+    const mergedEntries = sortEntriesByHorseNumber(mergedEntriesRaw);
 
     const fields = ["entries = ?"];
     const values = [JSON.stringify(mergedEntries)];

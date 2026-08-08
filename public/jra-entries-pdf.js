@@ -10,11 +10,19 @@
 // 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
 // 実機未検証の結果PDFパーサーには手を入れず、独立ファイルとして新規作成している。
 //
-// 【既知の未検証事項】枠番・馬番が確定した状態のPDFの実サンプルが手元になく、
-// 「行頭に枠番→馬番の順で数字が2つ並ぶ」という前提で解析している(既存の結果PDF・
-// 一覧ページの列順「枠 馬番 馬名 …」に基づく推測)。実際に確定後PDFで検証した際、
-// ここが崩れていたら jraEntriesParseHorseRow() の行頭数字解析部分を調整すること。
-// また、調教師名は常に「姓 名」の2トークンという前提で騎手名との境界を判定している
+// 【既知の未検証事項→検証済み(2026-08-08)】枠番・馬番確定後の実PDFで検証した結果、
+// **枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない**ことが
+// 判明した(JRAレース結果PDFと同様の制約。docs/JRA_RESULT_PDF_IMPORT_PAYOUT_ISSUE_
+// INVESTIGATION.md の同種の記述を参照)。行頭に「枠番→馬番」の2つの数字が並ぶという
+// 当初の推測(jraEntriesParseHorseRow内の numPrefix2)は実際には発生しないが、
+// 万一将来のPDF形式変更で現れた場合のフォールバックとして処理自体は残してある。
+// 馬番は単独の数字として取得できる。
+// また、負担重量・オッズが発表された状態のPDFでは行末に単勝オッズ(小数)が付加される
+// ため、調教師名との境界を誤らないよう除去してから解析する。
+// さらに、ブリンカー(B)等のバッジが付く馬は、実PDFのテキスト抽出時に馬番だけが
+// 単独行になり、馬名以降が次の行に分離することが確認されている
+// (jraEntriesParseExtractedPages側の「馬番だけの行を次行と結合する」処理で対応)。
+// 調教師名は常に「姓 名」の2トークンという前提で騎手名との境界を判定している
 // (外国人騎手のような1トークン名は騎手側で許容している)。この前提が崩れる表記が
 // 実機で見つかった場合も同様に調整が必要。
 
@@ -124,12 +132,37 @@ function jraEntriesParseHorseRow(rawLine) {
   const markMatch = tail.match(/^([☆▲△★◇])\s*(.+)$/);
   if (markMatch) tail = markMatch[2].trim();
 
+  // 末尾の単勝オッズ(小数。例: "15.9")が付いている場合は取り除く。オッズが発表された
+  // 状態のPDF(枠番・馬番確定後によく見られる)では「騎手名 調教師名 単勝オッズ」の
+  // 順で並ぶため、これを除去せずに末尾2トークンを調教師名とすると、調教師名の一部が
+  // 騎手名側に押し出されてしまう不具合があった(2026-08-08修正)。
+  tail = tail.replace(/\s+[\d,]+\.\d+\s*$/, "");
+
   const tokens = tail.split(/\s+/).filter(Boolean);
   if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
 
-  // 調教師名は「姓 名」の2トークンという前提(ファイル冒頭コメント参照)。
-  const trainer = tokens.slice(-2).join(" ");
-  const jockey = tokens.length > 2 ? tokens.slice(0, -2).join(" ") : tokens[0];
+  // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
+  // 1トークンに結合されるケースが実PDFで確認されている(例: "浜中 俊 谷潔" → 本来は
+  // 騎手名「浜中 俊」・調教師名「谷潔」。2026-08-08確認)。一方、外国人騎手名
+  // (例: "J.コレット")のようにピリオドを含む1トークンの場合は騎手側が1トークンで
+  // 調教師側が2トークンという逆パターンになる。トークン数だけでは一意に決まらないため、
+  // 先頭トークンにピリオドを含むかどうかで判定する。
+  let jockey, trainer;
+  if (tokens.length >= 4) {
+    trainer = tokens.slice(-2).join(" ");
+    jockey = tokens.slice(0, -2).join(" ");
+  } else if (tokens.length === 3) {
+    if (/[.．]/.test(tokens[0])) {
+      jockey = tokens[0];
+      trainer = `${tokens[1]} ${tokens[2]}`;
+    } else {
+      jockey = `${tokens[0]} ${tokens[1]}`;
+      trainer = tokens[2];
+    }
+  } else {
+    jockey = tokens[0];
+    trainer = tokens[1];
+  }
 
   if (!horseName || !jockey) return null;
 
@@ -142,7 +175,7 @@ function jraEntriesParseHorseRow(rawLine) {
   };
 }
 
-const JRA_ENTRIES_PARSER_VERSION = "1.0.0";
+const JRA_ENTRIES_PARSER_VERSION = "1.1.0-oddstrip-linewrap";
 
 function jraEntriesParseExtractedPages(pages) {
   const lines = [];
@@ -227,16 +260,31 @@ function jraEntriesParseExtractedPages(pages) {
 
     const entries = [];
     let inTable = false;
+    // ブリンカー(B)等のバッジが付く馬は、実PDFのテキスト抽出時に馬番だけが単独行になり、
+    // 馬名以降が次の行に分離することが確認されている(2026-08-08確認)。単独の数字だけの
+    // 行が来たら「保留中の馬番」として記憶しておき、次の行と結合してから解析する。
+    let pendingHorseNumber = null;
     for (let i = 0; i < block.length; i++) {
       const line = block[i].text;
       if (/^枠\s*馬番\s*馬名/.test(line)) { inTable = true; continue; }
       if (!inTable) continue;
-      if (/ページトップへ戻る/.test(line) || jraEntriesFindStartTime(line)) { inTable = false; continue; }
-      const horse = jraEntriesParseHorseRow(line);
+      if (/ページトップへ戻る/.test(line) || jraEntriesFindStartTime(line)) { inTable = false; pendingHorseNumber = null; continue; }
+      if (!line) continue;
+      // ページをまたぐレースの場合、次ページのフッター/ヘッダー行(URL・タイムスタンプ等)が
+      // inTable=trueの間に紛れ込むことがある。これらは馬名行として解析されず失敗カウントに
+      // 計上されるだけで実害はないが、診断情報のノイズになるため事前に除外する。
+      if (/^https?:\/\//.test(line) || /出走馬一覧\s*JRA$/.test(line) || /^\d{4}\/\d{2}\/\d{2}\s+\d{1,2}:\d{2}/.test(line)) continue;
+
+      const bareNumber = line.match(/^(\d{1,2})$/);
+      if (bareNumber) { pendingHorseNumber = Number(bareNumber[1]); continue; }
+
+      const lineToParse = pendingHorseNumber !== null ? `${pendingHorseNumber} ${line}` : line;
+      const horse = jraEntriesParseHorseRow(lineToParse);
+      pendingHorseNumber = null;
       if (horse) {
         entries.push(horse);
         diagnostics.horseRowsDetected++;
-      } else if (line) {
+      } else {
         diagnostics.horseRowsFailed++;
       }
     }
