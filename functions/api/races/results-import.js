@@ -1,4 +1,4 @@
-import { requireAdmin, backfillHorseNamesForRace, linkUnregisteredImportsToRace } from "../_shared.js";
+import { requireAdmin, backfillHorseNamesForRace, linkUnregisteredImportsToRace, recomputeTicketPayoutsForRace } from "../_shared.js";
 
 const BET_TYPES = ["tan", "fuku", "wakuren", "umaren", "umatan", "wide", "sanrenpuku", "sanrentan"];
 
@@ -41,6 +41,12 @@ export async function onRequestPost(context) {
       const id = ins.meta.last_row_id;
       await linkUnregisteredImportsToRace(env.DB, id, item.race_date, item.track, raceNumber);
       await backfillHorseNamesForRace(env.DB, id, entries);
+      // 新規登録直後のレースには既存の通常購入(tickets)は存在しえない(通常購入はrace_idの
+      // 存在を前提とするため)。ただし念のため、この時点で万一tickets/imported分が
+      // 紐付いていた場合に備え、着順・払戻が入っていれば再計算しておく(安全側)。
+      if (finishOrder || Object.keys(payouts).length) {
+        await recomputeTicketPayoutsForRace(env.DB, id, finishOrder, Object.keys(payouts).length ? payouts : null, entries);
+      }
       results.push({ status: "created", id, key: normRaceKey(item), race_name: item.race_name || null });
       continue;
     }
@@ -57,8 +63,9 @@ export async function onRequestPost(context) {
     }
 
     const fields = []; const values = [];
-    if (body.mode === "overwrite" || !existingFinish) { fields.push("finish_order = ?"); values.push(finishOrder ? JSON.stringify(finishOrder) : null); }
-    if (body.mode === "overwrite" || !existingPayouts || Object.keys(existingPayouts || {}).length === 0) { fields.push("payouts = ?"); values.push(Object.keys(payouts).length ? JSON.stringify(payouts) : null); }
+    let finishOrPayoutTouched = false;
+    if (body.mode === "overwrite" || !existingFinish) { fields.push("finish_order = ?"); values.push(finishOrder ? JSON.stringify(finishOrder) : null); finishOrPayoutTouched = true; }
+    if (body.mode === "overwrite" || !existingPayouts || Object.keys(existingPayouts || {}).length === 0) { fields.push("payouts = ?"); values.push(Object.keys(payouts).length ? JSON.stringify(payouts) : null); finishOrPayoutTouched = true; }
     if (hasNewEntries) { fields.push("entries = ?"); values.push(JSON.stringify(entries)); }
     if (!existing.race_name && item.race_name) { fields.push("race_name = ?"); values.push(item.race_name); }
     if (!existing.course_type && item.course_type) { fields.push("course_type = ?"); values.push(item.course_type); }
@@ -66,6 +73,23 @@ export async function onRequestPost(context) {
     if (fields.length) { values.push(existing.id); await env.DB.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values).run(); }
     if (hasNewEntries) await backfillHorseNamesForRace(env.DB, existing.id, entries);
     await linkUnregisteredImportsToRace(env.DB, existing.id, existing.race_date, existing.track, existing.race_number);
+
+    // 2026-08-09追加: 着順(finish_order)または払戻(payouts)を更新した場合、このレースを
+    // 購入した「全ユーザーの」tickets.payoutを再計算して反映する。以前はこの一括登録
+    // (JRAレース結果PDFインポート)経由の更新だけ再計算処理が呼ばれておらず、購入済みの
+    // 馬券が「未確定」のまま表示され続ける不具合があった(races.js側の払戻編集モーダルから
+    // 個別に保存し直すと直る、という回避策はあったが、PDF一括登録の意義が薄れてしまっていた)。
+    // functions/api/races/[id].js の同等処理と揃える。
+    if (finishOrPayoutTouched) {
+      const fresh = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(existing.id).first();
+      if (fresh) {
+        const freshEntries = fresh.entries ? JSON.parse(fresh.entries) : [];
+        const freshFinishOrder = fresh.finish_order ? JSON.parse(fresh.finish_order) : null;
+        const freshPayouts = fresh.payouts ? JSON.parse(fresh.payouts) : null;
+        await recomputeTicketPayoutsForRace(env.DB, existing.id, freshFinishOrder, freshPayouts, freshEntries);
+      }
+    }
+
     results.push({ status: fields.length ? "updated" : "unchanged", id: existing.id, key: normRaceKey(item), finishDiff, payoutDiff });
   }
   return Response.json({ ok: true, results });

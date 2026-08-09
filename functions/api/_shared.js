@@ -237,6 +237,14 @@ export async function backfillHorseNamesForRace(db, raceId, entries) {
 // 他ユーザーの購入履歴に払戻が反映されない不具合があった。
 // (ロジックは public/payout.js の computeWinningCombos 等をサーバー側へ移植したもの。
 //  クライアント側と実装がずれないよう、変更する際は両方を確認すること)
+//
+// 呼び出し元(2026-08-09時点):
+//   - functions/api/races/[id].js (レース管理画面の払戻編集モーダルからの保存)
+//   - functions/api/races/results-import.js (JRAレース結果PDF一括登録)
+// 新しく finish_order / payouts を更新する処理を追加する場合は、必ずここも
+// 呼び出すこと(呼び忘れると、購入済みの馬券のpayoutが更新されないまま
+// 「未確定」表示が残ってしまう不具合になる。2026-08-09にresults-import.js側の
+// 呼び忘れが発覚し修正した実例がある)。
 
 const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
 
@@ -310,15 +318,24 @@ export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, pay
         selections = [];
       }
       const combos = computeWinningCombos(t.bet_type, finishOrder, entries);
-      let matchedRate = null;
-      for (const c of combos) {
-        const rate = findStoredRateServer(payoutsObj, t.bet_type, c.combo);
-        if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
-          matchedRate = rate;
-          break;
+      // 2026-08-09修正: 枠番(waku_number)が未確定の出走馬が絡む枠連など、
+      // 的中組み合わせ自体を算出できない(combo === null)ケースでは、
+      // 「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う。
+      // 以前は matchedRate が見つからない場合に一律0円へフォールバックしていたため、
+      // 実際には的中している可能性がある馬券まで不的中扱いになってしまっていた。
+      if (combos.some((c) => c.combo === null)) {
+        newPayout = null;
+      } else {
+        let matchedRate = null;
+        for (const c of combos) {
+          const rate = findStoredRateServer(payoutsObj, t.bet_type, c.combo);
+          if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
+            matchedRate = rate;
+            break;
+          }
         }
+        newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
       }
-      newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
     }
     const current = t.payout === undefined ? null : t.payout;
     if (newPayout !== current) {
