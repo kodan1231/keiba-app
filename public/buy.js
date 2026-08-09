@@ -86,7 +86,7 @@ async function loadPurchasedRaceIds() {
       });
     }
   } catch (_) {
-    // 取得に失敗してもレース一覧表示自体は継続する(バッジが出ないだけ)。
+    // 取得に失敗してもレース一覧表示自体は継続する(色分けが出ないだけ)。
   }
   purchasedRaceIds = ids;
 }
@@ -130,14 +130,16 @@ function renderGrid() {
           ${Array.from({length:12}, (_, i) => {
             const r = by[`${track}_${i+1}`];
             if (!r) return `<div class="race-column-row no-race"><b>${i+1}R</b></div>`;
+            // 2026-08-10: 「購入済み」はテキストバッジではなく、行の背景色(薄い緑の
+            // アクセント)で示す方式に変更。実機で確認したところテキストバッジは
+            // 視認しづらいとのフィードバックを受けての対応(docs/DESIGN.md参照)。
             const purchased = purchasedRaceIds.has(Number(r.id));
             return `
-              <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"}"
+              <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
                 data-id="${r.id}" type="button">
                 <b>${i+1}R</b>
                 <span>${escapeHtml(r.race_name || "")}</span>
                 <small>${r.entries.length ? `${r.entries.length}頭` : "出走馬未登録"}</small>
-                ${purchased ? `<span class="purchased-badge">購入済み</span>` : ""}
               </button>`;
           }).join("")}
         </section>
@@ -769,7 +771,7 @@ submitBtn.onclick = async () => {
   submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
   if (res.ok) {
     submitMessage.textContent = `${combos.length}点を購入記録に保存しました。`;
-    // 購入済みバッジをこのレースにも反映させるため、購入済みレースID集合を
+    // 購入済みの色分けをこのレースにも反映させるため、購入済みレースID集合を
     // 更新してレース一覧を再描画する(モーダルは開いたままでよい)。
     await loadPurchasedRaceIds();
     renderGrid();
