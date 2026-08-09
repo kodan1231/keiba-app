@@ -1609,6 +1609,21 @@ body.modal-open { overflow: hidden; }
 }
 .race-column-row.has-entries{background:rgba(0,0,0,.012)}
 
+/* ---------- 2026-08-10: 購入済みレースの表示をテキストバッジ→背景色に変更 ----------
+   実機確認で「購入済み」テキストバッジ(.purchased-badge)が視認しづらいとの
+   フィードバックを受けての対応。buy.js側もテキストバッジの生成をやめ、該当行に
+   .purchased クラスを付与するだけに変更した。ここでは win(緑)系の薄いアクセント色で
+   行全体の背景を塗り、一覧をざっと見ただけで購入済みかどうか分かるようにする。
+   hover時は既存の .race-column-row:hover(グレー塗り)より視認性を保てるよう、
+   同系色でわずかに濃くする。has-entries/empty-race等の既存クラスとは併用される
+   前提のため、背景色以外のプロパティは指定しない。 */
+.race-column-row.purchased {
+  background: rgba(47, 122, 61, 0.14);
+}
+.race-column-row.purchased:hover {
+  background: rgba(47, 122, 61, 0.22);
+}
+
 .bet-horse-table-head{
   grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) 44px minmax(220px,1fr);
 }
