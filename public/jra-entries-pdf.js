@@ -35,18 +35,34 @@ function jraEntriesNormalizeUnit(s) {
     .replace(/[︓﹕]/g, ":")
     .replace(/[﹣－−―–—]/g, "-");
 }
+// 2026-08-09修正: 以前はここで `\s+` → 半角スペース1つ、という一律変換をしており、
+// jraEntriesJoinRowItems が実測ギャップから慎重に判定した「タブ(列区切り)」の情報が
+// この時点で握りつぶされていた。タブは騎手名/調教師名の境界を判定する重要な signal
+// (jraEntriesParseHorseRow参照)のため、タブと半角スペースは別々に保ったまま
+// 連続分だけを1文字に圧縮する。
 function jraEntriesNormalizeLine(s) {
-  return jraEntriesNormalizeUnit(s).replace(/\s+/g, " ").trim();
+  return jraEntriesNormalizeUnit(s).replace(/ +/g, " ").replace(/\t+/g, "\t").trim();
 }
 
 // 行内テキストの連結。既存 public/jra-result-pdf.js の jraResultJoinRowItems と同じ
 // 考え方(直前要素との実測ギャップにより連結/スペース/タブを判定する)。本パーサーの
 // 正規表現はスペース・タブいずれも \s として扱うため、区別自体の重要性は低いが、
 // 単語内部に余計な区切りが入って正規表現が不一致になる事故を防ぐために踏襲する。
+//
+// 2026-08-09: 特定の騎手(複数レースに繰り返し登場する乗り鞍の多い騎手)でのみ、
+// 騎手名と調教師名の間の区切りが検出できず連結してしまう不具合が実機で報告された。
+// PDF内で同一文字列(騎手名リンク)が繰り返し使われる場合、PDF側が描画データを
+// 使い回す(キャッシュする)ことがあり、これによりPDF.jsが報告する文字幅(prev.w)が
+// 実際の見た目と異なる値になり、幅に比例するしきい値計算が異常値に引きずられて
+// 本来検出すべき区切りを見逃す可能性が考えられる(未確証・実機の実測値による
+// 検証が必要)。保険として、幅に比例する側のしきい値に上限を設け、
+// 万一prev.wが異常に大きく報告された場合でもしきい値が際限なく大きくならないようにする。
 const JRA_E_GAP_SPACE_RATIO = 0.3;
 const JRA_E_GAP_TAB_RATIO = 1.2;
 const JRA_E_GAP_SPACE_MIN = 1.0;
 const JRA_E_GAP_TAB_MIN = 6.0;
+const JRA_E_GAP_SPACE_MAX = 3.5; // これを超える幅比例しきい値は採用しない(保険)
+const JRA_E_GAP_TAB_MAX = 14.0;
 
 function jraEntriesJoinRowItems(items) {
   let text = "";
@@ -56,13 +72,13 @@ function jraEntriesJoinRowItems(items) {
     if (i > 0) {
       const prev = items[i - 1];
       const gap = item.x - (prev.x + (prev.w || 0));
-      const spaceThreshold = Math.max((prev.w || 0) * JRA_E_GAP_SPACE_RATIO, JRA_E_GAP_SPACE_MIN);
-      const tabThreshold = Math.max((prev.w || 0) * JRA_E_GAP_TAB_RATIO, JRA_E_GAP_TAB_MIN);
+      const spaceThreshold = Math.min(Math.max((prev.w || 0) * JRA_E_GAP_SPACE_RATIO, JRA_E_GAP_SPACE_MIN), JRA_E_GAP_SPACE_MAX);
+      const tabThreshold = Math.min(Math.max((prev.w || 0) * JRA_E_GAP_TAB_RATIO, JRA_E_GAP_TAB_MIN), JRA_E_GAP_TAB_MAX);
       let sep = "";
       if (gap > tabThreshold) sep = "\t";
       else if (gap > spaceThreshold) sep = " ";
       text += sep;
-      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結") });
+      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結"), prevWidth: Math.round((prev.w || 0) * 100) / 100, prevStr: prev.str, curStr: item.str });
     }
     text += item.str;
   }
@@ -99,8 +115,15 @@ function jraEntriesParseCourse(text) {
 // 例(見習い減量記号)  : "ジーティービキニ 牝3 54.0kg ☆舟山 瑠泉 松下 武士"
 // 例(外国人騎手)      : "アブキールベイ 牝4 55.5kg J.コレット 坂口 智史"
 // 例(枠番・馬番確定後・未検証の想定形式): "1 3 アルデバローズ 牝3 55.0kg 横山 琉人 矢野 英一"
+//
+// 2026-08-09修正: 以前は先頭で `.replace(/\t/g, " ")` によりタブ(列区切りの情報)を
+// 早期に握りつぶしていたため、後段の騎手名/調教師名の境界判定がトークン数だけに
+// 頼った「推測」になっていた(特定の騎手で区切りを誤検出する不具合の一因)。
+// タブは jraEntriesJoinRowItems が実測ギャップから「列の区切り」と判定した信頼度の
+// 高い情報のため、優先的に利用する(タブが無い場合のみトークン数ヒューリスティックへ
+// フォールバックする)。
 function jraEntriesParseHorseRow(rawLine) {
-  const s = jraEntriesNormalizeLine(rawLine).replace(/\t/g, " ");
+  const s = jraEntriesNormalizeLine(rawLine);
   if (!s) return null;
 
   let wakuNumber = null;
@@ -128,8 +151,10 @@ function jraEntriesParseHorseRow(rawLine) {
   const horseName = m[1].trim();
   let tail = m[5].trim();
 
-  // 見習い減量記号(☆▲△★◇)を除去。
+  // 見習い減量記号(☆▲△★◇)。以前はここで除去して捨てていたが、JRA表記に合わせて
+  // 騎手名の先頭に残すよう変更する(2026-08-09〜)。
   const markMatch = tail.match(/^([☆▲△★◇])\s*(.+)$/);
+  const apprenticeMark = markMatch ? markMatch[1] : "";
   if (markMatch) tail = markMatch[2].trim();
 
   // 末尾の単勝オッズ(小数。例: "15.9")が付いている場合は取り除く。オッズが発表された
@@ -138,37 +163,51 @@ function jraEntriesParseHorseRow(rawLine) {
   // 騎手名側に押し出されてしまう不具合があった(2026-08-08修正)。
   tail = tail.replace(/\s+[\d,]+\.\d+\s*$/, "");
 
-  const tokens = tail.split(/\s+/).filter(Boolean);
-  if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
-
-  // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
-  // 1トークンに結合されるケースが実PDFで確認されている(例: "浜中 俊 谷潔" → 本来は
-  // 騎手名「浜中 俊」・調教師名「谷潔」。2026-08-08確認)。一方、外国人騎手名
-  // (例: "J.コレット")のようにピリオドを含む1トークンの場合は騎手側が1トークンで
-  // 調教師側が2トークンという逆パターンになる。トークン数だけでは一意に決まらないため、
-  // 先頭トークンにピリオドを含むかどうかで判定する。
   let jockey, trainer;
-  if (tokens.length >= 4) {
-    trainer = tokens.slice(-2).join(" ");
-    jockey = tokens.slice(0, -2).join(" ");
-  } else if (tokens.length === 3) {
-    if (/[.．]/.test(tokens[0])) {
-      jockey = tokens[0];
-      trainer = `${tokens[1]} ${tokens[2]}`;
-    } else {
-      jockey = `${tokens[0]} ${tokens[1]}`;
-      trainer = tokens[2];
+
+  // 最優先: タブ(列区切り)が残っていれば、それを騎手名/調教師名/(オッズ)の境界として使う。
+  if (tail.includes("\t")) {
+    const tabParts = tail.split("\t").map((p) => p.trim()).filter(Boolean);
+    while (tabParts.length > 2 && /^[\d,]+\.\d+$/.test(tabParts[tabParts.length - 1])) tabParts.pop();
+    if (tabParts.length >= 2) {
+      jockey = tabParts[0];
+      trainer = tabParts.slice(1).join(" ");
     }
-  } else {
-    jockey = tokens[0];
-    trainer = tokens[1];
+  }
+
+  // タブが無い(または不十分な)場合は、トークン数から推測する(以前からのフォールバック)。
+  if (!jockey || !trainer) {
+    const tokens = tail.replace(/\t/g, " ").split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
+
+    // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
+    // 1トークンに結合されるケースが実PDFで確認されている(例: "浜中 俊 谷潔" → 本来は
+    // 騎手名「浜中 俊」・調教師名「谷潔」。2026-08-08確認)。一方、外国人騎手名
+    // (例: "J.コレット")のようにピリオドを含む1トークンの場合は騎手側が1トークンで
+    // 調教師側が2トークンという逆パターンになる。トークン数だけでは一意に決まらないため、
+    // 先頭トークンにピリオドを含むかどうかで判定する。
+    if (tokens.length >= 4) {
+      trainer = tokens.slice(-2).join(" ");
+      jockey = tokens.slice(0, -2).join(" ");
+    } else if (tokens.length === 3) {
+      if (/[.．]/.test(tokens[0])) {
+        jockey = tokens[0];
+        trainer = `${tokens[1]} ${tokens[2]}`;
+      } else {
+        jockey = `${tokens[0]} ${tokens[1]}`;
+        trainer = tokens[2];
+      }
+    } else {
+      jockey = tokens[0];
+      trainer = tokens[1];
+    }
   }
 
   if (!horseName || !jockey) return null;
 
   return {
     horse_name: horseName,
-    jockey,
+    jockey: apprenticeMark ? `${apprenticeMark}${jockey}` : jockey,
     trainer, // 2026-08-07時点では保存対象外(entries-import.js側で無視される。次フェーズでentriesに追加予定)
     waku_number: wakuNumber,
     horse_number: horseNumber,
