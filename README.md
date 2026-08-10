@@ -86,12 +86,12 @@ functions/
   api/horse-notes/           ... 馬メモの登録・取得
   api/admin/                 ... 管理者向けAPI(未登録レース一覧・登録ユーザー一覧)。管理者限定
 schema.sql                   ... D1データベースの最新版テーブル定義(新規セットアップ用)
-latest1.sql                  ... 既存DBを最新版へ更新する統合マイグレーション(未適用分のみ)
-archive/migrations/          ... 過去の番号付きmigration・過去のlatest1.sqlのアーカイブ(通常は実行しない)
+migration.sql                ... 既存DBを最新版へ更新する統合マイグレーション(未適用分のみ)
+archive/migrations/          ... 過去の番号付きmigration・過去のmigration.sql(旧latest1.sql)のアーカイブ(通常は実行しない)
 archive/documents/           ... 過去の作業ログ・調査メモ・完了済みタスクの経緯のアーカイブ(通常は参照しない)
 docs/DESIGN.md                ... データ構造・データフロー・集計ルールなどの設計方針(JRAレース結果PDFインポートの仕様も含む。生きたドキュメント)
 docs/TESTING.md                ... 手動テストチェックリスト(生きたドキュメント)
-docs/BACKLOG.md                 ... 承認済みだが未実装のタスク・調査中の不具合の引継ぎメモ
+docs/BACKLOG.md                 ... 承認済みだが未実装のタスクの引継ぎメモ
 wrangler.toml
 ```
 
@@ -123,7 +123,7 @@ DBスキーマは最新版を基準に管理します。
   (`CREATE TABLE IF NOT EXISTS`)など、既存データに影響しない変更のみを基本とする。
   どうしても削除的な変更が必要な場合は、影響範囲(消えるデータ・対象範囲)を明示した
   上で、**必ず作業前に承認を得ること**
-- `latest1.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、末尾に
+- `migration.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、末尾に
   `-- @STEP: 名前`ブロックとして追記していく。適用が完了したブロックは、
   ファイルからは削除し(内容は`schema.sql`に反映し、必要なら
   `archive/migrations/`へ退避する)、常に「これから適用すべき差分だけ」が
@@ -131,7 +131,7 @@ DBスキーマは最新版を基準に管理します。
 
 ### スキーマ変更の適用手順(手動・wranglerのみ)
 
-1. `latest1.sql`に新しい`-- @STEP: 名前`ブロックを追記する
+1. `migration.sql`に新しい`-- @STEP: 名前`ブロックを追記する
 2. そのブロックのSQLだけを一時ファイル(例: `step.sql`)にコピーし、まず`--local`で試す
 
    ```bash
@@ -147,7 +147,7 @@ DBスキーマは最新版を基準に管理します。
    ```bash
    npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('新しいステップ名');"
    ```
-5. `latest1.sql`から該当ブロックを削除し、`schema.sql`へ内容を反映する(新規DBでも
+5. `migration.sql`から該当ブロックを削除し、`schema.sql`へ内容を反映する(新規DBでも
    最初から最新構造になるように)
 
 途中で失敗した場合は、`ALTER TABLE ADD COLUMN`のような非破壊的な変更なら
@@ -162,7 +162,7 @@ DBスキーマは最新版を基準に管理します。
 npx wrangler pages deploy public --project-name=keiba-yosou-app
 ```
 
-> 注意: `latest1.sql` は既存DBを最新版へ更新するためのものです。新規DBは `schema.sql` を使用してください。
+> 注意: `migration.sql` は既存DBを最新版へ更新するためのものです。新規DBは `schema.sql` を使用してください。
 > 既存DBに複数ユーザー対応のマイグレーションを適用した場合は、管理者アカウント作成後に
 > `archive/migrations/assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに割り当ててください
 > (下記「複数ユーザー対応について」参照)。

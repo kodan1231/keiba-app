@@ -14,11 +14,11 @@
 npx wrangler d1 execute keiba-yosou-db --local --file=./schema.sql
 ```
 
-既存ローカルDBを最新版へ更新する場合(`latest1.sql`に未適用の`-- @STEP`ブロックが
+既存ローカルDBを最新版へ更新する場合(`migration.sql`に未適用の`-- @STEP`ブロックが
 残っている場合のみ。無ければ`schema.sql`実行時点で最新):
 
 ```bash
-npx wrangler d1 execute keiba-yosou-db --local --file=./latest1.sql
+npx wrangler d1 execute keiba-yosou-db --local --file=./migration.sql
 ```
 
 (未適用ブロックがある場合、実行後に該当ブロック名を`schema_migrations`へ`INSERT`する。
@@ -340,9 +340,9 @@ POST /api/ticket-imports
 ## 6. マイグレーション整合性
 
 - 新規DBは `schema.sql` の1回実行で最新版になること
-- 既存DBは `latest1.sql` に残っている未適用の `-- @STEP` ブロックだけを手動で適用すれば
+- 既存DBは `migration.sql` に残っている未適用の `-- @STEP` ブロックだけを手動で適用すれば
   最新版になること(`schema_migrations`テーブルで適用状況を確認できること)
-- 過去のmigration・過去の`latest1.sql`(`archive/migrations/`)は通常のセットアップ・
+- 過去のmigration・過去の`migration.sql`(`archive/migrations/`)は通常のセットアップ・
   更新で使用しないこと
 
 ## 7. レース管理画面のレイアウト

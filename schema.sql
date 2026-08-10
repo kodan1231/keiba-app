@@ -1,4 +1,21 @@
--- 疑似馬券購入シミュレーター データベース スキーマ (latest / v13相当・複数ユーザー対応)
+-- 疑似馬券購入シミュレーター データベース スキーマ (FIX ver1.0)
+--
+-- 新規DBを構築する際に、このファイルを1回実行すれば最新版のテーブル一式が
+-- 出来上がる。既存DBを更新する場合はこのファイルではなく migration.sql を使う
+-- (README.md「DBマイグレーション方針」参照)。
+--
+-- セクション構成:
+--   1. 認証(users)
+--   2. レース(races) ... 全ユーザー共有
+--   3. 通常購入(tickets)
+--   4. 予想(prediction_notes / prediction_marks)
+--   5. 馬メモ(horse_notes)
+--   6. CSV取込 原本(imported_tickets)
+--   7. CSV取込 正規化データ(imported_ticket_groups / imported_ticket_items)
+
+-- ============================================================
+-- 1. 認証
+-- ============================================================
 
 -- ユーザーアカウント。ログイン画面から自己登録できる(招待コード等の制限なし)。
 -- 管理者かどうかはこのテーブルではなく、Cloudflare Pagesの環境変数ADMIN_USERNAMES
@@ -11,36 +28,51 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- 初期管理者アカウント: username=admin, password=password
--- (パスワードハッシュは pbkdf2$100000$<salt>$<hash> 形式。ログイン後、必要であれば
---  パスワード変更機能は現状無いため、DBを直接更新するか運用で管理する)
+-- (パスワードハッシュは pbkdf2$100000$<salt>$<hash> 形式)
 -- 管理者として扱われるには、Cloudflare Pagesの環境変数 ADMIN_USERNAMES に
--- "admin" を追加する必要がある(README参照)。
+-- "admin" を追加する必要がある(README参照)。ログイン後、必要であればパスワードを
+-- 変更する(現状アプリ内に変更機能は無いため、変更する場合はDBを直接更新する)。
 INSERT OR IGNORE INTO users (username, password_hash) VALUES (
   'admin',
   'pbkdf2$100000$MStroT20U7oSgAlutNgvkw==$gkB+N7Q6VHmvVWx94Bs7oBqlHUk9DnWJRr9YnMasMS8='
 );
 
--- レースマスター: 出走馬表(枠・馬番・馬名・騎手)と、確定後のレース結果(着順)を保持
--- 全ユーザー共有のデータ(実世界の共通データのため、ユーザーごとに分けない)。
--- 登録・編集・削除は管理者のみが行える(APIハンドラ側でチェックする)。
+-- ============================================================
+-- 2. レース(全ユーザー共有)
+-- ============================================================
+
+-- レースマスター: 出走馬表(枠・馬番・馬名・騎手)と、確定後のレース結果(着順)を保持する。
+-- 実世界の共通データのため全ユーザー共有。登録・編集・削除は管理者のみが行える
+-- (APIハンドラ側でチェックする)。
 CREATE TABLE IF NOT EXISTS races (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_date TEXT NOT NULL,        -- 開催日 (YYYY-MM-DD)
   track TEXT NOT NULL,            -- 競馬場
   race_number INTEGER NOT NULL,   -- レース番号 (1-12)
   race_name TEXT,                 -- レース名(任意)
-  course_type TEXT,               -- コース種別: 芝/ダート/障害(任意入力・2026-08-02追加)
-  distance INTEGER,               -- 距離(メートル・任意入力・2026-08-02追加)
+  course_type TEXT,               -- コース種別: 芝/ダート/障害(任意入力)
+  distance INTEGER,               -- 距離(メートル・任意入力)
   entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark}]
+                                   -- waku_number/horse_numberはnullを許容する(出走馬一覧PDF
+                                   -- インポート対応。docs/DESIGN.md「出走馬(races.entries)の
+                                   -- 枠番・馬番はnullを許容する」参照)
   finish_order TEXT,              -- JSON配列 [horse_number, ...] 着順順(1着から)。未確定はNULL
-  created_at TEXT DEFAULT (datetime('now')),
   payouts TEXT,                   -- JSON { 馬券式: [{combo:[馬番...], rate:100円あたり払戻}, ...] }
+  created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(race_date, track, race_number)
 );
 
--- 購入履歴: ボックス/流し/フォーメーションで生成された組み合わせ1点ごとに1行
+CREATE INDEX IF NOT EXISTS idx_races_date ON races(race_date);
+
+-- ============================================================
+-- 3. 通常購入
+-- ============================================================
+
+-- 購入履歴: ボックス/流し/フォーメーションで生成された組み合わせ1点ごとに1行。
 -- user_id: 購入したユーザー。複数ユーザー対応より前のデータはNULL(管理者アカウント
--- 作成後に一括で割り当てる運用。README参照)。
+-- 作成後、archive/migrations/assign_existing_data_to_admin.sql で一括割り当てする)。
+-- ロック仕様(着順・払戻確定後の編集・削除禁止)は撤廃済み。確定後も自由に編集・削除できる
+-- (docs/DESIGN.md「ロック仕様」参照)。
 CREATE TABLE IF NOT EXISTS tickets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER,
@@ -59,20 +91,17 @@ CREATE TABLE IF NOT EXISTS tickets (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_races_date ON races(race_date);
 CREATE INDEX IF NOT EXISTS idx_tickets_group ON tickets(group_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_race_date ON tickets(race_date);
 CREATE INDEX IF NOT EXISTS idx_tickets_race_id ON tickets(race_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_track ON tickets(track);
 CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
 
+-- ============================================================
+-- 4. 予想(予想印・予想メモ)
+-- ============================================================
 
--- Phase 1: 予想
--- Phase 1: 予想機能の追加
--- 既存の races / tickets データは変更しません。
--- 2026-08-01: 複数ユーザー対応により、予想メモ・予想印はユーザーごとに持てるようにする
--- (以前は1レースにつき1件・全ユーザー共通だった)。
-
+-- 予想メモ: レース単位の自由記述メモ。ユーザーごとに複数持てる(1レース1ユーザーにつき1件)。
 CREATE TABLE IF NOT EXISTS prediction_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL,
@@ -84,6 +113,9 @@ CREATE TABLE IF NOT EXISTS prediction_notes (
   FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_prediction_notes_race_id ON prediction_notes(race_id);
+
+-- 予想印: 1頭につき1つまで(◎○▲△☆消)。ユーザーごとに独立して持てる。
 CREATE TABLE IF NOT EXISTS prediction_marks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL,
@@ -92,20 +124,18 @@ CREATE TABLE IF NOT EXISTS prediction_marks (
   mark TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
-  -- 1頭につき予想印は1つまで(2026-07-30〜)。ユーザーごとに独立して持てる。
   UNIQUE(race_id, horse_number, user_id),
   FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id
-  ON prediction_marks(race_id);
-CREATE INDEX IF NOT EXISTS idx_prediction_notes_race_id
-  ON prediction_notes(race_id);
+CREATE INDEX IF NOT EXISTS idx_prediction_marks_race_id ON prediction_marks(race_id);
 
+-- ============================================================
+-- 5. 馬メモ
+-- ============================================================
 
--- Phase 2: 馬単位の継続メモ
--- 2026-08-01: 複数ユーザー対応により、馬メモもユーザーごとに持てるようにする
--- (以前はhorse_nameのみがPKで、全ユーザー共通の1件だった)。
+-- 馬単位の継続メモ。馬名をキーに管理する(馬名はtrim/空白正規化して保存)。
+-- ユーザーごとに独立して持てる(horse_name, user_idの組み合わせで一意)。
 CREATE TABLE IF NOT EXISTS horse_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   horse_name TEXT NOT NULL,
@@ -115,10 +145,14 @@ CREATE TABLE IF NOT EXISTS horse_notes (
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(horse_name, user_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_horse_notes_horse_name ON horse_notes(horse_name);
 
+-- ============================================================
+-- 6. CSV取込 原本
+-- ============================================================
 
--- Club JRA-Net等の外部購入履歴CSVを保持するテーブル
+-- Club JRA-Net等の外部購入履歴CSVを保持するテーブル(原本保持用)。
 -- user_id: 取り込んだユーザー。重複判定(uq_imported_tickets_club_jra)もユーザー単位で行う。
 CREATE TABLE IF NOT EXISTS imported_tickets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,6 +173,7 @@ CREATE TABLE IF NOT EXISTS imported_tickets (
   return_amount INTEGER DEFAULT 0,
   raw_csv TEXT
 );
+
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_race_date ON imported_tickets(race_date);
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_receipt_number ON imported_tickets(receipt_number);
 CREATE INDEX IF NOT EXISTS idx_imported_tickets_user_id ON imported_tickets(user_id);
@@ -152,8 +187,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_tickets_club_jra
   WHERE receipt_number IS NOT NULL AND receipt_number <> ''
     AND sequence_number IS NOT NULL AND sequence_number <> '';
 
+-- ============================================================
+-- 7. CSV取込 正規化データ
+-- ============================================================
 
--- 最新版: Import normalized purchase groups / individual ticket items
+-- CSV購入グループ: CSVの1行=1購入グループ。組み合わせを個別買い目(imported_ticket_items)へ
+-- 分解する前の、購入操作単位のまとまり。
 -- user_id: 取り込んだユーザー(imported_ticket_itemsは持たず、group_id経由で辿る)。
 CREATE TABLE IF NOT EXISTS imported_ticket_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,9 +214,13 @@ CREATE TABLE IF NOT EXISTS imported_ticket_groups (
   imported_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (race_id) REFERENCES races(id)
 );
+
+-- (source, group_key)の一意制約にはuser_idを含めない。本アプリは同じJRA-Netアカウントを
+-- 複数のアプリユーザーが共有する想定をしていないため(docs/DESIGN.md「CSV取込の仕様」参照)。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_group_source_key ON imported_ticket_groups(source, group_key);
 CREATE INDEX IF NOT EXISTS idx_imported_groups_user_id ON imported_ticket_groups(user_id);
 
+-- CSV個別買い目: imported_ticket_groups の組み合わせを個別買い目へ分解したもの。
 CREATE TABLE IF NOT EXISTS imported_ticket_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id INTEGER NOT NULL,
@@ -192,5 +235,6 @@ CREATE TABLE IF NOT EXISTS imported_ticket_items (
   FOREIGN KEY (group_id) REFERENCES imported_ticket_groups(id) ON DELETE CASCADE,
   FOREIGN KEY (race_id) REFERENCES races(id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_imported_items_group ON imported_ticket_items(group_id);
 CREATE INDEX IF NOT EXISTS idx_imported_items_race ON imported_ticket_items(race_id);

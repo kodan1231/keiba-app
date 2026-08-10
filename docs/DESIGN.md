@@ -527,19 +527,19 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 
 ## DBマイグレーションの運用(node不要・wranglerコマンドのみで手動運用)
 
-`latest1.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、`-- @STEP: 名前`
+`migration.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、`-- @STEP: 名前`
 ブロックとして末尾に追記していく。各ブロックが適用済みかどうかは、DB自身に作成される
 `schema_migrations`テーブルに記録する(名前をキーに1行1件)。
 
 適用手順(手動・wranglerのみ):
 
-1. `latest1.sql`に新しい`-- @STEP: 名前`ブロックを追記する
+1. `migration.sql`に新しい`-- @STEP: 名前`ブロックを追記する
 2. そのブロックのSQLだけを一時ファイルにコピーし、まず`--local`で試してから`--remote`
    (本番)に適用する
 3. 成功したら`schema_migrations`に`INSERT INTO schema_migrations (name) VALUES
    ('ステップ名');`で記録する
-4. `latest1.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映する(新規DBでも最初から
-   最新構造になるように)。これにより`latest1.sql`は常に「これから適用すべき差分だけ」を
+4. `migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映する(新規DBでも最初から
+   最新構造になるように)。これにより`migration.sql`は常に「これから適用すべき差分だけ」を
    保持する軽量な状態を保つ
 
 DROP/RENAMEを伴う破壊的な変更は極力避け、`ALTER TABLE ADD COLUMN`や`CREATE TABLE/INDEX
@@ -558,11 +558,12 @@ JSON列であるため、そもそもこのマイグレーション手順の対�
 ## DBファイルの役割
 
 - `schema.sql`: 新規DBを最新版で構築するための最終スキーマ。新規構築時に1回実行する
-- `latest1.sql`: 既存DBを最新版へ更新するための統合マイグレーション。**未適用の`-- @STEP`
+- `migration.sql`: 既存DBを最新版へ更新するための統合マイグレーション。**未適用の`-- @STEP`
   ブロックのみ**を保持する(適用済みの内容は`schema.sql`に反映し、ファイルからは削除する)
-- `archive/migrations/`: 過去の番号付きmigration・過去の`latest1.sql`のアーカイブ・単発
-  マイグレーションファイルの履歴保管場所。通常のセットアップ・更新では使用しない
-- `archive/scripts/migrate.js`: 以前使用していた自動適用ラッパー(廃止済み・履歴保管のみ)
+- `archive/migrations/`: 過去の番号付きmigration・過去の`migration.sql`(旧`latest1.sql`)の
+  アーカイブ・単発マイグレーションファイルの履歴保管場所。通常のセットアップ・更新では使用しない
+- `archive/scripts/migrate.js`: 以前使用していた自動適用ラッパー(廃止済み・履歴保管のみ。
+  旧ファイル名`latest1.sql`を参照するコードのまま保管している)
 
-新しいスキーマ変更を行う場合は、`schema.sql`と`latest1.sql`の両方を更新し、このファイル
+新しいスキーマ変更を行う場合は、`schema.sql`と`migration.sql`の両方を更新し、このファイル
 (`docs/DESIGN.md`)の該当箇所も合わせて更新してください。

@@ -1,5 +1,7 @@
--- latest1.sql
+-- migration.sql
 -- 現行DBを最新版へ更新するための統合マイグレーション。
+-- (旧ファイル名 latest1.sql。FIX ver1.0整理にあわせて改名した。
+--  内容自体は同じ運用ルールを引き継いでいる)
 --
 -- 方針:
 --   * 本ファイルは、既存DBを最新版へ更新する用途。新規DBは schema.sql を使用する。
@@ -11,9 +13,9 @@
 --     新しい "-- @STEP: 名前" ブロックを追記するだけでよい。名前は一度使ったら
 --     固定すること(schema_migrations内のキーになるため)。
 --
--- 2026-08-03: これより前の全ステップ(legacy_v13_multiuser, course_type_distance)は
+-- 過去に適用済みのステップ(legacy_v13_multiuser, course_type_distance)は
 -- 本番DB(keiba-yosou-db)への適用・schema_migrationsへの記録が完了し、
--- その最終結果は schema.sql に統合済みのため、本ファイルからは削除した。
+-- その最終結果は schema.sql に統合済みのため、本ファイルからは削除してある。
 -- 内容が必要な場合は archive/migrations/latest1_until_course_type_distance.sql
 -- を参照(git履歴にも残っている)。
 --
