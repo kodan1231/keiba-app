@@ -1,6 +1,6 @@
 import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace } from "../_shared.js";
 
-// PUT(編集)・DELETE(削除)ともに 2026-08-01より管理者のみ実行可能。
+// PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
 export async function onRequestPut(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -61,9 +61,10 @@ export async function onRequestPut(context) {
   }
 
   // 着順(finish_order)または払戻(payouts)が更新された場合、このレースを購入した
-  // 「全ユーザーの」tickets.payout を再計算して反映する。
-  // (以前は races.js が払戻モーダルを開いた管理者自身が購入したticketだけをPUTで
-  //  更新しており、他ユーザーの購入履歴に払戻が反映されない不具合があった)
+  // 「全ユーザーの」tickets.payout を再計算して反映する
+  // (races は共有データ、tickets はユーザーごとに分離されたデータであるため、
+  //  user_idで絞り込まず該当race_idの全ticketsを対象にする必要がある。
+  //  詳細はdocs/DESIGN.md「払戻確定時のticket反映」参照)。
   if ("finish_order" in data || "payouts" in data) {
     const race = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(params.id).first();
     if (race) {

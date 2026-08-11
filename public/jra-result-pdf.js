@@ -17,13 +17,12 @@ function jraResultNormalizeLine(s) {
   return jraResultNormalizeUnit(s).replace(/\s+/g, " ").trim();
 }
 
-// ---------- 行内テキストの連結(2026-08-07: ギャップ実測方式に変更) ----------
+// ---------- 行内テキストの連結 ----------
 // PDF.jsが返す各テキスト断片は、見た目の間隔(スペースの有無)と1対1で対応しない。
-// 以前は同一行と判定された断片を間隔の大小を見ずに一律タブで連結していたため、
-// 「発」と「走」の間、「２０２６」と「年」の間のように、本来隙間なく続く1つの
-// 単語の途中にもタブが挿入されてしまい、「文字同士が隙間なく連続している」ことを
-// 前提とする正規表現(発走時刻・年月日・開催回など)が軒並み不一致になる不具合があった
-// (実機診断ログで「発走時刻」候補=0、日付候補=0、開催情報候補=0という形で確認済み)。
+// 断片を間隔の大小を見ずに一律タブで連結すると、「発」と「走」の間、「２０２６」と
+// 「年」の間のように、本来隙間なく続く1つの単語の途中にもタブが挿入されてしまい、
+// 「文字同士が隙間なく連続している」ことを前提とする正規表現(発走時刻・年月日・
+// 開催回など)が軒並み不一致になる。
 // 直前の要素の右端から今回の要素の左端までの実際の隙間(gap)を計測し、
 //   - 隙間がごく小さい(同一単語内の文字とみなせる) → 連結(区切り文字なし)
 //   - 隙間が単語区切り相当           → 半角スペースで連結
@@ -112,14 +111,12 @@ const JRA_PAYOUT_TYPE_COMBO_SIZE = { tan:1, fuku:1, wakuren:2, wide:2, umaren:2,
 // 払戻表は「単勝/複勝」「枠連/ワイド」「馬連/馬単/3連複/3連単」の3列レイアウトの
 // グリッド構造になっており、複勝・ワイドのように複数行にまたがる式別は、2行目
 // 以降にラベルが再印字されない(例: 複勝の2・3件目は先頭に馬番・金額だけが続き、
-// 「複勝」という文字は無い)。以前は「行内で見つかった最初のラベルより前にある
-// 内容」を単純に捨てる/直前の1つの式別に決め打ちする実装だったが、1行の中に
-// 複数の列の継続データ(例: 複勝の3件目と、ワイドの2件目)が同時に現れる行が
-// あり、単一の「直前の式別」では区別できないことが判明した(2026-08-09確認)。
-// そこで、ラベルの無い継続データは「組み合わせの頭数(1頭/2頭/3頭)」で
-// 直前の式別を引き継ぐ方式にする。単勝・馬連・馬単・3連複・3連単は基本的に
-// 1行で完結する(継続行を持たない)ため、同じ頭数でもラベル無しの継続データは
-// 実質的に複勝・枠連・ワイドのいずれかにしかならない。
+// 「複勝」という文字は無い)。単一の「直前の式別」だけでは、1行の中に複数の列の
+// 継続データ(例: 複勝の3件目と、ワイドの2件目)が同時に現れる行を区別できないため、
+// ラベルの無い継続データは「組み合わせの頭数(1頭/2頭/3頭)」で直前の式別を引き継ぐ
+// 方式にする。単勝・馬連・馬単・3連複・3連単は基本的に1行で完結する(継続行を
+// 持たない)ため、同じ頭数でもラベル無しの継続データは実質的に複勝・枠連・
+// ワイドのいずれかにしかならない。
 // carryState: {1: 直前の1頭式別, 2: 直前の2頭式別, 3: 直前の3頭式別}
 function jraResultParsePayoutLine(r, rawLine, carryState) {
   const state = { 1: carryState?.[1] ?? null, 2: carryState?.[2] ?? null, 3: carryState?.[3] ?? null };
@@ -200,7 +197,7 @@ function jraResultCleanJockeyName(raw) {
 function jraResultParseHorseFromResultLine(text) {
   const s=jraResultNormalizeLine(text);
 
-  // 実PDFで確認した基本形式(2026-08-08確認):
+  // 基本形式:
   //   馬番 馬名 性齢 負担重量 騎手名 タイム 着差 ...
   //   例: "8 クールストラッチン 牝2 55.0 菊沢 一樹 0:57.2 ハナ ..."
   // 枠番は結果表の数字としては現れないことが多い(JRAが枠番を色付きアイコンで
@@ -322,7 +319,7 @@ function jraResultParseExtractedPages(pages) {
     errors:[],
     headerCandidates:[],
     rawSamples:[],
-    gapSamples:[] // 2026-08-07追加: 行内文字間隔の実測サンプル(連結閾値の調整用)
+    gapSamples:[] // 行内文字間隔の実測サンプル(連結閾値の調整用の診断情報)
   };
 
   // 解析前の実データを診断できるよう、各ページ先頭と「発走/日付/開催」候補を保存。
@@ -607,10 +604,9 @@ function jraResultParseExtractedPages(pages) {
           if(line.includes(label)){explicitPayoutType=type;break;}
         }
 
-        // 2026-08-09: ラベルの有無にかかわらず、円を含む行は常に
-        // jraResultParsePayoutLine で処理する(行内の複数ラベル・ラベル無し
-        // 継続行のいずれにも対応できるよう統一)。payoutCarryStateは頭数
-        // (1頭/2頭/3頭)ごとの直前の式別を保持し、行の処理結果で更新する。
+        // ラベルの有無にかかわらず、円を含む行は常に jraResultParsePayoutLine で処理する
+        // (行内の複数ラベル・ラベル無し継続行のいずれにも対応できるよう統一)。
+        // payoutCarryStateは頭数(1頭/2頭/3頭)ごとの直前の式別を保持し、行の処理結果で更新する。
         const hasCarryState = Object.values(payoutCarryState).some(Boolean);
         if(explicitPayoutType || (hasCarryState && /円/.test(line))){
           const { count, carryState } = jraResultParsePayoutLine(current,line,payoutCarryState);
@@ -627,19 +623,16 @@ function jraResultParseExtractedPages(pages) {
 
       current.finish_order=current.finish_order.filter(Number.isInteger).slice(0,3);
 
-      // 2026-08-08: 出走馬は着順ではなく馬番順に並べ替える。出走馬表編集画面
-      // (races.js)は「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画する
-      // ため、着順順のまま渡すと表示が総崩れになる不具合があった。
+      // 出走馬は着順ではなく馬番順に並べ替える。出走馬表編集画面(races.js)は
+      // 「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画するため、
+      // 着順順のまま渡すと表示が総崩れになる。
       current.entries.sort((a,b)=>a.horse_number-b.horse_number);
 
       // 枠番が結果表から数字として取得できなかった場合(JRAの結果PDFは枠番を
-      // 色付きアイコンで表現していることが多く、テキストとして抽出できない
-      // ことがある)、出走頭数から races.js の defaultWakuNumber() と全く同じ
-      // ロジックで簡易な初期値を計算する。あくまで目安値であり、実際の抽選
-      // 結果と異なる場合は登録後に手動で修正できる(races.jsの新規登録時と
-      // 同じ位置づけ)。races.jsはjra-result-pdf.jsより後に読み込まれるが、
-      // この関数自体はPDF解析ボタン押下時=全スクリプト読み込み後に実行される
-      // ため、参照時点では既にグローバルに定義済みであることを前提にできる。
+      // 色付きアイコンで表現していることが多く、テキストとして抽出できないことがある)、
+      // 出走頭数から races.js の defaultWakuNumber() と全く同じロジックで簡易な
+      // 初期値を計算する。あくまで目安値であり、実際の抽選結果と異なる場合は
+      // 登録後に手動で修正できる(races.jsの新規登録時と同じ位置づけ)。
       if (typeof defaultWakuNumber === "function") {
         const horseCount = current.entries.length;
         for (const e of current.entries) {
@@ -754,8 +747,7 @@ async function jraResultExtractPdfPages(file, log=()=>{}) {
       if(!row){row={y:item.y,items:[]};rows.push(row);}
       row.items.push(item);
     }
-    // 2026-08-07: 行内の連結方法を「一律タブ」から「間隔の実測に基づく3段階判定」に変更。
-    // 詳細は jraResultJoinRowItems のコメント参照。
+    // 行内の連結方法は「間隔の実測に基づく3段階判定」を用いる(詳細は jraResultJoinRowItems 参照)。
     pages.push(rows.sort((a,b)=>b.y-a.y).map(r=>{
       const sortedItems=r.items.sort((a,b)=>a.x-b.x);
       const joined=jraResultJoinRowItems(sortedItems);

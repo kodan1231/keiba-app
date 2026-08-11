@@ -49,12 +49,10 @@ function findStoredRate(payouts, betType, combo) {
 function computeTicketPayout(ticket, race) {
   if (!race || !race.finish_order || !race.payouts || !race.payouts[ticket.bet_type]) return null;
   const combos = computeWinningCombos(ticket.bet_type, race.finish_order, race.entries);
-  // 2026-08-09修正: 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を
-  // 算出できない(combo === null)場合は、「不的中(0円)」と断定せず判定不能(null=未確定の
-  // まま)として扱う。以前はこのケースでも最終的に0円へフォールバックしてしまい、実際には
-  // 的中している可能性がある枠連馬券まで不的中扱いになる不具合があった。
-  // (出走馬一覧PDFインポート機能では、確定後PDFでも枠番はテキスト抽出できず基本的に
-  //  waku_numberがnullのままになる。docs/DESIGN.md「出走馬一覧PDFインポート」参照)
+  // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を算出できない
+  // (combo === null)場合は、「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う。
+  // 出走馬一覧PDFインポート機能では、確定後PDFでも枠番はテキスト抽出できず基本的に
+  // waku_numberがnullのままになる(docs/DESIGN.md「出走馬一覧PDFインポート」参照)。
   if (combos.some((c) => c.combo === null)) return null;
   for (const c of combos) {
     const rate = findStoredRate(race.payouts, ticket.bet_type, c.combo);

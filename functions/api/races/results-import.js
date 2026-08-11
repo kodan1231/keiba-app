@@ -42,8 +42,8 @@ export async function onRequestPost(context) {
       await linkUnregisteredImportsToRace(env.DB, id, item.race_date, item.track, raceNumber);
       await backfillHorseNamesForRace(env.DB, id, entries);
       // 新規登録直後のレースには既存の通常購入(tickets)は存在しえない(通常購入はrace_idの
-      // 存在を前提とするため)。ただし念のため、この時点で万一tickets/imported分が
-      // 紐付いていた場合に備え、着順・払戻が入っていれば再計算しておく(安全側)。
+      // 存在を前提とするため)。念のため、この時点で万一tickets/imported分が紐付いていた
+      // 場合に備え、着順・払戻が入っていれば再計算しておく(安全側)。
       if (finishOrder || Object.keys(payouts).length) {
         await recomputeTicketPayoutsForRace(env.DB, id, finishOrder, Object.keys(payouts).length ? payouts : null, entries);
       }
@@ -74,12 +74,10 @@ export async function onRequestPost(context) {
     if (hasNewEntries) await backfillHorseNamesForRace(env.DB, existing.id, entries);
     await linkUnregisteredImportsToRace(env.DB, existing.id, existing.race_date, existing.track, existing.race_number);
 
-    // 2026-08-09追加: 着順(finish_order)または払戻(payouts)を更新した場合、このレースを
-    // 購入した「全ユーザーの」tickets.payoutを再計算して反映する。以前はこの一括登録
-    // (JRAレース結果PDFインポート)経由の更新だけ再計算処理が呼ばれておらず、購入済みの
-    // 馬券が「未確定」のまま表示され続ける不具合があった(races.js側の払戻編集モーダルから
-    // 個別に保存し直すと直る、という回避策はあったが、PDF一括登録の意義が薄れてしまっていた)。
-    // functions/api/races/[id].js の同等処理と揃える。
+    // 着順(finish_order)または払戻(payouts)を更新した場合、このレースを購入した
+    // 「全ユーザーの」tickets.payoutを再計算して反映する
+    // (functions/api/races/[id].js の同等処理と揃える。呼び出し漏れがあると、
+    //  購入済みの馬券が「未確定」のまま表示され続けてしまう)。
     if (finishOrPayoutTouched) {
       const fresh = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(existing.id).first();
       if (fresh) {

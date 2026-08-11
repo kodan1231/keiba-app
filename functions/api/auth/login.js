@@ -1,7 +1,6 @@
 import { verifyPassword, createSessionToken } from "../_shared.js";
 
-// 2026-08-01 複数ユーザー対応: 全員共通のAPP_PASSWORDと照合する方式から、
-// usersテーブルに登録された個別のユーザー名+パスワードと照合する方式に変更。
+// usersテーブルに登録された個別のユーザー名+パスワードと照合する。
 export async function onRequestPost(context) {
   const { request, env } = context;
 

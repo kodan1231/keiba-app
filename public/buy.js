@@ -3,7 +3,7 @@ let selectedRace = null;
 let comboAmounts = new Map();
 let predictionMarks = new Map();
 // 自分(ログインユーザー)が既に購入済みのレースID(races.id)の集合。
-// 通常購入(tickets)・CSVインポート分(ticket-imports)の両方を対象とする(2026-08-08〜)。
+// 通常購入(tickets)・CSVインポート分(ticket-imports)の両方を対象とする。
 // GET /api/tickets・GET /api/ticket-imports はいずれもログインユーザー自身のデータのみを
 // 返すため、他ユーザーの購入は含まれない(docs/DESIGN.md「画面仕様」参照)。
 let purchasedRaceIds = new Set();
@@ -130,9 +130,8 @@ function renderGrid() {
           ${Array.from({length:12}, (_, i) => {
             const r = by[`${track}_${i+1}`];
             if (!r) return `<div class="race-column-row no-race"><b>${i+1}R</b></div>`;
-            // 2026-08-10: 「購入済み」はテキストバッジではなく、行の背景色(薄い緑の
-            // アクセント)で示す方式に変更。実機で確認したところテキストバッジは
-            // 視認しづらいとのフィードバックを受けての対応(docs/DESIGN.md参照)。
+            // 「購入済み」はテキストバッジではなく、行の背景色(薄い緑の
+            // アクセント)で示す方式。(docs/DESIGN.md参照)。
             const purchased = purchasedRaceIds.has(Number(r.id));
             return `
               <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
@@ -272,8 +271,8 @@ async function openPurchase(race) {
   } catch (_) {}
 
   // レースの着順 or 払戻が確定済みでも、購入履歴の登録し忘れに対応できるよう
-  // 購入自体は引き続きできるようにする(2026-07-30〜。以前は購入自体をブロックしていた)。
-  // 確定済みであることが分かるよう、案内バナーのみ表示する(購入UIはブロックしない)。
+  // 購入自体は引き続きできるようにする。確定済みであることが分かるよう、
+  // 案内バナーのみ表示する(購入UIはブロックしない)。
   const settled = !!race.finish_order || !!(race.payouts && Object.keys(race.payouts).length > 0);
   raceSettledBlock.hidden = !settled;
   betTypeSection.hidden = false;
@@ -499,8 +498,6 @@ function renderPicker() {
   } else if (state.method === "nagashi") {
     if (state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
       // JRA/netkeiba風の1リスト形式: 各馬の行に「軸」(最大2頭まで)と「相手」のチェックを並べる。
-      // 以前は「軸馬①」「軸馬②」「相手」の3つの縦リスト(全頭分×3)が並んでおり、
-      // 頭数が多いと非常に縦長になる問題があったため、1リストに統合した。
       const axisFull = state.axisSet.size >= 2;
       html = entries.map(e => {
         const n = Number(e.horse_number);

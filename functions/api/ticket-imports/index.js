@@ -122,8 +122,6 @@ function inferFinish(type, nums){return type==='sanrentan'&&nums.length===3?nums
 // 「的中／返還」列は、1行に複数の的中組み合わせがある場合(BOX・ながし等で複数点的中)、
 // "的中02―05／的中02―09／的中05―09" のように「的中」を各組み合わせの前に繰り返して
 // ／(全角スラッシュ)で連結する。これを的中組み合わせ1件ごとに分解する。
-// (以前は先頭の「的中」だけを取り除いていたため、2件目以降の組み合わせに「的中」の
-//  文字が残ったまま数値解析され、一部の的中組み合わせが正しく認識されないバグがあった)
 function splitHitSegments(hitText){
   if(!/^的中/.test(hitText)) return [];
   return hitText.split(/[／\/]/).map(s=>clean(s).replace(/^的中/,'')).map(clean).filter(Boolean);
@@ -216,23 +214,21 @@ export async function onRequestPost(context){
     const db=context.env.DB; if(!db)return Response.json({ok:false,error:'D1 binding が見つかりません。'},{status:500});
     const userId=context.data.userId;
     let imported=0, skipped=0, conflicted=0;
-    // 2026-08-04: imported_ticket_groups の一意制約(uq_imported_group_source_key)は
-    // user_id を含まない設計(docs/DESIGN.md「CSV取込の仕様」参照)。本アプリは同じ
-    // JRA-Netアカウントを複数ユーザーが共有する想定をしていないため、通常は起こらないが、
-    // 万が一 group_key が別ユーザーの既存データと衝突した場合はUNIQUE制約違反となる。
-    // 従来はこれが未ハンドリングのままリクエスト全体を500エラーで中断させていたため、
-    // 該当行だけをスキップしてconflictedとして数え、他の行の取込は継続するようにする。
+    // imported_ticket_groups の一意制約(uq_imported_group_source_key)は user_id を
+    // 含まない設計(docs/DESIGN.md「CSV取込の仕様」参照。同じJRA-Netアカウントを複数
+    // ユーザーが共有する想定をしていないため通常は起こらない)。万が一group_keyが
+    // 別ユーザーの既存データと衝突した場合、該当行だけをスキップしてconflictedとして
+    // 数え、他の行の取込は継続する。
     const conflicts=[];
 
-    // 以前はCSVの行ごとに「既存チェック」「重複候補検出」を個別クエリしており、
-    // レース参照(SELECT/INSERT)も行ごとに発行していたため、行数の多いCSVを取り込むと
-    // Cloudflare Workersのサブリクエスト数上限(1リクエストあたりのD1呼び出し数)に
-    // 抵触して「Too many API requests by single Worker invocation」エラーになっていた
-    // (2026-07-31)。既存チェックはリクエスト開始時に1回だけ取得してメモリ上で照合し、
-    // 同一レースへの参照は初回のみDBに問い合わせてキャッシュし、重複候補検出は
-    // 全行の取込完了後に1回だけ行うように変更する。
-    // 2026-08-01: 複数ユーザー対応により、既存チェック・重複候補検出はいずれも
-    // ログインユーザー自身のデータのみを対象にする(他ユーザーのCSVとは重複判定しない)。
+    // CSVの行ごとに個別クエリを発行すると、行数の多いCSVでCloudflare Workersの
+    // サブリクエスト数上限(1リクエストあたりのD1呼び出し数)に抵触する
+    // (「Too many API requests by single Worker invocation」エラー)。
+    // 既存チェックはリクエスト開始時に1回だけ取得してメモリ上で照合し、同一レースへの
+    // 参照は初回のみDBに問い合わせてキャッシュし、重複候補検出は全行の取込完了後に
+    // 1回だけ行う方式で、1リクエストあたりのクエリ回数を抑える。
+    // 複数ユーザー対応により、既存チェック・重複候補検出はいずれもログインユーザー
+    // 自身のデータのみを対象にする(他ユーザーのCSVとは重複判定しない)。
     const existingRows=(await db.prepare(`SELECT race_date, receipt_number, sequence_number, raw_csv FROM imported_tickets WHERE source=? AND user_id=?`).bind('club_jra_net',userId).all()).results||[];
     const existingKeyed=new Set(); const existingRaw=new Set();
     for(const r of existingRows){ if(r.receipt_number) existingKeyed.add(`${r.race_date}:${r.receipt_number}:${r.sequence_number}`); else existingRaw.add(r.raw_csv); }
@@ -261,11 +257,11 @@ export async function onRequestPost(context){
       // 同一CSV内に同じ行が複数回含まれるケースにも対応できるよう、取込直後にメモリ上の
       // 既存チェック用セットへも反映しておく。
       if(receipt&&sequence) existingKeyed.add(sourceKey); else existingRaw.add(sourceKey);
-      // レースを参照する。2026-08-01より、レースの新規登録は管理者のみが行える方針になった
-      // ため、CSV取込側での自動作成(該当レースが無ければINSERTする処理)は廃止した。
-      // 該当レースが未登録の場合は race_id を null のまま取り込み、日付・競馬場・
-      // レース番号・レース名はグループ側にそのまま保持する(管理者向けの「未登録レース一覧」
-      // 画面から、後日そのレースが登録されれば紐付く)。
+      // レースを参照する。レースの新規登録は管理者のみが行える方針のため、CSV取込側での
+      // 自動作成(該当レースが無ければINSERTする処理)は行わない。該当レースが未登録の
+      // 場合は race_id を null のまま取り込み、日付・競馬場・レース番号・レース名は
+      // グループ側にそのまま保持する(管理者向けの「未登録レース一覧」画面から、
+      // 後日そのレースが登録されれば紐付く)。
       const raceKey=`${raceDate}|${track}|${raceNumber}`;
       let race=raceCache.has(raceKey)?raceCache.get(raceKey):undefined;
       if(race===undefined){
@@ -296,8 +292,6 @@ export async function onRequestPost(context){
         // Club JRA-Net購入履歴CSVは既に決着済みの購入履歴であり、「未確定(結果待ち)」は存在しない。
         // 的中/返還列に値がある(空でない)行は、的中買い目はrefundを、非的中買い目は0円をpayoutとする。
         // 的中買い目の払戻額は、組み合わせごとの払戻レート(100円あたり)×その買い目の購入金額で計算する。
-        // (以前は1行に複数の的中組み合わせがある場合、組み合わせを区別せず行全体のrefundを1件だけに
-        //  誤って計上していたため、複数点的中時に金額が合わなくなるバグがあった)
         // レートが個別に取得できない場合は、的中1件のみなら従来通りrefund全額、複数件なら均等割りにフォールバックする。
         let payout=null;
         if(hitText!==''){
@@ -333,8 +327,8 @@ export async function onRequestPost(context){
       newGroups.push({groupId,race_date:raceDate,track,race_number:raceNumber,bet_type:type,total_amount:totalAmount});
       imported++;
     }
-    // 重複候補の検出は、以前は新規グループ挿入のたびに個別クエリしていたが、
-    // 全行の取込完了後に1回のクエリでまとめて行う。ユーザー自身のグループのみを対象にする。
+    // 重複候補の検出は全行の取込完了後に1回のクエリでまとめて行う(個別クエリの積み
+    // 重ねを避けるため)。ユーザー自身のグループのみを対象にする。
     let duplicateCandidates=[];
     if(newGroups.length){
       const allGroups=(await db.prepare(`SELECT id,source,total_amount,race_date,track,race_number,bet_type FROM imported_ticket_groups WHERE user_id=?`).bind(userId).all()).results||[];
@@ -355,10 +349,9 @@ export async function onRequestGet(context){
     const db=context.env.DB; const out=[];
     const userId=context.data.userId;
     const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
-    // 以前はグループ毎にimported_ticket_itemsを個別クエリしていたため、取込件数が増えると
-    // Cloudflare Workersのサブリクエスト数上限(1リクエストあたりのD1呼び出し数)に抵触し、
-    // 一覧取得自体が500エラーになっていた(2026-07-31)。全アイテムを1回のクエリで
-    // まとめて取得し、メモリ上でグループごとに振り分ける方式に変更する。
+    // グループ毎にimported_ticket_itemsを個別クエリすると、取込件数が増えるほど
+    // Cloudflare Workersのサブリクエスト数上限に抵触しうる。全アイテムを1回のクエリで
+    // まとめて取得し、メモリ上でグループごとに振り分ける方式にする。
     // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
     //  作り、それに含まれるitemsだけを対象にする)
     const groupIds=new Set(groups.map(g=>g.id));
@@ -370,7 +363,7 @@ export async function onRequestGet(context){
       const items=itemsByGroup.get(g.id)||[];
       for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
-    // Backward compatibility: show legacy rows imported before v10 even if they have not been normalized yet.
+    // v10以前に取り込まれたレガシー行(未正規化)も、履歴APIで後方互換表示する。
     const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||null,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});

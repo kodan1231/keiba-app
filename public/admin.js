@@ -3,7 +3,7 @@
 // 日付・競馬場・レース番号を一覧表示し、レース登録画面へ事前入力付きで遷移できる。
 // 「登録ユーザー一覧」: users テーブルの閲覧のみ(編集・削除機能は無し)。
 
-// escapeHtml は utils.js のものを使用する(2026-08-04: 重複定義を統合)
+// escapeHtml は utils.js のものを使用する
 function formatDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
@@ -13,10 +13,8 @@ function formatDate(dateStr) {
 
 // D1の created_at (datetime('now')) はUTCの "YYYY-MM-DD HH:MM:SS" 形式(タイムゾーン情報なし)
 // で保存されている。この文字列をそのまま new Date() に渡すと、末尾にタイムゾーン指定が
-// 無い形式の解釈がブラウザによって異なり(UTCとして解釈されるとは限らない)、閲覧環境に
-// よって表示時刻がずれる可能性があった。ここでは明示的にUTCとして解釈したうえで、
-// 常に日本時間(JST)に変換して表示する(2026-08-10〜。以前はブラウザのローカル
-// タイムゾーンでの解釈に依存していた)。
+// 無い形式の解釈がブラウザによって異なる(UTCとして解釈されるとは限らない)ため、
+// 常に明示的にUTCとして解釈したうえで日本時間(JST)に変換して表示する。
 function formatDateTime(s) {
   if (!s) return "";
   const hasTz = /[Zz]|[+-]\d{2}:?\d{2}$/.test(s);

@@ -2,9 +2,9 @@
 // /api/auth/login と /api/auth/register だけは未認証でもアクセス可能
 // (ログイン・新規登録そのものなので)。
 //
-// 2026-08-01 複数ユーザー対応: セッションにuser_id・usernameを含めるように変更し、
-// 検証後は context.data.userId / context.data.username / context.data.isAdmin として
-// 後続のAPIハンドラへ引き渡す。管理者判定は環境変数ADMIN_USERNAMESで行う。
+// セッションにはuser_id・usernameを含め、検証後は context.data.userId /
+// context.data.username / context.data.isAdmin として後続のAPIハンドラへ引き渡す。
+// 管理者判定は環境変数ADMIN_USERNAMESで行う。
 import { verifySessionToken, isAdminUsername } from "./api/_shared.js";
 
 export async function onRequest(context) {

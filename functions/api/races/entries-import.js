@@ -12,11 +12,9 @@ function normalizeHorseName(v) {
 }
 
 // entries配列を馬番順に並べ替える。races.js の出走馬表編集画面は
-// 「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画するため(既存の
-// functions/api/races/results-import.js と同じ制約)、マージ後は必ずソートし直す。
+// 「entries配列のi番目 ≒ 馬番(i+1)」という前提で行を描画するため、マージ後は必ずソートし直す。
 // 枠番・馬番が未確定(null)の間は五十音順(馬名)のままにしておく
-// (2026-08-08確認: 枠番・馬番確定前のインポートでは、そもそもソートすべき
-// 数値情報が無いため馬名順が自然な並びになる)。
+// (ソートすべき数値情報がまだ無いため、馬名順が自然な並びになる)。
 function sortEntriesByHorseNumber(entries) {
   return [...entries].sort((a, b) => {
     const an = a.horse_number, bn = b.horse_number;
@@ -41,9 +39,8 @@ function sortEntriesByHorseNumber(entries) {
 function mergeEntries(existingEntries, incomingEntries) {
   // 馬名が空の既存entries項目(手動編集での保存ミスや過去のインポート不具合等で
   // 紛れ込んだ空行)は、名前をキーにしたマージでは永久にどの馬とも一致せず、
-  // 新しい実データが「別の馬」として追加され続けて重複・空欄混在の原因になる
-  // (2026-08-09確認: 実データで発生を確認した不具合)。マージ前に除去することで、
-  // 次回インポート時に自動的にクリーンアップされるようにする。
+  // 新しい実データが「別の馬」として追加され続けて重複・空欄混在の原因になる。
+  // マージ前に除去することで、次回インポート時に自動的にクリーンアップされるようにする。
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
     .filter((e) => normalizeHorseName(e?.horse_name));
   const merged = cleanedExisting.map((e) => ({ ...e }));
@@ -153,9 +150,8 @@ export async function onRequestPost(context) {
     try { currentEntries = JSON.parse(existing.entries || "[]"); } catch { currentEntries = []; }
 
     const { entries: mergedEntriesRaw, conflicts } = mergeEntries(currentEntries, item.entries);
-    // 木曜(馬番なし)→金曜(馬番あり)の更新で、entries配列の並びが最初のインポート時
-    // (五十音順)のまま残ってしまう不具合があったため、マージ後は必ず馬番順に
-    // ソートし直す(2026-08-08修正)。
+    // マージ後は必ず馬番順にソートし直す(木曜(馬番なし)→金曜(馬番あり)の更新で、
+    // entries配列の並びが最初のインポート時(五十音順)のまま残ってしまわないようにするため)。
     const mergedEntries = sortEntriesByHorseNumber(mergedEntriesRaw);
 
     const fields = ["entries = ?"];

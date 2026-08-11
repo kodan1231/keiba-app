@@ -2,7 +2,7 @@
 // ファイル名を "_" で始めているため、Cloudflare Pages Functions では
 // このファイル自体はルートとして扱われない(_middleware.js と同じ扱い)。
 
-// ---- パスワードハッシュ化(2026-08-01 複数ユーザー対応で追加) ----
+// ---- パスワードハッシュ化 ----
 // Web Crypto の PBKDF2(SHA-256, 100000回)でハッシュ化する。
 // 保存形式: "pbkdf2$<反復回数>$<salt(base64)>$<ハッシュ(base64)>"
 // (バージョン管理のためアルゴリズム名・反復回数を保存文字列に含めている)
@@ -63,7 +63,7 @@ export async function verifyPassword(password, stored) {
   return diff === 0;
 }
 
-// ---- 管理者判定(2026-08-01 複数ユーザー対応で追加) ----
+// ---- 管理者判定 ----
 // 管理者かどうかはDBのフラグではなく、Cloudflare Pagesの環境変数
 // ADMIN_USERNAMES(カンマ区切りのユーザー名リスト)で判定する。
 // 環境変数を編集するだけで管理者を増減できるようにするための設計。
@@ -85,10 +85,10 @@ export function requireAdmin(context) {
   return null;
 }
 
-// ---- セッションCookieの発行・検証(2026-08-01 複数ユーザー対応で追加) ----
-// 従来は exp のみを署名対象にしていたが、user_id・username も含めるように拡張する。
-// 署名鍵は引き続き env.APP_PASSWORD を流用する(ログイン用パスワードとしては
-// 使わなくなったが、セッション署名用の秘密鍵としてはそのまま使い続ける)。
+// ---- セッションCookieの発行・検証 ----
+// user_id・username・有効期限をセッションペイロードに含める。
+// 署名鍵は env.APP_PASSWORD を流用する(ログイン用パスワードとしては使わないが、
+// セッション署名用の秘密鍵としてはそのまま使い続ける)。
 const SESSION_DAYS = 30;
 
 function strToBase64url(str) {
@@ -141,7 +141,7 @@ export async function verifySessionToken(cookieHeader, secret) {
   try {
     const payload = JSON.parse(base64urlToStr(payloadB64));
     if (!(payload.exp > Date.now())) return null;
-    // uid が無い旧形式のセッション(複数ユーザー対応より前に発行されたもの)は無効として扱う。
+    // uid が無い旧形式のセッションは無効として扱う。
     if (!Number.isInteger(payload.uid)) return null;
     return { userId: payload.uid, username: payload.username || null };
   } catch {
@@ -149,9 +149,8 @@ export async function verifySessionToken(cookieHeader, secret) {
   }
 }
 
-// CSVインポート時のレース自動作成を廃止した(2026-08-01)ことに伴い、レースが未登録の
-// 間にインポートされた imported_ticket_groups / imported_ticket_items は race_id が
-// NULL のまま保存されている。管理者がそのレースを登録(または編集)したタイミングで、
+// レースが未登録の間にインポートされた imported_ticket_groups / imported_ticket_items は
+// race_id が NULL のまま保存されている。管理者がそのレースを登録(または編集)したタイミングで、
 // 日付・競馬場・レース番号が一致する未紐付けデータを探してレースに紐付ける。
 export async function linkUnregisteredImportsToRace(db, raceId, raceDate, track, raceNumber) {
   if (!db || !raceId || !raceDate || !track || !raceNumber) return { linkedGroups: 0 };
@@ -230,21 +229,20 @@ export async function backfillHorseNamesForRace(db, raceId, entries) {
   return { updated };
 }
 
-// ---- 払戻確定時の全ユーザーticket反映(2026-08 追加) ----
+// ---- 払戻確定時の全ユーザーticket反映 ----
 // races.finish_order / races.payouts が確定した際、そのレースを購入した
-// 全ユーザーの tickets.payout を再計算して反映する。以前は races.js が
-// 「払戻モーダルを開いた管理者自身が購入したticket」しか更新できず、
-// 他ユーザーの購入履歴に払戻が反映されない不具合があった。
+// 全ユーザーの tickets.payout を再計算して反映する。races は共有データ、
+// tickets はユーザーごとに分離されたデータであるため、user_idで絞り込まず
+// race_id単位で全ユーザーのticketsを対象にする必要がある。
 // (ロジックは public/payout.js の computeWinningCombos 等をサーバー側へ移植したもの。
 //  クライアント側と実装がずれないよう、変更する際は両方を確認すること)
 //
-// 呼び出し元(2026-08-09時点):
+// 呼び出し元:
 //   - functions/api/races/[id].js (レース管理画面の払戻編集モーダルからの保存)
 //   - functions/api/races/results-import.js (JRAレース結果PDF一括登録)
 // 新しく finish_order / payouts を更新する処理を追加する場合は、必ずここも
 // 呼び出すこと(呼び忘れると、購入済みの馬券のpayoutが更新されないまま
-// 「未確定」表示が残ってしまう不具合になる。2026-08-09にresults-import.js側の
-// 呼び忘れが発覚し修正した実例がある)。
+// 「未確定」表示が残ってしまう)。
 
 const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
 
@@ -318,11 +316,10 @@ export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, pay
         selections = [];
       }
       const combos = computeWinningCombos(t.bet_type, finishOrder, entries);
-      // 2026-08-09修正: 枠番(waku_number)が未確定の出走馬が絡む枠連など、
-      // 的中組み合わせ自体を算出できない(combo === null)ケースでは、
-      // 「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う。
-      // 以前は matchedRate が見つからない場合に一律0円へフォールバックしていたため、
-      // 実際には的中している可能性がある馬券まで不的中扱いになってしまっていた。
+      // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を
+      // 算出できない(combo === null)ケースでは、「不的中(0円)」と断定せず
+      // 判定不能(null=未確定のまま)として扱う(0円へフォールバックすると、
+      // 実際には的中している可能性がある馬券まで不的中扱いになってしまうため)。
       if (combos.some((c) => c.combo === null)) {
         newPayout = null;
       } else {

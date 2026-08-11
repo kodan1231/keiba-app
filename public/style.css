@@ -664,8 +664,7 @@ textarea { resize: vertical; }
 .race-list-card .entry-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
 .race-list-card .settled-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); background: #fff; }
 .race-list-card .settled-badge.done { background: var(--win); color: #fff; border-color: var(--win); }
-/* 管理者向けにentries-badge/settled-badgeがbutton要素(出走馬表・払戻の登録/編集への入口)になる場合の見た目調整
-   (2026-08-04〜。以前は状態表示のみで、編集は共通の✎ボタン1つ経由だった) */
+/* 管理者向けにentries-badge/settled-badgeがbutton要素(出走馬表・払戻の登録/編集への入口)になる場合の見た目調整 */
 button.entries-badge, button.settled-badge {
   font-family: inherit;
   cursor: pointer;
@@ -801,7 +800,7 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 /* ---------- 出走馬テキスト貼り付け・開催日程一括登録 ---------- */
 .paste-box { border: 1px dashed var(--rule); padding: 10px; }
 .paste-box textarea { width: 100%; margin: 8px 0; font-family: var(--font-mono); font-size: 12px; }
-/* 「テキストから出走馬を一括入力」ボタンの横に「保存する」ボタンを複製配置(2026-08-04〜)。
+/* 「テキストから出走馬を一括入力」ボタンの横に「保存する」ボタンを複製配置。
    一括入力→保存までモーダル下部にスクロールしなくても完結できるようにするため。 */
 .paste-box-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -905,9 +904,8 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .preview-combo-amount { width: 90px; font-family: var(--font-mono); }
 
 /* ---------- 馬券式別の払戻入力 ----------
-   2026-08-04〜: モーダル幅を活かして横に並べることで縦スクロール量を減らす
-   (以前は式別ブロック・組み合わせ行とも常に縦1列で、幅は余っているのに縦に長かった)。
-   auto-fitにより、幅が狭い画面では自動的に1列に折り返される。 */
+   モーダル幅を活かして横に並べることで縦スクロール量を減らす
+   (幅は余っているのに縦に長くなるのを避けるため)。 */
 .payout-by-type {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1051,7 +1049,7 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 }
 
 
-/* ---------- Phase 1: 予想画面 ---------- */
+/* ---------- 予想画面 ---------- */
 .prediction-main {
   max-width: 960px;
   margin: 0 auto;
@@ -1319,7 +1317,7 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 }
 
 
-/* ---------- 馬券購入UI刷新: ステップ式ダイアログ ---------- */
+/* ---------- 馬券購入UI: ステップ式ダイアログ ---------- */
 body.modal-open { overflow: hidden; }
 
 .purchase-modal {
@@ -1512,13 +1510,13 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* --- UI refresh: race columns / prediction horse notes / betting ticket rows --- */
+/* --- レース選択カラム / 予想画面の馬メモ行 / 購入チケット行 --- */
 .race-columns{display:flex;gap:16px;overflow-x:auto;align-items:flex-start;padding:8px 2px 20px}.race-track-column{min-width:240px;flex:1;background:var(--paper,#fff);border:1px solid rgba(0,0,0,.12);border-radius:12px;overflow:hidden}.race-track-column h3{margin:0;padding:12px 14px;background:rgba(0,0,0,.04);font-size:1.05rem}.race-column-row{width:100%;min-height:54px;border:0;border-top:1px solid rgba(0,0,0,.08);background:transparent;display:grid;grid-template-columns:48px 1fr;gap:8px;text-align:left;padding:8px 12px;cursor:pointer}.race-column-row:hover{background:rgba(0,0,0,.04)}.race-column-row b{font-family:"Roboto Mono",monospace}.race-column-row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.race-column-row.empty-race,.race-column-row.no-race{color:#999}.race-column-row.has-entries{font-weight:600}
 .horse-note-card{display:block;padding:0;border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden;background:#fff}.horse-note-toggle{width:100%;display:grid;grid-template-columns:34px 38px minmax(130px,1fr) minmax(80px,1.5fr) 30px;align-items:center;gap:8px;padding:12px;border:0;background:transparent;text-align:left;cursor:pointer}.horse-note-toggle:hover{background:rgba(0,0,0,.035)}.current-horse-note{font-size:.82rem;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.horse-note-editor{padding:12px;border-top:1px solid rgba(0,0,0,.08);background:rgba(0,0,0,.02)}.horse-note-editor textarea{width:100%;box-sizing:border-box;margin-top:8px}.horse-note-actions{display:flex;gap:10px;align-items:center;margin-top:8px}.horse-note-status{font-size:.85rem;color:#2c6e49}.prediction-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.prediction-actions a{text-decoration:none}.prediction-mark-btn.selected{font-weight:800;transform:translateY(-1px);box-shadow:0 0 0 2px currentColor inset}
 .purchase-dialog-modern{max-width:980px}.purchase-dialog-modern .purchase-dialog-body{display:flex;flex-direction:column;gap:14px}.method-options{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}.inline-options,.toggle-option{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,.035)}.inline-options label,.toggle-option{cursor:pointer}.bet-horse-table-head{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;padding:8px 10px;font-size:.8rem;color:#777;border-bottom:1px solid rgba(0,0,0,.12)}.bet-horse-list{border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden}.bet-horse-row{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;align-items:center;padding:10px;border-top:1px solid rgba(0,0,0,.07)}.bet-horse-row:first-child{border-top:0}.bet-horse-control{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.control-label{display:inline-flex;gap:5px;align-items:center;font-size:.86rem}.radio-inline,.check-inline{display:inline-flex;gap:4px;align-items:center}.preview-combo-row{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}.preview-combo-amount{width:100%;box-sizing:border-box}.purchase-dialog-modern .purchase-panel{margin:0}.purchase-dialog-modern .purchase-panel[hidden]{display:none}.date-picker-label{display:flex;flex-direction:column;gap:4px;max-width:220px}.date-picker-label input{padding:8px}.buy-main .buy-step{margin-bottom:20px}
 @media(max-width:700px){.race-track-column{min-width:220px}.horse-note-toggle{grid-template-columns:30px 32px minmax(100px,1fr) 28px}.current-horse-note{display:none}.bet-horse-table-head{display:none}.bet-horse-row{grid-template-columns:30px 38px minmax(100px,1fr);gap:6px}.bet-horse-jockey{display:none}.bet-horse-control{grid-column:1/-1;padding-left:68px}.preview-combo-row{grid-template-columns:1fr 90px}.purchase-dialog-modern{width:calc(100vw - 16px);max-height:92vh;overflow:auto}}
 
-/* ---------- 2026-07 UI correction ---------- */
+/* ---------- カレンダー・購入履歴一覧 ---------- */
 .race-calendar{
   background:var(--paper,#fff);
   border:1px solid rgba(0,0,0,.12);
@@ -1657,7 +1655,7 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* ---------- 2026-07 UI refinement: compact purchase controls ---------- */
+/* ---------- 馬券購入操作: コンパクト化 ---------- */
 .bet-type-tabs {
   display: flex;
   gap: 6px;
@@ -1739,7 +1737,7 @@ body.modal-open { overflow: hidden; }
 .horse-note-status.error { color: var(--hanko); }
 
 
-/* ---------- 2026-07-28 final UI adjustments ---------- */
+/* ---------- 全画面共通 UI 調整 ---------- */
 
 /* 共通ナビゲーションは全ページ同じ順序 */
 .masthead-nav { display:flex; align-items:center; gap:6px; }
@@ -1783,9 +1781,7 @@ body.modal-open { overflow: hidden; }
 }
 
 /* 予想画面: メモの有無を、アコーディオン(この馬のメモ欄)を開かなくても一目で
-   分かるようにするバッジ(2026-08-10〜)。以前は薄いグレーのプレビュー文字
-   (.horse-note-preview)だけが頼りで、特に一覧をざっと流し見する際に見落と
-   しやすかった。hankoの赤アクセントを使い、他の状態バッジ
+   分かるようにするバッジ。hankoの赤アクセントを使い、他の状態バッジ
    (.import-source-badge等)と同程度の視認性を持たせる。 */
 .horse-note-badge {
   display:inline-block;
@@ -1809,7 +1805,7 @@ body.modal-open { overflow: hidden; }
   padding:5px 10px;
 }
 
-/* STEP説明を消したためパネル見出しの余白も縮小 */
+/* パネル見出しの余白を縮小 */
 .purchase-panel h3 { margin-bottom:10px; font-size:18px; }
 .method-options { margin-top:8px; gap:8px; }
 .inline-options, .toggle-option { padding:7px 10px; gap:10px; }
@@ -1827,16 +1823,16 @@ body.modal-open { overflow: hidden; }
     padding:4px 6px;
   }
   .bet-horse-jockey { display:none; }
-  /* 2026-08-02: 旧ルール(grid-row:1)の残骸により印列が先頭に来て
-     馬番/馬名が1列ずつ右にズレる不具合があったため、grid-rowも明示的にリセット */
+  /* 印列は grid-column/grid-row とも auto にリセットする(旧ルールの残骸で
+     馬番・馬名が1列ずつズレる事故を防ぐため)。 */
   .bet-horse-mark { grid-column:auto; grid-row:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
   .horse-note-preview { max-width:150px; }
-  /* 2026-08-02: CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
+  /* CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
   #csv-import-btn { display:none; }
 }
 
-/* 2026-08-02: iPhone SE3等の小型端末(430px以下)向け追加対応。
+/* iPhone SE3等の小型端末(430px以下)向け追加対応。
    700px以下のルールに重ねて適用し、430px超(PC含む)のレイアウトは変更しない。
    組み合わせ選択表(単勝〜三連単・2頭軸まで共通)のチェックボックスが
    縦に並んでしまう・馬名が折り返る、といった崩れをさらに詰めて解消する */
@@ -1870,7 +1866,7 @@ body.modal-open { overflow: hidden; }
     height:15px;
     font-size:7px;
   }
-  /* 購入履歴カレンダー: K表記→実数表示化に伴い、桁数増加分を縮小して収める */
+  /* 購入履歴カレンダー: 実数表示化に伴い、桁数増加分を縮小して収める */
   .calendar-day-money {
     font-size:.52rem;
   }
@@ -1885,18 +1881,18 @@ body.modal-open { overflow: hidden; }
   }
 }
 
-/* 2026-07-28: race list compact + purchase shortcut */
+/* レース一覧の圧縮 + 購入ショートカット */
 .race-list-card{min-height:38px;padding:5px 10px;gap:8px}
 .race-list-card .card-actions{margin-left:auto;display:flex;align-items:center;gap:5px}
 .compact-buy-btn{padding:4px 9px;font-size:.78rem;white-space:nowrap;text-decoration:none}
 .race-list-card .r-num{min-width:34px}.race-list-card .meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:700px){.race-list-card{padding:4px 7px;gap:5px}.race-list-card .entries-badge,.race-list-card .settled-badge{font-size:.68rem}.compact-buy-btn{padding:3px 6px}}
 
-/* 2026-07-28: compact method controls */
+/* 購入方式ボタンのコンパクト化 */
 #method-buttons{display:flex;flex-wrap:wrap;gap:6px}
 #method-buttons .choice-button{min-height:36px;padding:5px 10px;font-size:13px}
 
-/* 2026-07-31: 2頭軸(JRA/netkeiba風)は1リストに「軸」「相手」チェックを並べる形式。
+/* 2頭軸(JRA/netkeiba風)は1リストに「軸」「相手」チェックを並べる形式。
    最後の見出し列は通常フォントサイズ0(操作列に文字を出さないため)だが、
    このモードだけ2つの子ラベルとして復活させる。 */
 .bet-horse-table-head > span:last-child .axis2-head-cols { font-size: .8rem; }
@@ -1908,18 +1904,16 @@ body.modal-open { overflow: hidden; }
 
 .import-preview-list{max-height:320px;overflow:auto;margin:12px 0;border:1px solid #ddd;border-radius:8px}.import-preview-row{padding:8px 10px;border-bottom:1px solid #eee;font-size:.9em}.import-preview-row:last-child{border-bottom:0}.import-preview-row span{float:right;opacity:.75}
 
-/* ---------- 2026-08-10: モバイル用ヘッダー(masthead)の高さ削減 ----------
-   実機(Y!mobile経由のアプリ内ブラウザ)で、ページによってブラウザのURLバーの
-   表示/非表示が変わり、見かけの高さがばらつくという報告を受けての対応
-   (docs/BACKLOG.md「クラスタ12」参照)。根本原因(ブラウザのネイティブな
-   アドレスバー表示/非表示の挙動)そのものはCSS/JSから制御できないため、
-   ヘッダー自体の高さを削ってページ間の高さのばらつきを抑える、という
-   現実的な緩和策(完全な解消を保証するものではない)。
+/* ---------- モバイル用ヘッダー(masthead)の高さ削減 ----------
+   実機のアプリ内ブラウザで、ページによってブラウザのURLバーの表示/非表示が
+   変わり、見かけの高さがばらつくという報告への対応。根本原因(ブラウザの
+   ネイティブなアドレスバー表示/非表示の挙動)そのものはCSS/JSから制御できないため、
+   ヘッダー自体の高さを削ってページ間の高さのばらつきを抑える緩和策(完全な
+   解消を保証するものではない)。
 
-   ユーザー確認済み仕様(2026-08-10):
+   仕様:
      1. モバイルでは「馬券帳」のタイトル表記を完全に非表示にする(PCでは維持)
      2. モバイルでは、ナビ・ユーザー名・退場ボタン等をすべて1つの行にまとめる
-        (現行は「タイトル+ナビ」の行と「ユーザー名+退場ボタン」の行の2行)
      3. 1行が画面幅に収まりきらない場合は、行全体を横スクロールにする
         (ナビだけでなくユーザー名・退場ボタンも画面外に隠れることを許容する)
 
@@ -1929,15 +1923,12 @@ body.modal-open { overflow: hidden; }
    .masthead-actions(ユーザー名+退場ボタン)と同じ1行に横並びさせる。
    .masthead 自体に overflow-x:auto を指定し、行全体が画面幅に収まらない場合は
    横スクロールになるようにする(要件3)。タイトルは display:none で非表示に
-   する(要件1)。ナビ自身が個別に持っていた横スクロール(@media(max-width:700px)の
+   する(要件1)。ナビ自身が個別に持っていた横スクロール(700px以下の
    .masthead-nav{overflow-x:auto;...})は、二重スクロール領域になって
    操作感が悪くなるのを避けるため、この幅では明示的に無効化し、
    親(.masthead)側のスクロールに一本化している。
 
-   display:contents はiOS Safari 12.1以降で利用可能で、この用途では
-   十分に安定している想定だが、実機での最終確認を推奨する(前回の
-   .masthead-nav折り返し修正と同様、この環境からはWebKitエンジンでの
-   自動検証ができないため)。 */
+   display:contents はiOS Safari 12.1以降で利用可能。 */
 @media (max-width: 600px) {
   .masthead {
     flex-direction: row;

@@ -1,6 +1,6 @@
 import { requireAdmin } from "../_shared.js";
 
-// 開催日程の一括登録も 2026-08-01より管理者のみ実行可能。
+// 開催日程の一括登録も管理者のみ実行可能。
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;

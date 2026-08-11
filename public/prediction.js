@@ -4,7 +4,7 @@ let prediction = { marks: [] };
 let horseNotes = {};
 // 「このレースの購入馬券」欄の開閉状態(group_idごと)。app.jsの.group-card開閉パターンと
 // 同じ考え方で、開閉した状態を再描画(selectRace()のたびに呼ばれるrenderPurchasedTickets)
-// をまたいで保持する(2026-08〜。以前は常時全展開だった)。
+// をまたいで保持する。
 let expandedTicketGroups = new Set();
 const emptyState = document.getElementById("prediction-empty");
 const panel = document.getElementById("prediction-panel");
@@ -169,14 +169,13 @@ async function selectRace() {
   applyPrediction();
   applyHorseNotes();
   // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
-  // 購入自体は引き続きできるようにする(2026-07-30〜。以前は購入自体をブロックしていた)。
-  // ボタンのラベルだけ「結果確定済」に変え、確定済みであることがひと目でわかるようにする。
+  // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
+  // 確定済みであることがひと目でわかるようにする。
   buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
   const settled = !!selectedRace.finish_order || !!(selectedRace.payouts && Object.keys(selectedRace.payouts).length > 0);
-  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定の
-  // レースが存在しうるようになった。未確定の間は buy.js 側で購入自体をブロックするため、
-  // ここでもボタンの見た目を変えて分かるようにする(クリック自体はできる。buy.js側の
-  // 案内バナーで説明する)。
+  // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定のレースが存在しうる。
+  // 未確定の間は buy.js 側で購入自体をブロックするため、ここでもボタンの見た目を変える
+  // (クリック自体はできる。buy.js側の案内バナーで説明する)。
   const hasUnconfirmedNumbers = (selectedRace.entries || []).some((e) => e.horse_number === null || e.horse_number === undefined);
   if (hasUnconfirmedNumbers) {
     buyBtn.textContent = "枠番・馬番未確定(購入不可)";
@@ -252,9 +251,9 @@ function renderRaceHeader() {
 }
 
 function renderHorses() {
-  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定(null)の
-  // 馬が混在しうるようになった。馬番でのソートができないため、未確定の馬がいる場合は
-  // 馬名(五十音)順にフォールバックする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定(null)の馬が
+  // 混在しうる。馬番でのソートができないため、未確定の馬がいる場合は馬名(五十音)順に
+  // フォールバックする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
   const hasUnconfirmedNumbers = selectedRace.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const entries = hasUnconfirmedNumbers
     ? [...selectedRace.entries].sort((a, b) => String(a.horse_name || "").localeCompare(String(b.horse_name || ""), "ja"))
@@ -402,7 +401,7 @@ function applyHorseNotes() {
 
 function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+/g, " ").trim(); }
 
-// escapeHtml / escapeAttr は utils.js のものを使用する(2026-08-04: 重複定義を統合)
+// escapeHtml / escapeAttr は utils.js のものを使用する
 function formatDate(s) {
   return new Date(`${s}T00:00:00`).toLocaleDateString("ja-JP", {
     year:"numeric", month:"numeric", day:"numeric", weekday:"short"

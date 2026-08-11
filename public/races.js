@@ -71,7 +71,6 @@ async function loadRaces() {
 
 // ---------- カレンダーから日付を選ぶ ----------
 // レースが登録されている日をカレンダー上でマークし、クリックするとその日だけに絞り込む。
-// (以前は登録済みの全日付を上から下へスクロールして探す必要があった)
 function renderRaceCalendar() {
   if (!racesCalendarGrid || !racesCalendarMonthLabel) return;
   const year = racesCalendarMonth.getFullYear();
@@ -155,7 +154,7 @@ function renderRaceList() {
     }
   } else {
     // 特定の日付が未選択の場合は、カレンダーに表示中の月のレースだけに絞り込む
-    // (全期間を一覧表示すると縦に長くなりすぎるため。2026-08-04〜)。
+    // (全期間を一覧表示すると縦に長くなりすぎるため)。
     const ym = `${racesCalendarMonth.getFullYear()}-${String(racesCalendarMonth.getMonth() + 1).padStart(2, "0")}`;
     dates = dates.filter((d) => d.startsWith(ym));
     if (dates.length === 0) {
@@ -184,7 +183,7 @@ function renderRaceList() {
     dateBody.className = "date-group-body";
     dateBody.hidden = !dateExpanded;
 
-    // 競馬場は横に並べ、その下にR1〜12を縦に並べる(予想ページの「馬券購入」カレンダー選択後と同じレイアウト)。
+    // 競馬場は横に並べ、その下にR1〜12を縦に並べる。
     const byTrack = new Map();
     dateRaces.forEach((r) => {
       if (!byTrack.has(r.track)) byTrack.set(r.track, []);
@@ -246,16 +245,15 @@ function courseTypeShort(courseType) {
 function renderRaceRow(r) {
   const settled = !!r.finish_order;
   const hasEntries = r.entries.length > 0;
-  // 2026-08-07: 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が
-  // 未確定(null)の馬が混在するケースが発生するようになったため、一覧上でも
-  // 分かるようにする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  // 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が未確定(null)の
+  // 馬が混在するケースが発生するため、一覧上でも分かるようにする
+  // (詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
   const hasUnconfirmedNumbers = hasEntries && r.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
   const courseLabel = courseTypeShort(r.course_type);
   const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
 
-  // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる
-  // (2026-08-04〜。以前は状態表示のみで、編集は共通の✎ボタン1つ経由だった)。
+  // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる。
   const unconfirmedSuffix = hasUnconfirmedNumbers ? "・枠番未確定" : "";
   const entriesLabel = hasEntries ? `出走馬表を編集(${r.entries.length}頭${unconfirmedSuffix})` : "出走馬表を登録";
   const settledLabel = settled ? "払戻を編集" : "払戻を登録";
@@ -295,11 +293,11 @@ function renderRaceRow(r) {
 
 async function deleteRace(id) {
   if (!confirm("このレースを削除しますか？関連する購入履歴も削除されます。")) return;
-  
+
   try {
     const res = await authedFetch(`/api/races/${id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
-    
+
     if (!res.ok) {
       // 409: 確認が必要なケース
       if (res.status === 409 && data.requires_confirmation) {
@@ -319,7 +317,7 @@ async function deleteRace(id) {
       alert(data.error || "削除に失敗しました。");
       return;
     }
-    
+
     alert("レースを削除しました。");
     loadRaces();
   } catch (e) {
@@ -328,15 +326,11 @@ async function deleteRace(id) {
 }
 
 // 出走頭数から、枠番の初期値を計算する。JRAの正式な枠番決定ルール(抽選)とは異なるが、
-// 「頭数が決まればおおよその枠番の目安はつく」というリクエストに対する簡易な初期値であり、
+// 「頭数が決まればおおよその枠番の目安はつく」という簡易な初期値であり、
 // 実際の枠番と異なる場合は手動で選び直せる(あくまで入力の手間を減らすための初期値)。
 // 8頭以下は1頭1枠、9頭以上は8枠に均等に近い形で振り分ける。JRAでは頭数が8で割り切れない
 // 場合、余りの馬は大きい枠番(7枠・8枠側)から順に1頭ずつ多くなる慣習があるため、
 // 余りは若い枠番ではなく大きい枠番(8枠側)に寄せる。
-// (2026-08-08修正: 以前は`waku <= remainder`で余りを1・2枠側に寄せてしまっており、
-//  実際のJRAの傾向と逆だった。例: 14頭立てで1〜6枠が2頭・7,8枠が1頭になっていたが、
-//  正しくは7,8枠が2頭になるべき。出走馬一覧PDFインポート機能で実際にこの逆転現象が
-//  再現することを確認し修正した)
 function defaultWakuNumber(horseNumber, horseCount) {
   const base = Math.floor(horseCount / 8);
   const remainder = horseCount % 8;
@@ -485,9 +479,7 @@ async function loadTicketsForRace(raceId) {
 // 注: ここで入力・保存されるのは「レースの払戻レート」(races.payouts)のみ。
 // 各ユーザーの購入履歴(tickets.payout)への反映は、保存後にサーバー側
 // (functions/api/races/[id].js の recomputeTicketPayoutsForRace)が
-// 全ユーザー分まとめて再計算する(2026-08〜。以前はここで管理者自身が購入した
-// currentTickets だけを個別PUTしていたため、他ユーザーの購入履歴に払戻が
-// 反映されない不具合があった)。currentTickets はこの画面での「◯点購入」表示にのみ使う。
+// 全ユーザー分まとめて再計算する。currentTickets はこの画面での「◯点購入」表示にのみ使う。
 function renderPayoutBlocks() {
   captureEnteredRatesIntoState();
 
@@ -544,8 +536,7 @@ function captureEnteredRatesIntoState() {
 
 // フォーム送信時: racesに保存する払戻率データを組み立てる。
 // 各購入履歴(tickets.payout)への反映はサーバー側で全ユーザー分まとめて行われるため、
-// ここではticket個別の更新は組み立てない(2026-08〜の変更。上のrenderPayoutBlocksの
-// コメント参照)。
+// ここではticket個別の更新は組み立てない。
 function buildPayoutSubmission() {
   captureEnteredRatesIntoState();
   const payoutsPayload = {};
@@ -596,7 +587,7 @@ function openEntriesModal(race, prefill) {
   }
 
   entriesModal.hidden = false;
-  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする(2026-08-04〜)。
+  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする。
   const modalBox = entriesModal.querySelector(".modal");
   if (modalBox) modalBox.scrollTop = 0;
 }
@@ -650,6 +641,9 @@ payoutModal.addEventListener("click", (e) => { if (e.target === payoutModal) clo
 function openPayoutModal(race) {
   if (!race) return;
   payoutForm.reset();
+  // モーダルを開くたびに残留DOM(払戻入力欄)を即座に空にしておく。これをしないと、
+  // 前回モーダルの残留DOMをcaptureEnteredRatesIntoState()が読み取ってしまい、
+  // 直後にセットしたcurrentRacePayoutsが空データで上書きされてしまう不具合が起きる。
   ticketsSection.innerHTML = "";
   document.getElementById("payout-race-id").value = race.id;
   payoutModalTitle.textContent = race.finish_order ? "払戻を編集" : "払戻を登録";
@@ -667,7 +661,7 @@ function openPayoutModal(race) {
   loadTicketsForRace(race.id);
 
   payoutModal.hidden = false;
-  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする(2026-08-04〜)。
+  // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする。
   const modalBox = payoutModal.querySelector(".modal");
   if (modalBox) modalBox.scrollTop = 0;
 }
@@ -702,9 +696,6 @@ payoutForm.addEventListener("submit", async (e) => {
 
   // 各購入履歴(tickets.payout)への反映は、上のPUTを受けたサーバー側
   // (functions/api/races/[id].js)が全ユーザー分まとめて再計算・保存する。
-  // (2026-08〜。以前はここでticketごとに個別PUTしていたが、管理者自身が
-  //  購入したticketしか更新できず、他ユーザーの購入履歴に払戻が反映されない
-  //  不具合があった)
 
   closePayoutModal();
   loadRaces();
@@ -782,7 +773,7 @@ scheduleSubmitBtn.addEventListener("click", async () => {
 });
 
 // ---------- ユーティリティ ----------
-// escapeHtml / escapeAttr は utils.js のものを使用する(2026-08-04: 重複定義を統合)
+// escapeHtml / escapeAttr は utils.js のものを使用する
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);

@@ -12,7 +12,7 @@ export async function onRequestPut(context) {
   let data; try { data = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
   const ticket = await getTicket(env, params.id, userId);
   if (!ticket) return Response.json({ error: "購入履歴が見つかりません" }, { status: 404 });
-  // ロック仕様は2026-07-31に全面撤廃。着順・払戻確定後でも変更できる(docs/DESIGN.md「ロック仕様」参照)。
+  // 通常購入は着順・払戻の確定有無にかかわらず常に編集できる(ロック無し。docs/DESIGN.md「ロック仕様」参照)。
   const fields=[]; const values=[];
   for (const key of EDITABLE_FIELDS) {
     if (key in data) {
@@ -32,7 +32,6 @@ export async function onRequestDelete(context) {
   const userId = context.data.userId;
   const ticket = await getTicket(env, params.id, userId);
   if (!ticket) return Response.json({ error: "購入履歴が見つかりません" }, { status: 404 });
-  // ロック仕様は2026-07-31に全面撤廃。着順・払戻確定後でも削除できる(docs/DESIGN.md「ロック仕様」参照)。
   await env.DB.prepare(`DELETE FROM tickets WHERE id = ? AND user_id = ?`).bind(params.id, userId).run();
   return Response.json({ ok: true });
 }

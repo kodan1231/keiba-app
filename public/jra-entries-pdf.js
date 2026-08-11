@@ -8,23 +8,20 @@
 // インポート」参照)。
 //
 // 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
-// 実機未検証の結果PDFパーサーには手を入れず、独立ファイルとして新規作成している。
+// 結果PDFパーサーには手を入れず、独立ファイルとして実装している。
 //
-// 【既知の未検証事項→検証済み(2026-08-08)】枠番・馬番確定後の実PDFで検証した結果、
-// **枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない**ことが
-// 判明した(JRAレース結果PDFと同様の制約。docs/JRA_RESULT_PDF_IMPORT_PAYOUT_ISSUE_
-// INVESTIGATION.md の同種の記述を参照)。行頭に「枠番→馬番」の2つの数字が並ぶという
+// 枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない
+// (JRAレース結果PDFと同様の制約)。行頭に「枠番→馬番」の2つの数字が並ぶという
 // 当初の推測(jraEntriesParseHorseRow内の numPrefix2)は実際には発生しないが、
 // 万一将来のPDF形式変更で現れた場合のフォールバックとして処理自体は残してある。
 // 馬番は単独の数字として取得できる。
 // また、負担重量・オッズが発表された状態のPDFでは行末に単勝オッズ(小数)が付加される
 // ため、調教師名との境界を誤らないよう除去してから解析する。
 // さらに、ブリンカー(B)等のバッジが付く馬は、実PDFのテキスト抽出時に馬番だけが
-// 単独行になり、馬名以降が次の行に分離することが確認されている
+// 単独行になり、馬名以降が次の行に分離する
 // (jraEntriesParseExtractedPages側の「馬番だけの行を次行と結合する」処理で対応)。
 // 調教師名は常に「姓 名」の2トークンという前提で騎手名との境界を判定している
-// (外国人騎手のような1トークン名は騎手側で許容している)。この前提が崩れる表記が
-// 実機で見つかった場合も同様に調整が必要。
+// (外国人騎手のような1トークン名は騎手側で許容している)。
 
 const JRA_ENTRIES_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
 
@@ -130,7 +127,7 @@ function jraEntriesParseHorseRow(rawLine) {
   let horseNumber = null;
   let rest = s;
 
-  // 行頭の「枠番 馬番」を試みる(未検証の想定形式。上記コメント参照)。
+  // 行頭の「枠番 馬番」を試みる(フォールバック。上記コメント参照)。
   const numPrefix2 = rest.match(/^([1-8])\s+(\d{1,2})\s+(.+)$/);
   if (numPrefix2 && /^(.+?)\s+(牡|牝|せん|セ|騸)\s*\d{1,2}\s+[\d.]+\s*kg/.test(numPrefix2[3])) {
     wakuNumber = Number(numPrefix2[1]);
@@ -178,28 +175,28 @@ function jraEntriesParseHorseRow(rawLine) {
   // タブが無い(または不十分な)場合は、トークン数から推測する(以前からのフォールバック)。
   if (!jockey || !trainer) {
     const tokens = tail.replace(/\t/g, " ").split(/\s+/).filter(Boolean);
-    if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
+  if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
 
-    // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
+  // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
     // 1トークンに結合されるケースが実PDFで確認されている(例: "浜中 俊 谷潔" → 本来は
     // 騎手名「浜中 俊」・調教師名「谷潔」。2026-08-08確認)。一方、外国人騎手名
     // (例: "J.コレット")のようにピリオドを含む1トークンの場合は騎手側が1トークンで
     // 調教師側が2トークンという逆パターンになる。トークン数だけでは一意に決まらないため、
     // 先頭トークンにピリオドを含むかどうかで判定する。
-    if (tokens.length >= 4) {
-      trainer = tokens.slice(-2).join(" ");
-      jockey = tokens.slice(0, -2).join(" ");
-    } else if (tokens.length === 3) {
-      if (/[.．]/.test(tokens[0])) {
-        jockey = tokens[0];
-        trainer = `${tokens[1]} ${tokens[2]}`;
-      } else {
-        jockey = `${tokens[0]} ${tokens[1]}`;
-        trainer = tokens[2];
-      }
-    } else {
+  if (tokens.length >= 4) {
+    trainer = tokens.slice(-2).join(" ");
+    jockey = tokens.slice(0, -2).join(" ");
+  } else if (tokens.length === 3) {
+    if (/[.．]/.test(tokens[0])) {
       jockey = tokens[0];
-      trainer = tokens[1];
+      trainer = `${tokens[1]} ${tokens[2]}`;
+    } else {
+      jockey = `${tokens[0]} ${tokens[1]}`;
+      trainer = tokens[2];
+    }
+  } else {
+    jockey = tokens[0];
+    trainer = tokens[1];
     }
   }
 
@@ -274,8 +271,8 @@ function jraEntriesParseExtractedPages(pages) {
     const raceDiag = { key: `${h.date} ${h.track} ${number}R`, entries: 0, errors: [] };
 
     // レース名・コース情報は「出走馬表(枠 馬番 馬名…)」の見出し行より前にしか現れないため、
-    // 探索範囲をその行までに限定する(以前は固定で先頭15行を見ていたため、開催情報の行数が
-    // 少ないレースで出走馬の行を誤ってレース名として拾ってしまう不具合があった)。
+    // 探索範囲をその行までに限定する(開催情報の行数が少ないレースで、出走馬の行を
+    // 誤ってレース名として拾ってしまう事故を防ぐため)。
     const tableHeaderIndex = block.findIndex((l) => /^枠\s*馬番\s*馬名/.test(l.text));
     const metaScanEnd = tableHeaderIndex >= 0 ? tableHeaderIndex : Math.min(block.length, 15);
     let raceName = null, courseType = null, distance = null;

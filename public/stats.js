@@ -269,7 +269,7 @@ async function loadAndRender() {
   renderJockeyTable(all);
 }
 
-// escapeHtml は utils.js のものを使用する(2026-08-04: 重複定義を統合)
+// escapeHtml は utils.js のものを使用する
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);

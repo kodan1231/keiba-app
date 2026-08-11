@@ -17,7 +17,7 @@ export async function onRequestGet(context) {
   return Response.json(items);
 }
 
-// POST(新規登録): 2026-08-01より管理者のみ実行可能。
+// POST(新規登録): 管理者のみ実行可能。
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -43,7 +43,6 @@ export async function onRequestPost(context) {
   try {
     // 新規登録時も、出走馬表と同時に着順・払戻が入力されているケースがあるため
     // (例: 結果が既に出ているレースを後から一括登録する場合)、finish_order/payouts も保存する。
-    // 以前はここで entries のみ保存し、finish_order/payouts は無視されて消えてしまうバグがあった。
     const result = await env.DB.prepare(
       `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance, entries, finish_order, payouts)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -63,8 +62,7 @@ export async function onRequestPost(context) {
 
     const raceId = result.meta.last_row_id;
 
-    // CSV自動レース登録の廃止(2026-08-01)に伴い、このレースが未登録の間に取り込まれた
-    // CSVデータ(race_id未紐付け)があれば、ここで紐付ける。
+    // このレースが未登録の間に取り込まれたCSVデータ(race_id未紐付け)があれば、ここで紐付ける。
     await linkUnregisteredImportsToRace(env.DB, raceId, race_date, track, race_number);
     // 出走馬表(馬名・騎手)が分かったので、紐付いた購入履歴のselectionsへ反映する。
     await backfillHorseNamesForRace(env.DB, raceId, entries);

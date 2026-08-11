@@ -120,7 +120,7 @@ async function loadTickets() {
       ? importedPayload
       : (Array.isArray(importedPayload.items) ? importedPayload.items : []);
   races = racesRes.ok ? await racesRes.json() : [];
-  allItems = [...(Array.isArray(items) ? items : []), ...(Array.isArray(imported) ? imported : [])];
+  allItems = [...(Array.isArray(items) ? items : []), ...imported];
   renderHistoryCalendar();
   applyHistoryFilter();
 }
@@ -280,16 +280,17 @@ function renderGroupRow(group) {
   detail.innerHTML = `
     <div class="group-detail-rows">
       ${group
-        .map((t) => {
-          // 不正/未知の bet_type (壊れたインポートデータ等)でも描画がクラッシュしないよう
-          // フォールバック値を用意する。
-          const def = BET_TYPES[t.bet_type] || { ordered: false };
-          const selHtml = t.selections
-            .map((s) => `<span class="sel-item"><span class="sel-num">${s.horse_number}</span>${escapeHtml(s.horse_name || "")}</span>`)
-            .join(def.ordered ? '<span class="sel-arrow">→</span>' : '<span class="sel-dash">-</span>');
-          return `
-            <div class="group-detail-row" data-id="${t.id}" data-imported="${t.imported ? "1" : ""}">
-              <div class="sel-line">${selHtml}</div>
+        .map(
+          (t) => `
+      <div class="group-detail-row" data-id="${t.id}" data-imported="${t.imported ? "1" : ""}">
+              <div class="sel-line">${(() => {
+                // 不正/未知の bet_type (壊れたインポートデータ等)でも描画がクラッシュしないよう
+                // フォールバック値を用意する。
+                const def = BET_TYPES[t.bet_type] || { ordered: false };
+                return t.selections
+                  .map((s) => `<span class="sel-item"><span class="sel-num">${s.horse_number}</span>${escapeHtml(s.horse_name || "")}</span>`)
+                  .join(def.ordered ? '<span class="sel-arrow">→</span>' : '<span class="sel-dash">-</span>');
+              })()}</div>
               ${t.imported
                 ? `<span class="import-source-badge">CSV取込</span><label class="payout-label">購入額 <input type="number" class="amount-edit-input import-edit-input" min="0" step="100" value="${t.amount}" /></label><label class="payout-label">払戻 <input type="number" class="payout-edit-input import-edit-input" min="0" step="1" value="${t.payout ?? ""}" placeholder="未確定" /></label>`
                 : `<label class="payout-label">購入額
@@ -299,8 +300,8 @@ function renderGroupRow(group) {
               <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `払戻¥${t.payout.toLocaleString()}` : "未確定"}</span>
               ${t.imported && !t.legacy_import ? `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>` : (t.imported ? "" : `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>`)}
             </div>
-          `;
-        })
+          `
+        )
         .join("")}
     </div>
     ${first.imported || !(window.currentUser && window.currentUser.isAdmin) ? "" : `<div class="group-detail-actions">
@@ -365,12 +366,12 @@ function renderGroupRow(group) {
         const endpoint = isImported ? `/api/ticket-imports/${encodeURIComponent(id)}` : `/api/tickets/${id}`;
         const res = await authedFetch(endpoint, { method: "DELETE" });
         const data = await res.json().catch(() => ({}));
-        
+
         if (!res.ok) {
           alert(data.error || "削除に失敗しました。");
           return;
         }
-        
+
         loadTickets();
       } catch (e) {
         alert("削除に失敗しました: " + (e.message || e));
