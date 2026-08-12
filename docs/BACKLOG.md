@@ -1,8 +1,10 @@
 # 未着手タスク・調査中の不具合 引継ぎメモ
 
 **FIX ver1.0**(2026-08-10整理。2026-08-11: クラスタL追加。2026-08-11(2): クラスタLを
-race_results新設・レース条件詳細カラムを含む形に拡張、クラスタM新設。2026-08-12:
+race_results新設・レース条件詳細カラムを含む形に拡張、クラスタM新設。
+2026-08-12:
 FIX ver1.0完了後のコードレビューで発見した不具合3件をクラスタNとして追加)
+2026-08-12: クラスタL実装完了)
 
 このファイルは、要望としては承認済みだが未実装のタスク、および調査中・未解決の不具合を
 引き継ぐための一覧です。`README.md` / `docs/DESIGN.md` / `docs/TESTING.md`とは異なり
@@ -26,10 +28,10 @@ FIX ver1.0完了後のコードレビューで発見した不具合3件をクラ
 
 ## 🔰 次のチャットで最初に読むこと(2026-08-12引き継ぎ)
 
-**クラスタL(下記)がドキュメント更新のみ完了・実装未着手の状態です。** 出走馬一覧PDF
-インポート・JRAレース結果PDFインポートについて、木曜(枠番未確定)→金曜(枠番確定)→
-土日(結果確定)という運用フローに加え、以下を追加で仕様確定しました(`docs/DESIGN.md`
-「レース結果の詳細記録(race_results)」「レース条件の詳細カラム」参照)。
+**クラスタL(下記)の実装が完了しました。** 出走馬一覧PDFインポート・JRAレース結果PDF
+インポートについて、木曜(枠番未確定)→金曜(枠番確定)→土日(結果確定)という運用フローに
+加え、以下を実装済みです(`docs/DESIGN.md`「レース結果の詳細記録(race_results)」
+「レース条件の詳細カラム」参照)。
 
 - `races`テーブルへレース条件詳細カラム(`weight_type`/`class_flags`/`course_direction`/
   `weather`/`track_condition`)を追加
@@ -42,12 +44,26 @@ FIX ver1.0完了後のコードレビューで発見した不具合3件をクラ
 - 馬名ベース・騎手名ベースの集計参照(過去出走一覧・的中率等)は**今回のスコープ外**とし、
   クラスタM(下記)として別タスク化
 
-`migration.sql`には対応する`-- @STEP: race_results_and_conditions`ブロックを追記済みだが、
-**対応する取込処理(パーサー・API)の実装が完了するまでは、このステップを実際のDBに
-適用しないこと**(スキーマだけ先行適用すると、対応する取込処理が無いまま空のテーブル・
-カラムが残るだけになるため)。
+**実データ(サンプルPDFをpdftotextでテキスト抽出したもの)での検証**は完了しています
+(12レース中12レース検出・全着順抽出成功、取消・除外行の検出・競走中の出来事メモの
+自動紐付けも確認済み)。ただし**実ブラウザのPDF.js経由での動作検証は未実施**です
+(既存のパーサー全体と同様の既知の限界。下記「調査中の不具合」参照)。
 
-次のセッションではクラスタLの実装項目(下記)を上から順に着手すること。
+**`migration.sql`の`-- @STEP: race_results_and_conditions`ブロックはまだ実DBに未適用です。**
+以下の手順で適用してください(README「スキーマ変更の適用手順」も参照):
+
+```bash
+npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
+# 問題なければ本番にも適用
+npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
+npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('race_results_and_conditions');"
+```
+
+適用後、`migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映してください。
+
+### 実装済みファイル一覧(2026-08-12)
+
+- `functions/api/_shared.js`: `mergeEntriesByHorseName()`・`upsertRaceResults()`を新設
 
 **FIX ver1.0完了後、コードレビュー(実行環境なしの静的レビュー)で3件の不具合を発見し、
 修正方針を確定した(クラスタN、下記)。実装はまだ着手していない。** 次のセッションでは
@@ -173,6 +189,27 @@ const isPublicAuthRoute =
 - N-1のサーバー側(API直叩き)向け重複チェックの要否は、実際にAPI経由での不正な
   重複データが確認された場合に改めて検討する
 
+- `functions/api/races/entries-import.js`: 共通マージヘルパー呼び出しに置き換え、
+  性齢・負担重量・レース条件詳細に対応
+- `functions/api/races/results-import.js`: 共通マージヘルパー呼び出しに置き換え、
+  `race_results`へのUPSERT、レース条件詳細カラムの保存を追加
+- `functions/api/races/[id].js`: レース条件詳細カラムの手動更新を受付可能に
+- `functions/api/races/[id]/results.js`: **新規**。`race_results`一覧取得・
+  `incident_note`編集用API
+- `public/jra-entries-pdf.js`: 性齢・負担重量・レース条件詳細の抽出を追加
+- `public/jra-result-pdf.js`: レース条件詳細・天候/馬場状態・全着順・タイム・着差・
+  コーナー通過順位・推定上り・馬体重・単勝人気・取消/除外・競走中の出来事メモの抽出を追加。
+  `defaultWakuNumber()`による推定値埋め込みを廃止。見習い記号を保持するよう変更
+- `public/races.js`・`public/races.html`: 払戻モーダルに`race_results`詳細の閲覧・
+  `incident_note`編集UIを追加
+
+### 未実施・今後の確認事項
+
+- 実ブラウザのPDF.jsでの動作確認(次回実機で試す際は`docs/TESTING.md`参照)
+- `docs/BACKLOG.md`「クラスタM」(馬名ベース・騎手名ベースの集計参照画面)は未着手のまま
+
+
+
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
 
 | 状態 | 内容 | 詳細 |
@@ -186,14 +223,14 @@ const isPublicAuthRoute =
 | 🔵 実機検証未完了 | 出走馬一覧PDFインポート・JRAレース結果PDFインポートはいずれも実ブラウザのPDF.jsでの動作検証が完全には済んでいない(Node上のロジック単体テストが中心)。次回実機で試す際は`docs/TESTING.md`「1.8」「1.7.1」の該当項目、および`docs/DESIGN.md`「JRAレース結果PDFインポート」の残件を確認すること | `docs/TESTING.md`・`docs/DESIGN.md` |
 | 🟢 記録のみ(修正は保留・ユーザー確認済み) | ログアウトAPI(`/api/auth/logout`)が、セッション切れ状態だと`_middleware.js`の認証チェックで401になりCookieクリアまで到達しない。実害は低い(結果的にログイン画面には戻る) | 本ファイル「クラスタN」N-3参照 |
 
-## クラスタL: 出走馬インポート/レース結果インポートの統合修正+レース結果詳細記録の新設(2026-08-11(2)仕様確定・実装待ち)
+## クラスタL: 出走馬インポート/レース結果インポートの統合修正+レース結果詳細記録の新設(2026-08-12実装完了)
 
 出走馬一覧PDFインポート(`entries-import.js`)とJRAレース結果PDFインポート
 (`results-import.js`)が同じ`races.entries`を扱うにもかかわらず異なるマージロジックを
 持っていた問題、枠番の推定値がDBに保存されてしまうリスク、および「レース結果の詳細情報
 (全着順・タイム・馬体重等)が記録として残らない」という不足について、ユーザーとの確認により
-以下の方針が確定した。**方針確定・ドキュメント反映(`docs/DESIGN.md`各該当節)は完了したが、
-コード実装はまだ着手していない。**
+以下の方針が確定し、実装が完了した。**残タスクは`migration.sql`の実DBへの適用のみ
+(README「スキーマ変更の適用手順」参照)。**
 
 ### 確認済みの運用フロー(前提)
 
@@ -220,7 +257,7 @@ const isPublicAuthRoute =
 - 降着・失格・競走中止等(取消・除外以外の着順未確定ケース)は将来対応
 - 馬名ベース・騎手名ベースの集計参照API/画面(クラスタMへ)
 
-### 実装タスク(上から順に着手を推奨)
+### 実装タスク(2026-08-12実装完了。参考のため手順を残す)
 
 1. **`schema.sql`・`migration.sql`のスキーマ変更を実際にDBへ適用する準備**
    - `migration.sql`の`-- @STEP: race_results_and_conditions`ブロック(`races`への

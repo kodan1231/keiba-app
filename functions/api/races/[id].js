@@ -17,7 +17,12 @@ export async function onRequestPut(context) {
   const fields = [];
   const values = [];
 
-  for (const key of ["race_date", "track", "race_number", "race_name", "course_type", "distance"]) {
+  for (const key of [
+    "race_date", "track", "race_number", "race_name", "course_type", "distance",
+    // 2026-08-11追加: レース条件詳細カラム。手動編集用のUIは今回未整備だが、
+    // PDFインポート以外の経路(将来のUI等)からも更新できるよう受け付けておく。
+    "weight_type", "class_flags", "course_direction", "weather", "track_condition",
+  ]) {
     if (key in data) {
       fields.push(`${key} = ?`);
       values.push(data[key]);
@@ -116,6 +121,8 @@ export async function onRequestDelete(context) {
       ? [env.DB.prepare(`DELETE FROM imported_tickets WHERE id IN (${sourceRowIds.map(() => "?").join(",")})`).bind(...sourceRowIds)]
       : []),
     env.DB.prepare("DELETE FROM tickets WHERE race_id = ?").bind(id),
+    // race_results は races への ON DELETE CASCADE で連動して削除されるため、
+    // 明示的なDELETE文は不要(migration.sqlのrace_resultsテーブル定義を参照)。
     env.DB.prepare("DELETE FROM races WHERE id = ?").bind(id),
   ]);
   return Response.json({ ok: true });

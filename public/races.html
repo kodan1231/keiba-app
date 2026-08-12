@@ -143,6 +143,14 @@
 
       <div id="race-tickets-section"></div>
 
+      <!-- 2026-08-11追加: レース結果の詳細記録(race_results)の閲覧・
+           競走中の出来事メモ(incident_note)の編集。着順・タイム等はPDFインポート
+           経由でのみ更新される(このUIからは編集不可)。 -->
+      <div id="race-results-detail-section" class="finish-top3-box" hidden>
+        <p class="picker-hint" style="margin-bottom:6px">結果詳細(全着順・タイム・馬体重等。JRAレース結果PDFインポートで自動登録されます)</p>
+        <div id="race-results-detail-table"></div>
+      </div>
+
       <div class="modal-actions">
         <button type="button" id="payout-cancel-btn" class="ghost-btn">キャンセル</button>
         <button type="submit" class="stamp-btn">保存する</button>
@@ -173,7 +181,7 @@
 <div id="jra-result-import-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h2>JRAレース結果PDFを一括登録</h2>
-    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは既存データを確認したうえで更新できます。</p>
+    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは既存データを確認したうえで更新できます。全着順・タイム・馬体重等の詳細記録(race_results)もあわせて登録されます。</p>
     <label>PDFファイル
       <input type="file" id="jra-result-pdf-file" accept="application/pdf,.pdf" />
     </label>
@@ -214,8 +222,8 @@
 <script src="utils.js"></script>
 <script src="bettypes.js"></script>
 <script src="parse.js"></script>
-<script src="jra-entries-pdf.js?v=1"></script>
-<script src="jra-result-pdf.js?v=1"></script>
+<script src="jra-entries-pdf.js?v=2"></script>
+<script src="jra-result-pdf.js?v=2"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
 <script src="races.js"></script>

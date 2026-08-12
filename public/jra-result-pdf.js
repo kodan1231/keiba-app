@@ -70,6 +70,37 @@ function jraResultParseCourse(text) {
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g,"")) } : {course_type:null,distance:null};
 }
 
+// レース条件詳細(斤量区分・条件フラグ・回り)の抽出(2026-08-11追加)。
+// 例: "3歳 未勝利（混合）［指定］ 馬齢 コース：1,400メートル（ダート・右）"
+//   → weight_type="馬齢", class_flags="3歳 未勝利（混合）［指定］", course_direction="右"
+// public/jra-entries-pdf.js の jraEntriesParseConditions と同じ考え方(実装は
+// グローバル名の衝突を避けるためこのファイル内に独立して持つ)。
+function jraResultParseConditions(text) {
+  const s = jraResultNormalizeUnit(text).replace(/\s+/g, " ");
+  let weight_type = null;
+  const wt = s.match(/(馬齢|定量|別定|ハンデ)/);
+  if (wt) weight_type = wt[1];
+
+  let course_direction = null;
+  const dir = s.match(/[（(]\s*(芝|ダート|障害)\s*[・･]\s*(左|右)\s*[)）]/);
+  if (dir) course_direction = dir[2];
+
+  let class_flags = null;
+  const cf = s.match(/^\s*(\S.*?)\s*(?:馬齢|定量|別定|ハンデ)\s*コース/);
+  if (cf) class_flags = cf[1].trim() || null;
+
+  return { weight_type, class_flags, course_direction };
+}
+
+// 天候・馬場状態の抽出(2026-08-11追加)。結果PDFにのみ出現する行:
+// 例: "天候 晴 ダート 良" → weather="晴", track_condition="良"
+function jraResultParseWeather(text) {
+  const s = jraResultNormalizeUnit(text).replace(/\s+/g, " ");
+  const m = s.match(/天候\s*([^\s]+)\s*(芝|ダート|障害)\s*([^\s]+)/);
+  if (!m) return { weather: null, track_condition: null };
+  return { weather: m[1] || null, track_condition: m[3] || null };
+}
+
 function jraResultParseNumberList(raw) {
   return String(raw).split(/[-,、]/).map(x => Number(x.trim())).filter(Number.isInteger);
 }
@@ -78,7 +109,10 @@ function jraResultCreateRace(date, track, number) {
   return {
     race_date: date, track, race_number: number,
     race_name: null, course_type: null, distance: null,
-    entries: [], finish_order: [], payouts: {}, refunds: []
+    weight_type: null, class_flags: null, course_direction: null,
+    weather: null, track_condition: null,
+    entries: [], finish_order: [], payouts: {}, refunds: [],
+    race_results: [], // 2026-08-11追加: 馬単位の確定結果(全着順・タイム・馬体重等)
   };
 }
 
@@ -188,9 +222,12 @@ function jraResultParseRefund(r, rawLine) {
   if(nums.length||frames.length) r.refunds.push({horse_numbers:nums,waku_numbers:frames});
 }
 
-// 騎手名の見習い印(▲△☆◇)を取り除く。「▲上里 直汰」→「上里 直汰」。
+// 騎手名の見習い印(▲△☆◇)。
+// 2026-08-11方針変更: 以前は除去していたが、出走馬一覧PDFインポート側の表記
+// (記号を先頭に残す)と揃えるため、除去せずそのまま残すよう変更した
+// (docs/DESIGN.md「JRAレース結果PDFインポート」解析ロジックの要点 参照)。
 function jraResultCleanJockeyName(raw) {
-  const s = String(raw ?? "").replace(/^[▲△☆◇]\s*/, "").trim();
+  const s = String(raw ?? "").trim();
   return s || null;
 }
 
@@ -228,8 +265,141 @@ function jraResultParseHorseFromResultLine(text) {
   return null;
 }
 
+// ---------- 全着順・タイム・着差・馬体重等の詳細抽出(2026-08-11追加) ----------
+// race_results(馬単位の確定結果を1頭1行で記録する新テーブル)へ送信するレコードを
+// 組み立てる。既存の jraResultParseHorseFromResultLine (entries/finish_order用の
+// 簡易パーサー)とは独立して動作し、失敗しても既存のentries/finish_order抽出には
+// 影響しない(フォールバック関係にはせず、それぞれ独立に試みる)。
+//
+// 実データ(pdftotext -layout でのテキスト抽出)による検証は済んでいるが、実ブラウザの
+// PDF.js(ギャップ実測による行連結)を通した際の間隔の付き方までは未検証のため、
+// 「実機未検証」の扱いとする(docs/DESIGN.md参照)。
 
-const JRA_RESULT_PDF_PARSER_VERSION = "8.1.0-jockey-order-waku";
+const JRA_RESULT_ROW_HEAD_RE = /^(\d{1,2})\s+(.*?)\s*(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+([\d.]+)\s+(.+?)\s+(\d+:\d{2}\.\d)\s+(.*)$/;
+const JRA_RESULT_ROW_TAIL_RE = /^(.*?)\s*([\d.]+)\s+(\d+)\s*[（(]([^）)]*)[）)]\s+(.+?)\s+(\d+)\s*$/;
+const JRA_RESULT_MARGIN_WORDS = ["クビ", "アタマ", "ハナ", "大差"];
+
+// 着差とコーナー通過順位が混在した文字列(数字のみで区切り文字が無い)を分離する。
+// 1着(rank===1)は着差が存在しないため、全トークンをコーナー通過順位として扱う。
+// それ以外の着順では、先頭トークンが着差(クビ/アタマ/ハナ/大差等の語、単純な数字、
+// または分数表記「１ 1/4」)であるという前提で切り出す。実際のJRA表記は着差が
+// 必ず存在するため、この前提はおおむね妥当だが、表記ゆれがあれば誤判定しうる点に注意。
+function jraResultSplitMarginAndCorners(blob, rank) {
+  const tokens = String(blob || "").split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { margin: null, corners: [] };
+  if (Number(rank) === 1) return { margin: null, corners: tokens };
+  const first = tokens[0];
+  if (JRA_RESULT_MARGIN_WORDS.includes(first) || /^\d+$/.test(first) || /\//.test(first)) {
+    if (tokens.length > 1 && /^\d+\/\d+$/.test(tokens[1])) {
+      return { margin: `${first} ${tokens[1]}`, corners: tokens.slice(2) };
+    }
+    return { margin: first, corners: tokens.slice(1) };
+  }
+  return { margin: null, corners: tokens };
+}
+
+// 通常の完走馬1行(着順が確定済み)から、race_results用の詳細レコードを組み立てる。
+// restAfterRank: 着順(rank)の数字を除いた残りの文字列(先頭は馬番から始まる)。
+function jraResultParseFullResultRow(restAfterRank, rank) {
+  const m = restAfterRank.match(JRA_RESULT_ROW_HEAD_RE);
+  if (!m) return null;
+  const [, horseNumberStr, horseName, sex, age, weightStr, jockeyRaw, time, tailBlob] = m;
+  const t = tailBlob.match(JRA_RESULT_ROW_TAIL_RE);
+  if (!t) return null;
+  const [, middle, finalFurlongStr, bodyWeightStr, change, trainer, popularityStr] = t;
+  const { margin, corners } = jraResultSplitMarginAndCorners(middle, rank);
+
+  const weightCarried = Number(weightStr);
+  const finalFurlong = Number(finalFurlongStr);
+  const bodyWeight = Number(bodyWeightStr);
+
+  return {
+    horse_number: Number(horseNumberStr),
+    horse_name: horseName.trim() || null,
+    sex_age: `${sex}${age}`,
+    weight_carried: Number.isFinite(weightCarried) ? weightCarried : null,
+    jockey: jraResultCleanJockeyName(jockeyRaw),
+    status: "finished",
+    finish_position: Number(rank),
+    time_text: time,
+    margin: margin,
+    corner_positions: corners.length ? corners.join("-") : null,
+    final_furlong_time: Number.isFinite(finalFurlong) ? finalFurlong : null,
+    body_weight: Number.isFinite(bodyWeight) ? bodyWeight : null,
+    body_weight_change: change || null,
+    _trainer: trainer, // 保存対象外(APIへは送らない。docs/DESIGN.md参照)
+    win_popularity: Number.isInteger(Number(popularityStr)) ? Number(popularityStr) : null,
+  };
+}
+
+// 「取消」「除外」で始まる特殊行から race_results 用レコードを組み立てる。
+// 取消(発走前・体重測定前)は馬体重列が無く、除外(体重測定後)は馬体重列がある。
+const JRA_RESULT_SCRATCH_HEAD_RE = /^(取消|除外)\s+(\d{1,2})\s+(.*?)\s*(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+([\d.]+)\s+(.+)$/;
+
+function jraResultParseScratchRow(rawLine) {
+  const s = jraResultNormalizeLine(rawLine);
+  const m = s.match(JRA_RESULT_SCRATCH_HEAD_RE);
+  if (!m) return null;
+  const [, statusLabel, horseNumberStr, horseName, sex, age, weightStr, tail] = m;
+  const status = statusLabel === "取消" ? "scratched" : "excluded";
+
+  let jockeyRaw = null, bodyWeight = null, change = null;
+  const withWeight = tail.match(/^(.+?)\s+(\d+)\s*[（(]([^）)]*)[）)]\s+(.+)$/);
+  if (withWeight) {
+    jockeyRaw = withWeight[1];
+    bodyWeight = Number(withWeight[2]);
+    change = withWeight[3];
+  } else {
+    // 馬体重列が無い(取消は測定前のため)。トークン数から騎手・調教師を推測する
+    // (public/jra-entries-pdf.js の同種ロジックを踏襲)。
+    const tokens = tail.replace(/^[▲△☆◇]/, (mm) => mm).split(/\s+/).filter(Boolean);
+    if (tokens.length >= 4) {
+      jockeyRaw = tokens.slice(0, -2).join(" ");
+    } else if (tokens.length === 3) {
+      jockeyRaw = tokens[0];
+    } else {
+      jockeyRaw = tokens[0] || null;
+    }
+  }
+
+  const weightCarried = Number(weightStr);
+  return {
+    horse_number: Number(horseNumberStr),
+    horse_name: horseName.trim() || null,
+    sex_age: `${sex}${age}`,
+    weight_carried: Number.isFinite(weightCarried) ? weightCarried : null,
+    jockey: jraResultCleanJockeyName(jockeyRaw),
+    status,
+    finish_position: null,
+    time_text: null,
+    margin: null,
+    corner_positions: null,
+    final_furlong_time: null,
+    body_weight: Number.isFinite(bodyWeight) ? bodyWeight : null,
+    body_weight_change: change,
+    win_popularity: null,
+  };
+}
+
+// 「競走中の出来事等」の箇条書きから、該当馬名(「◯◯号」の「号」を除いた部分)を
+// キーに注記本文を集める。セクションの開始/終了を厳密に検出せず、
+// 「・◯◯号は、」というパターンに一致する行だけを対象にすることで、
+// 誤検出のリスクを抑える(2026-08-11追加)。
+function jraResultParseIncidentNotes(blockLines) {
+  const map = new Map();
+  for (const line of blockLines) {
+    const text = typeof line === "string" ? line : line.text;
+    const m = text.match(/^[・\s]*(\S+?)号は、.+$/);
+    if (m) {
+      const name = m[1].trim();
+      map.set(name, text.replace(/^[・\s]*/, "").trim());
+    }
+  }
+  return map;
+}
+
+
+const JRA_RESULT_PDF_PARSER_VERSION = "9.0.0-race-results-conditions";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
@@ -308,6 +478,9 @@ function jraResultParseExtractedPages(pages) {
     raceHeaders:0,
     resultRows:0,
     finishRanks:0,
+    fullResultRowsDetected:0,
+    fullResultRowsFailed:0,
+    scratchedRowsDetected:0,
     payoutLines:0,
     payoutItems:0,
     refundLines:0,
@@ -508,17 +681,38 @@ function jraResultParseExtractedPages(pages) {
       entries:0,
       finishOrder:[],
       payouts:0,
+      raceResults:0,
       errors:[],
       sample:block.slice(0,20).map(x=>`[p${x.page}:${x.row}] ${x.text}`)
     };
 
     try{
-      // レース名・コースはヘッダー直後の広い範囲から取得。
-      const metaText=block.slice(0,18).map(x=>x.text).join(" ");
+      // レース名・コース・条件詳細はヘッダー直後の広い範囲から取得。
+      const metaLines = block.slice(0,18).map(x=>x.text);
+      const metaText = metaLines.join(" ");
       const course=jraResultParseCourseLoose(metaText);
       if(course.course_type){
         current.course_type=course.course_type;
         current.distance=course.distance;
+      }
+      // 条件詳細(斤量区分・条件フラグ・回り)は「コース：」を含む行から抽出する
+      // (メタ全体を1行に連結すると「メートル」を含まない行の断片が混ざり誤検出
+      // しやすいため、該当行を個別に走査する)。
+      for (const s of metaLines) {
+        if (/コ\s*ー\s*ス\s*[:：]/.test(s) || /メートル/.test(s)) {
+          const cond = jraResultParseConditions(s);
+          if (cond.weight_type && !current.weight_type) current.weight_type = cond.weight_type;
+          if (cond.class_flags && !current.class_flags) current.class_flags = cond.class_flags;
+          if (cond.course_direction && !current.course_direction) current.course_direction = cond.course_direction;
+        }
+      }
+      // 天候・馬場状態の行は、着順表の後ろ(払戻表の手前)に出現することが多く、
+      // 先頭18行に収まらない場合があるため、ブロック全体から検索する。
+      const weatherLine = block.find((l) => /天候/.test(l.text));
+      if (weatherLine) {
+        const w = jraResultParseWeather(weatherLine.text);
+        if (w.weather) current.weather = w.weather;
+        if (w.track_condition) current.track_condition = w.track_condition;
       }
       for(let i=1;i<Math.min(block.length,15);i++){
         const s=block[i].text;
@@ -532,6 +726,10 @@ function jraResultParseExtractedPages(pages) {
         }
       }
       raceDiag.raceInfo=Boolean(current.race_name||current.course_type||current.distance);
+
+      // 「競走中の出来事等」の箇条書きは着順表より後ろ(払戻の下)に出現するため、
+      // レースブロック全体を対象に馬名→注記のマップを事前に作っておく。
+      const incidentNotes = jraResultParseIncidentNotes(block);
 
       let inResults=false;
       let pendingRank=null;
@@ -548,6 +746,15 @@ function jraResultParseExtractedPages(pages) {
         }
 
         if(inResults){
+          // 取消・除外は着順を持たない特殊行のため、他の行より先に判定する。
+          const scratchRow = jraResultParseScratchRow(line);
+          if (scratchRow) {
+            scratchRow.incident_note = incidentNotes.get(String(scratchRow.horse_name || "")) || null;
+            current.race_results.push(scratchRow);
+            diagnostics.scratchedRowsDetected++;
+            continue;
+          }
+
           const rankOnly=line.match(/^(\d{1,2})$/);
           if(rankOnly){pendingRank=Number(rankOnly[1]);continue;}
 
@@ -564,6 +771,19 @@ function jraResultParseExtractedPages(pages) {
                 raceDiag.finishOrder[pendingRank-1]=hh.horse_number;
               }
               raceDiag.entries=current.entries.length;
+
+              // race_results用の詳細レコードも試みる(失敗しても上記entries/
+              // finish_orderの抽出結果には影響しない)。
+              const full = jraResultParseFullResultRow(line, pendingRank);
+              if (full) {
+                full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
+                delete full._trainer;
+                current.race_results.push(full);
+                diagnostics.fullResultRowsDetected++;
+              } else {
+                diagnostics.fullResultRowsFailed++;
+              }
+
               pendingRank=null;
               continue;
             }
@@ -584,6 +804,17 @@ function jraResultParseExtractedPages(pages) {
                 raceDiag.finishOrder[rank-1]=hh.horse_number;
               }
               raceDiag.entries=current.entries.length;
+
+              const full = jraResultParseFullResultRow(rm[2], rank);
+              if (full) {
+                full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
+                delete full._trainer;
+                current.race_results.push(full);
+                diagnostics.fullResultRowsDetected++;
+              } else {
+                diagnostics.fullResultRowsFailed++;
+              }
+
               continue;
             }
           }
@@ -628,19 +859,14 @@ function jraResultParseExtractedPages(pages) {
       // 着順順のまま渡すと表示が総崩れになる。
       current.entries.sort((a,b)=>a.horse_number-b.horse_number);
 
-      // 枠番が結果表から数字として取得できなかった場合(JRAの結果PDFは枠番を
-      // 色付きアイコンで表現していることが多く、テキストとして抽出できないことがある)、
-      // 出走頭数から races.js の defaultWakuNumber() と全く同じロジックで簡易な
-      // 初期値を計算する。あくまで目安値であり、実際の抽選結果と異なる場合は
-      // 登録後に手動で修正できる(races.jsの新規登録時と同じ位置づけ)。
-      if (typeof defaultWakuNumber === "function") {
-        const horseCount = current.entries.length;
-        for (const e of current.entries) {
-          if (e.waku_number === null || e.waku_number === undefined) {
-            e.waku_number = defaultWakuNumber(e.horse_number, horseCount);
-          }
-        }
-      }
+      // 2026-08-11方針変更: 枠番が結果表から数字として取得できなかった場合、
+      // 以前は defaultWakuNumber() で推定値を計算しその場で entries へ埋め込んで
+      // いたが、この推定値が「確定値」としてDBに保存され枠連馬券の的中判定に
+      // 誤って使われるリスクがあるため廃止した。取得できない場合は null のまま
+      // 送信する(docs/DESIGN.md「枠番の推定値をDBに保存しない」参照)。
+      // race_results.waku_number も同様に基本 null のまま送信する。
+
+      current.race_results.sort((a,b)=>a.horse_number-b.horse_number);
 
       for(const type of Object.keys(current.payouts)){
         const seen=new Set();
@@ -654,9 +880,11 @@ function jraResultParseExtractedPages(pages) {
 
       raceDiag.finishOrder=current.finish_order.slice();
       raceDiag.payouts=Object.entries(current.payouts).filter(([k])=>k!=="refunds").reduce((n,[,v])=>n+v.length,0);
+      raceDiag.raceResults=current.race_results.length;
       if(!current.entries.length)raceDiag.errors.push("出走馬情報を取得できませんでした");
       if(current.finish_order.length<3)raceDiag.errors.push(`1〜3着の取得が不完全です(${current.finish_order.join("-")||"なし"})`);
       if(raceDiag.payouts===0)raceDiag.errors.push("払戻項目を取得できませんでした");
+      if(!current.race_results.length)raceDiag.errors.push("race_results用の詳細行を取得できませんでした(全着順・タイム等の記録は行われません)");
 
       if(current.finish_order.length||raceDiag.payouts||current.entries.length){
         records.push({race:current,diag:raceDiag});
@@ -681,12 +909,18 @@ function jraResultParseExtractedPages(pages) {
     old.race_name ||= r.race_name;
     old.course_type ||= r.course_type;
     old.distance ||= r.distance;
+    old.weight_type ||= r.weight_type;
+    old.class_flags ||= r.class_flags;
+    old.course_direction ||= r.course_direction;
+    old.weather ||= r.weather;
+    old.track_condition ||= r.track_condition;
     for(const e of r.entries)if(!old.entries.some(x=>x.horse_number===e.horse_number))old.entries.push(e);
     r.finish_order.forEach((v,i)=>{if(Number.isInteger(v))old.finish_order[i]=v;});
     for(const [type,list] of Object.entries(r.payouts||{})){
       old.payouts[type] ||= [];
       old.payouts[type].push(...list);
     }
+    for(const rr of r.race_results||[])if(!old.race_results.some(x=>x.horse_number===rr.horse_number))old.race_results.push(rr);
   }
 
   for(const r of merged.values()){
@@ -767,7 +1001,7 @@ function jraResultRenderDiagnostics(d, extracted) {
   const raceRows=(d.raceDiagnostics||[]).map(r=>{
     const finish=r.finishOrder?.length?r.finishOrder.join("-"):"なし";
     const err=r.errors?.length?`<ul>${r.errors.map(e=>`<li>${escapeHtml(e)}</li>`).join("")}</ul>`:"なし";
-    return `<tr><td>${escapeHtml(r.key)}</td><td>${r.pageStart}-${r.pageEnd}</td><td>${r.entries}</td><td>${escapeHtml(finish)}</td><td>${r.payouts}</td><td>${err}</td></tr>`;
+    return `<tr><td>${escapeHtml(r.key)}</td><td>${r.pageStart}-${r.pageEnd}</td><td>${r.entries}</td><td>${escapeHtml(finish)}</td><td>${r.payouts}</td><td>${r.raceResults||0}</td><td>${err}</td></tr>`;
   }).join("");
   const candidateRows=(d.headerCandidates||[]).map(x=>
     `<li>p${x.page}:${x.row} / ${escapeHtml(x.date||"日付なし")} / ${escapeHtml(x.track||"競馬場なし")} / ${escapeHtml(x.time||"時刻なし")} / ${escapeHtml(x.label||"")} ${x.timeSource?` → ${escapeHtml(x.timeSource)}`:""}</li>`
@@ -793,6 +1027,8 @@ function jraResultRenderDiagnostics(d, extracted) {
   レース開始検出: ${d.raceHeaders}<br>
   結果行検出: ${d.resultRows}<br>
   1〜3着検出: ${d.finishRanks}<br>
+  race_results詳細行 検出: ${d.fullResultRowsDetected} / 解析失敗: ${d.fullResultRowsFailed}<br>
+  取消・除外行 検出: ${d.scratchedRowsDetected}<br>
   払戻行検出: ${d.payoutLines}<br>
   払戻項目検出: ${d.payoutItems}<br>
   返還行検出: ${d.refundLines}<br>
@@ -803,7 +1039,7 @@ function jraResultRenderDiagnostics(d, extracted) {
   ${d.errors?.length?`<details open><summary>解析エラー・警告 (${d.errors.length})</summary><ul>${d.errors.map(e=>`<li>${escapeHtml(e)}</li>`).join("")}</ul></details>`:""}
   <details><summary>レース開始候補 (${(d.headerCandidates||[]).length})</summary><ul>${candidateRows||"<li>候補なし</li>"}</ul></details>
   <details><summary>レース別解析結果 (${(d.raceDiagnostics||[]).length})</summary>
-    <div style="overflow:auto"><table><thead><tr><th>レース</th><th>ページ</th><th>出走馬</th><th>1〜3着</th><th>払戻項目</th><th>問題</th></tr></thead><tbody>${raceRows||"<tr><td colspan='6'>レース解析結果なし</td></tr>"}</tbody></table></div>
+    <div style="overflow:auto"><table><thead><tr><th>レース</th><th>ページ</th><th>出走馬</th><th>1〜3着</th><th>払戻項目</th><th>race_results行数</th><th>問題</th></tr></thead><tbody>${raceRows||"<tr><td colspan='7'>レース解析結果なし</td></tr>"}</tbody></table></div>
   </details>
   <details><summary>抽出テキスト候補サンプル (${(d.rawSamples||[]).length})</summary><ul>${sampleRows||"<li>なし</li>"}</ul></details>
   <details><summary>行内文字間隔サンプル・閾値調整用 (${(d.gapSamples||[]).length})</summary>
@@ -864,7 +1100,7 @@ document.getElementById("jra-result-parse-btn")?.addEventListener("click",async(
       const old=jraExistingMap.get(key(r));
       const finish=r.finish_order.length?r.finish_order.join("-"):"着順未取得";
       const payouts=Object.entries(r.payouts||{}).filter(([k])=>k!=="refunds").reduce((n,[,v])=>n+(Array.isArray(v)?v.length:0),0);
-      return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name||"")} <span>着順: ${escapeHtml(finish)} / 払戻: ${payouts}項目 / ${old?"既存レースへ結果登録":"レース新規登録＋結果登録"}</span></div>`;
+      return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name||"")} <span>着順: ${escapeHtml(finish)} / 払戻: ${payouts}項目 / race_results: ${(r.race_results||[]).length}頭分 / ${old?"既存レースへ結果登録":"レース新規登録＋結果登録"}</span></div>`;
     }).join("")}</div>`;
     jraImportSubmit.disabled=jraParsedRecords.length===0;
   }catch(e){

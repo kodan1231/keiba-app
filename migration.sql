@@ -76,13 +76,12 @@ CREATE TABLE IF NOT EXISTS race_results (
   final_furlong_time REAL,      -- 推定上り 例:37.2
   body_weight INTEGER,          -- 馬体重
   body_weight_change TEXT,      -- 増減 例:"+2" "-2" "初出走" "計不"(数値以外もあるためTEXT)
+  win_popularity INTEGER,       -- 単勝人気
   incident_note TEXT,           -- 競走中の出来事(該当時に自動転記)。管理者が編集可
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(race_id, horse_number)
 );
-
-ALTER TABLE race_results ADD COLUMN win_popularity INTEGER;  -- 単勝人気
 
 CREATE INDEX IF NOT EXISTS idx_race_results_race_id ON race_results(race_id);
 CREATE INDEX IF NOT EXISTS idx_race_results_horse_name ON race_results(horse_name);

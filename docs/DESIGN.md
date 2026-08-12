@@ -1,18 +1,24 @@
 # 設計方針
 
 **FIX ver1.0**(2026-08-10整理。2026-08-11: 出走馬/結果PDFインポートのマージ方針を統一。
-2026-08-11(2): レース結果の詳細記録(race_results)・レース条件詳細のスキーマ拡張を追加)
+2026-08-11(2): レース結果の詳細記録(race_results)・レース条件詳細のスキーマ拡張を追加。
+2026-08-12: 上記の実装完了)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
 過去の経緯を確認したい場合は`archive/documents/pre-fix-v1.0/DESIGN.md`を参照してください。
 未解決の不具合・未着手のタスクは`docs/BACKLOG.md`を参照してください。
 
-> **2026-08-11時点の注記**: 本節(出走馬一覧PDFインポート・JRAレース結果PDFインポート・
-> 払戻確定時のticket反映・下記「レース結果の詳細記録(race_results)」)は、仕様の合意までは
-> 完了していますが、コード側の実装は**まだ着手していません**。実装待ちのタスクは
-> `docs/BACKLOG.md`「クラスタL」を参照してください。実装完了後、このセクションの記述と
-> 実際のコードとの整合を再確認すること。
+> **2026-08-12時点の注記**: 本節(出走馬一覧PDFインポート・JRAレース結果PDFインポート・
+> 払戻確定時のticket反映・下記「レース結果の詳細記録(race_results)」)は、コード実装が
+> 完了しました(`functions/api/_shared.js`の`mergeEntriesByHorseName()`/
+> `upsertRaceResults()`、`functions/api/races/entries-import.js`・
+> `functions/api/races/results-import.js`・`public/jra-entries-pdf.js`・
+> `public/jra-result-pdf.js`の変更)。**ただし`migration.sql`の
+> `race_results_and_conditions`ステップはまだ実DBに未適用です**(README「スキーマ変更の
+> 適用手順」の通り、`--local`→`--remote`の順で適用し、`schema_migrations`への記録・
+> `schema.sql`への反映まで行ってから運用を開始してください)。実ブラウザのPDF.jsでの
+> 動作検証は未実施のため、`docs/BACKLOG.md`の実機検証タスクを参照してください。
 
 ## データ構造
 

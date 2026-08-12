@@ -28,6 +28,8 @@ const ticketsSection = document.getElementById("race-tickets-section");
 const finish1Select = document.getElementById("r-finish-1");
 const finish2Select = document.getElementById("r-finish-2");
 const finish3Select = document.getElementById("r-finish-3");
+const raceResultsDetailSection = document.getElementById("race-results-detail-section");
+const raceResultsDetailTable = document.getElementById("race-results-detail-table");
 
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
@@ -549,6 +551,88 @@ function buildPayoutSubmission() {
   return { payoutsPayload };
 }
 
+// ---------- レース結果詳細(race_results)の表示・出来事メモ編集(2026-08-11追加) ----------
+// 全着順・タイム・着差・馬体重等はPDFインポート経由でのみ登録される(このUIからは
+// 編集不可)。競走中の出来事メモ(incident_note)のみ、管理者がその場で編集・保存できる。
+async function loadRaceResultsDetail(raceId) {
+  if (!raceId) {
+    raceResultsDetailSection.hidden = true;
+    raceResultsDetailTable.innerHTML = "";
+    return;
+  }
+  const res = await authedFetch(`/api/races/${raceId}/results`);
+  if (!res.ok) {
+    raceResultsDetailSection.hidden = true;
+    return;
+  }
+  const data = await res.json().catch(() => ({ items: [] }));
+  const items = data.items || [];
+  if (!items.length) {
+    raceResultsDetailSection.hidden = true;
+    return;
+  }
+  raceResultsDetailSection.hidden = false;
+  const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
+
+  const statusLabel = (s) => (s === "scratched" ? "取消" : s === "excluded" ? "除外" : "");
+
+  raceResultsDetailTable.innerHTML = `
+    <div class="table-wrap"><table class="stats-table">
+      <thead><tr>
+        <th>着順</th><th>馬番</th><th>馬名</th><th>タイム</th><th>着差</th>
+        <th>馬体重</th><th>人気</th><th>出来事メモ</th>
+      </tr></thead>
+      <tbody>
+        ${items.map((it) => `
+          <tr data-horse-number="${it.horse_number}">
+            <td>${it.finish_position ?? statusLabel(it.status) ?? "-"}</td>
+            <td>${it.horse_number ?? "-"}</td>
+            <td class="table-name">${escapeHtml(it.horse_name || "")}</td>
+            <td>${escapeHtml(it.time_text || "")}</td>
+            <td>${escapeHtml(it.margin || "")}</td>
+            <td>${it.body_weight ? `${it.body_weight}${it.body_weight_change ? `(${escapeHtml(it.body_weight_change)})` : ""}` : ""}</td>
+            <td>${it.win_popularity ?? ""}</td>
+            <td>
+              ${isAdmin
+                ? `<textarea class="incident-note-input" rows="1" style="width:100%;min-width:160px" placeholder="競走中の出来事等">${escapeHtml(it.incident_note || "")}</textarea>`
+                : escapeHtml(it.incident_note || "")}
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table></div>
+    ${isAdmin ? `<button type="button" id="save-incident-notes-btn" class="ghost-btn" style="margin-top:8px">出来事メモを保存</button>
+    <span id="incident-notes-save-status" class="submit-message" hidden></span>` : ""}
+  `;
+
+  const saveBtn = document.getElementById("save-incident-notes-btn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      const statusEl = document.getElementById("incident-notes-save-status");
+      const rows = Array.from(raceResultsDetailTable.querySelectorAll("tr[data-horse-number]"));
+      saveBtn.disabled = true;
+      let failed = 0;
+      for (const row of rows) {
+        const horseNumber = Number(row.dataset.horseNumber);
+        const textarea = row.querySelector(".incident-note-input");
+        if (!textarea) continue;
+        const res2 = await authedFetch(`/api/races/${raceId}/results`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ horse_number: horseNumber, incident_note: textarea.value }),
+        });
+        if (!res2.ok) failed++;
+      }
+      saveBtn.disabled = false;
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.className = `submit-message ${failed ? "error" : "success"}`;
+        statusEl.textContent = failed ? `${failed}件の保存に失敗しました` : "保存しました";
+      }
+    });
+  }
+}
+
 // ---------- 出走馬表モーダル(登録・編集) ----------
 document.getElementById("new-race-btn").addEventListener("click", () => openEntriesModal());
 document.getElementById("entries-cancel-btn").addEventListener("click", closeEntriesModal);
@@ -645,6 +729,8 @@ function openPayoutModal(race) {
   // 前回モーダルの残留DOMをcaptureEnteredRatesIntoState()が読み取ってしまい、
   // 直後にセットしたcurrentRacePayoutsが空データで上書きされてしまう不具合が起きる。
   ticketsSection.innerHTML = "";
+  raceResultsDetailSection.hidden = true;
+  raceResultsDetailTable.innerHTML = "";
   document.getElementById("payout-race-id").value = race.id;
   payoutModalTitle.textContent = race.finish_order ? "払戻を編集" : "払戻を登録";
 
@@ -659,6 +745,7 @@ function openPayoutModal(race) {
   renderFinishSelects(count, race.finish_order);
   currentRacePayouts = race.payouts || {};
   loadTicketsForRace(race.id);
+  loadRaceResultsDetail(race.id);
 
   payoutModal.hidden = false;
   // 前回別レースを開いていたときのスクロール位置が残らないよう、先頭にリセットする。

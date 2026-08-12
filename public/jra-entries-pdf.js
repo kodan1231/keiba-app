@@ -8,20 +8,27 @@
 // インポート」参照)。
 //
 // 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
-// 結果PDFパーサーには手を入れず、独立ファイルとして実装している。
+// 実機未検証の結果PDFパーサーには手を入れず、独立ファイルとして新規作成している。
 //
-// 枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない
-// (JRAレース結果PDFと同様の制約)。行頭に「枠番→馬番」の2つの数字が並ぶという
+// 【既知の未検証事項→検証済み(2026-08-08)】枠番・馬番確定後の実PDFで検証した結果、
+// **枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない**ことが
+// 判明した(JRAレース結果PDFと同様の制約。docs/JRA_RESULT_PDF_IMPORT_PAYOUT_ISSUE_
+// INVESTIGATION.md の同種の記述を参照)。行頭に「枠番→馬番」の2つの数字が並ぶという
 // 当初の推測(jraEntriesParseHorseRow内の numPrefix2)は実際には発生しないが、
 // 万一将来のPDF形式変更で現れた場合のフォールバックとして処理自体は残してある。
 // 馬番は単独の数字として取得できる。
 // また、負担重量・オッズが発表された状態のPDFでは行末に単勝オッズ(小数)が付加される
 // ため、調教師名との境界を誤らないよう除去してから解析する。
 // さらに、ブリンカー(B)等のバッジが付く馬は、実PDFのテキスト抽出時に馬番だけが
-// 単独行になり、馬名以降が次の行に分離する
+// 単独行になり、馬名以降が次の行に分離することが確認されている
 // (jraEntriesParseExtractedPages側の「馬番だけの行を次行と結合する」処理で対応)。
 // 調教師名は常に「姓 名」の2トークンという前提で騎手名との境界を判定している
-// (外国人騎手のような1トークン名は騎手側で許容している)。
+// (外国人騎手のような1トークン名は騎手側で許容している)。この前提が崩れる表記が
+// 実機で見つかった場合も同様に調整が必要。
+//
+// 2026-08-11追加: 性齢(sex_age)・負担重量(weight_carried)を抽出し、entriesへ含めて
+// サーバーへ送信するようにした(docs/DESIGN.md「races.entriesへの性齢・負担重量の追加」
+// 参照)。抽出済みの正規表現マッチ結果(牡/牝/せん/セ/騸 + 年齢 + kg)をそのまま流用する。
 
 const JRA_ENTRIES_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
 
@@ -107,6 +114,37 @@ function jraEntriesParseCourse(text) {
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g, "")) } : { course_type: null, distance: null };
 }
 
+// レース条件詳細(斤量区分・条件フラグ・回り)の抽出(2026-08-11追加)。
+// 例: "2歳 未勝利（混合）［指定］ 馬齢 コース：1,600メートル（芝・左）"
+//   → weight_type="馬齢", class_flags="未勝利（混合）［指定］", course_direction="左"
+function jraEntriesParseConditions(text) {
+  const s = jraEntriesNormalizeUnit(text).replace(/\s+/g, " ");
+  let weight_type = null;
+  const wt = s.match(/(馬齢|定量|別定|ハンデ)/);
+  if (wt) weight_type = wt[1];
+
+  let course_direction = null;
+  const dir = s.match(/[（(]\s*(芝|ダート|障害)\s*[・･]\s*(左|右)\s*[)）]/);
+  if (dir) course_direction = dir[2];
+
+  // class_flags: 年齢条件〜斤量区分の手前までの生テキスト(コース情報を除く)。
+  // 例: "2歳 未勝利（混合）［指定］" の部分だけを取り出す。
+  let class_flags = null;
+  const cf = s.match(/^\s*(\S.*?)\s*(?:馬齢|定量|別定|ハンデ)\s*コース/);
+  if (cf) class_flags = cf[1].trim() || null;
+
+  return { weight_type, class_flags, course_direction };
+}
+
+// 天候・馬場状態の抽出(2026-08-11追加)。結果PDFにのみ出現する行:
+// 例: "天候 晴 ダート 良" → weather="晴", track_condition="良"
+function jraEntriesParseWeather(text) {
+  const s = jraEntriesNormalizeUnit(text).replace(/\s+/g, " ");
+  const m = s.match(/天候\s*([^\s]+)\s*(芝|ダート|障害)\s*([^\s]+)/);
+  if (!m) return { weather: null, track_condition: null };
+  return { weather: m[1] || null, track_condition: m[3] || null };
+}
+
 // 出走馬1行を解析する。
 // 例(枠番・馬番未確定): "アルデバローズ 牝3 55.0kg 横山 琉人 矢野 英一"
 // 例(見習い減量記号)  : "ジーティービキニ 牝3 54.0kg ☆舟山 瑠泉 松下 武士"
@@ -119,6 +157,8 @@ function jraEntriesParseCourse(text) {
 // タブは jraEntriesJoinRowItems が実測ギャップから「列の区切り」と判定した信頼度の
 // 高い情報のため、優先的に利用する(タブが無い場合のみトークン数ヒューリスティックへ
 // フォールバックする)。
+//
+// 2026-08-11追加: 性齢(sex_age)・負担重量(weight_carried)も戻り値に含める。
 function jraEntriesParseHorseRow(rawLine) {
   const s = jraEntriesNormalizeLine(rawLine);
   if (!s) return null;
@@ -127,7 +167,7 @@ function jraEntriesParseHorseRow(rawLine) {
   let horseNumber = null;
   let rest = s;
 
-  // 行頭の「枠番 馬番」を試みる(フォールバック。上記コメント参照)。
+  // 行頭の「枠番 馬番」を試みる(未検証の想定形式。上記コメント参照)。
   const numPrefix2 = rest.match(/^([1-8])\s+(\d{1,2})\s+(.+)$/);
   if (numPrefix2 && /^(.+?)\s+(牡|牝|せん|セ|騸)\s*\d{1,2}\s+[\d.]+\s*kg/.test(numPrefix2[3])) {
     wakuNumber = Number(numPrefix2[1]);
@@ -146,6 +186,8 @@ function jraEntriesParseHorseRow(rawLine) {
   if (!m) return null;
 
   const horseName = m[1].trim();
+  const sexAge = `${m[2]}${m[3]}`;
+  const weightCarried = Number(m[4]);
   let tail = m[5].trim();
 
   // 見習い減量記号(☆▲△★◇)。以前はここで除去して捨てていたが、JRA表記に合わせて
@@ -157,7 +199,8 @@ function jraEntriesParseHorseRow(rawLine) {
   // 末尾の単勝オッズ(小数。例: "15.9")が付いている場合は取り除く。オッズが発表された
   // 状態のPDF(枠番・馬番確定後によく見られる)では「騎手名 調教師名 単勝オッズ」の
   // 順で並ぶため、これを除去せずに末尾2トークンを調教師名とすると、調教師名の一部が
-  // 騎手名側に押し出されてしまう不具合があった(2026-08-08修正)。
+  // 騎手名側に押し出されてしまう不具合があった(2026-08-08修正)。単勝オッズ自体は
+  // 保存しない方針(docs/DESIGN.md参照)のため、ここでは境界判定のためだけに除去する。
   tail = tail.replace(/\s+[\d,]+\.\d+\s*$/, "");
 
   let jockey, trainer;
@@ -175,28 +218,28 @@ function jraEntriesParseHorseRow(rawLine) {
   // タブが無い(または不十分な)場合は、トークン数から推測する(以前からのフォールバック)。
   if (!jockey || !trainer) {
     const tokens = tail.replace(/\t/g, " ").split(/\s+/).filter(Boolean);
-  if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
+    if (tokens.length < 2) return null; // 騎手・調教師のいずれかが読み取れない
 
-  // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
+    // 調教師名は通常「姓 名」の2トークンだが、PDF内のスペース幅が僅かで検出できず
     // 1トークンに結合されるケースが実PDFで確認されている(例: "浜中 俊 谷潔" → 本来は
     // 騎手名「浜中 俊」・調教師名「谷潔」。2026-08-08確認)。一方、外国人騎手名
     // (例: "J.コレット")のようにピリオドを含む1トークンの場合は騎手側が1トークンで
     // 調教師側が2トークンという逆パターンになる。トークン数だけでは一意に決まらないため、
     // 先頭トークンにピリオドを含むかどうかで判定する。
-  if (tokens.length >= 4) {
-    trainer = tokens.slice(-2).join(" ");
-    jockey = tokens.slice(0, -2).join(" ");
-  } else if (tokens.length === 3) {
-    if (/[.．]/.test(tokens[0])) {
-      jockey = tokens[0];
-      trainer = `${tokens[1]} ${tokens[2]}`;
+    if (tokens.length >= 4) {
+      trainer = tokens.slice(-2).join(" ");
+      jockey = tokens.slice(0, -2).join(" ");
+    } else if (tokens.length === 3) {
+      if (/[.．]/.test(tokens[0])) {
+        jockey = tokens[0];
+        trainer = `${tokens[1]} ${tokens[2]}`;
+      } else {
+        jockey = `${tokens[0]} ${tokens[1]}`;
+        trainer = tokens[2];
+      }
     } else {
-      jockey = `${tokens[0]} ${tokens[1]}`;
-      trainer = tokens[2];
-    }
-  } else {
-    jockey = tokens[0];
-    trainer = tokens[1];
+      jockey = tokens[0];
+      trainer = tokens[1];
     }
   }
 
@@ -205,13 +248,15 @@ function jraEntriesParseHorseRow(rawLine) {
   return {
     horse_name: horseName,
     jockey: apprenticeMark ? `${apprenticeMark}${jockey}` : jockey,
-    trainer, // 2026-08-07時点では保存対象外(entries-import.js側で無視される。次フェーズでentriesに追加予定)
+    trainer, // 保存対象外(entries-import.js側で無視される。docs/BACKLOG.md参照)
     waku_number: wakuNumber,
     horse_number: horseNumber,
+    sex_age: sexAge,
+    weight_carried: Number.isFinite(weightCarried) ? weightCarried : null,
   };
 }
 
-const JRA_ENTRIES_PARSER_VERSION = "1.1.0-oddstrip-linewrap";
+const JRA_ENTRIES_PARSER_VERSION = "1.2.0-sexage-weight-conditions";
 
 function jraEntriesParseExtractedPages(pages) {
   const lines = [];
@@ -270,16 +315,23 @@ function jraEntriesParseExtractedPages(pages) {
 
     const raceDiag = { key: `${h.date} ${h.track} ${number}R`, entries: 0, errors: [] };
 
-    // レース名・コース情報は「出走馬表(枠 馬番 馬名…)」の見出し行より前にしか現れないため、
-    // 探索範囲をその行までに限定する(開催情報の行数が少ないレースで、出走馬の行を
-    // 誤ってレース名として拾ってしまう事故を防ぐため)。
+    // レース名・コースは「出走馬表(枠 馬番 馬名…)」の見出し行より前にしか現れないため、
+    // 探索範囲をその行までに限定する(以前は固定で先頭15行を見ていたため、開催情報の行数が
+    // 少ないレースで出走馬の行を誤ってレース名として拾ってしまう不具合があった)。
     const tableHeaderIndex = block.findIndex((l) => /^枠\s*馬番\s*馬名/.test(l.text));
     const metaScanEnd = tableHeaderIndex >= 0 ? tableHeaderIndex : Math.min(block.length, 15);
     let raceName = null, courseType = null, distance = null;
+    let weightType = null, classFlags = null, courseDirection = null;
     for (let i = 1; i < metaScanEnd; i++) {
       const s = block[i].text;
       const course = jraEntriesParseCourse(s);
       if (course.course_type && !courseType) { courseType = course.course_type; distance = course.distance; }
+      if (/コ\s*ー\s*ス\s*[:：]/.test(s) || /メートル/.test(s)) {
+        const cond = jraEntriesParseConditions(s);
+        if (cond.weight_type && !weightType) weightType = cond.weight_type;
+        if (cond.class_flags && !classFlags) classFlags = cond.class_flags;
+        if (cond.course_direction && !courseDirection) courseDirection = cond.course_direction;
+      }
       // 「3歳未勝利」「2歳新馬」のように数字+歳で始まるレース名は多いため、
       // 「◯歳」始まりであること自体では除外しない。条件行(例: 「3歳 未勝利牝［指定］
       // 馬齢 コース：1,700メートル…」)は「メートル」を含むため、そちらの除外だけで十分。
@@ -333,6 +385,7 @@ function jraEntriesParseExtractedPages(pages) {
       records.push({
         race_date: h.date, track: h.track, race_number: number,
         race_name: raceName, course_type: courseType, distance,
+        weight_type: weightType, class_flags: classFlags, course_direction: courseDirection,
         entries: entries.map(({ trainer, ...rest }) => rest), // trainerは今回のフェーズでは送信しない(BACKLOG参照)
       });
     }
