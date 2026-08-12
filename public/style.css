@@ -1277,6 +1277,11 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 }
 
 @media (max-width: 600px) {
+  /* クラスタJ-2: モバイルでは操作説明を省略して馬一覧を優先する */
+  .prediction-help {
+    display: none;
+  }
+
   .prediction-main {
     padding: 18px 12px 60px;
   }
