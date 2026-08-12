@@ -1774,6 +1774,14 @@ body.modal-open { overflow: hidden; }
 .control-label { font-size:0; }
 .control-label input { font-size:initial; }
 
+/* クラスタJ-4: 馬メモ登録済みの馬行を、購入済みレースと同じwin系の薄い緑で表示。 */
+.horse-note-card.has-horse-memo {
+  background: rgba(47, 122, 61, 0.14);
+}
+.horse-note-card.has-horse-memo:hover {
+  background: rgba(47, 122, 61, 0.22);
+}
+
 /* 予想画面:既存メモを馬名横に表示 */
 .horse-note-preview {
   display:block;

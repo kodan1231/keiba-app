@@ -321,7 +321,7 @@ function renderHorses() {
     const n = hasNumber ? Number(e.horse_number) : null;
     const note = horseNotes[e.horse_name] || {};
     return `
-      <article class="prediction-horse horse-note-card"
+      <article class="prediction-horse horse-note-card${note.memo ? " has-horse-memo" : ""}"
         data-horse-number="${n !== null ? n : ""}"
         data-horse-name="${escapeAttr(e.horse_name || "")}">
         <div class="horse-note-toggle" role="button" tabindex="0">
@@ -347,7 +347,7 @@ function renderHorses() {
           <label class="horse-memo-label">
             この馬についてのメモ
             <textarea class="horse-memo" rows="3" maxlength="5000"
-              placeholder="次回以降も参照したい、この馬固有のメモを入力">${escapeHtml(note.memo || "")}</textarea>
+              >${escapeHtml(note.memo || "")}</textarea>
           </label>
           <span class="horse-note-status" hidden></span>
         </div>
