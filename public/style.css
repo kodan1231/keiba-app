@@ -1875,14 +1875,27 @@ body.modal-open { overflow: hidden; }
   .calendar-day-money {
     font-size:.52rem;
   }
-  /* 予想登録画面: 枠番・馬番と馬名の間の余白を詰める(馬名自体は既に見えている) */
+  /* クラスタJ-3: 予想登録画面の馬行は5列(枠番・馬番・馬名・予想印・メモ展開)を
+     明示し、予想印を暗黙列へ押し出さない。これにより小型画面でも印セレクトが
+     画面右端から見切れず、馬名～騎手～印の余白も必要最小限にする。 */
   .horse-note-toggle {
-    grid-template-columns:18px 22px minmax(90px,1fr) 26px;
-    gap:6px;
-    padding:10px;
+    grid-template-columns:18px 22px minmax(0,1fr) 64px 24px;
+    gap:4px;
+    padding:10px 8px;
   }
   .prediction-horse-number {
     width:20px;
+  }
+  .prediction-mark-inline {
+    margin-left:0;
+    min-width:0;
+    justify-content:flex-end;
+  }
+  .prediction-mark-select {
+    width:64px;
+    min-width:0;
+    padding-left:2px;
+    padding-right:2px;
   }
 }
 
