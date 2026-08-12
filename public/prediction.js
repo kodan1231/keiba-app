@@ -115,14 +115,24 @@ function renderPurchasedTickets(items) {
               <div class="group-detail-rows">
                 ${group
                   .map(
-                    (t) => `
-                  <div class="group-detail-row">
+                   (t) => `
+                  <div class="group-detail-row" data-id="${escapeAttr(String(t.id))}" data-imported="${t.imported ? "1" : "0"}">
                     <div class="sel-line">${formatSelections(t.bet_type, t.selections)}</div>
-                    <span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
-                      t.payout !== null && t.payout !== undefined
-                        ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
-                        : " / 未確定"
-                    }</span>
+                    ${t.imported
+                      ? `<span class="import-source-badge">CSV取込</span><span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
+                          t.payout !== null && t.payout !== undefined
+                            ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
+                            : " / 未確定"
+                        }</span>`
+                      : `<label class="payout-label">購入額
+                          <input type="number" class="amount-edit-input" min="100" step="100" value="${Number(t.amount || 0)}" aria-label="購入金額" />
+                        </label>
+                        <span class="detail-payout">${
+                          t.payout !== null && t.payout !== undefined
+                            ? `払戻¥${Number(t.payout).toLocaleString()}`
+                            : "未確定"
+                        }</span>`
+                    }
                   </div>
                 `
                   )
@@ -137,6 +147,49 @@ function renderPurchasedTickets(items) {
 
   ticketsEl.querySelectorAll(".group-card-head[data-group-id]").forEach((head) => {
     head.addEventListener("click", () => toggleTicketGroup(head));
+  });
+
+  // 通常購入分の購入金額は、この画面からその場で変更できる。
+  // CSV取込分は確定した過去履歴として別APIで管理するため、ここでは編集対象外。
+  ticketsEl.querySelectorAll(".amount-edit-input").forEach((input) => {
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("change", async () => {
+      const row = input.closest(".group-detail-row");
+      const id = row?.dataset.id;
+      if (!id || row.dataset.imported === "1") return;
+
+      const ticket = items.find((t) => String(t.id) === String(id));
+      if (!ticket) return;
+
+      const newAmount = Number(input.value);
+      if (!Number.isInteger(newAmount) || newAmount < 100) {
+        input.value = Number(ticket.amount || 0);
+        alert("購入金額は100円以上の整数で入力してください。");
+        return;
+      }
+
+      // 払戻率が既に登録されている場合は、購入金額変更後の払戻額も再計算する。
+      // 払戻率が未登録の場合は、既存の未確定状態を維持する。
+      let newPayout = ticket.payout ?? null;
+      if (selectedRace && selectedRace.payouts && selectedRace.payouts[ticket.bet_type]) {
+        newPayout = computeTicketPayout({ ...ticket, amount: newAmount }, selectedRace);
+      }
+
+      const res = await authedFetch(`/api/tickets/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: newAmount, payout: newPayout }),
+      });
+
+      if (!res.ok) {
+        input.value = Number(ticket.amount || 0);
+        alert("購入金額の更新に失敗しました。");
+        return;
+      }
+
+      const updatedItems = await loadRaceTickets();
+      renderPurchasedTickets(updatedItems);
+    });
   });
 }
 
