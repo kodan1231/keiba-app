@@ -82,5 +82,7 @@ CREATE TABLE IF NOT EXISTS race_results (
   UNIQUE(race_id, horse_number)
 );
 
+ALTER TABLE race_results ADD COLUMN win_popularity INTEGER;  -- 単勝人気
+
 CREATE INDEX IF NOT EXISTS idx_race_results_race_id ON race_results(race_id);
 CREATE INDEX IF NOT EXISTS idx_race_results_horse_name ON race_results(horse_name);
