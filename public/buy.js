@@ -279,6 +279,14 @@ async function openPurchase(race) {
 
   renderBetTypes();
   hideDownstream();
+
+  // B-3: 購入モーダルを開いた直後は単勝を選択済みとし、
+  // 通常/ボックス等の方式選択を挟まず馬選択画面まで表示する。
+  // 単勝は1頭選択の券種なので、methodSectionは非表示のままにする。
+  if (state.betType === "tan") {
+    methodSection.hidden = true;
+    renderPicker();
+  }
 }
 
 function hideDownstream() {
