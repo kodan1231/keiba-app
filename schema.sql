@@ -52,7 +52,12 @@ CREATE TABLE IF NOT EXISTS races (
   race_name TEXT,                 -- レース名(任意)
   course_type TEXT,               -- コース種別: 芝/ダート/障害(任意入力)
   distance INTEGER,               -- 距離(メートル・任意入力)
-  entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark}]
+  weight_type TEXT,               -- 斤量区分: 馬齢/定量/別定/ハンデ(任意入力)
+  class_flags TEXT,               -- 条件フラグ等の生テキスト(指定/特指/混合/牝馬限定等。任意入力)
+  course_direction TEXT,          -- コースの回り: 左/右(該当なしはNULL)
+  weather TEXT,                   -- 天候(JRAレース結果PDFのみに出現)
+  track_condition TEXT,           -- 馬場状態(JRAレース結果PDFのみに出現。天候とは別カラム)
+  entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark, sex_age, weight_carried}]
                                    -- waku_number/horse_numberはnullを許容する(出走馬一覧PDF
                                    -- インポート対応。docs/DESIGN.md「出走馬(races.entries)の
                                    -- 枠番・馬番はnullを許容する」参照)
@@ -63,6 +68,36 @@ CREATE TABLE IF NOT EXISTS races (
 );
 
 CREATE INDEX IF NOT EXISTS idx_races_date ON races(race_date);
+
+-- レース結果の詳細記録: 馬単位の確定結果を1頭1行で記録する(全ユーザー共有)。
+-- races.finish_order/payouts(払戻判定用・上位3着のみ)とは独立した「記録・将来の
+-- 集計参照用」の追加データ。docs/DESIGN.md「レース結果の詳細記録(race_results)」参照。
+CREATE TABLE IF NOT EXISTS race_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  race_id INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+  horse_number INTEGER,
+  waku_number INTEGER,         -- 常にnull想定。PDFからは取得できないため手動入力用の列としてのみ保持
+  horse_name TEXT,
+  sex_age TEXT,                 -- 性齢 例:"牡3"
+  weight_carried REAL,          -- 負担重量 例:57.0
+  jockey TEXT,                  -- 見習い減量記号を含む表記のまま保持
+  status TEXT NOT NULL DEFAULT 'finished', -- finished/scratched(取消)/excluded(除外)
+  finish_position INTEGER,      -- 着順(全馬)。取消・除外はNULL
+  time_text TEXT,                -- タイム 例:"1:25.0"(生テキストのまま)
+  margin TEXT,                   -- 着差 例:"クビ" "１ 1/4" "大差"(表記ゆれが大きいためTEXT)
+  corner_positions TEXT,         -- 個別コーナー通過順位(生テキストのまま)
+  final_furlong_time REAL,       -- 推定上り 例:37.2
+  body_weight INTEGER,           -- 馬体重
+  body_weight_change TEXT,       -- 増減 例:"+2" "-2" "初出走" "計不"(数値以外もあるためTEXT)
+  win_popularity INTEGER,        -- 単勝人気
+  incident_note TEXT,            -- 競走中の出来事(該当時に自動転記)。管理者が編集可
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(race_id, horse_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_race_results_race_id ON race_results(race_id);
+CREATE INDEX IF NOT EXISTS idx_race_results_horse_name ON race_results(horse_name);
 
 -- ============================================================
 -- 3. 通常購入
