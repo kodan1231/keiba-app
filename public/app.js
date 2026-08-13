@@ -212,16 +212,18 @@ function renderRaceCard(race) {
   const head = document.createElement("div");
   head.className = "race-card-head";
   head.innerHTML = `
-    <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
-    <span class="r-num">${race.race_number}R</span>
-    <span class="track">${escapeHtml(race.track)}</span>
-    ${race.race_name ? `<span class="race-name">${escapeHtml(race.race_name)}</span>` : ""}
-    <span class="race-date">${formatDate(race.race_date)}</span>
-    <span class="race-total">
+    <div class="race-card-head-main">
+      <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
+      <span class="race-date">${formatDate(race.race_date)}</span>
+      <span class="track">${escapeHtml(race.track)}</span>
+      <span class="r-num">${race.race_number}R</span>
+      ${race.race_name ? `<span class="race-name">${escapeHtml(race.race_name)}</span>` : ""}
+    </div>
+    <div class="race-total">
       購入¥${totalAmount.toLocaleString()}
       ${settledTickets.length > 0 ? ` / 払戻¥${totalPayout.toLocaleString()} / ` : ""}
       ${settledTickets.length > 0 ? `<span class="${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}¥${profit.toLocaleString()}</span>` : ""}
-    </span>
+    </div>
   `;
   card.appendChild(head);
 
