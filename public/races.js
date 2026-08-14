@@ -31,6 +31,43 @@ const finish3Select = document.getElementById("r-finish-3");
 const raceResultsDetailSection = document.getElementById("race-results-detail-section");
 const raceResultsDetailTable = document.getElementById("race-results-detail-table");
 
+// クラスタK: races.html の各モーダルは Escape でキャンセル相当として閉じる。
+// 保存処理は実行せず、既存のキャンセル/閉じる処理と同じ状態に戻す。
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+
+  if (entriesModal && !entriesModal.hidden) {
+    e.preventDefault();
+    closeEntriesModal();
+    return;
+  }
+  if (payoutModal && !payoutModal.hidden) {
+    e.preventDefault();
+    closePayoutModal();
+    return;
+  }
+
+  const jraEntriesModal = document.getElementById("jra-entries-import-modal");
+  if (jraEntriesModal && !jraEntriesModal.hidden) {
+    e.preventDefault();
+    jraEntriesModal.hidden = true;
+    return;
+  }
+
+  const jraResultModal = document.getElementById("jra-result-import-modal");
+  if (jraResultModal && !jraResultModal.hidden) {
+    e.preventDefault();
+    jraResultModal.hidden = true;
+    return;
+  }
+
+  const scheduleModalEl = document.getElementById("schedule-modal");
+  if (scheduleModalEl && !scheduleModalEl.hidden) {
+    e.preventDefault();
+    scheduleModalEl.hidden = true;
+  }
+});
+
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
 

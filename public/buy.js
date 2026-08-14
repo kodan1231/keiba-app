@@ -302,6 +302,13 @@ document.getElementById("close-purchase-modal").onclick = () => {
   history.replaceState(null, "", "buy.html");
 };
 
+// クラスタK: 購入モーダルも Escape でキャンセル相当として閉じる。
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || modal.hidden) return;
+  e.preventDefault();
+  document.getElementById("close-purchase-modal").click();
+});
+
 function renderBetTypes() {
   betButtons.innerHTML = Object.entries(BET_LABELS)
     .map(([k,v]) => `<button class="choice-button ${state.betType===k ? "selected" : ""}" data-value="${k}" type="button">${v}</button>`)

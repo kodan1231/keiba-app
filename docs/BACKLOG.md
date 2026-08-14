@@ -89,7 +89,7 @@ npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_mi
 実行環境を用いない静的コードレビューにより発見。3件ともユーザーとの確認により修正方針を
 確定済み。**実装(コード変更)はまだ行っていない。**
 
-### N-1(中優先度・未実装): 出走馬表(races.js)で馬番が重複入力できてしまう
+### N-1(中優先度): 出走馬表(races.js)で馬番が重複入力できてしまう
 
 **症状**: `public/races.js`の出走馬表フォーム(`entry-form-row`)は、各行の馬番セレクトが
 互いに独立しており、同じ馬番を複数行に設定できてしまう。馬番が重複すると、購入時の
@@ -496,7 +496,9 @@ JV-Link(Windows専用ActiveX)・JRA公式サイト(bot対策あり)・netkeiba(�
 
 | 優先度 | 内容 | 規模目安 |
 |---|---|---|
-| 中 | 出走馬編集(`race-entries-modal`)・払戻編集(`race-payout-modal`)・出走馬一覧PDFインポート・JRAレース結果PDFインポート・開催日程一括登録(`schedule-modal`。以上いずれも`races.html`)、および馬券購入モーダル(`purchase-modal`。`buy.html`)など、ダイアログ表示系すべてで、ESCキー押下時に「キャンセル」ボタンと同じ扱いで(保存せず)閉じるようにする。共通のキーハンドラ(`keydown`で`Escape`検知→各モーダルのcancel/close関数を呼ぶ)を用意し、対象モーダルへ横断的に適用する想定 | 小〜中 |
+| ~~中~~ | ~~出走馬編集(`race-entries-modal`)・払戻編集(`race-payout-modal`)・出走馬一覧PDFインポート・JRAレース結果PDFインポート・開催日程一括登録(`schedule-modal`。以上いずれも`races.html`)、および馬券購入モーダル(`purchase-modal`。`buy.html`)など、ダイアログ表示系すべてで、ESCキー押下時に「キャンセル」ボタンと同じ扱いで(保存せず)閉じるようにする。~~ | **完了(K-1)** |
+
+**K-1 実装メモ:** `races.html` では対象5モーダルを1つの `keydown` ハンドラで監視し、表示中のモーダルだけを Escape で閉じる。出走馬編集・払戻編集は既存のclose関数を呼び出し、PDFインポート2種・開催日程一括登録は既存のキャンセル操作と同じく `hidden=true` とする。`buy.html` は購入モーダルの既存閉じるボタンを呼び出す。いずれも保存処理は実行しない。
 
 (仕様矛盾の解消方針一覧は`docs/BACKLOG.md`「参考: 今回確認した仕様矛盾の解消方針」参照)
 
