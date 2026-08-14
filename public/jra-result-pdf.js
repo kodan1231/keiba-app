@@ -1060,8 +1060,14 @@ let jraParsedRecords=[];let jraExistingMap=new Map();
 document.getElementById("jra-result-import-btn")?.addEventListener("click",()=>{
   jraImportFile.value="";jraImportPreview.innerHTML="";jraImportMessage.hidden=true;jraImportSubmit.disabled=true;jraParsedRecords=[];jraImportModal.hidden=false;
 });
-document.getElementById("jra-result-import-cancel-btn")?.addEventListener("click",()=>jraImportModal.hidden=true);
-jraImportModal?.addEventListener("click",e=>{if(e.target===jraImportModal)jraImportModal.hidden=true;});
+document.getElementById("jra-result-import-cancel-btn")?.addEventListener("click",closeJraResultImportModal);
+jraImportModal?.addEventListener("click",e=>{if(e.target===jraImportModal)closeJraResultImportModal();});
+
+function closeJraResultImportModal(){
+  if(jraImportModal) jraImportModal.hidden=true;
+}
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(jraImportModal, closeJraResultImportModal);
 
 jraImportFile?.addEventListener("change",()=>{
   jraImportPreview.innerHTML="";

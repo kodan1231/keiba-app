@@ -296,18 +296,14 @@ function hideDownstream() {
   submitMessage.hidden = true;
 }
 
-document.getElementById("close-purchase-modal").onclick = () => {
+function closePurchaseModal() {
   modal.hidden = true;
   document.body.classList.remove("modal-open");
   history.replaceState(null, "", "buy.html");
-};
-
-// クラスタK: 購入モーダルも Escape でキャンセル相当として閉じる。
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || modal.hidden) return;
-  e.preventDefault();
-  document.getElementById("close-purchase-modal").click();
-});
+}
+document.getElementById("close-purchase-modal").onclick = closePurchaseModal;
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(modal, closePurchaseModal);
 
 function renderBetTypes() {
   betButtons.innerHTML = Object.entries(BET_LABELS)

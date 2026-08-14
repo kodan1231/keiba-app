@@ -31,43 +31,6 @@ const finish3Select = document.getElementById("r-finish-3");
 const raceResultsDetailSection = document.getElementById("race-results-detail-section");
 const raceResultsDetailTable = document.getElementById("race-results-detail-table");
 
-// クラスタK: races.html の各モーダルは Escape でキャンセル相当として閉じる。
-// 保存処理は実行せず、既存のキャンセル/閉じる処理と同じ状態に戻す。
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-
-  if (entriesModal && !entriesModal.hidden) {
-    e.preventDefault();
-    closeEntriesModal();
-    return;
-  }
-  if (payoutModal && !payoutModal.hidden) {
-    e.preventDefault();
-    closePayoutModal();
-    return;
-  }
-
-  const jraEntriesModal = document.getElementById("jra-entries-import-modal");
-  if (jraEntriesModal && !jraEntriesModal.hidden) {
-    e.preventDefault();
-    jraEntriesModal.hidden = true;
-    return;
-  }
-
-  const jraResultModal = document.getElementById("jra-result-import-modal");
-  if (jraResultModal && !jraResultModal.hidden) {
-    e.preventDefault();
-    jraResultModal.hidden = true;
-    return;
-  }
-
-  const scheduleModalEl = document.getElementById("schedule-modal");
-  if (scheduleModalEl && !scheduleModalEl.hidden) {
-    e.preventDefault();
-    scheduleModalEl.hidden = true;
-  }
-});
-
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
 
@@ -730,6 +693,8 @@ function openEntriesModal(race, prefill) {
 function closeEntriesModal() {
   entriesModal.hidden = true;
 }
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(entriesModal, closeEntriesModal);
 
 entriesForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -806,6 +771,8 @@ function openPayoutModal(race) {
 function closePayoutModal() {
   payoutModal.hidden = true;
 }
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(payoutModal, closePayoutModal);
 
 payoutForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -859,8 +826,14 @@ document.getElementById("schedule-btn").addEventListener("click", () => {
   parsedSchedule = [];
   scheduleModal.hidden = false;
 });
-document.getElementById("schedule-cancel-btn").addEventListener("click", () => { scheduleModal.hidden = true; });
-scheduleModal.addEventListener("click", (e) => { if (e.target === scheduleModal) scheduleModal.hidden = true; });
+document.getElementById("schedule-cancel-btn").addEventListener("click", closeScheduleModal);
+scheduleModal.addEventListener("click", (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
+
+function closeScheduleModal() {
+  scheduleModal.hidden = true;
+}
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(scheduleModal, closeScheduleModal);
 
 document.getElementById("schedule-parse-btn").addEventListener("click", () => {
   const text = document.getElementById("schedule-paste").value;

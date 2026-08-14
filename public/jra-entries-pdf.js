@@ -479,8 +479,14 @@ document.getElementById("jra-entries-import-btn")?.addEventListener("click", () 
   jraEntriesParsedRecords = [];
   jraEntriesImportModal.hidden = false;
 });
-document.getElementById("jra-entries-import-cancel-btn")?.addEventListener("click", () => { jraEntriesImportModal.hidden = true; });
-jraEntriesImportModal?.addEventListener("click", (e) => { if (e.target === jraEntriesImportModal) jraEntriesImportModal.hidden = true; });
+document.getElementById("jra-entries-import-cancel-btn")?.addEventListener("click", closeJraEntriesImportModal);
+jraEntriesImportModal?.addEventListener("click", (e) => { if (e.target === jraEntriesImportModal) closeJraEntriesImportModal(); });
+
+function closeJraEntriesImportModal() {
+  if (jraEntriesImportModal) jraEntriesImportModal.hidden = true;
+}
+// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
+registerEscToClose(jraEntriesImportModal, closeJraEntriesImportModal);
 
 jraEntriesImportFile?.addEventListener("change", () => {
   jraEntriesImportPreview.innerHTML = "";
