@@ -244,6 +244,21 @@ function courseTypeShort(courseType) {
   return "";
 }
 
+// N-2修正: コース種別・距離のいずれか一方のみ入力の場合でも、入力済みの方だけを
+// 表示する共通関数。以前は `courseLabel ? \`${courseLabel}${distance}m\` : ""` という
+// ロジックが renderRaceRow()・openPayoutModal() の2箇所に重複しており、course_typeが
+// 未入力(null)でdistanceのみ入力されている場合、courseLabelが空文字(falsy)になり
+// courseText全体が""になるため、入力済みの距離が一覧・モーダルどちらにも表示されない
+// 不具合があった(データ自体はDBに保存されており消えてはいない)。
+// 登録されている方だけを表示する形に統一する(docs/BACKLOG.md「クラスタN」N-2参照)。
+function formatCourseText(courseType, distance) {
+  const parts = [];
+  const label = courseTypeShort(courseType);
+  if (label) parts.push(label);
+  if (distance) parts.push(`${distance}m`);
+  return parts.join("");
+}
+
 function renderRaceRow(r) {
   const settled = !!r.finish_order;
   const hasEntries = r.entries.length > 0;
@@ -252,8 +267,7 @@ function renderRaceRow(r) {
   // (詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
   const hasUnconfirmedNumbers = hasEntries && r.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
-  const courseLabel = courseTypeShort(r.course_type);
-  const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
+  const courseText = formatCourseText(r.course_type, r.distance);
 
   // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる。
   const unconfirmedSuffix = hasUnconfirmedNumbers ? "・枠番未確定" : "";
@@ -734,9 +748,8 @@ function openPayoutModal(race) {
   document.getElementById("payout-race-id").value = race.id;
   payoutModalTitle.textContent = race.finish_order ? "払戻を編集" : "払戻を登録";
 
-  const courseLabel = courseTypeShort(race.course_type);
-  const courseText = courseLabel ? `・${courseLabel}${race.distance ? race.distance + "m" : ""}` : "";
-  payoutRaceInfo.textContent = `${formatDate(race.race_date)} ${race.track} ${race.race_number}R${race.race_name ? "・" + race.race_name : ""}${courseText}`;
+  const courseText = formatCourseText(race.course_type, race.distance);
+  payoutRaceInfo.textContent = `${formatDate(race.race_date)} ${race.track} ${race.race_number}R${race.race_name ? "・" + race.race_name : ""}${courseText ? "・" + courseText : ""}`;
 
   currentPayoutEntries = race.entries || [];
   const count = Math.max(race.entries.length, 8);

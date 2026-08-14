@@ -5,6 +5,7 @@ race_results新設・レース条件詳細カラムを含む形に拡張、ク�
 2026-08-12:
 FIX ver1.0完了後のコードレビューで発見した不具合3件をクラスタNとして追加)
 2026-08-12: クラスタL実装完了)
+2026-08-14: クラスタN-2(コース種別・距離のいずれか一方のみ入力の場合の表示欠落)実装完了)
 
 このファイルは、要望としては承認済みだが未実装のタスク、および調査中・未解決の不具合を
 引き継ぐための一覧です。`README.md` / `docs/DESIGN.md` / `docs/TESTING.md`とは異なり
@@ -26,7 +27,7 @@ FIX ver1.0完了後のコードレビューで発見した不具合3件をクラ
   行ってもらう運用になっている。実機検証が必要な項目は各タスク・`docs/TESTING.md`に
   明記してあるので、着手・完了報告の際は検証状況を明確にすること
 
-## 🔰 次のチャットで最初に読むこと(2026-08-12引き継ぎ)
+## 🔰 次のチャットで最初に読むこと(2026-08-14引き継ぎ)
 
 **クラスタL(下記)の実装が完了しました。** 出走馬一覧PDFインポート・JRAレース結果PDF
 インポートについて、木曜(枠番未確定)→金曜(枠番確定)→土日(結果確定)という運用フローに
@@ -71,12 +72,24 @@ npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_mi
 
 クラスタL(race_results新設等)は引き続き実装未着手のまま(こちらも次点で着手候補)。
 
+**クラスタN-2(コース種別・距離のいずれか一方のみ入力の場合の表示欠落)の修正が
+完了しました。** `public/races.js`に共通関数`formatCourseText(courseType, distance)`を
+新設し、`renderRaceRow()`・`openPayoutModal()`の重複していた表示ロジックを統一しました。
+構文チェック(`node --check`)済み。**実機での動作確認は未実施**のため、
+`docs/TESTING.md`「7. レース管理画面のレイアウト」に追加したテスト項目を実機で
+確認すること。
+
+クラスタNの残タスク(N-1・N-3)、クラスタL・M・その他のクラスタは引き続き未着手のまま。
+次のセッションではN-1(出走馬表の馬番重複入力防止)への着手を推奨する。
+
+---
+
 ## クラスタN: FIX ver1.0後のコードレビューで発見した不具合の修正(2026-08-12仕様確定・実装待ち)
 
 実行環境を用いない静的コードレビューにより発見。3件ともユーザーとの確認により修正方針を
 確定済み。**実装(コード変更)はまだ行っていない。**
 
-### N-1(中優先度): 出走馬表(races.js)で馬番が重複入力できてしまう
+### N-1(中優先度・未実装): 出走馬表(races.js)で馬番が重複入力できてしまう
 
 **症状**: `public/races.js`の出走馬表フォーム(`entry-form-row`)は、各行の馬番セレクトが
 互いに独立しており、同じ馬番を複数行に設定できてしまう。馬番が重複すると、購入時の
@@ -119,10 +132,10 @@ npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_mi
 **実装対象ファイル**: `public/races.js`(`renderEntryRows()`・馬番セレクトの`change`
 イベントハンドラ)のみ。
 
-### N-2(中優先度): コース種別・距離のいずれか一方のみ入力の場合、表示が欠落する
+### N-2(中優先度): コース種別・距離のいずれか一方のみ入力の場合、表示が欠落する **実装完了(2026-08-14)**
 
 **症状**: `public/races.js`の`renderRaceRow()`(レース一覧カード)・`openPayoutModal()`
-(払戻モーダルの読み取り専用情報)双方で、以下のロジックになっている。
+(払戻モーダルの読み取り専用情報)双方で、以下のロジックになっていた。
 
 ```js
 const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" : ""}` : "";
@@ -131,14 +144,13 @@ const courseText = courseLabel ? `${courseLabel}${r.distance ? r.distance + "m" 
 `course_type`が未入力(null)で`distance`のみ入力されている場合、`courseLabel`が空文字
 (falsy)になり`courseText`全体が`""`になるため、**入力済みの距離が一覧・モーダルどちらにも
 一切表示されない**(データ自体はDBに保存されており消えてはいないが、画面上「入力したのに
-表示されない」不具合になる)。逆(距離未入力・コース種別のみ入力)は正しく表示される。
+表示されない」不具合になっていた)。逆(距離未入力・コース種別のみ入力)は正しく表示されていた。
 
-**確定した修正方針**: コース種別・距離をそれぞれ独立した要素として組み立て、**登録されて
-いる方だけを表示する**(どちらか一方のみの入力でもその一方は必ず表示され、両方入力済みなら
-両方表示、両方未入力なら何も表示しない)。
+**対応内容**: コース種別・距離をそれぞれ独立した要素として組み立て、**登録されている方だけを
+表示する**共通関数`formatCourseText(courseType, distance)`を`public/races.js`の
+`courseTypeShort()`の近くに新設した。
 
 ```js
-// courseTypeShort() の近くに新設する共通関数
 function formatCourseText(courseType, distance) {
   const parts = [];
   const label = courseTypeShort(courseType);
@@ -149,12 +161,20 @@ function formatCourseText(courseType, distance) {
 ```
 
 同じロジックが`renderRaceRow()`・`openPayoutModal()`の2箇所に重複していたのが今回の
-バグの一因(片方だけ直して他方を直し忘れる事故の温床)でもあるため、上記の共通関数へ
+バグの一因(片方だけ直して他方を直し忘れる事故の温床)でもあったため、上記の共通関数へ
 統一し、2箇所とも`formatCourseText(r.course_type, r.distance)` /
-`formatCourseText(race.course_type, race.distance)`を呼び出す形に置き換える。
+`formatCourseText(race.course_type, race.distance)`を呼び出す形に置き換えた。
+
+`openPayoutModal()`側は元々`courseText ? \`・${courseLabel}...\` : ""`という区切り文字
+(中点)付きの組み立てだったため、置き換え後も`courseText ? "・" + courseText : ""`という
+形で区切り文字の有無を維持している。
 
 **実装対象ファイル**: `public/races.js`のみ(`courseTypeShort()`の定義箇所に
-`formatCourseText()`を追加し、`renderRaceRow()`・`openPayoutModal()`の該当箇所を置き換える)。
+`formatCourseText()`を追加し、`renderRaceRow()`・`openPayoutModal()`の該当箇所を置き換えた)。
+
+**検証状況**: `node --check`による構文チェックのみ実施済み。**実機(wrangler dev等)での
+動作確認は未実施**。次回実機で試す際は`docs/TESTING.md`「7. レース管理画面のレイアウト」の
+該当項目を確認すること。
 
 ### N-3(低優先度・記録のみ): ログアウトAPIが未認証(セッション切れ)状態だと401になりCookieが消えない
 
