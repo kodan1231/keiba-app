@@ -2,23 +2,28 @@
 
 **FIX ver1.0**(2026-08-10整理。2026-08-11: 出走馬/結果PDFインポートのマージ方針を統一。
 2026-08-11(2): レース結果の詳細記録(race_results)・レース条件詳細のスキーマ拡張を追加。
-2026-08-12: 上記の実装完了。2026-08-12(2): モーダル/ダイアログのESCキー共通対応(旧クラスタK)を実装)
+2026-08-12: 上記の実装完了・`migration.sql`の`race_results_and_conditions`ステップを
+本番DB(keiba-yosou-db)へ適用完了。2026-08-12(2): モーダル/ダイアログのESCキー共通対応
+(旧クラスタK)を実装。2026-08-16: 本ドキュメント内に残っていた「実装待ち」表記が実態
+(実装・適用とも完了済み)と食い違っていたため、該当箇所をすべて整理した)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
 過去の経緯を確認したい場合は`archive/documents/pre-fix-v1.0/DESIGN.md`を参照してください。
 未解決の不具合・未着手のタスクは`docs/BACKLOG.md`を参照してください。
 
-> **2026-08-12時点の注記**: 本節(出走馬一覧PDFインポート・JRAレース結果PDFインポート・
-> 払戻確定時のticket反映・下記「レース結果の詳細記録(race_results)」)は、コード実装が
-> 完了しました(`functions/api/_shared.js`の`mergeEntriesByHorseName()`/
-> `upsertRaceResults()`、`functions/api/races/entries-import.js`・
-> `functions/api/races/results-import.js`・`public/jra-entries-pdf.js`・
-> `public/jra-result-pdf.js`の変更)。**ただし`migration.sql`の
-> `race_results_and_conditions`ステップはまだ実DBに未適用です**(README「スキーマ変更の
-> 適用手順」の通り、`--local`→`--remote`の順で適用し、`schema_migrations`への記録・
-> `schema.sql`への反映まで行ってから運用を開始してください)。実ブラウザのPDF.jsでの
-> 動作検証は未実施のため、`docs/BACKLOG.md`の実機検証タスクを参照してください。
+> **2026-08-16時点の注記**: 本節(出走馬一覧PDFインポート・JRAレース結果PDFインポート・
+> 払戻確定時のticket反映・下記「レース結果の詳細記録(race_results)」)は、コード実装
+> (`functions/api/_shared.js`の`mergeEntriesByHorseName()`/`upsertRaceResults()`、
+> `functions/api/races/entries-import.js`・`functions/api/races/results-import.js`・
+> `public/jra-entries-pdf.js`・`public/jra-result-pdf.js`の変更)、および`migration.sql`の
+> `race_results_and_conditions`ステップの本番DB(keiba-yosou-db)への適用(2026-08-12)の
+> いずれも完了済みです。適用完了に伴い、`migration.sql`本体からは該当`-- @STEP`ブロックを
+> 削除済みで、内容は`schema.sql`に統合されています。ただし、追加したレース条件詳細カラム
+> (`weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition`)は
+> **画面表示への反映が未着手のまま**です(意図的な優先度見送り。`docs/BACKLOG.md`
+> 「クラスタN-4」参照)。実ブラウザのPDF.jsでの動作検証も未実施のため、`docs/BACKLOG.md`の
+> 実機検証タスクを参照してください。
 
 ## データ構造
 
@@ -33,7 +38,7 @@
 | 馬メモ | `horse_notes` | 馬名をキーに継続管理。馬名はtrim/空白正規化して保存。ユーザーごとに分離(`UNIQUE(horse_name, user_id)`)。**馬名がキーのため、枠番・馬番の有無に関係なく常に利用できる** |
 | ユーザーアカウント | `users` | ログイン画面から自己登録できる(招待コード等の制限なし) |
 | レース | `races` | 出走馬表(予定)・着順(上位3着)・払戻・レース条件を保持。全ユーザー共有 |
-| レース結果詳細 | `race_results` | **実装待ち**。馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
+| レース結果詳細 | `race_results` | 馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
 
 ### レース情報のコース種別・距離
 
@@ -50,11 +55,12 @@
   表示全体が空文字になる不具合があった)。`renderRaceRow()`(レース一覧カード)・
   `openPayoutModal()`(払戻モーダルの読み取り専用情報)の両方がこの共通関数を呼び出す
 
-### レース条件の詳細カラム(2026-08-11追加・実装待ち)
+### レース条件の詳細カラム(2026-08-11追加)
 
 出走馬一覧PDF・JRAレース結果PDFいずれにも、以下のレース条件詳細が「発走時刻：hh時mm分」の
 直後に1行で出現する(例: `3歳 未勝利（混合）［指定］ 馬齢 コース：1,400メートル（ダート・右）`)。
-このうち以下を`races`テーブルの新規カラムとして追加する(**実装待ち**):
+このうち以下を`races`テーブルの新規カラムとして追加済み(スキーマは`schema.sql`に統合済み・
+`migration.sql`経由で本番DBへも適用済み):
 
 | カラム | 型 | 内容 | 例 |
 |---|---|---|---|
@@ -64,8 +70,13 @@
 | `weather` | TEXT | 天候。結果PDFのみに出現(出走馬一覧PDFには無い) | `"晴"` |
 | `track_condition` | TEXT | 馬場状態。結果PDFでは`"天候 晴 ダート 良"`のように天候とセットの1行で出現するが、**解析時に分離して別カラムに保存する** | `"良"` |
 
-**今回のスコープに含めないもの**(意図的に対象外): 発走時刻、本賞金、付加賞、調教師名、
-単勝オッズ(全馬分は結果PDFに存在しないため。理由は下記「レース結果の詳細記録」参照)。
+**対象外(意図的にスコープ外)**: 発走時刻、本賞金、付加賞、調教師名、単勝オッズ
+(全馬分は結果PDFに存在しないため。理由は下記「レース結果の詳細記録」参照)。
+
+**画面表示は未対応(意図的な優先度見送り)**: 上記カラムは`entries-import.js`/
+`results-import.js`によるPDF取込・保存までは実装済みだが、レース一覧カード・払戻モーダル等の
+画面表示にはまだ反映していない。対応は`docs/BACKLOG.md`「クラスタN-4」として優先度低の
+タスクに残している。
 
 ### 出走馬(`races.entries`)の枠番・馬番はnullを許容する
 
@@ -94,7 +105,7 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
   自体を算出できないため「不的中(0円)」と断定せず「判定不能(未確定のまま)」として扱う
   (詳細は下記「払戻確定時のticket反映」参照)
 
-### `races.entries`への性齢・負担重量の追加(2026-08-11追加・実装待ち)
+### `races.entries`への性齢・負担重量の追加(2026-08-11追加)
 
 出走馬一覧PDFの馬柱には性齢(例: `牡2`)・負担重量(例: `55.0kg`)が含まれている。これは
 「レース前の予定情報」であり、通常はレース確定後の値と一致するが、稀に負担重量が変わる
@@ -150,9 +161,9 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 ### 出走馬情報(`entries`)のマージルールは共通
 
 出走馬一覧PDFインポート・JRAレース結果PDFインポートのどちらも、`entries`は**馬名を
-キーに1頭ずつマージ**する共通ロジックを用いる(共通ヘルパー
-`functions/api/_shared.js`の`mergeEntriesByHorseName()`として実装する。**実装待ち**、
-`docs/BACKLOG.md`「クラスタL」参照)。
+キーに1頭ずつマージ**する共通ロジックを用いる。共通ヘルパー`functions/api/_shared.js`の
+`mergeEntriesByHorseName()`として実装済みで、両インポート処理(`entries-import.js`・
+`results-import.js`)双方から呼び出されている。
 
 - 新しい馬名 → `entries`に追加
 - 既存の馬名で、取込側の`waku_number`/`horse_number`/`sex_age`/`weight_carried`が**null**
@@ -177,7 +188,7 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 
 木・金の出走馬インポートが省略され、結果PDFのみでレースが登録される運用がありうるため、
 **結果PDF側で枠番がテキストから取得できなかった場合、推定値を計算して埋めることはせず、
-`null`のまま送信する**(旧仕様からの方針変更・実装待ち)。
+`null`のまま送信する**(旧仕様からの方針変更・実装済み)。
 
 以前は`jra-result-pdf.js`が`races.js`の`defaultWakuNumber()`と同じロジックで簡易な
 推定値をその場で`entries.waku_number`に埋め込んでいたが、これをそのままDBに保存すると
@@ -209,6 +220,8 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 - 馬名ベース・騎手名ベースの集計画面(過去出走レース一覧、競馬場・コース種別ごとの
   単勝率/連対率/複勝率)は、今回は`race_results`にデータを貯める(スキーマ+取込処理)
   までとし、参照・集計用のAPI/画面は別タスクとしてBACKLOGへ回す
+- 上記「レース条件の詳細カラム」の画面表示への反映も、スキーマ・取込は完了しているが
+  画面表示は別タスクとしてBACKLOG(クラスタN-4)へ回す
 
 ## 出走馬一覧PDFインポート
 
@@ -225,11 +238,11 @@ JRA公式サイトの「出走馬一覧」PDF(1開催日・1ファイルにつ�
   ため、`jraEntriesToHalfwidthAscii()`による全角英数記号(U+FF01–FF5E)限定の変換に
   置き換えた。詳細は下記「JRAレース結果PDFインポート」の同項目、および
   `public/jra-result-pdf.js`の同種修正を参照。パーサーバージョンは
-  `1.3.0-preserve-name-glyphs`)。**性齢・負担重量の抽出は
-  実装済み(騎手名/調教師名の境界判定で使っている`(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+[\d.]+kg`の
-  マッチ結果を利用できる。抽出結果を`entries`へ含める処理が実装待ち)**
-- `functions/api/races/entries-import.js`: 管理者専用API。マージ処理を行う(共通ヘルパー
-  `mergeEntriesByHorseName()`を呼び出す。**実装待ち**)
+  `1.3.0-preserve-name-glyphs`)。**性齢・負担重量の抽出、および抽出結果を`entries`へ
+  含めてサーバーへ送信する処理はいずれも実装済み**(騎手名/調教師名の境界判定で使っている
+  `(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+[\d.]+kg`のマッチ結果をそのまま利用している)
+- `functions/api/races/entries-import.js`: 管理者専用API。マージ処理(共通ヘルパー
+  `mergeEntriesByHorseName()`の呼び出し)を実装済み
 - `public/races.html`の「出走馬一覧PDFをインポート」ボタン(管理者のみ)からモーダルを開く
 
 ### マージロジック(レース行は絶対に削除・再作成しない)
@@ -301,32 +314,32 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
 - **レース境界の検出**: 「発走時刻」ラベルと時刻(「N時M分」)を基準に、開催情報(日付・
   競馬場・開催回)を近傍から補完してレースヘッダーを復元する。「発走時刻を変更」「発走時刻
   N分遅延」等の注記は新しいレース開始として誤検出しないよう除外する
-- **レース条件詳細の抽出(2026-08-11追加・実装待ち)**: 発走時刻行の直後にある条件文
+- **レース条件詳細の抽出(2026-08-11追加)**: 発走時刻行の直後にある条件文
   (例: `3歳 未勝利（混合）［指定］ 馬齢 コース：1,400メートル（ダート・右）`)から
   `weight_type`(馬齢/定量/別定/ハンデ)・`class_flags`(条件フラグの生テキスト)・
   `course_direction`(左/右)を抽出する。天候・馬場状態の行(例: `天候 晴 ダート 良`)から
   `weather`・`track_condition`を分離して抽出する
 - **出走馬・着順の抽出**: 馬番・馬名・性齢・負担重量・騎手名・タイムの位置関係から抽出する。
-  騎手名先頭の見習い減量記号(▲△☆◇)は**除去せず残す**(2026-08-11方針変更・実装待ち。
+  騎手名先頭の見習い減量記号(▲△◇)は**除去せず残す**(2026-08-11方針変更・実装済み。
   出走馬一覧PDFインポートと表記を揃え、木・金・土日いずれのインポート結果でも同じ表記で
   騎手名の一致/不一致を判定できるようにするため)。出走馬は着順順ではなく**馬番昇順**に
   並べ替える(`races.js`側の「entries配列のi番目≒馬番(i+1)」という前提に合わせるため)
-- **枠番は取得できなければ`null`のまま送信する**(2026-08-11方針変更・実装待ち): 以前は
+- **枠番は取得できなければ`null`のまま送信する**(2026-08-11方針変更・実装済み): 以前は
   出走頭数から`races.js`の`defaultWakuNumber()`と同じロジックで簡易な初期値を計算しその場で
   埋めていたが、この推定値が「確定値」としてDBに保存され枠連馬券の的中判定に誤って使われる
-  リスクがあるため廃止する。詳細は上記「枠番の推定値をDBに保存しない」参照
+  リスクがあるため廃止した。詳細は上記「枠番の推定値をDBに保存しない」参照
 - **払戻表の解析**: 単勝/複勝/枠連/馬連/馬単/ワイド/3連複/3連単の3列グリッドレイアウトを
   解析する。複勝・ワイドのように複数行にまたがる式別は、2行目以降にラベル(「複勝」等)が
   再印字されないため、「組み合わせの頭数(1頭/2頭/3頭)ごとに直前式別を保持する」方式
   (`carryState`)で継続データの式別を判定する
 - **返還情報の取得**: 「返還」の文字列を含む行から、返還対象の馬番・枠番を抽出する
-- **全着順・タイム・着差等の抽出(2026-08-11追加・実装待ち)**: 下記「レース結果の詳細記録
+- **全着順・タイム・着差等の抽出(2026-08-11追加・実装済み)**: 下記「レース結果の詳細記録
   (race_results)」参照
-- **取消・除外馬の抽出(2026-08-11追加・実装待ち)**: `取消 17 ラルス 牡3 55.0 △柴田 裕一郎
+- **取消・除外馬の抽出(2026-08-11追加・実装済み)**: `取消 17 ラルス 牡3 55.0 △柴田 裕一郎
   吉田 直弘`(馬体重なし)・`除外 13 ピアス 牝3 55.0 黛 弘人 458 (-4) 森 一誠`(馬体重あり)
   のように、行頭が「取消」「除外」で始まる行は、着順・タイム等を持たない特殊行として
   `race_results`へ`status='scratched'`(取消)/`status='excluded'`(除外)で登録する
-- **競走中の出来事等の抽出(2026-08-11追加・実装待ち)**: 「競走中の出来事等」の見出し以降の
+- **競走中の出来事等の抽出(2026-08-11追加・実装済み)**: 「競走中の出来事等」の見出し以降の
   箇条書き(例: `・ アリハム号は、枠内駐立不良〔立上る〕。`)から馬名(「◯◯号」の「号」を
   除いた部分)を特定し、一致する`race_results`行の`incident_note`へ転記する。複数頭に
   またがる場合は該当する各馬の行にそれぞれ転記する。転記後の内容はレース管理画面から
@@ -338,11 +351,11 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
   レース行(`races.id`)を削除して作り直すことは行わない(`prediction_marks`/
   `prediction_notes`が`ON DELETE CASCADE`で消えるのを避けるため)
 - **出走馬情報(`entries`)のマージは、出走馬一覧PDFインポートと共通の`mergeEntriesByHorseName()`
-  を使う(2026-08-11方針変更・実装待ち)**。以前の「既存entriesが完全に空の場合のみ丸ごと
-  差し替え」という粗い方式は廃止する。詳細は上記「出走馬情報(entries)のマージルールは共通」
-  参照。**ただし`finish_order`/`payouts`のマージ方式(fill-emptyのみ)は今回変更しない**
+  を使う(2026-08-11方針変更・実装済み)**。以前の「既存entriesが完全に空の場合のみ丸ごと
+  差し替え」という粗い方式は廃止済み。詳細は上記「出走馬情報(entries)のマージルールは共通」
+  参照。**ただし`finish_order`/`payouts`のマージ方式(fill-emptyのみ)は今回変更していない**
   (既知の制約として残る。下記「既知の制約・未解決の課題」参照)
-- **`race_results`への反映(2026-08-11追加・実装待ち)**: 解析した全馬分の結果行
+- **`race_results`への反映(2026-08-11追加・実装済み)**: 解析した全馬分の結果行
   (`finished`/`scratched`/`excluded`)を`race_id`+`horse_number`で`INSERT ... ON CONFLICT
   DO UPDATE`し、既存の`incident_note`(管理者が手動編集した内容)を**自動転記の内容で
   無条件上書きしない**(下記「レース結果の詳細記録」の更新ルール参照)
@@ -379,14 +392,16 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
 - `public/jra-result-pdf.js`: クライアント側の解析ロジック本体
 - `functions/api/races/results-import.js`: サーバー側の反映処理
 - `functions/api/_shared.js`: `recomputeTicketPayoutsForRace()`・`backfillHorseNamesForRace()`・
-  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`(実装待ち)
+  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`
 
-## レース結果の詳細記録(race_results)(2026-08-11追加・実装待ち)
+## レース結果の詳細記録(race_results)(2026-08-11追加)
 
 出走馬一覧PDF・JRAレース結果PDFから取得できる情報のうち、「レース前の予定」(`races.entries`)
 とは別に、「レース確定後の記録」を馬単位で保持するための新テーブル。**既存の`races.finish_order`
 (払戻判定に使う上位3着のみ)・`races.payouts`は変更せずそのまま維持し**、`race_results`は
 記録・将来の集計参照用の追加データという位置づけにする(払戻判定ロジックへの影響を避けるため)。
+テーブル定義・取込処理・APIとも実装済みで、`schema.sql`に統合済み・本番DBへも適用済み
+(2026-08-12)。
 
 ### 目的・想定用途
 
@@ -417,6 +432,7 @@ CREATE TABLE race_results (
   final_furlong_time REAL,     -- 推定上り 例:37.2
   body_weight INTEGER,         -- 馬体重
   body_weight_change TEXT,     -- 増減 例:"+2" "-2" "初出走" "計不"(数値以外もあるためTEXT)
+  win_popularity INTEGER,      -- 単勝人気
   incident_note TEXT,          -- 競走中の出来事(該当時に自動転記)。管理者が編集可
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
@@ -462,6 +478,19 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 | 馬体重 | 保持しない | 保持する |
 | 着順 | 保持しない(`races.finish_order`が上位3着のみ別途保持) | 全馬の着順を保持する |
 | 更新元 | 出走馬一覧PDF・結果PDFの両方 | 結果PDFのみ |
+
+### 画面での参照(レース管理画面)
+
+- `races.html`の払戻モーダル(`race-payout-modal`)内に「結果詳細」セクション
+  (`race-results-detail-section`)があり、`GET /api/races/:id/results`で取得した
+  全着順・タイム・着差・馬体重・単勝人気・出来事メモを表として表示する
+  (`public/races.js`の`loadRaceResultsDetail()`)
+- 着順・タイム等はPDFインポート経由でのみ更新される(この画面から編集はできない)。
+  `incident_note`(競走中の出来事メモ)のみ、管理者がテキストエリアで編集し
+  「出来事メモを保存」ボタンから`PUT /api/races/:id/results`(馬番ごとに個別送信)で
+  保存できる
+- `race_results`にデータが無いレース(結果PDF未取込)ではこのセクション自体が
+  非表示になる
 
 ## 認証・複数ユーザー対応
 
@@ -645,10 +674,9 @@ CSV出力元によって表記ゆれがあるため、以下を吸収して解�
   手動選択)・着順(1〜3着)・馬券式別の払戻金額を扱い、`PUT /api/races/:id`には
   `finish_order`・`payouts`のみ送信する(各購入履歴(`tickets.payout`)への反映はサーバー側で
   行うため、`races.js`からticketを直接更新するリクエストは送らない。詳細は下記
-  「払戻確定時のticket反映」参照)
-- **`race_results`(全着順・タイム・馬体重等・「競走中の出来事」)は、今回は専用の編集UIを
-  用意しない(実装待ち)。PDFインポート経由での自動登録のみとし、`incident_note`のみ
-  レース管理画面から編集できるようにする想定(具体的なUI配置は実装時に検討)**
+  「払戻確定時のticket反映」参照)。あわせて`race_results`の詳細(全着順・タイム・馬体重等)を
+  読み取り専用の表で表示し、`incident_note`のみ編集・保存できる(上記「レース結果の詳細記録
+  (race_results)」の「画面での参照」参照)
 
 `index.html`の「払戻を編集(レース管理へ)」リンク(`races.html?edit=`)は払戻モーダルを
 直接開く。モーダルは開くたびにスクロール位置が先頭にリセットされる。払戻入力欄(式別
@@ -760,7 +788,7 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 - レース新規登録(`POST /api/races`)・編集(`PUT /api/races/:id`)のどちらでも、出走馬表
   (`entries`)と同時に着順(`finish_order`)・払戻(`payouts`)を保存できる
 - `finish_order`は「1〜3着の馬番」のみを保存する(払戻判定用)。**全着順の記録は
-  `race_results`(実装待ち)が別途担う**。出走馬表とは独立した「1着/2着/3着」の3つの
+  `race_results`が別途担う**。出走馬表とは独立した「1着/2着/3着」の3つの
   セレクト(馬番のみ)で着順を入力する方式のため、馬名や出走馬表が未登録でも、馬番さえ
   分かれば払戻金額を入力できる
 - 払戻入力欄(馬券式別)は常に表示され、該当式別の判定に必要な着順(例: 単勝は1着のみ、
@@ -784,12 +812,12 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
   `findStoredRate`相当)は`functions/api/_shared.js`にサーバー側実装として移植されており、
   `recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries)`として
   公開されている
-- 呼び出し元(2026-08-11時点の方針。実装後に更新すること):
+- 呼び出し元(2026-08-12時点。いずれも実装済み):
   - `functions/api/races/[id].js`の`onRequestPut`(レース管理画面の払戻編集モーダルからの
     保存)
   - `functions/api/races/results-import.js`(JRAレース結果PDF一括登録。**必ず**呼び出す)
   - `functions/api/races/entries-import.js`(出走馬一覧PDFインポート。**保険として**呼び出す。
-    実装待ち。木・金の出走馬インポート時点では通常`finish_order`/`payouts`が存在しないため
+    木・金の出走馬インポート時点では通常`finish_order`/`payouts`が存在しないため
     実質何もしないが、木金を省略して結果PDFが先に取り込まれるイレギュラーな運用への
     備えとして呼び出す)
   上記いずれも、`user_id`で絞り込まず該当`race_id`の全`tickets`を対象に払戻額を
@@ -804,14 +832,13 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 
 **今後の注意点**: `races.finish_order`/`races.payouts`を書き換えるコードパスを新規に
 追加・変更する場合は、必ず`recomputeTicketPayoutsForRace`の呼び出しが漏れていないか
-確認すること(2026-08-11時点の想定呼び出し元は`functions/api/races/[id].js`・
-`functions/api/races/results-import.js`・`functions/api/races/entries-import.js`の3箇所。
-実装後にこの記述を確定させること)。`races`(共有)と`tickets`/`prediction_marks`/
-`horse_notes`等(ユーザーごとに分離)をまたぐ処理を新たに書く際は、「今操作している
-ユーザーから見えているデータ」だけを更新対象にしないこと。出走馬一覧PDFインポート
-(`entries-import.js`)も同様の考え方で、`race_id`をキーに全ユーザー分の
-`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を適用している
-(user_idで絞り込まない)。
+確認すること(2026-08-12時点の呼び出し元は`functions/api/races/[id].js`・
+`functions/api/races/results-import.js`・`functions/api/races/entries-import.js`の3箇所)。
+`races`(共有)と`tickets`/`prediction_marks`/`horse_notes`等(ユーザーごとに分離)をまたぐ
+処理を新たに書く際は、「今操作しているユーザーから見えているデータ」だけを更新対象に
+しないこと。出走馬一覧PDFインポート(`entries-import.js`)も同様の考え方で、`race_id`を
+キーに全ユーザー分の`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を
+適用している(user_idで絞り込まない)。
 
 ## ロック仕様
 
@@ -880,10 +907,11 @@ IF NOT EXISTS`など、途中で失敗しても安全な内容にすること。
 データを壊す恐れがあるため、特に慎重に確認すること。
 
 **2026-08-11時点で、上記「レース結果の詳細記録(race_results)」・「レース条件の詳細カラム」・
-「races.entriesへの性齢・負担重量の追加」に対応する`-- @STEP`ブロックを`migration.sql`に
-追記済み(`race_results_and_conditions`)。ただし実装(パーサー・APIの変更)は別途行うまで、
-このステップを実際にDBへ適用しないこと(スキーマだけ先に適用すると、対応する取込処理が
-無いまま空のテーブル・カラムが残るだけになるため、実装完了後にまとめて適用することを推奨)。**
+「races.entriesへの性齢・負担重量の追加」に対応する`-- @STEP`ブロック(`race_results_and_
+conditions`)を`migration.sql`に追記し、対応する実装(パーサー・API)完了後の2026-08-12に
+本番DB(keiba-yosou-db)への適用・`schema_migrations`への記録を完了した。適用完了に伴い、
+`migration.sql`本体からは該当`-- @STEP`ブロックを削除し、内容は`schema.sql`へ統合済みである
+(現在の`migration.sql`・`schema.sql`はこの状態を反映済み)。**
 
 更新後に再デプロイします。
 

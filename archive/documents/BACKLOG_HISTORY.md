@@ -7,6 +7,11 @@
 一本化した(後者は削除済み)。あわせて、FIX ver1.0期(2026-08-10〜08-15)に完了したタスク
 (クラスタA-1・B-3・J・K・L・N-2)を追記した。**
 
+**2026-08-16: クラスタLの節にあった「`migration.sql`の`race_results_and_conditions`ステップは
+2026-08-15時点でも実DBには未適用のまま残っている」という記述を、事実確認の結果誤りと判明した
+ため修正した。実際には2026-08-12に本番DB(keiba-yosou-db)への適用・`schema_migrations`への
+記録が完了しており、`migration.sql`本体からも適用完了に伴い該当ブロックは削除済みだった。**
+
 新しいセッションで同じ修正を重複して行わないための参考資料として保管しています。現状の仕様は
 `README.md` / `docs/DESIGN.md` / `docs/TESTING.md`を、未着手タスクの一覧は`docs/BACKLOG.md`を
 参照してください。
@@ -124,9 +129,15 @@
 - 枠番の推定値をDBへ保存する処理を廃止し、`null`のまま送信するよう方針転換(表示用の目安
   計算のみ`races.js`側に残す)
 - レース管理画面の払戻モーダルに`race_results`詳細の閲覧・`incident_note`編集UIを追加
-- **`migration.sql`の`race_results_and_conditions`ステップは、2026-08-15時点でも実DBには
-  未適用のまま残っている。適用手順はREADME「スキーマ変更の適用手順」、および
-  `docs/BACKLOG.md`冒頭の引き継ぎメモを参照**
+- **`migration.sql`の`race_results_and_conditions`ステップは、2026-08-12に本番DB
+  (keiba-yosou-db)への適用・`schema_migrations`への記録が完了しており、内容は`schema.sql`に
+  統合済み。適用完了に伴い`migration.sql`本体からは該当`-- @STEP`ブロックを削除済み
+  (2026-08-16に事実確認・訂正。以前このドキュメントには「未適用のまま残っている」という
+  誤った記述があった)**
+- なお、追加したレース条件詳細カラム(`weight_type`/`class_flags`/`course_direction`/
+  `weather`/`track_condition`)は、スキーマ追加とPDFインポート時の取込・保存までを優先した
+  ものであり、**画面表示への反映は今回のスコープに含めていない**(意図的な未着手。
+  `docs/BACKLOG.md`「クラスタN-4」参照)
 
 **クラスタN-2(コース種別・距離の表示欠落修正・2026-08-14・完了)**
 - コース種別が未入力(null)で距離のみ入力されている場合、距離も含めて一覧・モーダルの
