@@ -100,6 +100,14 @@ const STAT_COLUMNS = [
   { key: "hitRate", label: "的中率" },
 ];
 
+// レース別収支は1レースあたりの的中率が0%か100%にしかならず表示する意味が薄いため、
+// 的中率列を除外する。競馬場別・騎手別は複数レースにまたがる集計のため引き続き表示する。
+const STAT_COLUMNS_BY_TABLE = {
+  race: STAT_COLUMNS.filter((c) => c.key !== "hitRate"),
+  track: STAT_COLUMNS,
+  jockey: STAT_COLUMNS,
+};
+
 // nullは常に末尾(方向によらず)、それ以外は指定方向で比較する。
 function compareValues(av, bv, dir) {
   const factor = dir === "asc" ? 1 : -1;
@@ -165,10 +173,19 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
     return;
   }
 
+  const columns = STAT_COLUMNS_BY_TABLE[tableKey] || STAT_COLUMNS;
+  const CELL_RENDERERS = {
+    totalAmount: (s) => `<td>¥${s.totalAmount.toLocaleString()}</td>`,
+    settledPayout: (s) => `<td>¥${s.settledPayout.toLocaleString()}</td>`,
+    profit: (s) => `<td class="${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${s.profit >= 0 ? "+" : ""}¥${s.profit.toLocaleString()}</td>`,
+    rate: (s) => `<td>${s.rate !== null ? s.rate + "%" : "-"}</td>`,
+    hitRate: (s) => `<td>${s.hitRate !== null ? s.hitRate + "%" : "-"}</td>`,
+  };
+
   const head = `
     <tr>
       <th class="sortable-th" data-sort-key="${labelKey}">${labelHeader}${sortIndicator(tableKey, labelKey)}</th>
-      ${STAT_COLUMNS.map((c) => `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${sortIndicator(tableKey, c.key)}</th>`).join("")}
+      ${columns.map((c) => `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${sortIndicator(tableKey, c.key)}</th>`).join("")}
     </tr>
   `;
   const body = rows
@@ -176,11 +193,7 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
       (r) => `
       <tr>
         <td class="table-name">${escapeHtml(r.name)}</td>
-        <td>¥${r.stats.totalAmount.toLocaleString()}</td>
-        <td>¥${r.stats.settledPayout.toLocaleString()}</td>
-        <td class="${r.stats.profit >= 0 ? "profit-plus" : "profit-minus"}">${r.stats.profit >= 0 ? "+" : ""}¥${r.stats.profit.toLocaleString()}</td>
-        <td>${r.stats.rate !== null ? r.stats.rate + "%" : "-"}</td>
-        <td>${r.stats.hitRate !== null ? r.stats.hitRate + "%" : "-"}</td>
+        ${columns.map((c) => CELL_RENDERERS[c.key](r.stats)).join("")}
       </tr>
     `
     )
