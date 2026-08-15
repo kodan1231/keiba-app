@@ -345,8 +345,7 @@ function renderHorses() {
         </div>
         <div class="horse-note-editor" hidden>
           <label class="horse-memo-label">
-            この馬についてのメモ
-            <textarea class="horse-memo" rows="3" maxlength="5000"
+            <textarea class="horse-memo" rows="3" maxlength="5000" aria-label="この馬についてのメモ"
               >${escapeHtml(note.memo || "")}</textarea>
           </label>
           <span class="horse-note-status" hidden></span>
@@ -422,12 +421,16 @@ async function savePredictionMarks() {
     body: JSON.stringify({ race_id: selectedRace.id, marks: prediction.marks || [], memo: "" })
   });
   if (!messageEl) return;
-  messageEl.hidden = false;
-  messageEl.className = `submit-message ${res.ok ? "success" : "error"}`;
-  messageEl.textContent = res.ok ? "印を自動保存しました" : "印の保存に失敗しました";
   if (res.ok) {
-    setTimeout(() => { messageEl.hidden = true; }, 1200);
+    // 予想印は選択直後に画面へ即時反映される(applyPrediction())ため、
+    // 「印を自動保存しました」という成功メッセージは表示しない。
+    messageEl.hidden = true;
+    return;
   }
+  // 保存失敗時のみ、原因が分かるようメッセージを表示する。
+  messageEl.hidden = false;
+  messageEl.className = "submit-message error";
+  messageEl.textContent = "印の保存に失敗しました";
 }
 
 function applyPrediction() {
