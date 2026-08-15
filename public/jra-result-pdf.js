@@ -4,9 +4,20 @@ const JRA_RESULT_BET_MAP = {
   "ワイド": "wide", "3連複": "sanrenpuku", "3連単": "sanrentan"
 };
 
+// 全角英数記号(Unicode Fullwidth Forms, U+FF01–FF5E)のみを対応する半角ASCII文字へ
+// 変換する。以前は String.prototype.normalize("NFKC") を使っていたが、NFKC正規化は
+// 全角/半角の統一だけでなく、CJK互換漢字(人名用の異体字を多く含むCJK Compatibility
+// Ideographs Supplement等)まで標準字形へ変換してしまう副作用があり、「戸崎」騎手の
+// ように人名で使われる異体字の字体が変わってしまう不具合があった(2026-08-14修正)。
+// 日付・時刻・金額等のパースに必要な全角→半角変換の効果は維持しつつ、漢字(人名用の
+// 異体字を含む)には一切影響しない変換に置き換える。
+function jraResultToHalfwidthAscii(s) {
+  return String(s ?? "").replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
 function jraResultNormalizeUnit(s) {
-  return String(s ?? "")
-    .normalize("NFKC")
+  return jraResultToHalfwidthAscii(s)
+    .replace(/\u3000/g, " ") // 全角スペース(以前はNFKCが半角化していた分の代替)
     .replace(/\u00a0|\u2000-\u200B|\u202F/g, " ")
     .replace(/[︓﹕]/g, ":")
     .replace(/[︵]/g, "(").replace(/[︶]/g, ")")
@@ -399,7 +410,7 @@ function jraResultParseIncidentNotes(blockLines) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "9.0.0-race-results-conditions";
+const JRA_RESULT_PDF_PARSER_VERSION = "9.1.0-preserve-name-glyphs";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);

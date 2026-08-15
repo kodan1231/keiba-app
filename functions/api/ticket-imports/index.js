@@ -273,7 +273,11 @@ export async function onRequestPost(context){
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
       let group;
       try{
-        group=await db.prepare(`INSERT INTO imported_ticket_groups(user_id,source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||raceNameForGroup,type,'import',totalAmount,refund||null,(refund>0||/的中|返還/.test(hit))?'settled':'unsettled',JSON.stringify(raw)).run();
+        // Club JRA-Net購入履歴CSVは既に決着済みの購入履歴であり、「未確定(結果待ち)」は
+        // 存在しない。「的中／返還」列が空の行(=不的中)も含め、常に確定(settled)として
+        // 扱う(2026-08-14〜。以前は的中/返還列が空の場合のみunsettled扱いだった。
+        // docs/BACKLOG.md「クラスタE」参照)。
+        group=await db.prepare(`INSERT INTO imported_ticket_groups(user_id,source,source_row_id,race_id,group_key,race_date,track,race_number,race_name,bet_type,method,total_amount,total_payout,status,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(userId,'club_jra_net',legacy.meta.last_row_id,race?.id||null,sourceKey,raceDate,track,raceNumber||null,race?.race_name||raceNameForGroup,type,'import',totalAmount,refund||null,'settled',JSON.stringify(raw)).run();
       }catch(insertError){
         const msg=insertError?.message||String(insertError);
         if(/UNIQUE constraint failed/i.test(msg)){
@@ -290,18 +294,19 @@ export async function onRequestPost(context){
       const statements=[];
       for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const isHit=hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1);const inferred=inferFinish(type,nums);
         // Club JRA-Net購入履歴CSVは既に決着済みの購入履歴であり、「未確定(結果待ち)」は存在しない。
-        // 的中/返還列に値がある(空でない)行は、的中買い目はrefundを、非的中買い目は0円をpayoutとする。
+        // 「的中／返還」列の値の有無にかかわらず、常に確定させる(2026-08-14〜。以前は
+        // hitText===''(列が完全に空)の場合のみpayout=null(未確定)のまま残していたが、
+        // Club JRA-Net CSVはそもそも決着済みデータのため、空欄も「不的中(0円)」を意味する
+        // ものとして扱うよう統一した。docs/BACKLOG.md「クラスタE」参照)。
         // 的中買い目の払戻額は、組み合わせごとの払戻レート(100円あたり)×その買い目の購入金額で計算する。
         // レートが個別に取得できない場合は、的中1件のみなら従来通りrefund全額、複数件なら均等割りにフォールバックする。
-        let payout=null;
-        if(hitText!==''){
-          if(isHit){
-            if(hitRateMap.has(key)) payout=Math.round((perAmount/100)*hitRateMap.get(key));
-            else if(hitCombos.length<=1) payout=refund||0;
-            else payout=Math.round((refund||0)/hitCombos.length);
-          } else {
-            payout=0;
-          }
+        let payout;
+        if(isHit){
+          if(hitRateMap.has(key)) payout=Math.round((perAmount/100)*hitRateMap.get(key));
+          else if(hitCombos.length<=1) payout=refund||0;
+          else payout=Math.round((refund||0)/hitCombos.length);
+        } else {
+          payout=0;
         }
         const statement=db.prepare(`INSERT INTO imported_ticket_items(group_id,race_id,bet_type,selections,amount,payout,is_hit,result_inferred,source_key) VALUES(?,?,?,?,?,?,?,?,?)`).bind(groupId,race?.id||null,type,JSON.stringify(selectionsFromNums(nums)),perAmount,payout,isHit?1:0,inferred?1:0,`${sourceKey}:${key}`);
         statements.push(statement);}
@@ -364,8 +369,12 @@ export async function onRequestGet(context){
       for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // v10以前に取り込まれたレガシー行(未正規化)も、履歴APIで後方互換表示する。
+    // 2026-08-14〜: Club JRA-Net購入履歴CSVは既に決着済みという方針統一に合わせ、
+    // 「的中／返還」列が空(refund=0)の行も payout=0(確定・不的中) として扱う
+    // (以前は payout: refund||null で、refund=0の場合にnull=未確定のままだった。
+    // docs/BACKLOG.md「クラスタE」参照)。
     const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
-    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||null,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
+    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }

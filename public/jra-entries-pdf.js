@@ -32,9 +32,21 @@
 
 const JRA_ENTRIES_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
 
+// 全角英数記号(Unicode Fullwidth Forms, U+FF01–FF5E)のみを対応する半角ASCII文字へ
+// 変換する。以前は String.prototype.normalize("NFKC") を使っていたが、NFKC正規化は
+// 全角/半角の統一だけでなく、CJK互換漢字(人名用の異体字を多く含むCJK Compatibility
+// Ideographs Supplement等)まで標準字形へ変換してしまう副作用があり、「戸崎」騎手の
+// ように人名で使われる異体字の字体が変わってしまう不具合があった(2026-08-14修正。
+// public/jra-result-pdf.jsと同時に対応)。日付・時刻・金額等のパースに必要な
+// 全角→半角変換の効果は維持しつつ、漢字(人名用の異体字を含む)には一切影響しない
+// 変換に置き換える。
+function jraEntriesToHalfwidthAscii(s) {
+  return String(s ?? "").replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
 function jraEntriesNormalizeUnit(s) {
-  return String(s ?? "")
-    .normalize("NFKC")
+  return jraEntriesToHalfwidthAscii(s)
+    .replace(/\u3000/g, " ") // 全角スペース(以前はNFKCが半角化していた分の代替)
     .replace(/\u00a0|\u202F/g, " ")
     .replace(/[︓﹕]/g, ":")
     .replace(/[﹣－−―–—]/g, "-");
@@ -256,7 +268,7 @@ function jraEntriesParseHorseRow(rawLine) {
   };
 }
 
-const JRA_ENTRIES_PARSER_VERSION = "1.2.0-sexage-weight-conditions";
+const JRA_ENTRIES_PARSER_VERSION = "1.3.0-preserve-name-glyphs";
 
 function jraEntriesParseExtractedPages(pages) {
   const lines = [];
