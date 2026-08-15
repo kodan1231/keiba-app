@@ -30,7 +30,6 @@ function computeGroupStats(tickets) {
     totalAmount,
     settledAmount,
     settledCount: settled.length,
-    unsettledCount: tickets.length - settled.length,
     settledPayout,
     profit,
     rate,
@@ -170,7 +169,6 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
     <tr>
       <th class="sortable-th" data-sort-key="${labelKey}">${labelHeader}${sortIndicator(tableKey, labelKey)}</th>
       ${STAT_COLUMNS.map((c) => `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${sortIndicator(tableKey, c.key)}</th>`).join("")}
-      <th>未確定</th>
     </tr>
   `;
   const body = rows
@@ -183,7 +181,6 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
         <td class="${r.stats.profit >= 0 ? "profit-plus" : "profit-minus"}">${r.stats.profit >= 0 ? "+" : ""}¥${r.stats.profit.toLocaleString()}</td>
         <td>${r.stats.rate !== null ? r.stats.rate + "%" : "-"}</td>
         <td>${r.stats.hitRate !== null ? r.stats.hitRate + "%" : "-"}</td>
-        <td>${r.stats.unsettledCount > 0 ? r.stats.unsettledCount + "枚" : "-"}</td>
       </tr>
     `
     )
