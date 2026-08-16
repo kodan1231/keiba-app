@@ -8,7 +8,8 @@
 (実装・適用とも完了済み)と食い違っていたため、該当箇所をすべて整理した)
 2026-08-12: 上記の実装完了。2026-08-12(2): モーダル/ダイアログのESCキー共通対応(旧クラスタK)を実装。
 2026-08-16: 馬券履歴画面のレースカード表示をモバイル専用に2行化。
-2026-08-16(2): ルートURLアクセス時に馬券購入画面へリダイレクトするよう変更)
+2026-08-16(2): ルートURLアクセス時に馬券購入画面へリダイレクトするよう変更。
+2026-08-16(3): 確定済みレースへの購入時に払戻を即時反映するよう変更)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
@@ -918,7 +919,7 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
   `findStoredRate`相当)は`functions/api/_shared.js`にサーバー側実装として移植されており、
   `recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries)`として
   公開されている
-- 呼び出し元(2026-08-12時点。いずれも実装済み):
+- 呼び出し元(2026-08-16時点):
   - `functions/api/races/[id].js`の`onRequestPut`(レース管理画面の払戻編集モーダルからの
     保存)
   - `functions/api/races/results-import.js`(JRAレース結果PDF一括登録。**必ず**呼び出す)
@@ -926,6 +927,14 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
     木・金の出走馬インポート時点では通常`finish_order`/`payouts`が存在しないため
     実質何もしないが、木金を省略して結果PDFが先に取り込まれるイレギュラーな運用への
     備えとして呼び出す)
+  - `functions/api/tickets/bulk.js`(通常購入。**2026-08-16追加**。過去に購入した馬券の
+    履歴を残す目的の購入操作であっても、対象レースが既に着順・払戻確定済みの場合、
+    保存時点で`payout`が未確定のまま残ってしまう不具合があったため、チケットINSERT直後に
+    対象レースの`finish_order`/`payouts`を確認し、いずれかが確定済みであれば呼び出す。
+    未確定レースの場合は何もしない。呼び出しが失敗しても購入自体(履歴の記録)は
+    ロールバックしない(`try/catch`で握りつぶし、ログのみ残す)。この呼び出しは
+    `user_id`で絞り込まないため、購入したのが誰であっても、同じレースを既に購入していた
+    他ユーザーのticketsも(値に変化がなければ実質無害な形で)一緒に再計算される)
   上記いずれも、`user_id`で絞り込まず該当`race_id`の全`tickets`を対象に払戻額を
   再計算・一括更新(`db.batch()`)する
 - `races.js`側は、払戻モーダル内の「◯点購入」表示のためだけに`GET /api/tickets`由来の
@@ -938,13 +947,14 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 
 **今後の注意点**: `races.finish_order`/`races.payouts`を書き換えるコードパスを新規に
 追加・変更する場合は、必ず`recomputeTicketPayoutsForRace`の呼び出しが漏れていないか
-確認すること(2026-08-12時点の呼び出し元は`functions/api/races/[id].js`・
-`functions/api/races/results-import.js`・`functions/api/races/entries-import.js`の3箇所)。
-`races`(共有)と`tickets`/`prediction_marks`/`horse_notes`等(ユーザーごとに分離)をまたぐ
-処理を新たに書く際は、「今操作しているユーザーから見えているデータ」だけを更新対象に
-しないこと。出走馬一覧PDFインポート(`entries-import.js`)も同様の考え方で、`race_id`を
-キーに全ユーザー分の`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を
-適用している(user_idで絞り込まない)。
+確認すること(2026-08-16時点の呼び出し元は`functions/api/races/[id].js`・
+`functions/api/races/results-import.js`・`functions/api/races/entries-import.js`・
+`functions/api/tickets/bulk.js`の4箇所)。`races`(共有)と`tickets`/`prediction_marks`/
+`horse_notes`等(ユーザーごとに分離)をまたぐ処理を新たに書く際は、「今操作している
+ユーザーから見えているデータ」だけを更新対象にしないこと。出走馬一覧PDFインポート
+(`entries-import.js`)も同様の考え方で、`race_id`をキーに全ユーザー分の
+`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を適用している
+(user_idで絞り込まない)。
 
 ## ロック仕様
 

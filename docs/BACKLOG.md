@@ -3,7 +3,10 @@
 **FIX ver1.0**(2026-08-10整理。2026-08-15: 対応済みタスク(クラスタA-1・B-3・J・K・L・N-2)を
 `archive/documents/BACKLOG_HISTORY.md`へ移動し、本ファイルは未着手タスク・調査中の不具合のみに
 整理し直した。あわせて`archive/documents/pre-fix-v1.0/BACKLOG.md`の内容も上記アーカイブへ統合し、
-同ファイルは削除した。2026-08-16: 部首文字正規化の回帰不具合(🔴緊急)を追加)
+同ファイルは削除した。
+2026-08-16: 部首文字正規化の回帰不具合(🔴緊急)を追加)
+2026-08-16: クラスタBの「結果確定済みレース購入時の払戻即時反映」タスクに
+対応したため、`archive/documents/BACKLOG_HISTORY.md`へ移動)
 
 このファイルは、要望としては承認済みだが未実装のタスク、および調査中・未解決の不具合を
 引き継ぐための一覧です。`README.md` / `docs/DESIGN.md` / `docs/TESTING.md`とは異なり
@@ -40,16 +43,18 @@
   `archive/documents/BACKLOG_HISTORY.md`(2026-08-15に旧`pre-fix-v1.0/BACKLOG.md`と統合済み)
   を参照
 - クラスタK(モーダルESCキー共通対応)・クラスタL(出走馬/結果PDFインポート統合修正・
-  `race_results`新設)・クラスタN-2(コース種別・距離の表示欠落修正)は実装完了済み。
-  詳細は上記アーカイブ参照
+  `race_results`新設)・クラスタN-2(コース種別・距離の表示欠落修正)・クラスタB
+  (結果確定済みレース購入時の払戻即時反映)は実装完了済み。詳細は上記アーカイブ参照
 - **`migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB
   (keiba-yosou-db)へ適用済み・`schema_migrations`への記録も完了しており、内容は
   `schema.sql`に統合済みであることを2026-08-16に確認した。以前このファイルに残っていた
   「まだ未適用」という記述は誤りだったため削除した(該当ブロックは`migration.sql`本文の
   コメントにある通り、適用完了時点でファイルから削除済み)。**
+- 2026-08-16: ルートURL(`/`)へのアクセスを馬券購入画面(`buy.html`)へリダイレクトする
+  対応を実施済み(`functions/_middleware.js`)。詳細はアーカイブ参照
 - 次のセッションでは**クラスタN-1(出走馬表の馬番重複入力防止)**への着手を推奨する
 - **未実施の運用作業が1件残っている**: `migration.sql`の`-- @STEP: race_results_and_conditions`
-  ブロックが、2026-08-15時点でもまだ実DBに未適用。以下の手順で適用すること(README
+  ブロックが、2026-08-16時点でもまだ実DBに未適用。以下の手順で適用すること(README
   「スキーマ変更の適用手順」も参照):
   ```bash
   npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
@@ -123,6 +128,7 @@ Unicodeブロックの文字として出力されるケースがあり、これ�
 | 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/DESIGN.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未対応(今回対象外) | 降着・失格・競走中止など、取消・除外以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/DESIGN.md`「レース結果の詳細記録(race_results)」取消・除外の扱い |
 | 🔵 実機検証未完了 | 出走馬一覧PDFインポート・JRAレース結果PDFインポートはいずれも実ブラウザのPDF.jsでの動作検証が完全には済んでいない(Node上のロジック単体テストが中心)。次回実機で試す際は`docs/TESTING.md`「1.8」「1.7.1」の該当項目、および`docs/DESIGN.md`「JRAレース結果PDFインポート」の残件を確認すること | `docs/TESTING.md`・`docs/DESIGN.md` |
+| 🔵 実機検証未完了 | 2026-08-16に実装した「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。次回実機で試す際は`docs/TESTING.md`「0.1」「4.5」該当項目を確認すること | `docs/TESTING.md` |
 
 ## クラスタM: race_resultsを使った集計・参照画面
 
@@ -325,7 +331,7 @@ bot対策等の技術的制約は無く着手可能。「JRAレース結果PDF�
 
 ### クラスタH: 外部データ自動取得(保留)
 
-JV-Link(Windows専用ActiveX)・JRA公式サイト(bot対策あり)・netkeiba(規約違反)のいずれも
+JV-Link(Windows専用ActiveX)・JRA公式サイト(bot対策あり)・netkeibaの規約違反)のいずれも
 技術的/規約的な制約があり保留中。詳細は下記「出走情報・払戻情報の自動取得について(調査結果)」
 参照。方針転換する場合のみ再検討する。
 
