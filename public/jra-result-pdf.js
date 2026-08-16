@@ -15,8 +15,27 @@ function jraResultToHalfwidthAscii(s) {
   return String(s ?? "").replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
 }
 
+// 康熙部首(Kangxi Radicals, U+2F00–2FD5)・CJK部首補助(CJK Radicals Supplement,
+// U+2E80–2EF3)を、対応する標準のCJK統合漢字へ正規化する(2026-08-16修正)。
+//
+// 2026-08-14修正でNFKC正規化を廃止した副作用として、JRA PDFのテキスト抽出結果に
+// 含まれる「日」「月」「土」「発」「走」「馬」等の通常の漢字が、見た目は同じでも
+// 上記2つのUnicodeブロックの部首記号として抽出されるケースで、「発走時刻」「年」
+// 「月」「日」等の正規表現が軒並み不一致になり、レース開始検出が0件になる回帰
+// 不具合が発生していた(2026-08-16報告)。
+//
+// この2ブロックは部首記号専用であり、「戸崎」問題の原因だったCJK互換漢字ブロック
+// (U+F900–FAFF・CJK互換漢字補助 U+2F800–2FA1F、人名異体字を含む)とは重複しない
+// ため、対象を該当ブロックの文字1文字ごとのNFKC正規化に限定することで、人名異体字
+// 問題を再発させずに日付・発走時刻等の検出不具合を解消できる。対象範囲は実際に
+// 確認できた特定の文字に限定せず、両ブロック全体を対象にする(将来別の部首文字が
+// 出現しても自動対応できるようにするため)。
+function jraResultNormalizeRadicals(s) {
+  return String(s ?? "").replace(/[\u2E80-\u2EF3\u2F00-\u2FD5]/g, (ch) => ch.normalize("NFKC"));
+}
+
 function jraResultNormalizeUnit(s) {
-  return jraResultToHalfwidthAscii(s)
+  return jraResultNormalizeRadicals(jraResultToHalfwidthAscii(s))
     .replace(/\u3000/g, " ") // 全角スペース(以前はNFKCが半角化していた分の代替)
     .replace(/\u00a0|\u2000-\u200B|\u202F/g, " ")
     .replace(/[︓﹕]/g, ":")
@@ -410,7 +429,7 @@ function jraResultParseIncidentNotes(blockLines) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "9.1.0-preserve-name-glyphs";
+const JRA_RESULT_PDF_PARSER_VERSION = "9.2.0-radical-fix";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
