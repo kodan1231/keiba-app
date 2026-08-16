@@ -466,23 +466,54 @@ textarea { resize: vertical; }
 @media (max-width: 700px) {
   .summary-bar { grid-template-columns: repeat(2, 1fr); }
 
-  .race-card-head { align-items: flex-start; }
-  .race-card-head-main { gap: 8px; }
-  .race-total { margin-left: 0; }
-}
-
-@media (max-width: 600px) {
-  .masthead { padding: 18px 16px 12px; flex-direction: column; align-items: flex-start; }
-  .masthead-title { font-size: 24px; }
-  /* 2026-08-10: 上部ナビ(.masthead-nav)の折り返し対策として、ここに
-     .masthead-inner を flex-direction:column にする対応を追加していたが、
-     同日中にユーザーから改めて「タイトルは非表示・ナビ+ユーザー名+退場ボタンを
-     1行にまとめる」という仕様変更の要望があり、下記(クラスタ12対応)へ
-     一本化した。このブロックには他の要素(.ticket-row等)のスタイルも
-     含まれているため、@media自体は残しつつ .masthead-inner / .masthead-nav
-     関連の記述はここから削除している。最新のmastheadレスポンシブ対応は
-     このファイル末尾の「2026-08-10: モバイル用ヘッダーの高さ削減」ブロックを
-     参照すること。 */
+  /* ---------- 2026-08-16: 購入履歴レースカードのモバイル2行化 ----------
+     PC(700px超)では従来通り「矢印・日付・競馬場・R・レース名」が1行目、
+     「購入額・払戻額・収支」が右寄せで同じ行に表示される(HTML構造・CSSともに
+     この@media内でのみ変更する)。
+     モバイル(700px以下)では縦に長くなりすぎるのを防ぐため、以下の2行構成にする:
+       1行目: 競馬場・R・レース名(日付は非表示。カレンダーで選択済みのため
+              重複表示は不要。レース名は画面幅に収まらない場合のみ
+              text-overflow:ellipsisで省略する)
+       2行目: 購入額・払戻額・収支を左寄せで表示し、行末に開閉矢印(▸/▾)を表示する
+     HTML自体はPC・モバイル共通(public/app.jsのrenderRaceCard()参照)で、
+     矢印(.expand-arrow)を.race-card-head-main の外(headの直接の子)に出した上で、
+     flexboxのorder・flex-basis・margin-right:auto を使って見た目だけを
+     モバイル用に並べ替えている。 */
+  .race-card-head {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .race-card-head > .expand-arrow {
+    order: 3;
+  }
+  .race-card-head-main {
+    order: 1;
+    flex: 1 1 100%;
+    gap: 8px;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .race-card-head-main .race-date {
+    display: none;
+  }
+  .race-card-head-main .track,
+  .race-card-head-main .r-num {
+    flex: 0 0 auto;
+  }
+  .race-card-head-main .race-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .race-total {
+    order: 2;
+    flex: 0 1 auto;
+    margin-left: 0;
+    margin-right: auto;
+    text-align: left;
+  }
 
   .ticket-row {
     grid-template-columns: 1fr auto;

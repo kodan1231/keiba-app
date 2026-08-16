@@ -197,6 +197,13 @@ function renderSummary(items) {
 }
 
 // ---------- レースごとのカード(初期状態は閉じており、開くと購入グループが見える) ----------
+//
+// 2026-08-16: モバイル(700px以下)でヘッダーが縦長になりすぎる問題への対応として、
+// 開閉矢印(.expand-arrow)を .race-card-head-main の外(head の直接の子)に出した。
+// HTML構造自体はPC・モバイル共通で、見た目の並び替え(モバイルでの2行化・矢印の
+// 行末への移動)は public/style.css の @media (max-width: 700px) 内で
+// flexboxの order / flex-basis / margin-right:auto を使って行う
+// (docs/DESIGN.md「馬券履歴画面：レースカード表示」参照)。
 function renderRaceCard(race) {
   const raceKey = `${race.race_date}__${race.track}__${race.race_number}`;
   const isExpanded = expandedRaces.has(raceKey);
@@ -212,8 +219,8 @@ function renderRaceCard(race) {
   const head = document.createElement("div");
   head.className = "race-card-head";
   head.innerHTML = `
+    <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
     <div class="race-card-head-main">
-      <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
       <span class="race-date">${formatDate(race.race_date)}</span>
       <span class="track">${escapeHtml(race.track)}</span>
       <span class="r-num">${race.race_number}R</span>
