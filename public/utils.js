@@ -36,6 +36,34 @@ function formatDate(dateStr) {
 }
 
 /**
+ * コース種別(芝/ダート/障害)を1〜2文字に短縮する。
+ * @param {string} courseType - "芝"/"ダート"/"障害"のいずれか(またはnull/未入力)
+ * @returns {string} "芝"/"ダ"/"障"、該当しなければ空文字
+ */
+function courseTypeShort(courseType) {
+  if (courseType === "芝") return "芝";
+  if (courseType === "ダート") return "ダ";
+  if (courseType === "障害") return "障";
+  return "";
+}
+
+/**
+ * コース種別・距離のいずれか一方のみ入力の場合でも、入力済みの方だけを表示する
+ * 共通関数(2026-08-14・クラスタN-2)。races.js(レース一覧・払戻モーダル)・
+ * buy.js(購入画面のレース選択グリッド)の両方から利用する。
+ * @param {string} courseType - "芝"/"ダート"/"障害"(またはnull)
+ * @param {number} distance - 距離(m。またはnull)
+ * @returns {string} 例: "ダ1800m" / "1800m" / "芝" / ""
+ */
+function formatCourseText(courseType, distance) {
+  const parts = [];
+  const label = courseTypeShort(courseType);
+  if (label) parts.push(label);
+  if (distance) parts.push(`${distance}m`);
+  return parts.join("");
+}
+
+/**
  * モーダル/ダイアログ共通: ESCキー押下時に「キャンセル」ボタンと同じ扱いで
  * (保存せず)閉じるようにする(docs/BACKLOG.md クラスタK対応・2026-08-12)。
  *

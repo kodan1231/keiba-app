@@ -237,27 +237,10 @@ function renderRaceList() {
   }
 }
 
-function courseTypeShort(courseType) {
-  if (courseType === "芝") return "芝";
-  if (courseType === "ダート") return "ダ";
-  if (courseType === "障害") return "障";
-  return "";
-}
-
-// N-2修正: コース種別・距離のいずれか一方のみ入力の場合でも、入力済みの方だけを
-// 表示する共通関数。以前は `courseLabel ? \`${courseLabel}${distance}m\` : ""` という
-// ロジックが renderRaceRow()・openPayoutModal() の2箇所に重複しており、course_typeが
-// 未入力(null)でdistanceのみ入力されている場合、courseLabelが空文字(falsy)になり
-// courseText全体が""になるため、入力済みの距離が一覧・モーダルどちらにも表示されない
-// 不具合があった(データ自体はDBに保存されており消えてはいない)。
-// 登録されている方だけを表示する形に統一する(docs/BACKLOG.md「クラスタN」N-2参照)。
-function formatCourseText(courseType, distance) {
-  const parts = [];
-  const label = courseTypeShort(courseType);
-  if (label) parts.push(label);
-  if (distance) parts.push(`${distance}m`);
-  return parts.join("");
-}
+// courseTypeShort / formatCourseText は public/utils.js の共有関数を使用する
+// (2026-08-16: buy.jsのレース選択グリッドにもコース情報表示を追加するにあたり、
+// races.js側にのみあった重複定義をutils.jsへ集約した。races.htmlはutils.jsを
+// races.jsより先に読み込むため、そのまま参照できる)。
 
 function renderRaceRow(r) {
   const settled = !!r.finish_order;

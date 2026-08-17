@@ -2,6 +2,19 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const userId = context.data.userId;
   const url = new URL(request.url);
+
+  // 2026-08-16追加: race_idを指定しないリクエストは、購入画面のレース一覧
+  // (buy.js)で「メモ登録済みの馬が出走しているか」をレースごとに個別APIを
+  // 叩かずまとめて判定するための一覧取得モードとして扱う。空でないメモを
+  // 持つ馬名だけを返す(メモ本文自体は判定に不要なため返さない)。
+  if (!url.searchParams.has("race_id")) {
+    const result = await env.DB.prepare(
+      "SELECT horse_name FROM horse_notes WHERE user_id = ? AND memo IS NOT NULL AND memo <> ''"
+    ).bind(userId).all();
+    const names = (result.results || []).map((r) => r.horse_name);
+    return Response.json({ names });
+  }
+
   const raceId = Number(url.searchParams.get("race_id"));
   if (!Number.isInteger(raceId) || raceId <= 0) return Response.json({ error: "race_idが必要です" }, { status: 400 });
   const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(raceId).first();

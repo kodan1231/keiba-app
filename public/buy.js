@@ -8,6 +8,16 @@ let predictionMarks = new Map();
 // 返すため、他ユーザーの購入は含まれない(docs/DESIGN.md「画面仕様」参照)。
 let purchasedRaceIds = new Set();
 
+// 自分(ログインユーザー)が空でないメモを登録済みの馬名の集合(2026-08-16追加)。
+// レース選択画面で「出走馬に1頭でもメモ登録済みの馬がいれば▼マークを表示する」判定に使う。
+// GET /api/horse-notes (race_id省略) はログインユーザー自身のメモのみを返すため、
+// 他ユーザーのメモは対象に含まれない。
+let myMemoHorseNames = new Set();
+
+function normalizeHorseNameForMemoCheck(v) {
+  return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
+}
+
 const state = {
   betType: "tan",
   method: "normal",
@@ -25,6 +35,7 @@ const state = {
 
 const dateInput = document.getElementById("date-input");
 const raceGrid = document.getElementById("race-grid");
+const raceTrackTabs = document.getElementById("race-track-tabs");
 const calendarGrid = document.getElementById("calendar-grid");
 const calendarMonthLabel = document.getElementById("calendar-month-label");
 const prevMonthBtn = document.getElementById("prev-month-btn");
@@ -54,6 +65,40 @@ const BET_LABELS = {
   tan:"単勝", fuku:"複勝", wakuren:"枠連", umaren:"馬連",
   wide:"ワイド", umatan:"馬単", sanrenpuku:"三連複", sanrentan:"三連単"
 };
+
+// ---------- 競馬場タブ・カラムの並び順(2026-08-16追加) ----------
+// 「中央(主要4場)を東から → 中央ローカル6場を東から → 南関東4場を東から →
+//  その他地方10場を東から」という要望に基づく並び順。競馬場名は自由入力のTEXT列
+// (races.track)であり、地方競馬場はDBスキーマ上は元々入力可能だったが、この
+// 並び順定義を追加するまでは特別扱いされていなかった。一覧に無い競馬場名が来た
+// 場合は末尾に五十音順で追加表示する(将来の競馬場追加への保険)。
+const RACE_TRACK_ORDER = [
+  // 中央4場(主要場・東から)
+  "東京", "中山", "京都", "阪神",
+  // 中央ローカル6場(東から)
+  "札幌", "函館", "福島", "新潟", "中京", "小倉",
+  // 南関東4場(東から)
+  "船橋", "大井", "川崎", "浦和",
+  // その他地方10場(東から)
+  "門別", "盛岡", "水沢", "名古屋", "笠松", "金沢", "園田", "姫路", "高知", "佐賀",
+];
+
+function trackSortIndex(track) {
+  const idx = RACE_TRACK_ORDER.indexOf(track);
+  return idx >= 0 ? idx : RACE_TRACK_ORDER.length;
+}
+
+function sortTracksForDisplay(tracks) {
+  return [...tracks].sort((a, b) => {
+    const ka = trackSortIndex(a), kb = trackSortIndex(b);
+    if (ka !== kb) return ka - kb;
+    return a.localeCompare(b, "ja"); // 一覧に無い競馬場同士は五十音順
+  });
+}
+
+// モバイル用: 現在タブ選択中の競馬場。日付を切り替えた際はnullへリセットし、
+// renderGrid() 側でその日の先頭(並び順の一番東)へフォールバックする。
+let selectedTrackTab = null;
 
 const today = new Date();
 let selectedDate = new URLSearchParams(location.search).get("date")
@@ -91,10 +136,32 @@ async function loadPurchasedRaceIds() {
   purchasedRaceIds = ids;
 }
 
+// 自分が空でないメモを登録済みの馬名一覧を取得する(2026-08-16追加)。
+// レースごとに個別APIを呼ぶN+1を避けるため、ページ読み込み時に1回だけ取得する。
+async function loadMyMemoHorseNames() {
+  const names = new Set();
+  try {
+    const res = await authedFetch("/api/horse-notes");
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      (data.names || []).forEach((n) => names.add(normalizeHorseNameForMemoCheck(n)));
+    }
+  } catch (_) {
+    // 取得に失敗してもマーク表示が出ないだけで、一覧表示自体は継続する。
+  }
+  myMemoHorseNames = names;
+}
+
+// そのレースの出走馬に、自分がメモを登録済みの馬が1頭でも含まれるか。
+function raceHasMemoHorse(race) {
+  return (race.entries || []).some((e) => myMemoHorseNames.has(normalizeHorseNameForMemoCheck(e.horse_name)));
+}
+
 async function loadRaces() {
   const [racesRes] = await Promise.all([
     authedFetch("/api/races"),
     loadPurchasedRaceIds(),
+    loadMyMemoHorseNames(),
   ]);
   if (!racesRes.ok) return;
   races = await racesRes.json();
@@ -111,21 +178,41 @@ async function loadRaces() {
 function renderGrid() {
   const date = dateInput.value;
   const day = races.filter(r => r.race_date === date);
-  const tracks = [...new Set(day.map(r => r.track))];
+  const tracks = sortTracksForDisplay([...new Set(day.map(r => r.track))]);
   noRaceHint.hidden = tracks.length > 0;
 
   if (!tracks.length) {
     raceGrid.innerHTML = "";
+    if (raceTrackTabs) raceTrackTabs.innerHTML = "";
     return;
+  }
+
+  // 選択中タブがその日に存在しない(=日付切り替え、または開催が無くなった)場合は
+  // 並び順の先頭(一番東の競馬場)へフォールバックする。
+  if (!selectedTrackTab || !tracks.includes(selectedTrackTab)) {
+    selectedTrackTab = tracks[0];
   }
 
   const by = {};
   day.forEach(r => by[`${r.track}_${r.race_number}`] = r);
 
+  // モバイル用の競馬場タブ(PCではCSSで非表示。#race-track-tabs参照)。
+  if (raceTrackTabs) {
+    raceTrackTabs.innerHTML = tracks.map(track => `
+      <button type="button" class="race-track-tab ${track === selectedTrackTab ? "active" : ""}" data-track="${escapeAttr(track)}">${escapeHtml(track)}</button>
+    `).join("");
+    raceTrackTabs.querySelectorAll("button[data-track]").forEach(btn => {
+      btn.onclick = () => {
+        selectedTrackTab = btn.dataset.track;
+        renderGrid();
+      };
+    });
+  }
+
   raceGrid.innerHTML = `
     <div class="race-columns">
       ${tracks.map(track => `
-        <section class="race-track-column">
+        <section class="race-track-column ${track === selectedTrackTab ? "tab-active" : ""}" data-track="${escapeAttr(track)}">
           <h3>${escapeHtml(track)}</h3>
           ${Array.from({length:12}, (_, i) => {
             const r = by[`${track}_${i+1}`];
@@ -133,12 +220,17 @@ function renderGrid() {
             // 「購入済み」はテキストバッジではなく、行の背景色(薄い緑の
             // アクセント)で示す方式。(docs/DESIGN.md参照)。
             const purchased = purchasedRaceIds.has(Number(r.id));
+            const courseText = formatCourseText(r.course_type, r.distance);
+            const hasMemo = raceHasMemoHorse(r);
+            const infoParts = [];
+            if (courseText) infoParts.push(escapeHtml(courseText));
+            infoParts.push(r.entries.length ? `${r.entries.length}頭` : "出走馬未登録");
             return `
               <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
                 data-id="${r.id}" type="button">
                 <b>${i+1}R</b>
                 <span>${escapeHtml(r.race_name || "")}</span>
-                <small>${r.entries.length ? `${r.entries.length}頭` : "出走馬未登録"}</small>
+                <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}</small>
               </button>`;
           }).join("")}
         </section>
@@ -182,6 +274,7 @@ function renderCalendar() {
     btn.onclick = () => {
       selectedDate = btn.dataset.date;
       dateInput.value = selectedDate;
+      selectedTrackTab = null; // 日付が変わるため、タブ選択を先頭競馬場へリセットする
       renderCalendar();
       renderGrid();
       const url = new URL(location.href);
@@ -205,6 +298,7 @@ todayBtn?.addEventListener("click", () => {
   calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   selectedDate = now.toISOString().slice(0,10);
   dateInput.value = selectedDate;
+  selectedTrackTab = null; // 日付が変わるため、タブ選択を先頭競馬場へリセットする
   renderCalendar();
   renderGrid();
 });

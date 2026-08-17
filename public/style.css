@@ -466,6 +466,23 @@ textarea { resize: vertical; }
 @media (max-width: 700px) {
   .summary-bar { grid-template-columns: repeat(2, 1fr); }
 
+  .race-card-head { align-items: flex-start; }
+  .race-card-head-main { gap: 8px; }
+  .race-total { margin-left: 0; }
+}
+
+@media (max-width: 600px) {
+  .masthead { padding: 18px 16px 12px; flex-direction: column; align-items: flex-start; }
+  .masthead-title { font-size: 24px; }
+  /* 2026-08-10: 上部ナビ(.masthead-nav)の折り返し対策として、ここに
+     .masthead-inner を flex-direction:column にする対応を追加していたが、
+     同日中にユーザーから改めて「タイトルは非表示・ナビ+ユーザー名+退場ボタンを
+     1行にまとめる」という仕様変更の要望があり、下記(クラスタ12対応)へ
+     一本化した。このブロックには他の要素(.ticket-row等)のスタイルも
+     含まれているため、@media自体は残しつつ .masthead-inner / .masthead-nav
+     関連の記述はここから削除している。最新のmastheadレスポンシブ対応は
+     このファイル末尾の「2026-08-10: モバイル用ヘッダーの高さ削減」ブロックを
+     参照すること。 */
   /* ---------- 2026-08-16: 購入履歴レースカードのモバイル2行化 ----------
      PC(700px超)では従来通り「矢印・日付・競馬場・R・レース名」が1行目、
      「購入額・払戻額・収支」が右寄せで同じ行に表示される(HTML構造・CSSともに
@@ -2041,5 +2058,74 @@ body.modal-open { overflow: hidden; }
   .masthead-actions {
     flex: 0 0 auto;
     white-space: nowrap;
+  }
+}
+
+/* ---------- 2026-08-16: 購入画面レース選択グリッドの改修 ----------
+   ・モバイルでは競馬場をタブ切り替え式にする(#race-track-tabs)
+   ・各レース行にコース情報(例: ダ1800m)を追加表示
+   ・PCでは最低3競馬場が横スクロール無しで見えるよう、カラム最小幅を縮小
+   ・出走馬に自分のメモ登録済みの馬が1頭でもいれば「▼」マークを表示
+   いずれも public/buy.js の renderGrid() から出力されるDOMに対応する。
+   races.html側のレース管理画面(.race-columns/.race-track-column)は
+   同じCSSクラスを共有しているため、影響が及ばないよう #race-grid 配下に
+   スコープしたセレクタのみを追加する。 */
+
+/* モバイル用競馬場タブ。PCでは常に非表示(下記700px以下のmediaで表示に切り替える)。 */
+.race-track-tabs {
+  display: none;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+.race-track-tab {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.race-track-tab.active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+/* メモ登録済みの馬が出走している場合の「▼」マーク。 */
+.memo-mark {
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--hanko);
+  font-size: 10px;
+}
+
+/* PCで最低3競馬場が見切れずに収まるよう、購入画面のカラム最小幅を縮小する
+   (buy.htmlの#race-gridにのみ適用し、races.htmlのレース管理画面のカラム幅には
+   影響させない)。3カラム(200px×3+gap16px×2=632px)は.buy-main(max-width:720px、
+   内側パディング20px×2)の最小content幅(700px幅の画面でも約660px)に収まる。 */
+#race-grid .race-track-column {
+  min-width: 200px;
+}
+
+@media (max-width: 700px) {
+  /* モバイルでは競馬場タブを表示し、選択中の競馬場カラムだけを表示する
+     (残りの競馬場はDOM上には存在するが display:none で隠す)。 */
+  .race-track-tabs {
+    display: flex;
+  }
+  #race-grid .race-columns {
+    display: block;
+  }
+  #race-grid .race-track-column {
+    display: none;
+    min-width: 0;
+  }
+  #race-grid .race-track-column.tab-active {
+    display: block;
   }
 }
