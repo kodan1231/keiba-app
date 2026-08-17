@@ -45,6 +45,19 @@
 - クラスタK(モーダルESCキー共通対応)・クラスタL(出走馬/結果PDFインポート統合修正・
   `race_results`新設)・クラスタN-2(コース種別・距離の表示欠落修正)・クラスタB
   (結果確定済みレース購入時の払戻即時反映)は実装完了済み。詳細は上記アーカイブ参照
+- 2026-08-16: 騎手名エイリアス管理(`jockey_aliases`)を新規実装済み(表記ゆれの騎手名を
+  管理画面から登録し、今後の登録・取込時に自動正規化。既存データは管理画面の
+  「一括補正」ボタンで補正)。詳細は`docs/DESIGN.md`「騎手名エイリアス管理(jockey_aliases)」
+  参照
+- **未実施の運用作業が1件ある**: `migration.sql`の`-- @STEP: jockey_aliases`ブロックが、
+  2026-08-16時点でまだ実DBに未適用。`CREATE TABLE IF NOT EXISTS`のみの非破壊的変更のため、
+  以下の手順で速やかに適用すること:
+  ```bash
+  npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
+  npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
+  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
+  ```
+  適用後、`migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映すること
 - **`migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB
   (keiba-yosou-db)へ適用済み・`schema_migrations`への記録も完了しており、内容は
   `schema.sql`に統合済みであることを2026-08-16に確認した。以前このファイルに残っていた
@@ -127,6 +140,7 @@ Unicodeブロックの文字として出力されるケースがあり、これ�
 | 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/DESIGN.md`「CSV取込の仕様」集計への反映漏れ |
 | 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/DESIGN.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未対応(今回対象外) | 降着・失格・競走中止など、取消・除外以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/DESIGN.md`「レース結果の詳細記録(race_results)」取消・除外の扱い |
+| 🟡 未調査(2026-08-16追加) | netkeibaテキスト貼り付けによる出走馬情報の一括入力で、騎手名の一部が欠落する(例:「戸崎圭太」→「戸崎圭」)。`public/parse.js`側の解析処理の問題か、netkeiba側のコピー元テキスト自体が省略表示だったのかが未特定。`jockey_aliases`によるエイリアス登録で個別に救済可能だが、根本原因の特定・修正は別途必要 | `docs/DESIGN.md`「騎手名エイリアス管理(jockey_aliases)」今回のスコープに含めないもの |
 | 🔵 実機検証未完了 | 出走馬一覧PDFインポート・JRAレース結果PDFインポートはいずれも実ブラウザのPDF.jsでの動作検証が完全には済んでいない(Node上のロジック単体テストが中心)。次回実機で試す際は`docs/TESTING.md`「1.8」「1.7.1」の該当項目、および`docs/DESIGN.md`「JRAレース結果PDFインポート」の残件を確認すること | `docs/TESTING.md`・`docs/DESIGN.md` |
 | 🔵 実機検証未完了 | 2026-08-16に実装した「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。次回実機で試す際は`docs/TESTING.md`「0.1」「4.5」該当項目を確認すること | `docs/TESTING.md` |
 

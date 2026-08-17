@@ -8,7 +8,8 @@
 (クラスタA-1・B-3・J・K・L・N-2)を追記した。**
 
 **2026-08-16: モバイル購入履歴画面のレースカード表示改善・ルートURLリダイレクト・
-クラスタB(結果確定済みレース購入時の払戻即時反映)を追記した(期間5)。**
+クラスタB(結果確定済みレース購入時の払戻即時反映)・騎手名エイリアス管理の新規実装を
+追記した(期間5)。**
 
 新しいセッションで同じ修正を重複して行わないための参考資料として保管しています。現状の仕様は
 `README.md` / `docs/DESIGN.md` / `docs/TESTING.md`を、未着手タスクの一覧は`docs/BACKLOG.md`を
@@ -172,3 +173,26 @@
   (`try/catch`で握りつぶし、ログのみ残す設計)
 - CSVインポート経由の購入履歴(`imported_ticket_items`)は元々「取込時点で決着済み」という
   前提のデータのため、この問題は対象外(今回のスコープにも含めていない)
+
+**騎手名エイリアス管理(jockey_aliases)の新規実装(2026-08-16・完了)**
+- 同一騎手がPDFインポート・手動入力(netkeibaテキスト貼り付け含む)経由で異なる表記
+  (異体字・空白有無・文字欠落等)で登録され、`stats.html`の騎手別収支集計が同一人物を
+  複数行に分裂させてしまう問題への対応
+- 表記ゆれ→正しい表記の対応表`jockey_aliases`テーブルを新設(`migration.sql`へ
+  `-- @STEP: jockey_aliases`を追記。**2026-08-16時点で実DBへは未適用**)
+- 突き合わせキー(`alias_key`)は見習い減量記号(☆▲△★◇)と空白(全角/半角)を除去した
+  文字列とし、姓名間のスペース有無は同一人物として扱う仕様にした
+- 今後登録されるデータの救済: レース新規登録・編集(`functions/api/races/index.js`・
+  `[id].js`)、出走馬一覧PDFインポート(`entries-import.js`)、JRAレース結果PDFインポート
+  (`results-import.js`)の保存直前に、`loadJockeyAliasMap()`で1回だけ取得したエイリアス
+  Mapを使って`applyJockeyAliasMap()`で正規化する(N+1回避)
+- 既存データの救済: 管理画面(`admin.html`)の「既存データの騎手名を一括補正する」ボタンから
+  `normalizeExistingJockeyNames()`を実行し、`races.entries`・`race_results.jockey`・
+  `tickets.selections`・`imported_ticket_items.selections`のうちエイリアスと一致した
+  表記のみを一括書き換え(未登録の表記は変更しない。冪等)
+- 管理画面にエイリアスの一覧・追加・削除UIを新設(編集機能は無し。API4種はいずれも
+  管理者限定)
+- 併せて、過去のセッションで`docs/DESIGN.md`・`docs/BACKLOG.md`に誤って残っていた
+  「race_results関連機能が実装待ち」「migration.sqlのrace_results_and_conditionsが
+  未適用」という誤記述(実際は2026-08-12に実装・適用完了済み)を修正し、ドキュメントの
+  正確性を回復した

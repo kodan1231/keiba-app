@@ -5,6 +5,8 @@ import {
   recomputeTicketPayoutsForRace,
   mergeEntriesByHorseName,
   upsertRaceResults,
+  loadJockeyAliasMap,
+  applyJockeyAliasMap,
 } from "../_shared.js";
 
 const BET_TYPES = ["tan", "fuku", "wakuren", "umaren", "umatan", "wide", "sanrenpuku", "sanrentan"];
@@ -19,6 +21,12 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
   const races = Array.isArray(body?.races) ? body.races : [];
   if (!races.length) return Response.json({ error: "インポート対象のレースがありません" }, { status: 400 });
+
+  // 2026-08-16追加: 取込側の騎手名(entries・race_results双方)を、保存前に
+  // jockey_aliasesテーブルで正規化する。リクエスト単位で1回だけエイリアスMapを
+  // 取得して使い回し、騎手名1件ごとのDB問い合わせ(N+1)を避ける。
+  // 詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
+  const aliasMap = await loadJockeyAliasMap(env.DB);
 
   const results = [];
   for (const item of races) {
@@ -35,13 +43,15 @@ export async function onRequestPost(context) {
       horse_name: e.horse_name,
       waku_number: e.waku_number ?? null,
       horse_number: e.horse_number ?? null,
-      jockey: e.jockey || null,
+      jockey: e.jockey ? applyJockeyAliasMap(aliasMap, e.jockey) : null,
       sex_age: e.sex_age || null,
       weight_carried: e.weight_carried ?? null,
     }));
     const finishOrder = Array.isArray(item.finish_order) && item.finish_order.length ? item.finish_order : null;
     const payouts = item.payouts && typeof item.payouts === "object" ? item.payouts : {};
-    const raceResultsInput = Array.isArray(item.race_results) ? item.race_results : [];
+    const raceResultsInput = (Array.isArray(item.race_results) ? item.race_results : []).map((r) => (
+      r.jockey ? { ...r, jockey: applyJockeyAliasMap(aliasMap, r.jockey) } : r
+    ));
 
     if (!existing) {
       const { entries } = mergeEntriesByHorseName([], incomingEntries);

@@ -2,6 +2,9 @@
 // 「未登録レース一覧」: CSVインポートで参照されたがまだレース登録されていない
 // 日付・競馬場・レース番号を一覧表示し、レース登録画面へ事前入力付きで遷移できる。
 // 「登録ユーザー一覧」: users テーブルの閲覧のみ(編集・削除機能は無し)。
+// 「騎手名エイリアス管理」(2026-08-16追加): 表記ゆれの騎手名を正しい表記へ統一するための
+// 対応表(jockey_aliases)の一覧表示・追加・削除、および既存データへの一括補正。
+// 詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
 
 // escapeHtml は utils.js のものを使用する
 function formatDate(dateStr) {
@@ -82,6 +85,117 @@ async function loadUsers() {
   `;
 }
 
+// ---------- 騎手名エイリアス管理(2026-08-16追加) ----------
+
+async function loadJockeyAliases() {
+  const table = document.getElementById("jockey-aliases-table");
+  if (!table) return;
+  const res = await authedFetch("/api/admin/jockey-aliases");
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  const data = await res.json();
+  const items = data.items || [];
+  if (!items.length) {
+    table.innerHTML = "<tr><td>登録済みのエイリアスはありません</td></tr>";
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr><th>表記ゆれ側</th><th>正しい表記</th><th>登録日時</th><th></th></tr></thead>
+    <tbody>
+      ${items.map((a) => `
+        <tr data-id="${a.id}">
+          <td>${escapeHtml(a.alias_display)}</td>
+          <td>${escapeHtml(a.canonical_name)}</td>
+          <td>${formatDateTime(a.created_at)}</td>
+          <td><button type="button" class="icon-btn delete jockey-alias-delete-btn" title="削除">×</button></td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+
+  table.querySelectorAll(".jockey-alias-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row?.dataset.id;
+      if (!id) return;
+      if (!confirm("このエイリアスを削除しますか？")) return;
+      const res2 = await authedFetch(`/api/admin/jockey-aliases/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res2.ok) {
+        const data2 = await res2.json().catch(() => ({}));
+        alert(data2.error || "削除に失敗しました。");
+        return;
+      }
+      await loadJockeyAliases();
+    });
+  });
+}
+
+function setupJockeyAliasForm() {
+  const form = document.getElementById("jockey-alias-form");
+  const messageEl = document.getElementById("jockey-alias-form-message");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const displayInput = document.getElementById("jockey-alias-display");
+    const canonicalInput = document.getElementById("jockey-alias-canonical");
+    const alias_display = displayInput.value.trim();
+    const canonical_name = canonicalInput.value.trim();
+
+    if (!alias_display || !canonical_name) return;
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    messageEl.hidden = true;
+
+    const res = await authedFetch("/api/admin/jockey-aliases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias_display, canonical_name }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `「${alias_display}」→「${canonical_name}」を登録しました。`;
+      displayInput.value = "";
+      canonicalInput.value = "";
+      await loadJockeyAliases();
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "登録に失敗しました。";
+    }
+    submitBtn.disabled = false;
+  });
+}
+
+function setupJockeyAliasNormalizeButton() {
+  const btn = document.getElementById("jockey-alias-normalize-btn");
+  const messageEl = document.getElementById("jockey-alias-normalize-message");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    if (!confirm("登録済みのエイリアスと一致する騎手名を、既存の出走馬表・レース結果・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？")) return;
+
+    btn.disabled = true;
+    messageEl.hidden = true;
+
+    const res = await authedFetch("/api/admin/jockey-aliases/normalize-existing", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      const u = data.updated || {};
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `一括補正が完了しました(レース ${u.races || 0}件 / レース結果 ${u.race_results || 0}件 / 購入履歴 ${u.tickets || 0}件 / CSV取込 ${u.imported_ticket_items || 0}件を更新)。`;
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "一括補正に失敗しました。";
+    }
+    btn.disabled = false;
+  });
+}
+
 async function onReady() {
   const denied = document.getElementById("admin-denied-notice");
   const content = document.getElementById("admin-content");
@@ -92,7 +206,9 @@ async function onReady() {
   }
   if (denied) denied.hidden = true;
   if (content) content.hidden = false;
-  await Promise.all([loadUnregisteredRaces(), loadUsers()]);
+  setupJockeyAliasForm();
+  setupJockeyAliasNormalizeButton();
+  await Promise.all([loadUnregisteredRaces(), loadUsers(), loadJockeyAliases()]);
 }
 
 setupAuth(onReady);

@@ -9,7 +9,8 @@
 2026-08-12: 上記の実装完了。2026-08-12(2): モーダル/ダイアログのESCキー共通対応(旧クラスタK)を実装。
 2026-08-16: 馬券履歴画面のレースカード表示をモバイル専用に2行化。
 2026-08-16(2): ルートURLアクセス時に馬券購入画面へリダイレクトするよう変更。
-2026-08-16(3): 確定済みレースへの購入時に払戻を即時反映するよう変更)
+2026-08-16(3): 確定済みレースへの購入時に払戻を即時反映するよう変更。
+2026-08-16(4): 騎手名エイリアス管理(jockey_aliases)を新規実装)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
@@ -167,6 +168,7 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 キーに1頭ずつマージ**する共通ロジックを用いる。共通ヘルパー`functions/api/_shared.js`の
 `mergeEntriesByHorseName()`として実装済みで、両インポート処理(`entries-import.js`・
 `results-import.js`)双方から呼び出されている。
+`docs/BACKLOG.md`「クラスタL」参照)。
 
 - 新しい馬名 → `entries`に追加
 - 既存の馬名で、取込側の`waku_number`/`horse_number`/`sex_age`/`weight_carried`が**null**
@@ -247,7 +249,7 @@ JRA公式サイトの「出走馬一覧」PDF(1開催日・1ファイルにつ�
   実装済み(騎手名/調教師名の境界判定で使っている`(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+[\d.]+kg`の
   マッチ結果を利用できる。抽出結果を`entries`へ含める処理が実装待ち)**
 - `functions/api/races/entries-import.js`: 管理者専用API。マージ処理を行う(共通ヘルパー
-  `mergeEntriesByHorseName()`を呼び出す。**実装待ち**)
+  `mergeEntriesByHorseName()`を呼び出す。実装済み)
 - `public/races.html`の「出走馬一覧PDFをインポート」ボタン(管理者のみ)からモーダルを開く
 
 ### マージロジック(レース行は絶対に削除・再作成しない)
@@ -329,7 +331,7 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
 - **レース境界の検出**: 「発走時刻」ラベルと時刻(「N時M分」)を基準に、開催情報(日付・
   競馬場・開催回)を近傍から補完してレースヘッダーを復元する。「発走時刻を変更」「発走時刻
   N分遅延」等の注記は新しいレース開始として誤検出しないよう除外する
-- **レース条件詳細の抽出(2026-08-11追加)**: 発走時刻行の直後にある条件文
+- **レース条件詳細の抽出(2026-08-11追加・実装済み)**: 発走時刻行の直後にある条件文
   (例: `3歳 未勝利（混合）［指定］ 馬齢 コース：1,400メートル（ダート・右）`)から
   `weight_type`(馬齢/定量/別定/ハンデ)・`class_flags`(条件フラグの生テキスト)・
   `course_direction`(左/右)を抽出する。天候・馬場状態の行(例: `天候 晴 ダート 良`)から
@@ -448,7 +450,8 @@ U+F900–FAFF・CJK互換漢字補助、U+2F800–2FA1F)とは別のブロック
   `9.2.0-radical-fix`予定)
 - `functions/api/races/results-import.js`: サーバー側の反映処理
 - `functions/api/_shared.js`: `recomputeTicketPayoutsForRace()`・`backfillHorseNamesForRace()`・
-  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`
+  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`・`loadJockeyAliasMap()`・
+  `applyJockeyAliasMap()`・`normalizeExistingJockeyNames()`
 
 ## レース結果の詳細記録(race_results)(2026-08-11追加)
 
@@ -547,6 +550,110 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
   保存できる
 - `race_results`にデータが無いレース(結果PDF未取込)ではこのセクション自体が
   非表示になる
+
+## 騎手名エイリアス管理(jockey_aliases)(2026-08-16追加)
+
+同一騎手が、登録経路によって異なる表記で保存されてしまう問題への対応。例(戸崎圭太騎手):
+
+- JRAレース結果PDFインポート由来: 「戶崎 圭太」(JRA PDFフォント特有の異体字「戶」)
+- レース情報のテキスト入力(netkeibaコピー貼り付け)由来: 「戸崎圭」(末尾の文字・区切り
+  スペースが欠落。原因は`public/parse.js`側かnetkeiba側コピー元の時点かは未特定。
+  `docs/BACKLOG.md`「調査中の不具合」参照)
+- 手動修正: 「戸崎 圭太」(姓名間に全角スペース)
+
+これらは表記としてすべて異なるため、`stats.html`の騎手別収支集計(完全一致でグルーピング)
+が同一人物を複数行に分裂させてしまう。**この問題への対応として`jockey_aliases`テーブルと
+関連ロジックを新設した。**
+
+### 対応方針の切り分け
+
+- **異体字(「戶崎」→「戸崎」等)の是正**: 別途、PDFインポート側(`jra-result-pdf.js`)の
+  文字正規化ロジック改修で対応する(このドキュメントの「JRAレース結果PDFインポート」
+  「全角文字正規化の方針」参照)。**本節(`jockey_aliases`)の対応範囲外。**
+- **表記ゆれ全般(異体字以外)の吸収**: 本節の`jockey_aliases`テーブルおよび
+  `applyJockeyAliasMap()`等のロジックで対応する。異体字修正が別途入った後も、
+  本節の仕組みは他の表記ゆれ(文字欠落・スペース有無等)を補完的に吸収し続ける。
+
+### スキーマ
+
+```sql
+CREATE TABLE jockey_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,   -- 突き合わせキー。見習い減量記号(☆▲△★◇)と
+                                     -- 空白(全角/半角)を除去した文字列
+  alias_display TEXT NOT NULL,      -- 表記ゆれ側の元の見た目(管理画面での参考表示用)
+  canonical_name TEXT NOT NULL,     -- 正しい表記(見習い記号は含めない)
+  created_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+- `alias_key`の生成ロジック(`jockeyAliasKeyOf()`、`functions/api/_shared.js`): 先頭の見習い
+  減量記号を除去した上で、残りの全角/半角スペースをすべて除去する。これにより「戸崎 圭太」
+  「戸崎圭太」は同一キーになる(**要件: 姓名間のスペース有無は同一人物として扱う**)
+- `canonical_name`には見習い記号を含めない。正規化適用時、取込側の表記に見習い記号が
+  あれば、正規化後の名前の先頭に復元する(`applyJockeyAliasMap()`)
+
+### 正規化を適用する2つの経路
+
+**(1) 今後登録されるデータの救済(登録・取込時に自動正規化)**
+
+以下の保存直前に、`jockey_aliases`と突き合わせて正規化する。マッチするエイリアスが
+無い表記は変更しない(誤爆防止。エイリアス未登録の新種の表記ゆれは、後述(2)の
+一括補正、または管理画面からのエイリアス追加で個別に対応する)。
+
+| 経路 | 実装箇所 | 備考 |
+|---|---|---|
+| レース新規登録(手動入力・netkeibaテキスト貼り付けの一括入力を含む) | `functions/api/races/index.js`(POST) | `entries[].jockey`を正規化 |
+| レース編集(同上) | `functions/api/races/[id].js`(PUT) | `entries`が含まれる場合のみ正規化 |
+| 出走馬一覧PDFインポート | `functions/api/races/entries-import.js` | マージ前の`incomingEntries[].jockey`を正規化 |
+| JRAレース結果PDFインポート | `functions/api/races/results-import.js` | `entries[].jockey`・`race_results[].jockey`の両方を正規化 |
+
+いずれも、リクエスト内に含まれる騎手名の件数分DBへ問い合わせる(N+1)のを避けるため、
+リクエストの先頭で`loadJockeyAliasMap(db)`によりエイリアス全件を1回だけMapとして取得し、
+以降は`applyJockeyAliasMap(map, name)`でメモリ上のMap参照のみで正規化する
+(`functions/api/ticket-imports/index.js`等、既存のN+1回避パターンを踏襲)。
+
+購入時(`tickets.selections`)は`races.entries`から複写されるだけのため、上記の経路で
+正規化されていれば自動的に揃う。
+
+**(2) 既に登録されているデータの救済(一括補正・手動実行)**
+
+上記(1)で救済しきれないもの(過去に登録済みのデータ、(1)導入前のデータ、想定外の
+表記ゆれ)は、管理画面(`admin.html`)の「既存データの騎手名を一括補正する」ボタンから
+明示的に実行する`normalizeExistingJockeyNames(db)`(`functions/api/_shared.js`)で対応する。
+
+対象テーブル・カラム:
+
+- `races.entries`(JSON配列。各要素の`jockey`)
+- `race_results.jockey`
+- `tickets.selections`(JSON配列。各要素の`jockey`)
+- `imported_ticket_items.selections`(JSON配列。各要素の`jockey`)
+
+各テーブルとも「1回のSELECTで全件取得→メモリ上で`jockey_aliases`と突き合わせて判定→
+変更が必要な行だけ`db.batch()`でまとめてUPDATE」という、本プロジェクトの他のバッチ処理
+(CSVインポート等)と同じ方式でCloudflare Workersのサブリクエスト数上限を回避する。
+`jockey_aliases`に登録されていない表記は対象外(誤爆防止)。ボタンを押した時だけ実行され、
+自動実行はしない。エイリアスとの完全一致判定のみのため、**何度実行しても安全(冪等)。**
+
+### 管理画面(`admin.html`)でのエイリアス管理
+
+- 一覧表示(表記ゆれ側・正しい表記・登録日時・削除ボタン)
+- 追加フォーム(表記ゆれ側・正しい表記の2つのテキスト入力)。`alias_key`が既存のものと
+  重複する場合はエラーを返す(サーバー側`POST /api/admin/jockey-aliases`でUNIQUE制約違反を
+  検知)
+- 「既存データの騎手名を一括補正する」ボタン(上記(2))
+- 編集(更新)機能は無い。表記を訂正したい場合は削除して登録し直す
+- API: `GET/POST /api/admin/jockey-aliases`・`DELETE /api/admin/jockey-aliases/:id`・
+  `POST /api/admin/jockey-aliases/normalize-existing`。いずれも管理者限定
+  (`requireAdmin()`)
+
+### 今回のスコープに含めないもの(BACKLOGへ引き継ぎ)
+
+- netkeibaテキスト貼り付けで「戸崎圭」のように文字が欠落する根本原因の調査
+  (`public/parse.js`側の解析処理か、netkeiba側のコピー元テキスト自体が省略表示だったのか
+  の切り分けが必要。`docs/BACKLOG.md`「調査中の不具合」参照)
+- JRA PDFの異体字(「戶崎」等)自体の是正(別タスクとして進行中。本節の対応範囲外)
+- エイリアスの編集(更新)機能、CSVでの一括インポート/エクスポート
 
 ## 認証・複数ユーザー対応
 
@@ -778,9 +885,10 @@ CSV出力元によって表記ゆれがあるため、以下を吸収して解�
   手動選択)・着順(1〜3着)・馬券式別の払戻金額を扱い、`PUT /api/races/:id`には
   `finish_order`・`payouts`のみ送信する(各購入履歴(`tickets.payout`)への反映はサーバー側で
   行うため、`races.js`からticketを直接更新するリクエストは送らない。詳細は下記
-  「払戻確定時のticket反映」参照)。あわせて`race_results`の詳細(全着順・タイム・馬体重等)を
-  読み取り専用の表で表示し、`incident_note`のみ編集・保存できる(上記「レース結果の詳細記録
-  (race_results)」の「画面での参照」参照)
+  「払戻確定時のticket反映」参照)
+- **`race_results`(全着順・タイム・馬体重等・「競走中の出来事」)は、今回は専用の編集UIを
+  用意しない。PDFインポート経由での自動登録のみとし、`incident_note`のみ
+  レース管理画面から編集できるようにする想定(具体的なUI配置は実装時に検討)**
 
 `index.html`の「払戻を編集(レース管理へ)」リンク(`races.html?edit=`)は払戻モーダルを
 直接開く。モーダルは開くたびにスクロール位置が先頭にリセットされる。払戻入力欄(式別
@@ -1022,12 +1130,17 @@ IF NOT EXISTS`など、途中で失敗しても安全な内容にすること。
 記録や残りのSQLを個別に対応する。`DROP`/`RENAME`を伴う変更は再実行すると
 データを壊す恐れがあるため、特に慎重に確認すること。
 
-**2026-08-11時点で、上記「レース結果の詳細記録(race_results)」・「レース条件の詳細カラム」・
+**2026-08-11時点で、「レース結果の詳細記録(race_results)」・「レース条件の詳細カラム」・
 「races.entriesへの性齢・負担重量の追加」に対応する`-- @STEP`ブロック(`race_results_and_
 conditions`)を`migration.sql`に追記し、対応する実装(パーサー・API)完了後の2026-08-12に
 本番DB(keiba-yosou-db)への適用・`schema_migrations`への記録を完了した。適用完了に伴い、
-`migration.sql`本体からは該当`-- @STEP`ブロックを削除し、内容は`schema.sql`へ統合済みである
-(現在の`migration.sql`・`schema.sql`はこの状態を反映済み)。**
+`migration.sql`本体からは該当`-- @STEP`ブロックを削除し、内容は`schema.sql`へ統合済みである。**
+
+**2026-08-16時点で、上記「騎手名エイリアス管理(jockey_aliases)」に対応する`-- @STEP`ブロック
+(`jockey_aliases`)を`migration.sql`に追記済み。`CREATE TABLE IF NOT EXISTS`のみの
+非破壊的変更のため、`--local`での確認を経て速やかに`--remote`へ適用してよい
+(適用手順は上記「適用手順(手動・wranglerのみ)」参照)。適用後は`migration.sql`から
+該当ブロックを削除し、`schema.sql`へ反映すること。**
 
 更新後に再デプロイします。
 

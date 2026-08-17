@@ -12,6 +12,7 @@
 --   5. 馬メモ(horse_notes)
 --   6. CSV取込 原本(imported_tickets)
 --   7. CSV取込 正規化データ(imported_ticket_groups / imported_ticket_items)
+--   8. 騎手名エイリアス(jockey_aliases)
 
 -- ============================================================
 -- 1. 認証
@@ -273,3 +274,21 @@ CREATE TABLE IF NOT EXISTS imported_ticket_items (
 
 CREATE INDEX IF NOT EXISTS idx_imported_items_group ON imported_ticket_items(group_id);
 CREATE INDEX IF NOT EXISTS idx_imported_items_race ON imported_ticket_items(race_id);
+
+-- ============================================================
+-- 8. 騎手名エイリアス(2026-08-16追加)
+-- ============================================================
+
+-- 同一騎手がPDFインポート・手動入力・netkeibaテキスト貼り付け等の経路によって
+-- 異なる表記(異体字・空白有無・文字欠落等)で登録されてしまい、集計画面の
+-- 騎手別収支が同一人物なのに複数行へ分裂してしまう問題への対応。
+-- 管理画面(admin.html)から編集する。詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
+CREATE TABLE IF NOT EXISTS jockey_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,   -- 表記ゆれ側の突き合わせキー。見習い減量記号(☆▲△★◇)と
+                                     -- 空白(全角/半角)を除去した文字列。空白有無だけの違いは
+                                     -- 同一人物として扱うため、キー生成時に空白を除去している
+  alias_display TEXT NOT NULL,      -- 表記ゆれ側の元の見た目(管理画面での参考表示用)
+  canonical_name TEXT NOT NULL,     -- 正しい表記(見習い記号は含めない。適用時に元の記号を復元する)
+  created_at TEXT DEFAULT (datetime('now'))
+);

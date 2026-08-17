@@ -4,6 +4,8 @@ import {
   linkUnregisteredImportsToRace,
   mergeEntriesByHorseName,
   recomputeTicketPayoutsForRace,
+  loadJockeyAliasMap,
+  applyJockeyAliasMap,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -17,6 +19,11 @@ import {
 // 共通の functions/api/_shared.js の mergeEntriesByHorseName() を使うよう統一した
 // (以前はこのファイル内に個別のmergeEntries()を持っていた)。性齢(sex_age)・
 // 負担重量(weight_carried)のマージにも対応している。
+//
+// 2026-08-16追加: 取込側(incomingEntries)の騎手名を、mergeEntriesByHorseName()へ渡す前に
+// jockey_aliasesテーブルで正規化する(1件ずつDBへ問い合わせず、リクエスト単位で1回だけ
+// エイリアスMapを取得して使い回すことでN+1を回避する)。詳細はdocs/DESIGN.md
+// 「騎手名エイリアス管理」参照。
 
 function normalizeHorseName(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
@@ -39,6 +46,7 @@ export async function onRequestPost(context) {
     return Response.json({ error: "インポート対象のレースがありません" }, { status: 400 });
   }
 
+  const aliasMap = await loadJockeyAliasMap(env.DB);
   const results = [];
 
   for (const item of races) {
@@ -62,7 +70,7 @@ export async function onRequestPost(context) {
         horse_name: e.horse_name,
         waku_number: e.waku_number ?? null,
         horse_number: e.horse_number ?? null,
-        jockey: e.jockey || null,
+        jockey: e.jockey ? applyJockeyAliasMap(aliasMap, e.jockey) : null,
         sex_age: e.sex_age || null,
         weight_carried: e.weight_carried ?? null,
       }));

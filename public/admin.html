@@ -55,6 +55,43 @@
         <p class="ticket-sub">閲覧のみです(編集・削除はできません)。管理者にしたい場合は、Cloudflare Pagesの環境変数 ADMIN_USERNAMES にユーザー名を追加してください。</p>
         <div class="table-wrap"><table class="stats-table" id="users-table"></table></div>
       </section>
+
+      <!-- 騎手名エイリアス管理(2026-08-16追加)。
+           同一騎手がPDFインポート・手動入力・netkeibaテキスト貼り付け等の経路で
+           異なる表記(異体字・空白有無・文字欠落等)で登録され、集計画面の騎手別収支が
+           分裂してしまう問題への対応。詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">騎手名エイリアス管理</h2>
+        <p class="ticket-sub">
+          同じ騎手が表記ゆれ(異体字・スペースの有無・文字欠落等)で複数の名前として登録されてしまう場合の対応です。
+          「表記ゆれ側」に誤った/揺れた表記、「正しい表記」に統一したい表記を登録すると、
+          以後、出走馬一覧PDF・JRAレース結果PDFインポート・レース管理画面での手動入力(netkeibaテキスト貼り付けを含む)
+          いずれの経路で登録する場合も、登録時に自動的に「正しい表記」へ統一されます。
+          姓名間のスペースの有無は登録内容にかかわらず同一人物として扱われます。
+        </p>
+        <form id="jockey-alias-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+          <label style="flex:1;min-width:160px">表記ゆれ側(例: 戸崎圭)
+            <input type="text" id="jockey-alias-display" placeholder="表記ゆれ側の騎手名" required />
+          </label>
+          <label style="flex:1;min-width:160px">正しい表記(例: 戸崎圭太)
+            <input type="text" id="jockey-alias-canonical" placeholder="正しい騎手名" required />
+          </label>
+          <button type="submit" class="stamp-btn">エイリアスを追加</button>
+        </form>
+        <p id="jockey-alias-form-message" class="submit-message" hidden></p>
+
+        <div class="table-wrap"><table class="stats-table" id="jockey-aliases-table"></table></div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
+          <p class="ticket-sub">
+            上に登録済みのエイリアスと一致する騎手名を、既に保存されている出走馬表・レース結果・
+            購入履歴・CSV取込履歴からまとめて探して書き換えます(未登録の表記ゆれは変更されません)。
+            何度実行しても安全です。
+          </p>
+          <button type="button" id="jockey-alias-normalize-btn" class="ghost-btn">既存データの騎手名を一括補正する</button>
+          <p id="jockey-alias-normalize-message" class="submit-message" hidden></p>
+        </div>
+      </section>
     </div>
   </main>
 </div>

@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries } from "../_shared.js";
 
 // PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
 export async function onRequestPut(context) {
@@ -32,8 +32,13 @@ export async function onRequestPut(context) {
     if (!Array.isArray(data.entries)) {
       return new Response(JSON.stringify({ error: "entriesの形式が不正です" }), { status: 400 });
     }
+    // 2026-08-16追加: 手動編集(出走馬表フォーム経由。netkeibaテキスト貼り付け一括入力を
+    // 含む)された騎手名を、保存前にjockey_aliasesテーブルで正規化する。
+    // docs/DESIGN.md「騎手名エイリアス管理」参照。
+    const aliasMap = await loadJockeyAliasMap(env.DB);
+    const normalizedEntries = applyJockeyAliasesToEntries(aliasMap, data.entries);
     fields.push("entries = ?");
-    values.push(JSON.stringify(data.entries));
+    values.push(JSON.stringify(normalizedEntries));
   }
   if ("finish_order" in data) {
     fields.push("finish_order = ?");
@@ -56,7 +61,8 @@ export async function onRequestPut(context) {
   // 出走馬表(馬名・騎手)が更新された場合、同じレースを参照しているCSV取込データ・
   // 購入履歴のうち、馬番だけで馬名・騎手が空になっているものへ反映(バックフィル)する。
   if ("entries" in data) {
-    await backfillHorseNamesForRace(env.DB, Number(params.id), data.entries);
+    const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(params.id).first();
+    if (race) await backfillHorseNamesForRace(env.DB, Number(params.id), JSON.parse(race.entries || "[]"));
   }
   // 日付・競馬場・レース番号のいずれかが変わった(または初めて確定した)可能性があるため、
   // 未紐付けのCSV取込データが無いか毎回確認して紐付ける。

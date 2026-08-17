@@ -13,11 +13,13 @@
 --     新しい "-- @STEP: 名前" ブロックを追記するだけでよい。名前は一度使ったら
 --     固定すること(schema_migrations内のキーになるため)。
 --
--- 過去に適用済みのステップ(legacy_v13_multiuser, course_type_distance)は
--- 本番DB(keiba-yosou-db)への適用・schema_migrationsへの記録が完了し、
--- その最終結果は schema.sql に統合済みのため、本ファイルからは削除してある。
--- 内容が必要な場合は archive/migrations/latest1_until_course_type_distance.sql
--- を参照(git履歴にも残っている)。
+-- 過去に適用済みのステップ(legacy_v13_multiuser, course_type_distance,
+-- race_results_and_conditions)は本番DB(keiba-yosou-db)への適用・
+-- schema_migrationsへの記録が完了し、その最終結果は schema.sql に統合済みのため、
+-- 本ファイルからは削除してある。内容が必要な場合は
+-- archive/migrations/latest1_until_course_type_distance.sql を参照
+-- (race_results_and_conditionsについてはarchive/documents/BACKLOG_HISTORY.md
+-- 「クラスタL」参照。git履歴にも残っている)。
 --
 -- 実行方法: wrangler d1 execute --remote / --local で、新しく追記したブロックの
 -- SQLだけを --command または --file= で実行し、成功したら
@@ -29,6 +31,19 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS schema_migrations (
   name TEXT PRIMARY KEY,
   applied_at TEXT DEFAULT (datetime('now'))
+);
+
+-- @STEP: jockey_aliases
+-- 2026-08-16: 騎手別収支で同一騎手が表記ゆれ(異体字・空白有無・文字欠落等)により
+-- 複数行に分裂してしまう問題への対応。表記ゆれ→正しい表記の対応表を持つ
+-- jockey_aliases テーブルを追加する(CREATE TABLE IF NOT EXISTSのみの非破壊的変更)。
+-- 詳細はdocs/DESIGN.md「騎手名エイリアス管理(jockey_aliases)」参照。
+CREATE TABLE IF NOT EXISTS jockey_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,
+  alias_display TEXT NOT NULL,
+  canonical_name TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
