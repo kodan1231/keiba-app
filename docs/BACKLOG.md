@@ -4,12 +4,14 @@
 `archive/documents/BACKLOG_HISTORY.md`へ移動し、本ファイルは未着手タスク・調査中の不具合のみに
 整理し直した。あわせて`archive/documents/pre-fix-v1.0/BACKLOG.md`の内容も上記アーカイブへ統合し、
 同ファイルは削除した。
-2026-08-16: 部首文字正規化の回帰不具合(🔴緊急)を追加)
 2026-08-16: クラスタBの「結果確定済みレース購入時の払戻即時反映」タスクに
 対応したため、`archive/documents/BACKLOG_HISTORY.md`へ移動)
 2026-08-16: クラスタBのレース選択画面UI改修のうち②③④(コース情報表示・
 競馬場カラム幅縮小・メモありマーク)を実装し、モバイルの競馬場タブ化も追加対応した。詳細は
-`archive/documents/BACKLOG_HISTORY.md`参照)
+`archive/documents/BACKLOG_HISTORY.md`参照。
+2026-08-17: 部首文字正規化の回帰不具合(旧🔴緊急項目)の実装が完了済みであることを確認し、
+`archive/documents/BACKLOG_HISTORY.md`へ移動した。あわせて、本ファイル内に残っていた関連する
+矛盾・重複記述を整理した)
 
 このファイルは、要望としては承認済みだが未実装のタスク、および調査中・未解決の不具合を
 引き継ぐための一覧です。`README.md` / `docs/DESIGN.md` / `docs/TESTING.md`とは異なり
@@ -32,22 +34,16 @@
   行ってもらう運用になっている。実機検証が必要な項目は各タスク・`docs/TESTING.md`に
   明記してあるので、着手・完了報告の際は検証状況を明確にすること
 
-## 🔰 次のチャットで最初に読むこと(2026-08-16引き継ぎ)
+## 🔰 次のチャットで最初に読むこと(2026-08-17引き継ぎ)
 
 - アプリの全体像は`README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`、手動テスト項目は
   `docs/TESTING.md`を参照(いずれも現状を反映した生きたドキュメント)。過去の作業経緯・
   完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`(2026-08-15に旧
   `pre-fix-v1.0/BACKLOG.md`と統合済み)を参照
-
-- **🔴最優先: 下記「部首文字正規化の回帰不具合」の実装がまだ完了していない(方針承認済み・
-  コード未修正)。次のセッションではまずこれに着手すること。** アプリの全体像は
-  `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`、手動テスト項目は`docs/TESTING.md`を
-  参照(いずれも現状を反映した生きたドキュメント)。過去の作業経緯・完了済みタスクの詳細は
-  `archive/documents/BACKLOG_HISTORY.md`(2026-08-15に旧`pre-fix-v1.0/BACKLOG.md`と統合済み)
-  を参照
 - クラスタK(モーダルESCキー共通対応)・クラスタL(出走馬/結果PDFインポート統合修正・
   `race_results`新設)・クラスタN-2(コース種別・距離の表示欠落修正)・クラスタB
   (結果確定済みレース購入時の払戻即時反映)は実装完了済み。詳細は上記アーカイブ参照
+- 部首文字正規化の回帰不具合(旧🔴緊急項目)も実装完了済み。詳細は上記アーカイブ参照
 - 2026-08-16: 騎手名エイリアス管理(`jockey_aliases`)を新規実装済み(表記ゆれの騎手名を
   管理画面から登録し、今後の登録・取込時に自動正規化。既存データは管理画面の
   「一括補正」ボタンで補正)。詳細は`docs/DESIGN.md`「騎手名エイリアス管理(jockey_aliases)」
@@ -61,29 +57,15 @@
   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
   ```
   適用後、`migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映すること
-- **`migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB
+- `migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB
   (keiba-yosou-db)へ適用済み・`schema_migrations`への記録も完了しており、内容は
-  `schema.sql`に統合済みであることを2026-08-16に確認した。以前このファイルに残っていた
-  「まだ未適用」という記述は誤りだったため削除した(該当ブロックは`migration.sql`本文の
-  コメントにある通り、適用完了時点でファイルから削除済み)。**
+  `schema.sql`に統合済み(未適用の`-- @STEP`ブロックは残っていない)
 - 2026-08-16: ルートURL(`/`)へのアクセスを馬券購入画面(`buy.html`)へリダイレクトする
   対応を実施済み(`functions/_middleware.js`)。詳細はアーカイブ参照
-- 次のセッションでは**クラスタN-1(出走馬表の馬番重複入力防止)**への着手を推奨する
 - **クラスタB「レース選択画面のnetkeiba風UI改修」のうち②コース情報表示・③競馬場カラム幅縮小・
   ④メモありマーク(仕様は「▼」に変更)は2026-08-16に実装完了(モバイルの競馬場タブ化も
   追加対応)。残るのは①レース番号とレース名の間隔詰めのみ(下記クラスタB参照)**
-- **未実施の運用作業が1件残っている**: `migration.sql`の`-- @STEP: race_results_and_conditions`
-  ブロックが、2026-08-16時点でもまだ実DBに未適用。以下の手順で適用すること(README
-  「スキーマ変更の適用手順」も参照):
-  ```bash
-  npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
-  # 問題なければ本番にも適用
-  npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
-  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('race_results_and_conditions');"
-  ```
-  適用後、`migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映すること
-- 部首文字正規化の回帰不具合の対応が済んだら、**クラスタN-1(出走馬表の馬番重複入力防止)**への
-  着手を推奨する
+- 次のセッションでは**クラスタN-1(出走馬表の馬番重複入力防止)**への着手を推奨する
 - `race_results`にデータが貯まり始めたら、**クラスタM**(馬名・騎手名ベースの集計参照画面)に
   着手できる
 - **クラスタL(2026-08-11〜08-12)でスキーマへ追加した`weight_type`/`class_flags`/
@@ -91,50 +73,6 @@
   どの画面にも表示されていない(取込・保存経路は`entries-import.js`/`results-import.js`が
   対応済み)。表示対応は意図的に見送っており、下記「クラスタN-4」として優先度低のタスクに
   している**
-
-## 🔴 緊急: 部首文字正規化の回帰不具合(2026-08-16発見・修正方針承認済み・実装待ち)
-
-**症状**: JRAレース結果PDFインポート・出走馬一覧PDFインポートのいずれも、実際のJRA公式PDFを
-解析すると**解析結果が0レース**になる(ユーザー報告・複数の実PDFで再現確認済み)。診断パネルを
-見ると、抽出行数・発走時刻候補(時刻ベース)は正常に検出できているが、**開催情報候補・日付候補が
-0件**になっており、結果としてレース開始検出が0件になっている。
-
-**原因**: 2026-08-14に「戸崎」騎手等の人名異体字保護のため`String.prototype.normalize("NFKC")`を
-廃止し、全角英数記号(U+FF01–FF5E)のみを半角化する独自変換(`jraResultToHalfwidthAscii()`/
-`jraEntriesToHalfwidthAscii()`)に置き換えた際の副作用。JRA PDFのテキスト抽出結果では、
-「日」「月」「土」「発」「走」「馬」等の通常の漢字が、見た目は同じでも**康熙部首(Kangxi
-Radicals, U+2F00–2FD5)・CJK部首補助(CJK Radicals Supplement, U+2E80–2EF3)**という別の
-Unicodeブロックの文字として出力されるケースがあり、これらはNFKC正規化なら標準の漢字へ
-変換されるが、2026-08-14修正後の変換では変換されなくなり、「発走時刻」「年」「月」「日」等の
-正規表現が軒並み不一致になっていた。
-
-**確認したファイル**(いずれもユーザー提供の実PDF・診断パネルの抽出全文で確認済み):
-- レース結果PDF: 2026年8月15日 1回札幌7日・2回中京7日(いずれも0レース)
-- 出走馬一覧PDF: 2026年8月16日 1回札幌8日(0レース)
-
-**修正方針(2026-08-16ユーザー承認済み)**:
-- 全角英数記号の半角化に加えて、**康熙部首(U+2F00–2FD5)・CJK部首補助(U+2E80–2EF3)の
-  範囲の文字のみ**、1文字ずつ`normalize("NFKC")`を適用して標準の漢字へ変換する処理を
-  `jraResultNormalizeUnit()`(`public/jra-result-pdf.js`)・`jraEntriesNormalizeUnit()`
-  (`public/jra-entries-pdf.js`)に追加する
-- この2ブロックは部首記号専用であり、「戸崎」問題の原因だったCJK互換漢字ブロック
-  (U+F900–FAFF・CJK互換漢字補助 U+2F800–2FA1F、人名異体字を含む)とは重複しないため、
-  人名異体字問題を再発させずに解消できる
-- 対象範囲は実際に確認できた特定の文字(日月土走馬等)に限定せず、**該当Unicodeブロック全体**を
-  対象にする(将来別の部首文字が出現しても自動対応できるようにするため。個別文字のテーブル化は
-  行わない)
-- パーサーバージョンをそれぞれ更新する: `jra-result-pdf.js`は`9.1.0-preserve-name-glyphs`→
-  `9.2.0-radical-fix`、`jra-entries-pdf.js`は`1.3.0-preserve-name-glyphs`→`1.4.0-radical-fix`
-
-**実装状況**: 方針確定・`docs/DESIGN.md`「全角文字正規化の方針(2026-08-16修正)」に反映済み。
-コード修正(`public/jra-result-pdf.js`・`public/jra-entries-pdf.js`)は**未着手**。
-
-**実装後に確認すること**:
-- 上記2件の実PDF(レース結果PDF・出走馬一覧PDF)で、レース開始検出・出走馬行検出が
-  正常に行われること(実機・実ブラウザでの確認はユーザー側で実施)
-- 「戸崎」等の人名異体字が引き続き正しい字体で保存されること(2026-08-14修正の効果が
-  維持されていること。既存の`docs/TESTING.md`「人名の異体字保持」項目を流用して確認)
-- `node --check`による構文チェック
 
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
 
