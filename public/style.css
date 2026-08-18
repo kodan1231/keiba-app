@@ -1665,10 +1665,16 @@ body.modal-open { overflow: hidden; }
   font-family:var(--font-mono);
 }
 
+/* 2026-08-17: PC(700px超)は以前「R番号(48px)・レース名(1fr)・コース情報等(auto)」の
+   3カラム横並びだったが、コース情報側の幅に押されてレース名がほぼ潰れる不具合があった。
+   モバイルと同じ「1行目: R番号+レース名 / 2行目: コース情報・頭数・メモマーク」の
+   2行構成に統一する(docs/DESIGN.md「レース選択グリッド」参照)。 */
 .race-column-row{
-  grid-template-columns:48px minmax(0,1fr) auto;
+  grid-template-columns:44px minmax(0,1fr);
+  position:relative;
 }
 .race-column-row small{
+  grid-column:2;
   font-size:.7rem;
   color:#777;
   white-space:nowrap;
@@ -1711,8 +1717,6 @@ body.modal-open { overflow: hidden; }
 @media(max-width:700px){
   .race-calendar{padding:10px}
   .calendar-day{min-height:38px}
-  .race-column-row{grid-template-columns:44px minmax(0,1fr);position:relative}
-  .race-column-row small{grid-column:2}
   .bet-horse-table-head{display:none}
   .bet-horse-row{
     grid-template-columns:30px 38px minmax(100px,1fr) 44px;

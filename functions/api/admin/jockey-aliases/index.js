@@ -7,9 +7,14 @@ export async function onRequestGet(context) {
   if (deny) return deny;
 
   const { env } = context;
+  // 2026-08-17変更: 一覧の並び順を「登録日時の新しい順」から「表記ゆれ側(alias_display)の
+  // 文字列昇順」に変更した。SQLiteの標準的なバイト順比較によるソートで、他画面
+  // (stats.jsの名前列ソート等)と同じ方式に揃えている(濁点・拗音等を正規化した
+  // 厳密な五十音順ではない)。同じ表記ゆれ側の値が複数ある場合は、登録日時の
+  // 新しい順を副次キーとして使う。
   const { results } = await env.DB.prepare(
     `SELECT id, alias_key, alias_display, canonical_name, created_at
-     FROM jockey_aliases ORDER BY created_at DESC, id DESC`
+     FROM jockey_aliases ORDER BY alias_display ASC, created_at DESC, id DESC`
   ).all();
 
   return Response.json({ ok: true, items: results || [] });
