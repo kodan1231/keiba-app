@@ -417,6 +417,75 @@ function jraResultParseScratchRow(rawLine) {
   };
 }
 
+// 「中止」(競走中止。発走後にレース中に競走を中止した馬)から race_results 用レコードを
+// 組み立てる(2026-08-19追加)。取消・除外と異なり発走はしているため、単勝人気・馬体重
+// (増減)は取得できるが、タイム・着差・推定上りは記録されない。コーナー通過順位は
+// 「中止するまでに通過した分」のみが記録され、個数はレースにより異なる(2〜4個程度)ため、
+// 固定長の正規表現では対応できず、末尾からトークンを切り出す方式で解析する。
+// 例: "中止 7 ヒロイックヴァース 牡3 55.0 横山 武史 2 2 7 480 (+4) 浅利 英明 3"
+//   → 騎手「横山 武史」、コーナー通過順位「2-2-7」、馬体重480(+4)、調教師「浅利 英明」、単勝人気3
+const JRA_RESULT_STOP_HEAD_RE = /^中止\s+(\d{1,2})\s+(.*?)\s*(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+([\d.]+)\s+(.+)$/;
+
+function jraResultParseStopRow(rawLine) {
+  const s = jraResultNormalizeLine(rawLine);
+  const m = s.match(JRA_RESULT_STOP_HEAD_RE);
+  if (!m) return null;
+  const [, horseNumberStr, horseName, sex, age, weightStr, tail] = m;
+
+  const tokens = tail.split(/\s+/).filter(Boolean);
+  // 最低限、騎手(1トークン以上)+馬体重+括弧書き+調教師(1トークン以上)+単勝人気の
+  // 5トークンが必要。
+  if (tokens.length < 5) return null;
+
+  // 末尾トークン = 単勝人気(整数)。
+  const popularityTok = tokens[tokens.length - 1];
+  if (!/^\d+$/.test(popularityTok)) return null;
+  const winPopularity = Number(popularityTok);
+  const rest = tokens.slice(0, -1);
+
+  // 末尾側から「整数トークン」の直後に「括弧書きトークン(増減)」が続く箇所を探し、
+  // そこを馬体重(増減)の位置とする。
+  let bwIndex = -1;
+  for (let i = rest.length - 2; i >= 0; i--) {
+    if (/^\d+$/.test(rest[i]) && /^[（(].*[）)]$/.test(rest[i + 1])) { bwIndex = i; break; }
+  }
+  if (bwIndex === -1) return null;
+
+  const bodyWeight = Number(rest[bwIndex]);
+  const bodyWeightChange = rest[bwIndex + 1].replace(/[（）()]/g, "");
+  const trainerTokens = rest.slice(bwIndex + 2);
+  if (!trainerTokens.length) return null;
+  const trainer = trainerTokens.join(" ");
+
+  // 馬体重より手前(騎手+コーナー通過順位)を、末尾側から連続する整数トークンを
+  // コーナー通過順位として切り出し、残りの先頭側を騎手名とする。
+  const beforeBw = rest.slice(0, bwIndex);
+  let cornerStart = beforeBw.length;
+  while (cornerStart > 0 && /^\d+$/.test(beforeBw[cornerStart - 1])) cornerStart--;
+  const corners = beforeBw.slice(cornerStart);
+  const jockeyTokens = beforeBw.slice(0, cornerStart);
+  if (!jockeyTokens.length) return null;
+  const jockeyRaw = jockeyTokens.join(" ");
+
+  const weightCarried = Number(weightStr);
+  return {
+    horse_number: Number(horseNumberStr),
+    horse_name: horseName.trim() || null,
+    sex_age: `${sex}${age}`,
+    weight_carried: Number.isFinite(weightCarried) ? weightCarried : null,
+    jockey: jraResultCleanJockeyName(jockeyRaw),
+    status: "stopped",
+    finish_position: null,
+    time_text: null,
+    margin: null,
+    corner_positions: corners.length ? corners.join("-") : null,
+    final_furlong_time: null,
+    body_weight: Number.isFinite(bodyWeight) ? bodyWeight : null,
+    body_weight_change: bodyWeightChange || null,
+    win_popularity: Number.isInteger(winPopularity) ? winPopularity : null,
+  };
+}
+
 // 「競走中の出来事等」の箇条書きから、該当馬名(「◯◯号」の「号」を除いた部分)を
 // キーに注記本文を集める。セクションの開始/終了を厳密に検出せず、
 // 「・◯◯号は、」というパターンに一致する行だけを対象にすることで、
@@ -435,7 +504,7 @@ function jraResultParseIncidentNotes(blockLines) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "9.2.0-radical-fix";
+const JRA_RESULT_PDF_PARSER_VERSION = "9.3.0-stopped-status";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
@@ -517,6 +586,7 @@ function jraResultParseExtractedPages(pages) {
     fullResultRowsDetected:0,
     fullResultRowsFailed:0,
     scratchedRowsDetected:0,
+    stoppedRowsDetected:0,
     payoutLines:0,
     payoutItems:0,
     refundLines:0,
@@ -782,12 +852,36 @@ function jraResultParseExtractedPages(pages) {
         }
 
         if(inResults){
-          // 取消・除外は着順を持たない特殊行のため、他の行より先に判定する。
+          // 取消・除外・中止は着順を持たない特殊行のため、他の行より先に判定する。
           const scratchRow = jraResultParseScratchRow(line);
           if (scratchRow) {
             scratchRow.incident_note = incidentNotes.get(String(scratchRow.horse_name || "")) || null;
             current.race_results.push(scratchRow);
             diagnostics.scratchedRowsDetected++;
+            // 2026-08-19変更: 取消・除外の馬も出走馬リスト(races.entries)へ追加する。
+            // 以前は完走馬のみをentriesへ追加していたため、出走馬情報をインポートせず
+            // 結果PDFのみをインポートした場合、取消・除外・中止馬がentriesから漏れて
+            // 出走頭数が実際より少なく計算され、枠番の目安計算(defaultWakuNumber())や
+            // 予想登録・購入画面の頭数・馬番一覧にズレが生じる不具合があった
+            // (docs/DESIGN.md「取消・除外・中止の扱い」参照)。
+            if (!current.entries.some(e => e.horse_number === scratchRow.horse_number)) {
+              current.entries.push({ waku_number: scratchRow.waku_number ?? null, horse_number: scratchRow.horse_number, horse_name: scratchRow.horse_name, jockey: scratchRow.jockey ?? null });
+            }
+            raceDiag.entries = current.entries.length;
+            continue;
+          }
+
+          // 中止(競走中止)は取消・除外とは異なる行構造(コーナー通過順位・単勝人気を
+          // 持つ)のため、専用パーサーで判定する(2026-08-19追加)。
+          const stopRow = jraResultParseStopRow(line);
+          if (stopRow) {
+            stopRow.incident_note = incidentNotes.get(String(stopRow.horse_name || "")) || null;
+            current.race_results.push(stopRow);
+            diagnostics.stoppedRowsDetected++;
+            if (!current.entries.some(e => e.horse_number === stopRow.horse_number)) {
+              current.entries.push({ waku_number: stopRow.waku_number ?? null, horse_number: stopRow.horse_number, horse_name: stopRow.horse_name, jockey: stopRow.jockey ?? null });
+            }
+            raceDiag.entries = current.entries.length;
             continue;
           }
 
@@ -1065,6 +1159,7 @@ function jraResultRenderDiagnostics(d, extracted) {
   1〜3着検出: ${d.finishRanks}<br>
   race_results詳細行 検出: ${d.fullResultRowsDetected} / 解析失敗: ${d.fullResultRowsFailed}<br>
   取消・除外行 検出: ${d.scratchedRowsDetected}<br>
+  中止行 検出: ${d.stoppedRowsDetected}<br>
   払戻行検出: ${d.payoutLines}<br>
   払戻項目検出: ${d.payoutItems}<br>
   返還行検出: ${d.refundLines}<br>

@@ -571,7 +571,7 @@ async function loadRaceResultsDetail(raceId) {
   raceResultsDetailSection.hidden = false;
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
 
-  const statusLabel = (s) => (s === "scratched" ? "取消" : s === "excluded" ? "除外" : "");
+  const statusLabel = (s) => (s === "scratched" ? "取消" : s === "excluded" ? "除外" : s === "stopped" ? "中止" : "");
 
   raceResultsDetailTable.innerHTML = `
     <div class="table-wrap"><table class="stats-table">
