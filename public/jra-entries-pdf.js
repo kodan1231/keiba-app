@@ -30,7 +30,15 @@
 // サーバーへ送信するようにした(docs/DESIGN.md「races.entriesへの性齢・負担重量の追加」
 // 参照)。抽出済みの正規表現マッチ結果(牡/牝/せん/セ/騸 + 年齢 + kg)をそのまま流用する。
 
-const JRA_ENTRIES_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
+// 2026-08-17リファクタリング: この配列は public/utils.js の JRA_CENTRAL_TRACKS と
+// 内容が完全に同一だったため、重複定義を解消し共有定数を参照する形に変更した
+// (docs/BACKLOG.md「クラスタI」参照)。races.html では utils.js がこのファイルより
+// 先に読み込まれるため、参照時点で JRA_CENTRAL_TRACKS は定義済みである。なお本配列は
+// 現時点でこのファイル内から参照されていない(開催情報の検出は下記
+// jraEntriesFindMeeting/jraEntriesFindMeetingLoose 内でハードコードされた正規表現を
+// 使っており、この配列を経由していない)。変数名・挙動維持を優先し、削除はせず
+// 参照先のみ差し替えている。
+const JRA_ENTRIES_TRACKS = JRA_CENTRAL_TRACKS;
 
 // 全角英数記号(Unicode Fullwidth Forms, U+FF01–FF5E)のみを対応する半角ASCII文字へ
 // 変換する。以前は String.prototype.normalize("NFKC") を使っていたが、NFKC正規化は

@@ -1,4 +1,10 @@
-const JRA_RESULT_PDF_TRACKS = ["札幌","函館","福島","新潟","東京","中山","中京","京都","阪神","小倉"];
+// 2026-08-17リファクタリング: この配列は public/utils.js の JRA_CENTRAL_TRACKS と
+// 内容が完全に同一だったため、重複定義を解消し共有定数を参照する形に変更した
+// (docs/BACKLOG.md「クラスタI」参照)。races.html では utils.js がこのファイルより
+// 先に読み込まれるため、参照時点で JRA_CENTRAL_TRACKS は定義済みである。この配列を
+// 使う jraResultParseTrack() はファイル内のどこからも呼ばれていない(未使用関数だが、
+// 削除は今回のスコープに含めない)。変数名・挙動維持を優先し、参照先のみ差し替えている。
+const JRA_RESULT_PDF_TRACKS = JRA_CENTRAL_TRACKS;
 const JRA_RESULT_BET_MAP = {
   "単勝": "tan", "複勝": "fuku", "枠連": "wakuren", "馬連": "umaren", "馬単": "umatan",
   "ワイド": "wide", "3連複": "sanrenpuku", "3連単": "sanrentan"

@@ -86,3 +86,18 @@ function registerEscToClose(modalEl, closeFn) {
     closeFn();
   });
 }
+
+/**
+ * JRA中央競馬10場の一覧(五十音順ではなく、開催回・PDF解析等で一般的に使われる並び)。
+ * 2026-08-17リファクタリング: 従来 public/parse.js の JRA_TRACKS・
+ * public/jra-entries-pdf.js の JRA_ENTRIES_TRACKS・public/jra-result-pdf.js の
+ * JRA_RESULT_PDF_TRACKS として、内容が完全に同一の配列がそれぞれ独立して
+ * 定義されていた(docs/BACKLOG.md「クラスタI」参照)。本アプリはESモジュールを
+ * 使わないグローバルスクリプト構成のため、races.html で utils.js が上記3ファイルより
+ * 必ず先に読み込まれる点を利用し、この配列をここへ集約したうえで、各ファイル側は
+ * 従来通りの変数名のままこの配列を参照する(`const JRA_TRACKS = JRA_CENTRAL_TRACKS;`等)。
+ * 既存の変数名・参照箇所は変更していないため、この集約自体で挙動が変わることはない。
+ * `public/buy.js` の RACE_TRACK_ORDER(表示順序用。地方競馬場を含み用途が異なる)とは
+ * 別物であり、統合対象ではない。
+ */
+const JRA_CENTRAL_TRACKS = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
