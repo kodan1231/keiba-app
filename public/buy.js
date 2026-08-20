@@ -46,7 +46,7 @@ const modal = document.getElementById("purchase-modal");
 const titleEl = document.getElementById("purchase-dialog-title");
 const betButtons = document.getElementById("bet-type-buttons");
 const betTypeSection = document.getElementById("bet-type-section");
-const raceSettledBlock = document.getElementById("race-settled-block");
+const raceSettledBadge = document.getElementById("race-settled-badge");
 const raceUnconfirmedBlock = document.getElementById("race-unconfirmed-block");
 const methodSection = document.getElementById("method-section");
 const methodButtons = document.getElementById("method-buttons");
@@ -345,7 +345,7 @@ async function openPurchase(race) {
 
   if (unconfirmed) {
     // 枠番・馬番が未確定のため、購入UI自体を表示しない(案内のみ表示してブロックする)。
-    raceSettledBlock.hidden = true;
+    raceSettledBadge.hidden = true;
     betTypeSection.hidden = true;
     hideDownstream();
     return;
@@ -364,9 +364,10 @@ async function openPurchase(race) {
 
   // レースの着順 or 払戻が確定済みでも、購入履歴の登録し忘れに対応できるよう
   // 購入自体は引き続きできるようにする。確定済みであることが分かるよう、
-  // 案内バナーのみ表示する(購入UIはブロックしない)。
+  // 2026-08-19: 以前は案内バナーで表示していたが、レース名見出しの横に
+  // 「確定済」バッジを表示する方式に変更した(購入UIはブロックしない)。
   const settled = !!race.finish_order || !!(race.payouts && Object.keys(race.payouts).length > 0);
-  raceSettledBlock.hidden = !settled;
+  raceSettledBadge.hidden = !settled;
   betTypeSection.hidden = false;
 
   renderBetTypes();

@@ -17,10 +17,7 @@
      競馬場単位でタブ切り替えできるようにした(docs/DESIGN.md参照)。 -->
 <div id="race-track-tabs" class="race-track-tabs"></div>
 <div id="race-grid" class="race-grid"></div><p id="no-race-hint" class="buy-hint" hidden>この日に登録済みのレースがありません。</p></section>
-<div id="purchase-modal" class="purchase-modal" hidden><div class="purchase-dialog purchase-dialog-modern" role="dialog" aria-modal="true"><div class="purchase-dialog-head"><div><p class="purchase-kicker">馬券購入</p><h2 id="purchase-dialog-title"></h2></div><button id="close-purchase-modal" class="dialog-close">×</button></div>
-<div id="race-settled-block" class="buy-hint" style="margin:0 20px 16px" hidden>
-  このレースは着順または払戻が確定しています。購入履歴の登録し忘れがないか確認の上、必要であれば引き続き記録できます。
-</div>
+<div id="purchase-modal" class="purchase-modal" hidden><div class="purchase-dialog purchase-dialog-modern" role="dialog" aria-modal="true"><div class="purchase-dialog-head"><div><p class="purchase-kicker">馬券購入</p><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 id="purchase-dialog-title" style="margin:0"></h2><span id="race-settled-badge" hidden style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;background:var(--win);color:#fff;white-space:nowrap">確定済</span></div></div><button id="close-purchase-modal" class="dialog-close">×</button></div>
 <div id="race-unconfirmed-block" class="buy-hint" style="margin:0 20px 16px;color:var(--hanko)" hidden>
   このレースは枠番・馬番が未確定のため、購入できません。枠番・馬番確定後(出走馬一覧PDFの再インポート等)に改めてお試しください。
 </div>
