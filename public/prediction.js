@@ -224,7 +224,9 @@ async function selectRace() {
   // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
   // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
   // 確定済みであることがひと目でわかるようにする。
-  buyBtn.href = `buy.html?race=${encodeURIComponent(selectedRace.id)}`;
+  // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、購入画面へのリンク先を
+  // index.html に更新する(docs/DESIGN.md「トップページ(/)の表示について」参照)。
+  buyBtn.href = `index.html?race=${encodeURIComponent(selectedRace.id)}`;
   const settled = !!selectedRace.finish_order || !!(selectedRace.payouts && Object.keys(selectedRace.payouts).length > 0);
   // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定のレースが存在しうる。
   // 未確定の間は buy.js 側で購入自体をブロックするため、ここでもボタンの見た目を変える

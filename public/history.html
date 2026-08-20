@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>購入履歴 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css?v=2" />
+</head>
+<body>
+
+<div id="login-screen" class="screen" hidden>
+  <div class="ticket">
+    <p class="ticket-eyebrow">MEMBERS ONLY</p>
+    <h1 class="ticket-title">馬券帳</h1>
+    <p class="ticket-sub">ユーザー名とパスワードを入力して入場してください</p>
+    <form id="login-form">
+      <input type="text" id="login-username" placeholder="ユーザー名" autocomplete="username" required />
+      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit" id="login-submit-btn">入場する</button>
+    </form>
+    <p id="login-error" class="error-text" hidden></p>
+    <p id="login-mode-hint" class="ticket-sub" style="font-size:.8em"></p>
+    <button type="button" id="login-mode-toggle" class="ghost-btn">初めての方はこちら(新規登録)</button>
+  </div>
+</div>
+
+<div id="app-screen" class="screen" hidden>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <h1 class="masthead-title">馬券帳</h1>
+      <nav class="masthead-nav"><a href="index.html" class="nav-link">馬券購入</a><a href="history.html" class="nav-link active">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link" data-admin-only hidden>レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav>
+    </div>
+    <div class="masthead-actions">
+      <span id="current-username" class="current-username"></span>
+      <input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />
+      <button id="csv-import-btn" class="ghost-btn">CSVインポート</button>
+      <button id="logout-btn" class="ghost-btn">退場</button>
+    </div>
+  </header>
+
+  <div class="summary-bar" id="summary-bar"></div>
+
+  <div id="history-calendar" class="race-calendar">
+    <div class="race-calendar-toolbar">
+      <button type="button" id="history-prev-month-btn" class="ghost-btn">‹</button>
+      <strong id="history-calendar-month-label"></strong>
+      <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
+      <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
+      <button type="button" id="history-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
+    </div>
+    <div id="history-calendar-grid" class="calendar-grid money-calendar"></div>
+  </div>
+
+  <p id="history-filter-label" class="history-filter-label" hidden></p>
+
+  <main id="race-list" class="race-list"></main>
+
+  <p id="history-empty-hint" class="empty-state">
+    カレンダーから日付を選ぶと、その日の購入履歴が表示されます。
+  </p>
+
+  <p id="empty-state" class="empty-state" hidden>
+    まだ購入履歴がありません。「馬券購入」ページから最初の1枚を記録しましょう。
+  </p>
+
+</div>
+
+<script src="utils.js"></script>
+<script src="bettypes.js"></script>
+<script src="payout.js"></script>
+<script src="auth.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

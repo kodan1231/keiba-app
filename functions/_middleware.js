@@ -6,27 +6,26 @@
 // context.data.username / context.data.isAdmin として後続のAPIハンドラへ引き渡す。
 // 管理者判定は環境変数ADMIN_USERNAMESで行う。
 //
-// 2026-08-16追加: このミドルウェアはサイト全体の全リクエスト(/api/*以外の静的
-// ファイル配信も含む)に対して呼び出されるため、ルートURL("/")へのアクセスを
-// 「馬券購入」画面(buy.html)へリダイレクトする処理もここに追加した。各画面
-// (buy.html/index.html/prediction.html/stats.html/races.html/admin.html)は
-// それぞれ独立してログイン画面を内包しており、ページ間の自動遷移は行わない設計の
-// ため、「ログイン後の初期画面」は実質的に「ルートURLにアクセスした際にどの
-// ファイルが表示されるか」で決まる。詳細はdocs/DESIGN.md「画面仕様」内
-// 「ルートURLのリダイレクト」参照。
+// 2026-08-16追加→同日中に撤回: 以前このミドルウェアには、ルートURL("/")への
+// アクセスを"/buy.html"へ302リダイレクトする処理があった(「ログイン後の初期画面を
+// 馬券購入にしたい」という要望への対応)。しかしCloudflare Pagesには
+// 「*.html付きURLへのアクセスを拡張子なしURLへ自動的に308リダイレクトする」という
+// 別の標準挙動があり、この2つが衝突して意図しないリダイレクトの連鎖
+// (/index.html → / → /buy.html → /buy)が発生し、「馬券履歴」ナビリンクを
+// クリックしても馬券購入画面に遷移してしまう不具合が生じていた。
+//
+// この問題を回避するため、ミドルウェアによるHTTPリダイレクトは廃止し、代わりに
+// ファイル名を実際の画面の役割に合わせてリネームする方式に変更した
+// (public/buy.html → public/index.html、旧public/index.html(購入履歴) →
+// public/history.html)。これにより、サイトのルートURL("/")へのアクセスには
+// Cloudflare Pagesの標準挙動(「/」には index.html を返す)がそのまま働き、
+// 追加のリダイレクト処理は一切不要になった。詳細はdocs/DESIGN.md
+// 「トップページ(/)の表示について」参照。
 import { verifySessionToken, isAdminUsername } from "./api/_shared.js";
 
 export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
-
-  // ルートURL("/")へのアクセスは馬券購入画面へリダイレクトする。
-  // ログイン前後を問わず常にリダイレクトし(buy.html自身がログイン画面の
-  // 出し分けを行うため)、/以外のパス(/index.html等への直接アクセス)は
-  // 対象外とする。
-  if (url.pathname === "/") {
-    return Response.redirect(new URL("/buy.html", url), 302);
-  }
 
   const isApi = url.pathname.startsWith("/api/");
   const isPublicAuthRoute =

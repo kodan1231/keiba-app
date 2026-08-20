@@ -1,78 +1,33 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>購入履歴 - 馬券帳</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=3" />
-</head>
-<body>
-
-<div id="login-screen" class="screen" hidden>
-  <div class="ticket">
-    <p class="ticket-eyebrow">MEMBERS ONLY</p>
-    <h1 class="ticket-title">馬券帳</h1>
-    <p class="ticket-sub">ユーザー名とパスワードを入力して入場してください</p>
-    <form id="login-form">
-      <input type="text" id="login-username" placeholder="ユーザー名" autocomplete="username" required />
-      <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password" required />
-      <button type="submit" id="login-submit-btn">入場する</button>
-    </form>
-    <p id="login-error" class="error-text" hidden></p>
-    <p id="login-mode-hint" class="ticket-sub" style="font-size:.8em"></p>
-    <button type="button" id="login-mode-toggle" class="ghost-btn">初めての方はこちら(新規登録)</button>
+<html lang="ja"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>馬券購入 - 馬券帳</title><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet"/><link rel="stylesheet" href="style.css?v=2"/></head><body>
+<div id="login-screen" class="screen" hidden><div class="ticket"><p class="ticket-eyebrow">MEMBERS ONLY</p><h1 class="ticket-title">馬券帳</h1><p class="ticket-sub">ユーザー名とパスワードを入力して入場してください</p><form id="login-form"><input type="text" id="login-username" placeholder="ユーザー名" autocomplete="username" required/><input type="password" id="login-password" placeholder="パスワード" required/><button type="submit" id="login-submit-btn">入場する</button></form><p id="login-error" class="error-text" hidden></p><p id="login-mode-hint" class="ticket-sub" style="font-size:.8em"></p><button type="button" id="login-mode-toggle" class="ghost-btn">初めての方はこちら(新規登録)</button></div></div>
+<div id="app-screen" class="screen" hidden><header class="masthead"><div class="masthead-inner"><h1 class="masthead-title">馬券帳</h1><nav class="masthead-nav"><a href="index.html" class="nav-link active">馬券購入</a><a href="history.html" class="nav-link">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link" data-admin-only hidden>レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav></div><div class="masthead-actions"><span id="current-username" class="current-username"></span><button id="logout-btn" class="ghost-btn">退場</button></div></header>
+<main class="buy-main"><section class="buy-step"><h2 class="buy-step-title">開催日・レースを選ぶ</h2><p class="buy-hint">レースを選択すると予想ページを開きます。予想を固めた後、「このレースの馬券を購入」から購入内容を作成します。</p><div class="race-calendar">
+  <div class="race-calendar-toolbar">
+    <button type="button" id="prev-month-btn" class="ghost-btn">‹</button>
+    <strong id="calendar-month-label"></strong>
+    <button type="button" id="next-month-btn" class="ghost-btn">›</button>
+    <button type="button" id="today-btn" class="ghost-btn">今日</button>
   </div>
+  <div id="calendar-grid" class="calendar-grid"></div>
+  <input type="hidden" id="date-input" />
 </div>
-
-<div id="app-screen" class="screen" hidden>
-
-  <header class="masthead">
-    <div class="masthead-inner">
-      <h1 class="masthead-title">馬券帳</h1>
-      <nav class="masthead-nav"><a href="buy.html" class="nav-link">馬券購入</a><a href="index.html" class="nav-link active">馬券履歴</a><a href="stats.html" class="nav-link">集計</a><a href="races.html" class="nav-link" data-admin-only hidden>レース管理</a><a href="admin.html" class="nav-link" data-admin-only hidden>管理</a></nav>
-    </div>
-    <div class="masthead-actions">
-      <span id="current-username" class="current-username"></span>
-      <input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />
-      <button id="csv-import-btn" class="ghost-btn">CSVインポート</button>
-      <button id="logout-btn" class="ghost-btn">退場</button>
-    </div>
-  </header>
-
-  <div class="summary-bar" id="summary-bar"></div>
-
-  <div id="history-calendar" class="race-calendar">
-    <div class="race-calendar-toolbar">
-      <button type="button" id="history-prev-month-btn" class="ghost-btn">‹</button>
-      <strong id="history-calendar-month-label"></strong>
-      <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
-      <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
-      <button type="button" id="history-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
-    </div>
-    <div id="history-calendar-grid" class="calendar-grid money-calendar"></div>
-  </div>
-
-  <p id="history-filter-label" class="history-filter-label" hidden></p>
-
-  <main id="race-list" class="race-list"></main>
-
-  <p id="history-empty-hint" class="empty-state">
-    カレンダーから日付を選ぶと、その日の購入履歴が表示されます。
-  </p>
-
-  <p id="empty-state" class="empty-state" hidden>
-    まだ購入履歴がありません。「馬券購入」ページから最初の1枚を記録しましょう。
-  </p>
-
+<!-- 競馬場タブ(モバイル専用。PCではCSSで非表示にし、既存の横並びカラム表示のまま)。
+     2026-08-16追加: モバイルで全競馬場が横並びに詰め込まれ見づらかったため、
+     競馬場単位でタブ切り替えできるようにした(docs/DESIGN.md参照)。 -->
+<div id="race-track-tabs" class="race-track-tabs"></div>
+<div id="race-grid" class="race-grid"></div><p id="no-race-hint" class="buy-hint" hidden>この日に登録済みのレースがありません。</p></section>
+<div id="purchase-modal" class="purchase-modal" hidden><div class="purchase-dialog purchase-dialog-modern" role="dialog" aria-modal="true"><div class="purchase-dialog-head"><div><p class="purchase-kicker">馬券購入</p><h2 id="purchase-dialog-title"></h2></div><button id="close-purchase-modal" class="dialog-close">×</button></div><div id="purchase-race-summary" class="purchase-race-summary"></div>
+<div id="race-settled-block" class="buy-hint" style="margin:0 20px 16px" hidden>
+  このレースは着順または払戻が確定しています。購入履歴の登録し忘れがないか確認の上、必要であれば引き続き記録できます。
 </div>
-
-<script src="utils.js"></script>
-<script src="bettypes.js"></script>
-<script src="payout.js"></script>
-<script src="auth.js"></script>
-<script src="app.js"></script>
-</body>
-</html>
+<div id="race-unconfirmed-block" class="buy-hint" style="margin:0 20px 16px;color:var(--hanko)" hidden>
+  このレースは枠番・馬番が未確定のため、購入できません。枠番・馬番確定後(出走馬一覧PDFの再インポート等)に改めてお試しください。
+</div>
+<div class="purchase-dialog-body">
+<section id="bet-type-section" class="purchase-panel"><div id="bet-type-buttons" class="bet-type-tabs"></div></section>
+<section id="method-section" class="purchase-panel" hidden><div id="method-buttons" class="choice-grid"></div><div id="method-options" class="method-options"></div></section>
+<section id="picker-section" class="purchase-panel" hidden><h3 id="picker-dialog-title">馬を選択</h3><div id="picker-area"></div></section>
+<section id="preview-section" class="purchase-panel" hidden><h3>買い目・金額</h3><div class="amount-toolbar"><label>1点あたり<input type="number" id="amount-input" min="100" step="100" value="100"/></label><button id="apply-amount-btn" class="ghost-btn">全点に反映</button></div><div id="preview-area" class="preview-area"></div><button id="submit-btn" class="stamp-btn purchase-submit" disabled>この内容で購入する</button><p id="submit-message" class="submit-message" hidden></p></section>
+</div></div></div></main></div>
+<script src="utils.js"></script><script src="bettypes.js"></script><script src="combos.js"></script><script src="auth.js"></script><script src="buy.js"></script></body></html>

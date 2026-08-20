@@ -393,7 +393,9 @@ function hideDownstream() {
 function closePurchaseModal() {
   modal.hidden = true;
   document.body.classList.remove("modal-open");
-  history.replaceState(null, "", "buy.html");
+  // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、モーダルを閉じた際の
+  // URL復帰先も index.html に合わせる(docs/DESIGN.md「トップページ(/)の表示について」参照)。
+  history.replaceState(null, "", "index.html");
 }
 document.getElementById("close-purchase-modal").onclick = closePurchaseModal;
 // ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
