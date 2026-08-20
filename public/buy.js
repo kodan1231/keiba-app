@@ -44,7 +44,6 @@ const todayBtn = document.getElementById("today-btn");
 const noRaceHint = document.getElementById("no-race-hint");
 const modal = document.getElementById("purchase-modal");
 const titleEl = document.getElementById("purchase-dialog-title");
-const summaryEl = document.getElementById("purchase-race-summary");
 const betButtons = document.getElementById("bet-type-buttons");
 const betTypeSection = document.getElementById("bet-type-section");
 const raceSettledBlock = document.getElementById("race-settled-block");
@@ -334,12 +333,11 @@ async function openPurchase(race) {
 
   const unconfirmed = hasUnconfirmedEntries(race);
 
+  // 2026-08-19: ダイアログ見出し(titleEl)と、その下のサマリー行(旧summaryEl)が
+  // 全く同じレース情報(競馬場・R番号・レース名)を重複表示していたため、
+  // 見出し側のみ残し、冗長だったサマリー行の描画は廃止した(HTML側の
+  // #purchase-race-summary要素自体も削除済み)。
   titleEl.textContent = `${race.track} ${race.race_number}R${race.race_name ? ` ${race.race_name}` : ""}`;
-  summaryEl.innerHTML = `
-    <strong>${escapeHtml(race.track)}</strong>
-    <span>${race.race_number}R</span>
-    ${race.race_name ? `<span>${escapeHtml(race.race_name)}</span>` : ""}
-  `;
   modal.hidden = false;
   document.body.classList.add("modal-open");
 
