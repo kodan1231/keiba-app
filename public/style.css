@@ -1200,6 +1200,13 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
   white-space: nowrap;
 }
 
+.prediction-help {
+  padding: 12px 18px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
 .prediction-tickets {
   padding: 14px 18px;
   border-bottom: 1px solid var(--rule);
@@ -1335,6 +1342,11 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 }
 
 @media (max-width: 600px) {
+  /* クラスタJ-2: モバイルでは操作説明を省略して馬一覧を優先する */
+  .prediction-help {
+    display: none;
+  }
+
   .prediction-main {
     padding: 18px 12px 60px;
   }
@@ -1837,14 +1849,40 @@ body.modal-open { overflow: hidden; }
 .control-label { font-size:0; }
 .control-label input { font-size:initial; }
 
-/* 2026-08-20: 予想登録画面の馬メモ有無の表示方法を見直した。以前は行の背景色
-   (has-horse-memo)・馬名横の「メモ」バッジ・馬名下のメモ抜粋の3つを併用して
-   いたが、メモ抜粋行があるためメモ登録済みの馬だけ行の高さが変わってしまう
-   ことに加え、正規化していない馬名でhorseNotesを参照するバグにより実際には
-   ほとんど表示されていなかった(docs/DESIGN.md参照)。バグ修正とあわせて、
-   開閉トグル(＋/－)の隣に表示する「▼」マーク(.note-toggle-tail内。購入画面
-   のレース一覧で使っている.memo-markを流用)のみに一本化し、背景色・バッジ・
-   抜粋表示は廃止した。 */
+/* クラスタJ-4: 馬メモ登録済みの馬行を、購入済みレースと同じwin系の薄い緑で表示。 */
+.horse-note-card.has-horse-memo {
+  background: rgba(47, 122, 61, 0.14);
+}
+.horse-note-card.has-horse-memo:hover {
+  background: rgba(47, 122, 61, 0.22);
+}
+
+/* 予想画面:既存メモを馬名横に表示 */
+.horse-note-preview {
+  display:block;
+  color:var(--ink-soft);
+  font-size:11px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:260px;
+}
+
+/* 予想画面: メモの有無を、アコーディオン(この馬のメモ欄)を開かなくても一目で
+   分かるようにするバッジ。hankoの赤アクセントを使い、他の状態バッジ
+   (.import-source-badge等)と同程度の視認性を持たせる。 */
+.horse-note-badge {
+  display:inline-block;
+  flex:0 0 auto;
+  font-size:10px;
+  font-weight:700;
+  line-height:1.6;
+  color:var(--hanko);
+  border:1px solid var(--hanko);
+  border-radius:999px;
+  padding:0 6px;
+  white-space:nowrap;
+}
 
 /* 単勝・複勝は複数選択のチェックボックス */
 .single-check { transform:scale(1.05); }
@@ -1877,6 +1915,7 @@ body.modal-open { overflow: hidden; }
      馬番・馬名が1列ずつズレる事故を防ぐため)。 */
   .bet-horse-mark { grid-column:auto; grid-row:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
+  .horse-note-preview { max-width:150px; }
   /* CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
   #csv-import-btn { display:none; }
 }
@@ -2102,5 +2141,24 @@ body.modal-open { overflow: hidden; }
   }
   #race-grid .race-track-column.tab-active {
     display: block;
+  }
+}
+
+/* ---------- 2026-08-20: カレンダーツールバー(前月・次月・今日ボタン)の
+   モバイル縮小 ----------
+   購入画面(index.html)・購入履歴画面(history.html)・レース管理画面(races.html)の
+   カレンダーはいずれも共通クラス(.race-calendar-toolbar)を使っているため、
+   ここでの対応は3画面すべてのカレンダーに一律で適用される(ユーザー承認済み)。
+   700px以下では、‹・›・今日ボタン(.ghost-btn)のpadding/font-sizeを縮小し、
+   見た目のサイズをおおよそ半分程度にする。他画面で使われる.ghost-btn全般
+   (CSVインポートボタン・退場ボタン等)には影響しないよう、
+   .race-calendar-toolbar配下のみにスコープしている。 */
+@media (max-width: 700px) {
+  .race-calendar-toolbar {
+    gap: 6px;
+  }
+  .race-calendar-toolbar .ghost-btn {
+    padding: 5px 10px;
+    font-size: 12px;
   }
 }
