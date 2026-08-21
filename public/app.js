@@ -14,7 +14,6 @@ const historyCalendarGrid = document.getElementById("history-calendar-grid");
 const historyCalendarMonthLabel = document.getElementById("history-calendar-month-label");
 const historyFilterLabel = document.getElementById("history-filter-label");
 const historyEmptyHint = document.getElementById("history-empty-hint");
-const historyClearFilterBtn = document.getElementById("history-clear-filter-btn");
 
 document.getElementById("history-prev-month-btn")?.addEventListener("click", () => {
   historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() - 1);
@@ -31,11 +30,10 @@ document.getElementById("history-today-btn")?.addEventListener("click", () => {
   renderHistoryCalendar();
   applyHistoryFilter();
 });
-historyClearFilterBtn?.addEventListener("click", () => {
-  selectedHistoryDate = null;
-  renderHistoryCalendar();
-  applyHistoryFilter();
-});
+// 2026-08-20: 「選択解除」ボタンは、選択中の日付を再クリックすると同じ挙動になり
+// 機能が重複していたため廃止した。フィルタ解除は renderHistoryCalendar() 内の
+// カレンダー日付クリックハンドラ(同じ日付を再クリックするとselectedHistoryDateを
+// nullに戻す処理)がそのまま担う。
 
 // 日付ごとの購入金額・払戻金額・収支を集計する。
 // 収支の考え方はREADME/集計ページと同じく「未確定分も購入時点で支払い済みとして計上」する。
@@ -92,7 +90,6 @@ function renderHistoryCalendar() {
 // サマリーの集計は常に全期間(全購入)を対象とする(選択日だけの集計ではない)。
 function applyHistoryFilter() {
   renderSummary(allItems);
-  historyClearFilterBtn.hidden = !selectedHistoryDate;
 
   if (selectedHistoryDate) {
     historyFilterLabel.hidden = false;
