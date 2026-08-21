@@ -1148,8 +1148,10 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .prediction-race-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px;
+  gap: 8px;
+  /* 2026-08-20: 一覧の行の高さ削減とあわせて、ページ上部(日付・競馬場・
+     レース番号等のヘッダー)の余白も同程度(4px)詰めた(旧18px→14px)。 */
+  padding: 14px 18px;
   border-bottom: 2px solid var(--rule-strong);
   background: repeating-linear-gradient(135deg, rgba(28,27,24,0.03) 0 8px, transparent 8px 16px);
 }
@@ -1196,13 +1198,6 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .prediction-race-title .stamp-btn {
   margin-left: auto;
   white-space: nowrap;
-}
-
-.prediction-help {
-  padding: 12px 18px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  border-bottom: 1px solid var(--rule);
 }
 
 .prediction-tickets {
@@ -1340,11 +1335,6 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 }
 
 @media (max-width: 600px) {
-  /* クラスタJ-2: モバイルでは操作説明を省略して馬一覧を優先する */
-  .prediction-help {
-    display: none;
-  }
-
   .prediction-main {
     padding: 18px 12px 60px;
   }
@@ -1580,7 +1570,13 @@ body.modal-open { overflow: hidden; }
 
 /* --- レース選択カラム / 予想画面の馬メモ行 / 購入チケット行 --- */
 .race-columns{display:flex;gap:16px;overflow-x:auto;align-items:flex-start;padding:8px 2px 20px}.race-track-column{min-width:240px;flex:1;background:var(--paper,#fff);border:1px solid rgba(0,0,0,.12);border-radius:12px;overflow:hidden}.race-track-column h3{margin:0;padding:12px 14px;background:rgba(0,0,0,.04);font-size:1.05rem}.race-column-row{width:100%;min-height:54px;border:0;border-top:1px solid rgba(0,0,0,.08);background:transparent;display:grid;grid-template-columns:48px 1fr;gap:8px;text-align:left;padding:8px 12px;cursor:pointer}.race-column-row:hover{background:rgba(0,0,0,.04)}.race-column-row b{font-family:"Roboto Mono",monospace}.race-column-row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.race-column-row.empty-race,.race-column-row.no-race{color:#999}.race-column-row.has-entries{font-weight:600}
-.horse-note-card{display:block;padding:0;border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden;background:#fff}.horse-note-toggle{width:100%;display:grid;grid-template-columns:34px 38px minmax(130px,1fr) minmax(80px,1.5fr) 30px;align-items:center;gap:8px;padding:12px;border:0;background:transparent;text-align:left;cursor:pointer}.horse-note-toggle:hover{background:rgba(0,0,0,.035)}.current-horse-note{font-size:.82rem;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.horse-note-editor{padding:12px;border-top:1px solid rgba(0,0,0,.08);background:rgba(0,0,0,.02)}.horse-note-editor textarea{width:100%;box-sizing:border-box;margin-top:8px}.horse-note-actions{display:flex;gap:10px;align-items:center;margin-top:8px}.horse-note-status{font-size:.85rem;color:#2c6e49}.prediction-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.prediction-actions a{text-decoration:none}.prediction-mark-btn.selected{font-weight:800;transform:translateY(-1px);box-shadow:0 0 0 2px currentColor inset}
+.horse-note-card{display:block;padding:0;border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden;background:#fff}
+/* 2026-08-20: 行の高さをやや詰めるためpaddingを12px→9pxに削減。また、開閉
+   トグル(＋/－)の隣にメモ有無を示す「▼」マーク(.note-toggle-tail内)を
+   並べて表示できるよう、末尾列の幅を30px→42pxに広げた。 */
+.horse-note-toggle{width:100%;display:grid;grid-template-columns:34px 38px minmax(130px,1fr) minmax(80px,1.5fr) 42px;align-items:center;gap:8px;padding:9px 12px;border:0;background:transparent;text-align:left;cursor:pointer}.horse-note-toggle:hover{background:rgba(0,0,0,.035)}
+.note-toggle-tail{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px}
+.note-toggle-tail .memo-mark{margin-left:0}.current-horse-note{font-size:.82rem;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.horse-note-editor{padding:12px;border-top:1px solid rgba(0,0,0,.08);background:rgba(0,0,0,.02)}.horse-note-editor textarea{width:100%;box-sizing:border-box;margin-top:8px}.horse-note-actions{display:flex;gap:10px;align-items:center;margin-top:8px}.horse-note-status{font-size:.85rem;color:#2c6e49}.prediction-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.prediction-actions a{text-decoration:none}.prediction-mark-btn.selected{font-weight:800;transform:translateY(-1px);box-shadow:0 0 0 2px currentColor inset}
 .purchase-dialog-modern{max-width:980px}.purchase-dialog-modern .purchase-dialog-body{display:flex;flex-direction:column;gap:14px}.method-options{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}.inline-options,.toggle-option{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,.035)}.inline-options label,.toggle-option{cursor:pointer}.bet-horse-table-head{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;padding:8px 10px;font-size:.8rem;color:#777;border-bottom:1px solid rgba(0,0,0,.12)}.bet-horse-list{border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden}.bet-horse-row{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;align-items:center;padding:10px;border-top:1px solid rgba(0,0,0,.07)}.bet-horse-row:first-child{border-top:0}.bet-horse-control{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.control-label{display:inline-flex;gap:5px;align-items:center;font-size:.86rem}.radio-inline,.check-inline{display:inline-flex;gap:4px;align-items:center}.preview-combo-row{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}.preview-combo-amount{width:100%;box-sizing:border-box}.purchase-dialog-modern .purchase-panel{margin:0}.purchase-dialog-modern .purchase-panel[hidden]{display:none}.date-picker-label{display:flex;flex-direction:column;gap:4px;max-width:220px}.date-picker-label input{padding:8px}.buy-main .buy-step{margin-bottom:20px}
 @media(max-width:700px){.race-track-column{min-width:220px}.horse-note-toggle{grid-template-columns:30px 32px minmax(100px,1fr) 28px}.current-horse-note{display:none}.bet-horse-table-head{display:none}.bet-horse-row{grid-template-columns:30px 38px minmax(100px,1fr);gap:6px}.bet-horse-jockey{display:none}.bet-horse-control{grid-column:1/-1;padding-left:68px}.preview-combo-row{grid-template-columns:1fr 90px}.purchase-dialog-modern{width:calc(100vw - 16px);max-height:92vh;overflow:auto}}
 
@@ -1841,40 +1837,14 @@ body.modal-open { overflow: hidden; }
 .control-label { font-size:0; }
 .control-label input { font-size:initial; }
 
-/* クラスタJ-4: 馬メモ登録済みの馬行を、購入済みレースと同じwin系の薄い緑で表示。 */
-.horse-note-card.has-horse-memo {
-  background: rgba(47, 122, 61, 0.14);
-}
-.horse-note-card.has-horse-memo:hover {
-  background: rgba(47, 122, 61, 0.22);
-}
-
-/* 予想画面:既存メモを馬名横に表示 */
-.horse-note-preview {
-  display:block;
-  color:var(--ink-soft);
-  font-size:11px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width:260px;
-}
-
-/* 予想画面: メモの有無を、アコーディオン(この馬のメモ欄)を開かなくても一目で
-   分かるようにするバッジ。hankoの赤アクセントを使い、他の状態バッジ
-   (.import-source-badge等)と同程度の視認性を持たせる。 */
-.horse-note-badge {
-  display:inline-block;
-  flex:0 0 auto;
-  font-size:10px;
-  font-weight:700;
-  line-height:1.6;
-  color:var(--hanko);
-  border:1px solid var(--hanko);
-  border-radius:999px;
-  padding:0 6px;
-  white-space:nowrap;
-}
+/* 2026-08-20: 予想登録画面の馬メモ有無の表示方法を見直した。以前は行の背景色
+   (has-horse-memo)・馬名横の「メモ」バッジ・馬名下のメモ抜粋の3つを併用して
+   いたが、メモ抜粋行があるためメモ登録済みの馬だけ行の高さが変わってしまう
+   ことに加え、正規化していない馬名でhorseNotesを参照するバグにより実際には
+   ほとんど表示されていなかった(docs/DESIGN.md参照)。バグ修正とあわせて、
+   開閉トグル(＋/－)の隣に表示する「▼」マーク(.note-toggle-tail内。購入画面
+   のレース一覧で使っている.memo-markを流用)のみに一本化し、背景色・バッジ・
+   抜粋表示は廃止した。 */
 
 /* 単勝・複勝は複数選択のチェックボックス */
 .single-check { transform:scale(1.05); }
@@ -1907,7 +1877,6 @@ body.modal-open { overflow: hidden; }
      馬番・馬名が1列ずつズレる事故を防ぐため)。 */
   .bet-horse-mark { grid-column:auto; grid-row:auto; }
   .bet-horse-control { grid-column:auto; padding-left:0; }
-  .horse-note-preview { max-width:150px; }
   /* CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
   #csv-import-btn { display:none; }
 }
@@ -1954,9 +1923,11 @@ body.modal-open { overflow: hidden; }
      明示し、予想印を暗黙列へ押し出さない。これにより小型画面でも印セレクトが
      画面右端から見切れず、馬名～騎手～印の余白も必要最小限にする。 */
   .horse-note-toggle {
-    grid-template-columns:18px 22px minmax(0,1fr) 64px 24px;
+    /* 2026-08-20: 末尾列を24px→34pxに拡張し、▼マーク+開閉トグルが並んでも
+       見切れないようにした。paddingも他の幅と同様にやや詰めている。 */
+    grid-template-columns:18px 22px minmax(0,1fr) 64px 34px;
     gap:4px;
-    padding:10px 8px;
+    padding:7px 8px;
   }
   .prediction-horse-number {
     width:20px;

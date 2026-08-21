@@ -321,9 +321,13 @@ function renderHorses() {
   horsesEl.innerHTML = entries.map(e => {
     const hasNumber = e.horse_number !== null && e.horse_number !== undefined;
     const n = hasNumber ? Number(e.horse_number) : null;
-    const note = horseNotes[e.horse_name] || {};
+    // 2026-08-20修正: horseNotesのキーは登録時に空白正規化された馬名のため、
+    // 出走馬表側の馬名(e.horse_name)も正規化してから参照する。以前はここで
+    // 正規化しておらず、空白の入り方の違いで一致せず「メモありなのに何も
+    // 表示されない」不具合があった(docs/DESIGN.md参照)。
+    const note = horseNotes[normalizeHorseName(e.horse_name)] || {};
     return `
-      <article class="prediction-horse horse-note-card${note.memo ? " has-horse-memo" : ""}"
+      <article class="prediction-horse horse-note-card"
         data-horse-number="${n !== null ? n : ""}"
         data-horse-name="${escapeAttr(e.horse_name || "")}">
         <div class="horse-note-toggle" role="button" tabindex="0">
@@ -333,9 +337,7 @@ function renderHorses() {
             <span class="prediction-horse-name-line">
               <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
               ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
-              ${note.memo ? `<span class="horse-note-badge" title="この馬のメモがあります">メモ</span>` : ""}
             </span>
-            ${note.memo ? `<small class="horse-note-preview" title="${escapeAttr(note.memo)}">${escapeHtml(note.memo.length > 36 ? note.memo.slice(0,36) + "…" : note.memo)}</small>` : ""}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
             <select class="prediction-mark-select" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
@@ -343,7 +345,10 @@ function renderHorses() {
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
             </select>
           </span>
-          <span class="note-chevron">＋</span>
+          <span class="note-toggle-tail">
+            ${note.memo ? `<span class="memo-mark" title="この馬のメモがあります">▼</span>` : ""}
+            <span class="note-chevron">＋</span>
+          </span>
         </div>
         <div class="horse-note-editor" hidden>
           <label class="horse-memo-label">
