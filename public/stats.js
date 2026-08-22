@@ -81,10 +81,14 @@ function groupBy(items, keyFn) {
 // ---------- 表の列ソート ----------
 // 各テーブルの現在のソート状態(キー・方向)を保持する。列ヘッダーをクリックするたびに更新する。
 // key: "date"(レース別のみ)/"name"(競馬場別・騎手別)/"amount"/"payout"/"profit"/"rate"/"hitRate"
+//
+// 騎手別収支の初期ソートは「回収率(rate)の高い順」とする(以前は購入金額の多い順だったが、
+// 収支効率を優先して確認したいという要望に合わせて変更した)。回収率が未確定(null)の行は
+// compareValues() の仕様により、ソート方向によらず常に末尾に表示される。
 const sortState = {
   race: { key: "date", dir: "desc" },
   track: { key: "totalAmount", dir: "desc" },
-  jockey: { key: "totalAmount", dir: "desc" },
+  jockey: { key: "rate", dir: "desc" },
 };
 
 // ソート対象の行データ(再計算せず並べ替えだけで再描画できるようキャッシュしておく)
