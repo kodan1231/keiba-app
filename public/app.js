@@ -5,7 +5,14 @@ let expandedGroups = new Set();
 let expandedRaces = new Set();
 let races = [];
 let allItems = [];
-let selectedHistoryDate = null;
+// 2026-08-21: 画面を開いた直後から当日を選択済みの状態にする(必ずどこかの日付が
+// 選択されている状態を保つ方針に変更。同じ日付の再クリックによる選択解除は廃止した)。
+function todayDateKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+let selectedHistoryDate = todayDateKey();
 let historyCalendarMonth = new Date();
 historyCalendarMonth.setDate(1);
 
@@ -13,7 +20,6 @@ const historyCalendar = document.getElementById("history-calendar");
 const historyCalendarGrid = document.getElementById("history-calendar-grid");
 const historyCalendarMonthLabel = document.getElementById("history-calendar-month-label");
 const historyFilterLabel = document.getElementById("history-filter-label");
-const historyEmptyHint = document.getElementById("history-empty-hint");
 
 document.getElementById("history-prev-month-btn")?.addEventListener("click", () => {
   historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() - 1);
@@ -26,7 +32,7 @@ document.getElementById("history-next-month-btn")?.addEventListener("click", () 
 document.getElementById("history-today-btn")?.addEventListener("click", () => {
   const now = new Date();
   historyCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  selectedHistoryDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  selectedHistoryDate = todayDateKey();
   renderHistoryCalendar();
   applyHistoryFilter();
 });
@@ -78,30 +84,24 @@ function renderHistoryCalendar() {
   historyCalendarGrid.innerHTML = html;
   historyCalendarGrid.querySelectorAll("button[data-date]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      selectedHistoryDate = selectedHistoryDate === btn.dataset.date ? null : btn.dataset.date;
+      // 2026-08-21: 選択解除機能を廃止したため、クリックした日付を常に選択する
+      // (再クリックしても解除されない。必ずどこかの日付が選択された状態を保つ)。
+      selectedHistoryDate = btn.dataset.date;
       renderHistoryCalendar();
       applyHistoryFilter();
     });
   });
 }
 
-// 初期表示(日付未選択)ではサマリー(総購入・総払戻・収支・回収率)とカレンダーのみを表示し、
-// 個々の購入履歴はカレンダーで日付を選択したときだけ表示する。
-// サマリーの集計は常に全期間(全購入)を対象とする(選択日だけの集計ではない)。
+// 2026-08-21: 必ずどこかの日付が選択されている前提に変更したため、未選択時の分岐
+// (案内文表示等)は廃止した。サマリーも全期間ではなく選択中の日付の合計に変更する
+// (「集計」画面の総合成績とは別に、その日の収支だけを見たいという要望のため)。
 function applyHistoryFilter() {
-  renderSummary(allItems);
-
-  if (selectedHistoryDate) {
-    historyFilterLabel.hidden = false;
-    historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
-    historyEmptyHint.hidden = true;
-    renderList(allItems.filter((t) => t.race_date === selectedHistoryDate));
-  } else {
-    historyFilterLabel.hidden = true;
-    raceList.innerHTML = "";
-    emptyState.hidden = true;
-    historyEmptyHint.hidden = false;
-  }
+  const dayItems = allItems.filter((t) => t.race_date === selectedHistoryDate);
+  renderSummary(dayItems);
+  historyFilterLabel.hidden = false;
+  historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
+  renderList(dayItems);
 }
 
 async function loadTickets() {
