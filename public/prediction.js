@@ -464,6 +464,27 @@ function applyHorseNotes() {
     const note = horseNotes[normalizeHorseName(name)]?.memo || "";
     const textarea = card.querySelector(".horse-memo");
     if (textarea) textarea.value = note;
+
+    // 2026-08-24修正: 馬メモ(horseNotes)の取得はrenderHorses()より後に完了するため、
+    // renderHorses()内で組み立てる「▼」マークは常に「メモ未取得」の状態で描画されて
+    // しまい、実際にメモがある馬でも一覧上は▼マークが表示されない不具合があった。
+    // (メモ本文自体はこの関数でtextareaへ反映されていたため、行を開けば中身は見える
+    // が、一覧を見ただけではどの馬にメモがあるか分からない状態になっていた)
+    // メモ取得完了後のこのタイミングで、▼マークの追加/削除も行うようにする。
+    const tail = card.querySelector(".note-toggle-tail");
+    if (!tail) return;
+    let mark = tail.querySelector(".memo-mark");
+    if (note) {
+      if (!mark) {
+        mark = document.createElement("span");
+        mark.className = "memo-mark";
+        mark.title = "この馬のメモがあります";
+        mark.textContent = "▼";
+        tail.insertBefore(mark, tail.firstChild);
+      }
+    } else if (mark) {
+      mark.remove();
+    }
   });
 }
 
