@@ -51,7 +51,13 @@ function computeHitRate(tickets) {
   for (const raceTickets of byRace.values()) {
     const t0 = raceTickets[0];
     const hasTicketPayout = raceTickets.some((t) => t.payout !== null && t.payout !== undefined);
-    const raceResultKnown = hasRaceResult(t0?.race_finish_order) || hasRaceResult(t0?.race_payouts);
+    // race_payoutsはJOIN元(races.payouts)のJSON文字列そのままなので、判定前にパースする。
+    // 2026-08-23修正: payouts.refunds(取消・除外・中止馬の馬番/枠番の記録であり、
+    // 実際の払戻レートではない)のみが入っている場合に、着順未確定でも「結果確定済」と
+    // 誤って的中率の判定対象(分母)に含めてしまう不具合があった。実際の払戻レートが
+    // 1件以上あるかどうかで判定する共通関数 hasSettledPayoutRates()(public/utils.js)を
+    // 使うよう修正した。
+    const raceResultKnown = hasRaceResult(t0?.race_finish_order) || hasSettledPayoutRates(parsePayoutsJson(t0?.race_payouts));
     const judged = hasTicketPayout || raceResultKnown;
     if (!judged) continue;
     judgedRaces++;
@@ -61,11 +67,24 @@ function computeHitRate(tickets) {
   return { judgedRaces, hitRaces, rate };
 }
 
-// JSON文字列(TEXT列)として保存されたfinish_order/payoutsが実質的な値を持つか判定する。
+// JSON文字列(TEXT列)として保存されたfinish_orderが実質的な値を持つか判定する
+// (race_payoutsの判定は上記の通りhasSettledPayoutRates()に統一したため、
+// この関数はfinish_order専用として使う)。
 function hasRaceResult(value) {
   if (value === null || value === undefined || value === "") return false;
   if (value === "[]" || value === "{}") return false;
   return true;
+}
+
+// race_payouts(races.payoutsのJSON文字列)を安全にパースする。
+// 不正な値・空値の場合はnullを返し、呼び出し側のhasSettledPayoutRates()がfalseを返す。
+function parsePayoutsJson(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function groupBy(items, keyFn) {

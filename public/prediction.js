@@ -227,7 +227,12 @@ async function selectRace() {
   // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、購入画面へのリンク先を
   // index.html に更新する(docs/DESIGN.md「トップページ(/)の表示について」参照)。
   buyBtn.href = `index.html?race=${encodeURIComponent(selectedRace.id)}`;
-  const settled = !!selectedRace.finish_order || !!(selectedRace.payouts && Object.keys(selectedRace.payouts).length > 0);
+  // 2026-08-23修正: selectedRace.payoutsに「返還」情報(payouts.refunds。取消・除外・
+  // 中止馬の馬番/枠番の記録であり、実際の払戻レートではない)のみが入っている場合に、
+  // 誤って「結果確定済」と判定されてしまう不具合があった。実際の払戻レート(式別ごとの
+  // データ)が1件以上あるかどうかで判定する共通関数 hasSettledPayoutRates() を使う
+  // よう修正した(public/utils.js参照)。
+  const settled = !!selectedRace.finish_order || hasSettledPayoutRates(selectedRace.payouts);
   // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定のレースが存在しうる。
   // 未確定の間は buy.js 側で購入自体をブロックするため、ここでもボタンの見た目を変える
   // (クリック自体はできる。buy.js側の案内バナーで説明する)。

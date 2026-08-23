@@ -25,6 +25,11 @@
 「カレンダー」と「サマリー」の表示順を入れ替え、常時表示されなくなっていた案内文
 (「カレンダーから日付を選ぶと〜」)を削除。集計画面の騎手別収支の初期ソートを
 回収率の高い順に変更し、按分に関する説明文を削除。詳細は下記各節参照)
+2026-08-23: 「確定済」バッジ・的中率集計が、返還情報(payouts.refunds)のみで
+実際の払戻レートが無いレースを誤って「確定済」と判定してしまうバグを修正。
+共有ユーティリティ`hasSettledPayoutRates()`を新設し、購入画面・予想登録画面・
+集計画面の3箇所で統一的に判定するようにした。詳細は下記「払戻確定バッジ・的中率集計の
+判定」参照)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
@@ -1189,6 +1194,48 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 (`entries-import.js`)も同様の考え方で、`race_id`をキーに全ユーザー分の
 `imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を適用している
 (user_idで絞り込まない)。
+
+## 払戻確定バッジ・的中率集計の判定(2026-08-23修正)
+
+**症状**: 購入画面(`index.html`)のレース見出し横「確定済」バッジ、予想登録画面
+(`prediction.html`)の「結果確定済(購入する)」ボタン表示、集計画面(`stats.html`)の
+的中率集計(`computeHitRate`)のいずれも、着順(`finish_order`)・払戻レート
+(`payouts`の式別データ)がどちらも未確定なのに「確定済」と誤判定されるケースがあった。
+
+**原因**: `races.payouts`は式別ごとの払戻レート(`{tan:[...], fuku:[...], ...}`)に加えて、
+JRAレース結果PDFインポートが取消・除外・中止馬を検出した場合に`payouts.refunds`
+(返還対象の馬番・枠番の記録であり、払戻レートそのものではない)を保持することがある
+(`jraResultParseRefund()`、`public/jra-result-pdf.js`)。以前の判定は
+`Object.keys(payouts).length > 0`という「キーが1つでもあれば確定済」という単純な
+チェックだったため、`refunds`キーだけが入っている(＝取消・除外・中止馬がいるが、
+実際の払戻レートはまだ1件も登録されていない)状態でも「確定済」と誤判定されていた。
+
+**修正内容**: `public/utils.js`に共有ユーティリティ`hasSettledPayoutRates(payouts)`を
+新設した。`refunds`キーを判定対象から除外し、他の式別キーに実際のレート配列
+(要素数1以上)が存在するかどうかだけを見る。
+
+```js
+function hasSettledPayoutRates(payouts) {
+  if (!payouts || typeof payouts !== "object") return false;
+  return Object.keys(payouts).some(
+    (k) => k !== "refunds" && Array.isArray(payouts[k]) && payouts[k].length > 0
+  );
+}
+```
+
+以下3箇所を、この共通関数を使うように統一した(いずれもDBスキーマ・APIレスポンス形式は
+変更していない。クライアント側の判定ロジックのみの修正):
+
+- `public/buy.js`(`openPurchase()`。購入モーダルの「確定済」バッジ)
+- `public/prediction.js`(`selectRace()`。「このレースの馬券を購入」ボタンの
+  「結果確定済(購入する)」表示切り替え)
+- `public/stats.js`(`computeHitRate()`。的中率集計の判定対象(分母)への算入判定。
+  `race_payouts`はAPIレスポンス上はJSON文字列のため、新設した`parsePayoutsJson()`で
+  パースしてから`hasSettledPayoutRates()`に渡す)
+
+**影響しないもの**: サーバー側の払戻確定処理(`recomputeTicketPayoutsForRace()`)・
+着順(`finish_order`)の判定は今回変更していない。`finish_order`は元々「空配列が
+保存されることはない」ため、この不具合の対象外だった。
 
 ## ロック仕様
 

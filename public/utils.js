@@ -64,6 +64,31 @@ function formatCourseText(courseType, distance) {
 }
 
 /**
+ * races.payouts に、実際の払戻レート(式別ごとの的中組み合わせ・レートのデータ)が
+ * 1件以上含まれているかどうかを判定する共通関数(2026-08-23追加)。
+ *
+ * races.payouts は式別ごとの払戻レート({tan:[...], fuku:[...], ...})に加えて、
+ * JRAレース結果PDFインポートが取消・除外・中止馬を検出した際に
+ * `payouts.refunds`(返還対象の馬番・枠番の記録。払戻レートそのものではない)を
+ * 保持することがある。以前は `Object.keys(payouts).length > 0` によって
+ * 「確定済」を判定していたため、返還対象馬がいるだけで実際の払戻レートが
+ * 1件も登録されていないレースでも「確定済」と誤判定される不具合があった
+ * (docs/DESIGN.md「払戻確定バッジの判定」参照)。
+ *
+ * この関数は refunds キーを判定対象から除外し、他の式別キーに実際のレート配列
+ * (要素数1以上)があるかどうかだけを見る。
+ *
+ * @param {object|null} payouts - races.payouts (パース済みオブジェクト。null/undefined可)
+ * @returns {boolean} 実際の払戻レートが1件以上あればtrue
+ */
+function hasSettledPayoutRates(payouts) {
+  if (!payouts || typeof payouts !== "object") return false;
+  return Object.keys(payouts).some(
+    (k) => k !== "refunds" && Array.isArray(payouts[k]) && payouts[k].length > 0
+  );
+}
+
+/**
  * モーダル/ダイアログ共通: ESCキー押下時に「キャンセル」ボタンと同じ扱いで
  * (保存せず)閉じるようにする(docs/BACKLOG.md クラスタK対応・2026-08-12)。
  *

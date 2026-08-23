@@ -366,7 +366,12 @@ async function openPurchase(race) {
   // 購入自体は引き続きできるようにする。確定済みであることが分かるよう、
   // 2026-08-19: 以前は案内バナーで表示していたが、レース名見出しの横に
   // 「確定済」バッジを表示する方式に変更した(購入UIはブロックしない)。
-  const settled = !!race.finish_order || !!(race.payouts && Object.keys(race.payouts).length > 0);
+  // 2026-08-23修正: race.payoutsに「返還」情報(payouts.refunds。取消・除外・中止馬の
+  // 馬番/枠番の記録であり、実際の払戻レートではない)のみが入っている場合に、
+  // 誤って「確定済」と判定されてしまう不具合があった。実際の払戻レート(式別ごとの
+  // データ)が1件以上あるかどうかで判定する共通関数 hasSettledPayoutRates() を使う
+  // よう修正した(public/utils.js参照)。
+  const settled = !!race.finish_order || hasSettledPayoutRates(race.payouts);
   raceSettledBadge.hidden = !settled;
   betTypeSection.hidden = false;
 
