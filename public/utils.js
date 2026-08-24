@@ -89,6 +89,24 @@ function hasSettledPayoutRates(payouts) {
 }
 
 /**
+ * 「今日」の日付をローカルタイムゾーン基準でYYYY-MM-DD形式の文字列として返す
+ * 共通関数(2026-08-24追加)。
+ *
+ * 以前は public/app.js(馬券履歴画面)だけがこのロジック(getFullYear/getMonth/getDate
+ * によるローカル基準の組み立て)を持っており、public/buy.js(馬券購入画面)は
+ * `Date.prototype.toISOString().slice(0,10)`(UTC基準)を使っていた。日本(JST=UTC+9)
+ * では日付が変わってから午前9時頃までの間、toISOString()は前日の日付を返してしまうため、
+ * この時間帯に「今日」ボタンを押すと画面によって選択される日付がずれる不具合があった。
+ * 両画面から本関数を共有することで、「今日」の判定基準を統一する。
+ *
+ * @param {Date} [date] - 基準にするDateオブジェクト(省略時は現在時刻)
+ * @returns {string} 例: "2026-08-24"
+ */
+function todayDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/**
  * モーダル/ダイアログ共通: ESCキー押下時に「キャンセル」ボタンと同じ扱いで
  * (保存せず)閉じるようにする(docs/BACKLOG.md クラスタK対応・2026-08-12)。
  *

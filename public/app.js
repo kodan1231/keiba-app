@@ -7,10 +7,11 @@ let races = [];
 let allItems = [];
 // 2026-08-21: 画面を開いた直後から当日を選択済みの状態にする(必ずどこかの日付が
 // 選択されている状態を保つ方針に変更。同じ日付の再クリックによる選択解除は廃止した)。
-function todayDateKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
+// 2026-08-24: 「今日」の判定ロジック(todayDateKey())は public/buy.js(馬券購入画面)と
+// 共有するため、public/utils.js へ移動した(docs/DESIGN.md「『今日』ボタンの日付判定」
+// 参照)。以前はこのファイル内にローカル定義を持っており、buy.js側は別のロジック
+// (UTC基準のtoISOString())を使っていたため、日付が変わってから午前9時頃までの間、
+// 画面によって「今日」の判定がずれる不具合があった。
 
 let selectedHistoryDate = todayDateKey();
 let historyCalendarMonth = new Date();
@@ -32,7 +33,7 @@ document.getElementById("history-next-month-btn")?.addEventListener("click", () 
 document.getElementById("history-today-btn")?.addEventListener("click", () => {
   const now = new Date();
   historyCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  selectedHistoryDate = todayDateKey();
+  selectedHistoryDate = todayDateKey(now);
   renderHistoryCalendar();
   applyHistoryFilter();
 });

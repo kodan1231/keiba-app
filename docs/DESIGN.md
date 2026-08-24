@@ -30,6 +30,11 @@
 共有ユーティリティ`hasSettledPayoutRates()`を新設し、購入画面・予想登録画面・
 集計画面の3箇所で統一的に判定するようにした。詳細は下記「払戻確定バッジ・的中率集計の
 判定」参照)
+2026-08-24: 予想登録画面の馬メモ「▼」マークが、メモ取得完了前に描画されるため
+常に表示されない不具合を修正(applyHorseNotes()で反映)。あわせて、馬券購入画面
+「今日」ボタンがUTC基準で日付を計算していたため、日本時間で日付が変わってから
+午前9時頃までの間、馬券履歴画面と「今日」の判定がずれる不具合を修正。共有関数
+todayDateKey()(public/utils.js)に統一した。詳細は下記「『今日』ボタンの日付判定」参照)
 
 このドキュメントは現状の設計を常に表す「生きたドキュメント」です。日付単位の不具合修正記録・
 調査の経緯・実機検証ログといった過去の作業履歴は持たず、**現時点で正しい仕様のみ**を記載します。
@@ -1194,6 +1199,35 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 (`entries-import.js`)も同様の考え方で、`race_id`をキーに全ユーザー分の
 `imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を適用している
 (user_idで絞り込まない)。
+
+## 「今日」ボタンの日付判定(2026-08-24修正)
+
+**症状**: 馬券購入画面(`index.html`)と馬券履歴画面(`history.html`)の「今日」ボタンで、
+日本時間で日付が変わってから午前9時頃までの間、選択される日付がずれることがあった。
+
+**原因**: `public/buy.js`(馬券購入画面)は`Date.prototype.toISOString().slice(0,10)`
+(UTC基準)で「今日」の日付文字列を組み立てていたのに対し、`public/app.js`(馬券履歴画面)は
+`getFullYear()`/`getMonth()`/`getDate()`(ローカルタイムゾーン基準)で組み立てていた。
+日本(JST=UTC+9)では、日付が変わってから午前9時頃まではUTCの日付がまだ前日のままのため、
+この間は`buy.js`側だけ「今日」が1日前になってしまっていた。
+
+**修正内容**: `public/utils.js`に共有関数`todayDateKey(date = new Date())`を新設し、
+ローカルタイムゾーン基準で`YYYY-MM-DD`形式の日付文字列を返すよう統一した。
+
+```js
+function todayDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+```
+
+`public/app.js`のローカル定義(同名関数)は削除し、`public/buy.js`の初期表示時・「今日」
+ボタン押下時の2箇所を`todayDateKey()`経由に置き換えた。両画面とも`utils.js`を自身より
+先に読み込むため(`index.html`・`history.html`いずれも`<script src="utils.js">`が先頭)、
+追加のスクリプト読み込み順の変更は不要だった。
+
+**影響しないもの**: レース管理画面(`races.html`)のカレンダー「今日」ボタンは元々
+`new Date(now.getFullYear(), now.getMonth(), 1)`(月初め判定のみ・日付選択は行わない)
+のため、今回の不具合の対象外。
 
 ## 払戻確定バッジ・的中率集計の判定(2026-08-23修正)
 
