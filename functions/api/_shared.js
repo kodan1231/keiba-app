@@ -563,27 +563,72 @@ function findStoredRateServer(payouts, betType, combo) {
   return found ? found.rate : null;
 }
 
+// ---- 返還(refund)判定(2026-08-20追加) ----
+// races.payouts.refunds (jraResultParseRefund()が抽出した「返還馬番」「返還同枠」の情報。
+// [{horse_numbers:[...], waku_numbers:[...]}, ...]) と、1枚の購入(selections)を突き合わせ、
+// この買い目が返還対象かどうかを判定する。
+//
+// - 馬番ベースの式別(単勝・複勝・馬連・馬単・ワイド・三連複・三連単): 買い目の馬番の
+//   いずれか1つでも返還馬番に含まれていれば返還(1点の買い目に複数頭が含まれる式別では、
+//   そのうち1頭でも返還対象なら買い目全体が返還になる、というJRAの実際の運用に合わせる)
+// - 枠番ベースの式別(枠連): 買い目の枠番のいずれか1つでも返還同枠に含まれていれば返還
+//   (個別の返還馬番だけでは枠連の返還は判定しない。枠内に出走馬が1頭でも残っていれば、
+//   その枠連自体は返還にならないため)
+// - 「中止」(競走中止)は取消・除外と異なり発走しているため refunds には一切含まれない。
+//   そのためこの関数は中止馬についてはfalseを返し、呼び出し元では通常の的中判定へ進む
+//   (中止馬向けの分岐を別途設ける必要はない)
+//
+// 詳細はdocs/DESIGN.md「返還(refund)処理」参照。
+function isTicketRefunded(betType, selections, refunds) {
+  if (!Array.isArray(refunds) || !refunds.length || !Array.isArray(selections) || !selections.length) return false;
+  if (betType === "wakuren") {
+    const refundWakus = new Set();
+    for (const r of refunds) for (const w of (r?.waku_numbers || [])) refundWakus.add(w);
+    if (!refundWakus.size) return false;
+    return selections.some((s) => refundWakus.has(s.waku_number));
+  }
+  const refundHorses = new Set();
+  for (const r of refunds) for (const h of (r?.horse_numbers || [])) refundHorses.add(h);
+  if (!refundHorses.size) return false;
+  return selections.some((s) => refundHorses.has(s.horse_number));
+}
+
 // レースの着順・払戻レートが確定/更新された際、そのレースに紐づく
 // 「全ユーザーの」tickets.payout を再計算して反映する(user_idで絞り込まない)。
 // finishOrder / payoutsObj が無い(未確定に戻った)場合は payout を null に戻す。
+//
+// 2026-08-20追加: 的中判定より先に返還判定を行う。返還対象の買い目は、たとえ結果的に
+// 的中コンボと一致していたとしても返還として扱う(取消・除外により対象そのものが
+// 競走から除かれたことを意味するため、的中/不的中の判定自体が成立しない)。
+// 返還判定は payoutsObj.refunds の有無だけで行える(finish_order/該当bet_typeの
+// レート登録の有無に関係なく判定できる)ため、既存の `finishOrder && payoutsObj &&
+// payoutsObj[t.bet_type]` という前提条件よりも外側でチェックする。
 export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries) {
   if (!db || !raceId) return { updated: 0 };
   const { results } = await db
-    .prepare(`SELECT id, bet_type, selections, amount, payout FROM tickets WHERE race_id = ?`)
+    .prepare(`SELECT id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id = ?`)
     .bind(raceId)
     .all();
   if (!results || !results.length) return { updated: 0 };
 
+  const refunds = (payoutsObj && Array.isArray(payoutsObj.refunds)) ? payoutsObj.refunds : [];
+
   const statements = [];
   for (const t of results) {
+    let selections;
+    try {
+      selections = JSON.parse(t.selections || "[]");
+    } catch {
+      selections = [];
+    }
+
     let newPayout = null;
-    if (finishOrder && payoutsObj && payoutsObj[t.bet_type]) {
-      let selections;
-      try {
-        selections = JSON.parse(t.selections || "[]");
-      } catch {
-        selections = [];
-      }
+    let newRefunded = 0;
+
+    if (refunds.length && isTicketRefunded(t.bet_type, selections, refunds)) {
+      newPayout = Number(t.amount);
+      newRefunded = 1;
+    } else if (finishOrder && payoutsObj && payoutsObj[t.bet_type]) {
       const combos = computeWinningCombos(t.bet_type, finishOrder, entries);
       // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を
       // 算出できない(combo === null)ケースでは、「不的中(0円)」と断定せず
@@ -603,9 +648,10 @@ export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, pay
         newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
       }
     }
-    const current = t.payout === undefined ? null : t.payout;
-    if (newPayout !== current) {
-      statements.push(db.prepare(`UPDATE tickets SET payout = ? WHERE id = ?`).bind(newPayout, t.id));
+    const currentPayout = t.payout === undefined ? null : t.payout;
+    const currentRefunded = Number(t.refunded || 0);
+    if (newPayout !== currentPayout || newRefunded !== currentRefunded) {
+      statements.push(db.prepare(`UPDATE tickets SET payout = ?, refunded = ? WHERE id = ?`).bind(newPayout, newRefunded, t.id));
     }
   }
   if (statements.length) await db.batch(statements);

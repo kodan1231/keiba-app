@@ -61,7 +61,10 @@ function computeHitRate(tickets) {
     const judged = hasTicketPayout || raceResultKnown;
     if (!judged) continue;
     judgedRaces++;
-    if (raceTickets.some((t) => t.payout !== null && t.payout !== undefined && t.payout > 0)) hitRaces++;
+    // 2026-08-20修正: 返還(refunded=1)された馬券は、payout(=購入金額と同額)が0より
+    // 大きくても「的中」ではないため、的中率のカウント対象から除外する
+    // (docs/DESIGN.md「返還(refund)処理」参照)。
+    if (raceTickets.some((t) => t.payout !== null && t.payout !== undefined && t.payout > 0 && !t.refunded)) hitRaces++;
   }
   const rate = judgedRaces > 0 ? Math.round((hitRaces / judgedRaces) * 1000) / 10 : null;
   return { judgedRaces, hitRaces, rate };

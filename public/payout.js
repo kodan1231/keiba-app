@@ -47,6 +47,12 @@ function findStoredRate(payouts, betType, combo) {
 // レースの確定情報(finish_order・payouts)から、1枚の購入(チケット)の払戻金額を計算する。
 // 該当する式別のレートが1つも入力されていなければ null(未確定)を返す。
 function computeTicketPayout(ticket, race) {
+  // 2026-08-20追加: 取消・除外馬が絡む買い目として既にサーバー側(recomputeTicketPayoutsForRace)
+  // で返還確定済みの場合は、購入金額(amount)の変更に追随して常に同額を返す。返還判定自体
+  // (races.payouts.refundsとの突き合わせ)はサーバー側でのみ行い、この関数では確定済みの
+  // ticket.refunded フラグを信頼するのみに留める(判定ロジックをクライアント側にも複製すると、
+  // サーバー・クライアントの実装がズレるリスクが増えるため。docs/DESIGN.md「返還(refund)処理」参照)。
+  if (ticket.refunded) return Number(ticket.amount);
   if (!race || !race.finish_order || !race.payouts || !race.payouts[ticket.bet_type]) return null;
   const combos = computeWinningCombos(ticket.bet_type, race.finish_order, race.entries);
   // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を算出できない

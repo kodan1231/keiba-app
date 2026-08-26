@@ -129,7 +129,7 @@ function renderPurchasedTickets(items) {
                         </label>
                         <span class="detail-payout">${
                           t.payout !== null && t.payout !== undefined
-                            ? `払戻¥${Number(t.payout).toLocaleString()}`
+                            ? `${t.refunded ? "返還" : "払戻"}¥${Number(t.payout).toLocaleString()}`
                             : "未確定"
                         }</span>`
                     }

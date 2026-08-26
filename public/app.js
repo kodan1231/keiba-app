@@ -304,7 +304,7 @@ function renderGroupRow(group) {
                     <input type="number" class="amount-edit-input" min="100" step="100" value="${t.amount}" />
                   </label>`
               }
-              <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `払戻¥${t.payout.toLocaleString()}` : "未確定"}</span>
+              <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `${t.refunded ? "返還" : "払戻"}¥${t.payout.toLocaleString()}` : "未確定"}</span>
               ${t.imported && !t.legacy_import ? `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>` : (t.imported ? "" : `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>`)}
             </div>
           `

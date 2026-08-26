@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS jockey_aliases (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- @STEP: tickets_refunded
+-- 2026-08-20: 返還(refund)処理対応。取消・除外馬が絡む買い目の払戻を「不的中(0円)」では
+-- なく「返還(購入金額と同額)」として区別できるよう、tickets に refunded 列を追加する
+-- (ALTER TABLE ADD COLUMNのみの非破壊的変更)。詳細はdocs/DESIGN.md「返還(refund)処理」参照。
+ALTER TABLE tickets ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
+
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。

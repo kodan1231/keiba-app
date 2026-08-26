@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS race_results (
   sex_age TEXT,                 -- 性齢 例:"牡3"
   weight_carried REAL,          -- 負担重量 例:57.0
   jockey TEXT,                  -- 見習い減量記号を含む表記のまま保持
-  status TEXT NOT NULL DEFAULT 'finished', -- finished/scratched(取消)/excluded(除外)
+  status TEXT NOT NULL DEFAULT 'finished', -- finished/scratched(取消)/excluded(除外)/stopped(中止)
   finish_position INTEGER,      -- 着順(全馬)。取消・除外はNULL
   time_text TEXT,                -- タイム 例:"1:25.0"(生テキストのまま)
   margin TEXT,                   -- 着差 例:"クビ" "１ 1/4" "大差"(表記ゆれが大きいためTEXT)
@@ -122,7 +122,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   method TEXT NOT NULL DEFAULT 'normal', -- normal/box/nagashi/axis1/axis2/multi/axis2_multi/formation (表示用)
   selections TEXT NOT NULL,       -- JSON配列 [{horse_number, waku_number, horse_name, jockey}] (購入時点のスナップショット)
   amount INTEGER NOT NULL,        -- この1点の購入金額(円)
-  payout INTEGER,                 -- この1点の払戻金額(円)。未確定はNULL
+  payout INTEGER,                 -- この1点の払戻金額(円)。未確定はNULL。返還時は購入金額(amount)と同額
+  refunded INTEGER NOT NULL DEFAULT 0, -- 返還(取消・除外馬が絡む買い目)によりpayoutが確定した場合は1。
+                                        -- 2026-08-20追加。的中による払戻(refunded=0)と区別するためのフラグ。
+                                        -- docs/DESIGN.md「返還(refund)処理」参照
   memo TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
