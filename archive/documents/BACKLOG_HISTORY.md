@@ -11,9 +11,46 @@
 クラスタB(結果確定済みレース購入時の払戻即時反映)・騎手名エイリアス管理の新規実装を
 追記した(期間5)。**
 
+**2026-08-25: `archive/documents/`配下のファイル数圧縮のため、以下の作業を実施した。**
+- JRAレース結果PDFインポートの旧修正記録6本(`JRA_RESULT_PDF_IMPORT_FIX_V3〜V5.md`・
+  `_DIAGNOSTIC_V6.md`・`_VALIDATION.md`・`_PAYOUT_ISSUE_INVESTIGATION.md`)を削除。
+  内容はいずれも`archive/documents/pre-fix-v1.0/JRA_RESULT_PDF_IMPORT.md`(統合サマリ)に
+  要約済みのため、実質的な重複だった。
+- v10時代の開発ログ5本(`DATA_MODEL_AUDIT.md`・`IMPLEMENTATION_NOTES_V10.md`・
+  `BUGFIX_VALIDATION.md`・`CSV_IMPORT_SETUP.md`・`FIX_VERIFICATION.md`)を削除し、
+  要点を下記「期間0」として本ファイルへ折り込んだ(内容はいずれも現行の
+  `README.md`/`docs/DESIGN.md`/`docs/TESTING.md`にも反映済みで、これらのファイル自体は
+  「当時の生ドキュメント」としての参照価値以上のものは持っていなかった)。
+- 削除対象ファイルの一覧は本zip添付の`DELETIONS.txt`を参照。
+
 新しいセッションで同じ修正を重複して行わないための参考資料として保管しています。現状の仕様は
 `README.md` / `docs/DESIGN.md` / `docs/TESTING.md`を、未着手タスクの一覧は`docs/BACKLOG.md`を
 参照してください。
+
+---
+
+## 期間0: v10確定期(〜2026-08-04頃。2026-08-25に旧5ファイルから要約統合)
+
+**データモデル・ファイル運用の確定**
+- 通常購入は`tickets`(購入グループ`group_id` + 1点1行)、CSV原本は`imported_tickets`、
+  CSV購入グループは`imported_ticket_groups`、CSV個別買い目は`imported_ticket_items`という
+  役割分担を確定(この構成は現在も維持されている)。
+- DBファイルの役割を「`schema.sql`=新規構築用の最終形」「`latest1.sql`(現`migration.sql`)=
+  既存DBを最新へ追いつかせる差分」として整理(現行のDBマイグレーション運用の原型)。
+
+**CSV取込ロジックの初期バグ修正**
+- 通常購入は着順・払戻確定後の変更・削除をロックする仕様だったが(のちに2026-07-31に
+  全面撤廃)、集計画面の的中/確定判定が「着順のみ確定・払戻レート未入力」のケースを
+  正しく拾えていなかった不具合を修正(`race_finish_order`/`race_payouts`のいずれかで
+  判定するよう変更。この考え方は現行の`stats.js`の的中率判定にも引き継がれている)。
+
+**手動テストチェックリストの整備**
+- CSVインポート・予想印・馬メモ・馬券購入(組み合わせ生成数)・マイグレーション整合性の
+  確認手順を整備。以後`docs/TESTING.md`として版を重ねて現在に至る。
+
+**セットアップ手順の整備**
+- ローカル/リモートD1への`latest1.sql`適用手順、`wrangler pages dev`でのローカル起動、
+  CSVインポートAPI(`multipart/form-data`)の基本仕様を整備(現行README「セットアップ手順」の原型)。
 
 ---
 
@@ -87,6 +124,10 @@
 - 払戻確定時に購入済みticketsのpayoutが全ユーザー分再計算されない不具合、および枠番未確定の
   枠連馬券が誤って「不的中」判定される不具合を修正(`recomputeTicketPayoutsForRace`の実装・
   呼び出し漏れ解消)
+- **上記の詳細な修正の時系列(v3〜v6・payout issue調査)は、2026-08-25に
+  `archive/documents/pre-fix-v1.0/JRA_RESULT_PDF_IMPORT.md`(統合サマリ)へ一本化し、
+  個別ファイル(`JRA_RESULT_PDF_IMPORT_FIX_V3〜V5.md`・`_DIAGNOSTIC_V6.md`・`_VALIDATION.md`・
+  `_PAYOUT_ISSUE_INVESTIGATION.md`)は削除した。経緯を詳しく追いたい場合は同ファイルを参照**
 
 **出走馬一覧PDFインポートの新規実装(2026-08-07〜08-09)**
 - 枠番・馬番なし/あり両対応の出走馬一覧PDFを解析し、馬名をキーにマージする機能を新規実装
@@ -128,9 +169,8 @@
 - 枠番の推定値をDBへ保存する処理を廃止し、`null`のまま送信するよう方針転換(表示用の目安
   計算のみ`races.js`側に残す)
 - レース管理画面の払戻モーダルに`race_results`詳細の閲覧・`incident_note`編集UIを追加
-- **`migration.sql`の`race_results_and_conditions`ステップは、2026-08-16時点でも実DBには
-  未適用のまま残っている。適用手順はREADME「スキーマ変更の適用手順」、および
-  `docs/BACKLOG.md`冒頭の引き継ぎメモを参照**
+- `migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB適用・
+  `schema_migrations`記録済み。内容は`schema.sql`に統合済み
 
 **クラスタN-2(コース種別・距離の表示欠落修正・2026-08-14・完了)**
 - コース種別が未入力(null)で距離のみ入力されている場合、距離も含めて一覧・モーダルの
@@ -150,15 +190,16 @@
   `renderRaceCard()`)で、CSSの`order`/`flex-basis`/`margin-right:auto`(`public/style.css`の
   `@media (max-width: 700px)`)のみで見た目を切り替える方式で実装
 
-**ルートURLのリダイレクト(2026-08-16・完了)**
+**ルートURLのリダイレクト(2026-08-16・完了。※2026-08-16(2)にファイルリネーム方式へ変更済み)**
 - ログイン後の初期画面を「馬券購入」画面にしたいという要望に対応。各画面がそれぞれ独立して
   ログイン画面を内包しページ間の自動遷移を行わない設計のため、「ルートURL(`/`)へアクセスした
   際にどの画面が表示されるか」で対応することにした
-- 新規ファイル(`_redirects`等)は追加せず、既存の`functions/_middleware.js`(サイト全体の
-  全リクエストを処理する認証ミドルウェア)の冒頭に、`url.pathname === "/"`の場合は
-  `/buy.html`へ302リダイレクトする処理を追記する形で実装(`/api/*`の既存の認証チェック
-  ロジックには影響なし)
-- `index.html`等、ルートURL以外への直接アクセスは従来通りそのままの画面が表示される
+- 当初は`functions/_middleware.js`によるHTTPリダイレクト方式で実装したが、Cloudflare Pagesの
+  「`*.html`付きURLへのアクセスを拡張子なしURLへ自動的に308リダイレクトする」標準挙動と衝突し、
+  「馬券履歴」ナビリンクをクリックしても馬券購入画面に遷移してしまう不具合が生じたため、
+  2026-08-16(2)に**ファイル名リネーム方式**(`buy.html`→`index.html`、旧`index.html`→
+  `history.html`)へ修正した。現行の実装・詳細は`docs/DESIGN.md`「トップページ(/)の表示に
+  ついて」参照
 
 **クラスタB: 結果確定済みレース購入時の払戻即時反映(2026-08-16・完了)**
 - 過去に購入した馬券の履歴を残す目的で、既に着順・払戻が確定済みのレースへ後から購入した
@@ -179,7 +220,8 @@
   (異体字・空白有無・文字欠落等)で登録され、`stats.html`の騎手別収支集計が同一人物を
   複数行に分裂させてしまう問題への対応
 - 表記ゆれ→正しい表記の対応表`jockey_aliases`テーブルを新設(`migration.sql`へ
-  `-- @STEP: jockey_aliases`を追記。**2026-08-16時点で実DBへは未適用**)
+  `-- @STEP: jockey_aliases`を追記。2026-08-25時点でも実DBへは未適用の可能性あり。
+  `docs/BACKLOG.md`の運用作業チェックリストを参照)
 - 突き合わせキー(`alias_key`)は見習い減量記号(☆▲△★◇)と空白(全角/半角)を除去した
   文字列とし、姓名間のスペース有無は同一人物として扱う仕様にした
 - 今後登録されるデータの救済: レース新規登録・編集(`functions/api/races/index.js`・
@@ -277,3 +319,20 @@
   2026-08-17に改めて対象外であることをユーザー確認済み(着手しない)
 - Node上での構文チェック(`node --check`)のみ実施。実ブラウザでの動作確認は未実施
   (ユーザー側で実施予定)
+
+## 期間8: ドキュメント整理(2026-08-25)
+
+**アーカイブ文書のファイル数圧縮(完了)**
+- `archive/documents/`配下に残っていた、内容が既に別ファイルへ要約・統合済みの
+  重複ドキュメント11本を削除した(削除ファイル一覧は本アーカイブ更新時に添付した
+  `DELETIONS.txt`参照)。
+  - JRAレース結果PDFインポートの旧修正記録6本 → `pre-fix-v1.0/JRA_RESULT_PDF_IMPORT.md`
+    (統合サマリ)に要約済みのため削除。詳細な時系列を追いたい場合は同ファイルを参照
+  - v10時代の開発ログ5本 → 要点を本ファイル「期間0」として折り込んだうえで削除
+- `archive/documents/pre-fix-v1.0/README.md`・`DESIGN.md`・`TESTING.md`・
+  `JRA_RESULT_PDF_IMPORT.md`の4本、および`archive/migrations/`配下(旧DBを手動で
+  追いつかせるための実行可能な参照資料のため)は今回の圧縮対象から除外し、従来通り
+  保管を継続する
+- `docs/BACKLOG.md`・`docs/DESIGN.md`・`docs/TESTING.md`・`README.md`など現行の
+  生きたドキュメント自体には内容変更なし(参照リンクの張り替えも不要。個別ファイルへの
+  直接リンクは元々置いていなかったため)
