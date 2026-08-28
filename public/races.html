@@ -36,7 +36,6 @@
     </div>
     <div class="masthead-actions">
       <span id="current-username" class="current-username"></span>
-      <button id="schedule-btn" class="ghost-btn" data-admin-only hidden>開催日程を一括登録</button>
       <button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>
       <button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>
       <button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>
@@ -192,30 +191,6 @@
       <button type="button" id="jra-result-import-submit-btn" class="stamp-btn" disabled>この内容で一括登録する</button>
     </div>
     <p id="jra-result-import-message" class="submit-message" hidden></p>
-  </div>
-</div>
-
-<!-- 開催日程 一括登録モーダル -->
-<div id="schedule-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h2>開催日程を一括登録</h2>
-    <p class="picker-hint">
-      JRA公式サイト等からコピーした開催日程のテキスト(日付と競馬場が含まれる行)を貼り付けてください。
-      各日付×競馬場につき、1〜12Rの空レース(出走馬未登録)がまとめて作成されます。
-    </p>
-    <label>年
-      <select id="schedule-year"></select>
-    </label>
-    <label>貼り付けテキスト
-      <textarea id="schedule-paste" rows="8" placeholder="例:&#10;8/2(土) 新潟&#10;8/3(日) 新潟・札幌"></textarea>
-    </label>
-    <button type="button" id="schedule-parse-btn" class="ghost-btn">解析する</button>
-    <div id="schedule-preview"></div>
-    <div class="modal-actions">
-      <button type="button" id="schedule-cancel-btn" class="ghost-btn">キャンセル</button>
-      <button type="button" id="schedule-submit-btn" class="stamp-btn" disabled>この内容で登録する</button>
-    </div>
-    <p id="schedule-message" class="submit-message" hidden></p>
   </div>
 </div>
 

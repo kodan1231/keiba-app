@@ -134,7 +134,7 @@ let expandedDates = new Set();
 
 function renderRaceList() {
   if (races.length === 0) {
-    racesMain.innerHTML = `<p class="empty-state">まだレースが登録されていません。「＋ レースを登録」または「開催日程を一括登録」から始めましょう。</p>`;
+    racesMain.innerHTML = `<p class="empty-state">まだレースが登録されていません。「＋ レースを登録」から始めましょう。</p>`;
     return;
   }
 
@@ -786,83 +786,6 @@ payoutForm.addEventListener("submit", async (e) => {
 
   closePayoutModal();
   loadRaces();
-});
-
-// ---------- 開催日程 一括登録 ----------
-const scheduleModal = document.getElementById("schedule-modal");
-const scheduleYearSelect = document.getElementById("schedule-year");
-const schedulePreview = document.getElementById("schedule-preview");
-const scheduleSubmitBtn = document.getElementById("schedule-submit-btn");
-const scheduleMessage = document.getElementById("schedule-message");
-let parsedSchedule = [];
-
-const thisYear = new Date().getFullYear();
-scheduleYearSelect.innerHTML = [thisYear - 1, thisYear, thisYear + 1]
-  .map((y) => `<option value="${y}" ${y === thisYear ? "selected" : ""}>${y}年</option>`)
-  .join("");
-
-document.getElementById("schedule-btn").addEventListener("click", () => {
-  document.getElementById("schedule-paste").value = "";
-  schedulePreview.innerHTML = "";
-  scheduleMessage.hidden = true;
-  scheduleSubmitBtn.disabled = true;
-  parsedSchedule = [];
-  scheduleModal.hidden = false;
-});
-document.getElementById("schedule-cancel-btn").addEventListener("click", closeScheduleModal);
-scheduleModal.addEventListener("click", (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
-
-function closeScheduleModal() {
-  scheduleModal.hidden = true;
-}
-// ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
-registerEscToClose(scheduleModal, closeScheduleModal);
-
-document.getElementById("schedule-parse-btn").addEventListener("click", () => {
-  const text = document.getElementById("schedule-paste").value;
-  const year = Number(scheduleYearSelect.value);
-  parsedSchedule = parseSchedule(text, year);
-
-  if (parsedSchedule.length === 0) {
-    schedulePreview.innerHTML = `<p class="picker-hint">読み取れる行が見つかりませんでした。書式をご確認ください。</p>`;
-    scheduleSubmitBtn.disabled = true;
-    return;
-  }
-
-  schedulePreview.innerHTML = `
-    <p class="picker-hint">${parsedSchedule.length}件の開催日を検出しました(各12レース分作成されます)。</p>
-    <ul class="schedule-preview-list">
-      ${parsedSchedule.map((s) => `<li>${formatDate(s.race_date)} ${escapeHtml(s.track)}</li>`).join("")}
-    </ul>
-  `;
-  scheduleSubmitBtn.disabled = false;
-});
-
-scheduleSubmitBtn.addEventListener("click", async () => {
-  const raceRows = [];
-  for (const s of parsedSchedule) {
-    for (let r = 1; r <= 12; r++) {
-      raceRows.push({ race_date: s.race_date, track: s.track, race_number: r, entries: [] });
-    }
-  }
-
-  scheduleSubmitBtn.disabled = true;
-  const res = await authedFetch("/api/races/bulk", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ races: raceRows }),
-  });
-
-  scheduleMessage.hidden = false;
-  if (res.ok) {
-    scheduleMessage.className = "submit-message success";
-    scheduleMessage.textContent = `${parsedSchedule.length}開催日分のレース枠を作成しました。`;
-    loadRaces();
-  } else {
-    scheduleMessage.className = "submit-message error";
-    scheduleMessage.textContent = "登録に失敗しました。";
-    scheduleSubmitBtn.disabled = false;
-  }
 });
 
 // ---------- ユーティリティ ----------
