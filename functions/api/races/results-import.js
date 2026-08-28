@@ -2,12 +2,24 @@ import {
   requireAdmin,
   backfillHorseNamesForRace,
   linkUnregisteredImportsToRace,
-  recomputeTicketPayoutsForRace,
+  recomputeTicketPayoutsForRaces,
   mergeEntriesByHorseName,
-  upsertRaceResults,
+  upsertRaceResultsBulk,
   loadJockeyAliasMap,
   applyJockeyAliasMap,
 } from "../_shared.js";
+
+// 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
+// あたりのサブリクエスト数上限に抵触し「一括登録に失敗しました」となる不具合)により、
+// レースごとに逐次await(SELECT/INSERT/UPDATE/race_results UPSERT/払戻再計算等)していた
+// 実装を、「1回のSELECTでまとめて取得→メモリ上で判定→db.batch()でまとめて書き込む」
+// 方式へ書き直した。race_results UPSERT(upsertRaceResultsBulk)・tickets.payout再計算
+// (recomputeTicketPayoutsForRaces)はいずれも複数レースをまとめて処理するバルク版を
+// functions/api/_shared.js に新設し、そちらを使う(単一レース向けの
+// upsertRaceResults()・recomputeTicketPayoutsForRace() は他の呼び出し元
+// ([id].js・entries-import.js・tickets/bulk.js)のためにそのまま維持している)。
+// 業務ロジック(fill-empty/overwrite/skip-existingの各モード・entries共通マージ・
+// 騎手名エイリアス正規化・incident_noteの保護ルール等)自体は変更していない。
 
 const BET_TYPES = ["tan", "fuku", "wakuren", "umaren", "umatan", "wide", "sanrenpuku", "sanrentan"];
 
@@ -17,27 +29,24 @@ export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const { request, env } = context;
+  const db = env.DB;
+
   let body;
   try { body = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
   const races = Array.isArray(body?.races) ? body.races : [];
   if (!races.length) return Response.json({ error: "インポート対象のレースがありません" }, { status: 400 });
 
-  // 2026-08-16追加: 取込側の騎手名(entries・race_results双方)を、保存前に
-  // jockey_aliasesテーブルで正規化する。リクエスト単位で1回だけエイリアスMapを
-  // 取得して使い回し、騎手名1件ごとのDB問い合わせ(N+1)を避ける。
-  // 詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
-  const aliasMap = await loadJockeyAliasMap(env.DB);
+  const aliasMap = await loadJockeyAliasMap(db);
 
   const results = [];
+  const items = [];
+
   for (const item of races) {
     if (!item?.race_date || !item?.track || !Number(item?.race_number)) {
       results.push({ status: "invalid", key: normRaceKey(item || {}), message: "開催日・競馬場・レース番号が不足しています" });
       continue;
     }
     const raceNumber = Number(item.race_number);
-    const existing = await env.DB.prepare(
-      "SELECT * FROM races WHERE race_date = ? AND track = ? AND race_number = ?"
-    ).bind(item.race_date, item.track, raceNumber).first();
 
     const incomingEntries = (Array.isArray(item.entries) ? item.entries : []).map((e) => ({
       horse_name: e.horse_name,
@@ -53,87 +62,273 @@ export async function onRequestPost(context) {
       r.jockey ? { ...r, jockey: applyJockeyAliasMap(aliasMap, r.jockey) } : r
     ));
 
+    items.push({
+      raceDate: item.race_date,
+      track: item.track,
+      raceNumber,
+      key: normRaceKey(item),
+      item,
+      incomingEntries,
+      finishOrder,
+      payouts,
+      raceResultsInput,
+    });
+  }
+
+  if (!items.length) return Response.json({ ok: true, results });
+
+  // 1) 既存レースをまとめて取得する。
+  const uniqueDates = [...new Set(items.map((x) => x.raceDate))];
+  const datePlaceholders = uniqueDates.map(() => "?").join(",");
+  const { results: existingRaceRows } = await db
+    .prepare(`SELECT * FROM races WHERE race_date IN (${datePlaceholders})`)
+    .bind(...uniqueDates)
+    .all();
+  const existingByKey = new Map(
+    (existingRaceRows || []).map((r) => [`${r.race_date}__${r.track}__${r.race_number}`, r])
+  );
+
+  const toInsert = [];
+  const toUpdate = [];
+
+  for (const it of items) {
+    const rk = `${it.raceDate}__${it.track}__${it.raceNumber}`;
+    const existing = existingByKey.get(rk);
+
     if (!existing) {
-      const { entries } = mergeEntriesByHorseName([], incomingEntries);
-      const ins = await env.DB.prepare(
-        `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance,
-          weight_type, class_flags, course_direction, weather, track_condition,
-          entries, finish_order, payouts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        item.race_date, item.track, raceNumber, item.race_name || null, item.course_type || null,
-        item.distance ? Number(item.distance) : null,
-        item.weight_type || null, item.class_flags || null, item.course_direction || null,
-        item.weather || null, item.track_condition || null,
-        JSON.stringify(entries),
-        finishOrder ? JSON.stringify(finishOrder) : null,
-        Object.keys(payouts).length ? JSON.stringify(payouts) : null
-      ).run();
-      const id = ins.meta.last_row_id;
-      await linkUnregisteredImportsToRace(env.DB, id, item.race_date, item.track, raceNumber);
-      await backfillHorseNamesForRace(env.DB, id, entries);
-      if (raceResultsInput.length) await upsertRaceResults(env.DB, id, raceResultsInput);
-      // 新規登録直後のレースには既存の通常購入(tickets)は存在しえない(通常購入はrace_idの
-      // 存在を前提とするため)。念のため、この時点で万一tickets/imported分が紐付いていた
-      // 場合に備え、着順・払戻が入っていれば再計算しておく(安全側)。
-      if (finishOrder || Object.keys(payouts).length) {
-        await recomputeTicketPayoutsForRace(env.DB, id, finishOrder, Object.keys(payouts).length ? payouts : null, entries);
-      }
-      results.push({ status: "created", id, key: normRaceKey(item), race_name: item.race_name || null });
+      const { entries } = mergeEntriesByHorseName([], it.incomingEntries);
+      toInsert.push({ ...it, entries });
       continue;
     }
 
     const existingFinish = existing.finish_order ? JSON.parse(existing.finish_order) : null;
     const existingPayouts = existing.payouts ? JSON.parse(existing.payouts) : null;
-    const finishDiff = JSON.stringify(existingFinish || null) !== JSON.stringify(finishOrder || null);
-    const payoutDiff = JSON.stringify(existingPayouts || {}) !== JSON.stringify(payouts || {});
+    const finishDiff = JSON.stringify(existingFinish || null) !== JSON.stringify(it.finishOrder || null);
+    const payoutDiff = JSON.stringify(existingPayouts || {}) !== JSON.stringify(it.payouts || {});
 
     if (body.mode === "skip-existing") {
-      results.push({ status: "skipped", id: existing.id, key: normRaceKey(item), finishDiff, payoutDiff });
+      results.push({ status: "skipped", id: existing.id, key: it.key, finishDiff, payoutDiff });
       continue;
     }
 
     let currentEntries = [];
     try { currentEntries = JSON.parse(existing.entries || "[]"); } catch { currentEntries = []; }
-    // 2026-08-11: 出走馬一覧PDFインポートと共通のマージロジックを使う(以前の
-    // 「既存entriesが完全に空の場合のみ丸ごと差し替え」という粗い方式を廃止した)。
-    const { entries: mergedEntries } = mergeEntriesByHorseName(currentEntries, incomingEntries);
+    const { entries: mergedEntries } = mergeEntriesByHorseName(currentEntries, it.incomingEntries);
 
-    const fields = []; const values = [];
-    let finishOrPayoutTouched = false;
-    if (body.mode === "overwrite" || !existingFinish) { fields.push("finish_order = ?"); values.push(finishOrder ? JSON.stringify(finishOrder) : null); finishOrPayoutTouched = true; }
-    if (body.mode === "overwrite" || !existingPayouts || Object.keys(existingPayouts || {}).length === 0) { fields.push("payouts = ?"); values.push(Object.keys(payouts).length ? JSON.stringify(payouts) : null); finishOrPayoutTouched = true; }
-    fields.push("entries = ?"); values.push(JSON.stringify(mergedEntries));
-    if (!existing.race_name && item.race_name) { fields.push("race_name = ?"); values.push(item.race_name); }
-    if (!existing.course_type && item.course_type) { fields.push("course_type = ?"); values.push(item.course_type); }
-    if (!existing.distance && item.distance) { fields.push("distance = ?"); values.push(Number(item.distance)); }
-    if (!existing.weight_type && item.weight_type) { fields.push("weight_type = ?"); values.push(item.weight_type); }
-    if (!existing.class_flags && item.class_flags) { fields.push("class_flags = ?"); values.push(item.class_flags); }
-    if (!existing.course_direction && item.course_direction) { fields.push("course_direction = ?"); values.push(item.course_direction); }
-    // weather・track_condition は結果PDFにのみ出現するため、常に最新の値で上書きしてよい。
-    if (item.weather) { fields.push("weather = ?"); values.push(item.weather); }
-    if (item.track_condition) { fields.push("track_condition = ?"); values.push(item.track_condition); }
-    if (fields.length) { values.push(existing.id); await env.DB.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values).run(); }
-    await backfillHorseNamesForRace(env.DB, existing.id, mergedEntries);
-    await linkUnregisteredImportsToRace(env.DB, existing.id, existing.race_date, existing.track, existing.race_number);
+    toUpdate.push({ ...it, existing, existingFinish, existingPayouts, finishDiff, payoutDiff, mergedEntries });
+  }
 
-    if (raceResultsInput.length) await upsertRaceResults(env.DB, existing.id, raceResultsInput);
+  // 2) 新規レースをまとめてINSERTする。
+  if (toInsert.length) {
+    const stmts = toInsert.map((it) =>
+      db.prepare(
+        `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance,
+          weight_type, class_flags, course_direction, weather, track_condition,
+          entries, finish_order, payouts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        it.raceDate, it.track, it.raceNumber, it.item.race_name || null, it.item.course_type || null,
+        it.item.distance ? Number(it.item.distance) : null,
+        it.item.weight_type || null, it.item.class_flags || null, it.item.course_direction || null,
+        it.item.weather || null, it.item.track_condition || null,
+        JSON.stringify(it.entries),
+        it.finishOrder ? JSON.stringify(it.finishOrder) : null,
+        Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null
+      )
+    );
+    const batchResults = await db.batch(stmts);
+    batchResults.forEach((res, i) => {
+      const id = res.meta.last_row_id;
+      toInsert[i].id = id;
+      results.push({ status: "created", id, key: toInsert[i].key, race_name: toInsert[i].item.race_name || null });
+    });
+  }
 
-    // 着順(finish_order)または払戻(payouts)を更新した場合、このレースを購入した
-    // 「全ユーザーの」tickets.payoutを再計算して反映する
-    // (functions/api/races/[id].js の同等処理と揃える。呼び出し漏れがあると、
-    //  購入済みの馬券が「未確定」のまま表示され続けてしまう)。
-    if (finishOrPayoutTouched) {
-      const fresh = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(existing.id).first();
-      if (fresh) {
-        const freshEntries = fresh.entries ? JSON.parse(fresh.entries) : [];
-        const freshFinishOrder = fresh.finish_order ? JSON.parse(fresh.finish_order) : null;
-        const freshPayouts = fresh.payouts ? JSON.parse(fresh.payouts) : null;
-        await recomputeTicketPayoutsForRace(env.DB, existing.id, freshFinishOrder, freshPayouts, freshEntries);
+  // 3) 既存レースをまとめてUPDATEする。各レースごとに、実際にDBへ書き込まれる
+  //    finish_order/payoutsの最終値(finalFinishOrder/finalPayoutsObj)も同時に
+  //    算出しておき、後段の払戻再計算(recomputeTicketPayoutsForRaces)で
+  //    再SELECTせずそのまま使う。
+  if (toUpdate.length) {
+    const stmts = [];
+    for (const it of toUpdate) {
+      const fields = [];
+      const values = [];
+      let finishOrPayoutTouched = false;
+
+      const finishTouch = body.mode === "overwrite" || !it.existingFinish;
+      if (finishTouch) {
+        fields.push("finish_order = ?");
+        values.push(it.finishOrder ? JSON.stringify(it.finishOrder) : null);
+        finishOrPayoutTouched = true;
       }
+      it.finalFinishOrder = finishTouch ? it.finishOrder : it.existingFinish;
+
+      const payoutTouch = body.mode === "overwrite" || !it.existingPayouts || Object.keys(it.existingPayouts || {}).length === 0;
+      if (payoutTouch) {
+        fields.push("payouts = ?");
+        values.push(Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null);
+        finishOrPayoutTouched = true;
+      }
+      it.finalPayoutsObj = payoutTouch ? (Object.keys(it.payouts).length ? it.payouts : null) : it.existingPayouts;
+
+      fields.push("entries = ?");
+      values.push(JSON.stringify(it.mergedEntries));
+      if (!it.existing.race_name && it.item.race_name) { fields.push("race_name = ?"); values.push(it.item.race_name); }
+      if (!it.existing.course_type && it.item.course_type) { fields.push("course_type = ?"); values.push(it.item.course_type); }
+      if (!it.existing.distance && it.item.distance) { fields.push("distance = ?"); values.push(Number(it.item.distance)); }
+      if (!it.existing.weight_type && it.item.weight_type) { fields.push("weight_type = ?"); values.push(it.item.weight_type); }
+      if (!it.existing.class_flags && it.item.class_flags) { fields.push("class_flags = ?"); values.push(it.item.class_flags); }
+      if (!it.existing.course_direction && it.item.course_direction) { fields.push("course_direction = ?"); values.push(it.item.course_direction); }
+      if (it.item.weather) { fields.push("weather = ?"); values.push(it.item.weather); }
+      if (it.item.track_condition) { fields.push("track_condition = ?"); values.push(it.item.track_condition); }
+
+      it.id = it.existing.id;
+      it.finishOrPayoutTouched = finishOrPayoutTouched;
+      it.fieldsCount = fields.length;
+
+      values.push(it.existing.id);
+      stmts.push(db.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values));
+    }
+    if (stmts.length) await db.batch(stmts);
+
+    toUpdate.forEach((it) => {
+      results.push({
+        status: it.fieldsCount ? "updated" : "unchanged",
+        id: it.id,
+        key: it.key,
+        finishDiff: it.finishDiff,
+        payoutDiff: it.payoutDiff,
+      });
+    });
+  }
+
+  const allProcessed = [...toInsert, ...toUpdate];
+
+  // 4) 未登録レースへのCSV取込データの紐付けをまとめて行う。
+  {
+    const { results: pendingGroups } = await db
+      .prepare(
+        `SELECT id, race_date, track, race_number FROM imported_ticket_groups
+         WHERE race_id IS NULL AND race_date IN (${datePlaceholders})`
+      )
+      .bind(...uniqueDates)
+      .all();
+
+    const raceIdByKey = new Map(allProcessed.map((it) => [`${it.raceDate}__${it.track}__${it.raceNumber}`, it.id]));
+    const groupIdsByRaceId = new Map();
+    for (const g of pendingGroups || []) {
+      const rid = raceIdByKey.get(`${g.race_date}__${g.track}__${Number(g.race_number)}`);
+      if (!rid) continue;
+      if (!groupIdsByRaceId.has(rid)) groupIdsByRaceId.set(rid, []);
+      groupIdsByRaceId.get(rid).push(g.id);
     }
 
-    results.push({ status: fields.length ? "updated" : "unchanged", id: existing.id, key: normRaceKey(item), finishDiff, payoutDiff });
+    if (groupIdsByRaceId.size) {
+      const stmts = [];
+      for (const [rid, groupIds] of groupIdsByRaceId) {
+        const placeholders = groupIds.map(() => "?").join(",");
+        stmts.push(
+          db.prepare(`UPDATE imported_ticket_groups SET race_id = ? WHERE id IN (${placeholders})`).bind(rid, ...groupIds)
+        );
+        stmts.push(
+          db.prepare(`UPDATE imported_ticket_items SET race_id = ? WHERE group_id IN (${placeholders})`).bind(rid, ...groupIds)
+        );
+      }
+      if (stmts.length) await db.batch(stmts);
+    }
   }
+
+  // 5) 馬名・騎手のバックフィルをまとめて行う。
+  const raceIdsNeedingBackfill = allProcessed
+    .filter((it) => (it.entries || it.mergedEntries || []).some((e) => e.horse_number !== null && e.horse_number !== undefined))
+    .map((it) => it.id);
+
+  if (raceIdsNeedingBackfill.length) {
+    const nameByRaceId = new Map();
+    for (const it of allProcessed) {
+      const entries = it.entries || it.mergedEntries || [];
+      const m = new Map();
+      for (const e of entries) {
+        const hn = Number(e.horse_number);
+        if (!Number.isInteger(hn)) continue;
+        const horse_name = e.horse_name ? String(e.horse_name).trim() : "";
+        const jockey = e.jockey ? String(e.jockey).trim() : "";
+        if (!horse_name && !jockey) continue;
+        m.set(hn, { horse_name: horse_name || null, jockey: jockey || null });
+      }
+      if (m.size) nameByRaceId.set(it.id, m);
+    }
+
+    const idPlaceholders = raceIdsNeedingBackfill.map(() => "?").join(",");
+    for (const table of ["imported_ticket_items", "tickets"]) {
+      const { results: rows } = await db
+        .prepare(`SELECT id, race_id, selections FROM ${table} WHERE race_id IN (${idPlaceholders})`)
+        .bind(...raceIdsNeedingBackfill)
+        .all();
+
+      const stmts = [];
+      for (const row of rows || []) {
+        const nameMap = nameByRaceId.get(row.race_id);
+        if (!nameMap) continue;
+        let selections;
+        try { selections = JSON.parse(row.selections || "[]"); } catch { continue; }
+        if (!Array.isArray(selections) || !selections.length) continue;
+
+        let changed = false;
+        const next = selections.map((s) => {
+          const info = nameMap.get(Number(s?.horse_number));
+          if (!info) return s;
+          const merged = { ...s };
+          if (info.horse_name && merged.horse_name !== info.horse_name) { merged.horse_name = info.horse_name; changed = true; }
+          if (info.jockey && merged.jockey !== info.jockey) { merged.jockey = info.jockey; changed = true; }
+          return merged;
+        });
+
+        if (changed) {
+          stmts.push(db.prepare(`UPDATE ${table} SET selections = ? WHERE id = ?`).bind(JSON.stringify(next), row.id));
+        }
+      }
+      if (stmts.length) await db.batch(stmts);
+    }
+  }
+
+  // 6) race_results(全着順・タイム等の詳細記録)をまとめてUPSERTする。
+  const raceResultsList = allProcessed
+    .filter((it) => it.raceResultsInput && it.raceResultsInput.length)
+    .map((it) => ({ raceId: it.id, records: it.raceResultsInput }));
+  if (raceResultsList.length) {
+    await upsertRaceResultsBulk(db, raceResultsList);
+  }
+
+  // 7) 着順・払戻が確定/更新されたレース分の tickets.payout をまとめて再計算する。
+  //    新規作成レースはfinish_order/payoutsのいずれかがあれば対象、既存レースは
+  //    finishOrPayoutTouchedがtrueのものだけを対象にする。既存レースについては
+  //    ステップ3で算出済みの finalFinishOrder/finalPayoutsObj(実際にDBへ書き込まれた
+  //    値と同じ)をそのまま使い、UPDATE直後の再SELECTは行わない。
+  const recomputeUpdates = [];
+  for (const it of toInsert) {
+    if (it.finishOrder || Object.keys(it.payouts).length) {
+      recomputeUpdates.push({
+        raceId: it.id,
+        finishOrder: it.finishOrder || null,
+        payoutsObj: Object.keys(it.payouts).length ? it.payouts : null,
+        entries: it.entries,
+      });
+    }
+  }
+  for (const it of toUpdate) {
+    if (it.finishOrPayoutTouched) {
+      recomputeUpdates.push({
+        raceId: it.id,
+        finishOrder: it.finalFinishOrder || null,
+        payoutsObj: (it.finalPayoutsObj && Object.keys(it.finalPayoutsObj).length) ? it.finalPayoutsObj : null,
+        entries: it.mergedEntries,
+      });
+    }
+  }
+  if (recomputeUpdates.length) {
+    await recomputeTicketPayoutsForRaces(db, recomputeUpdates);
+  }
+
   return Response.json({ ok: true, results });
 }

@@ -758,3 +758,161 @@ export async function upsertRaceResults(db, raceId, records) {
   if (statements.length) await db.batch(statements);
   return { updated: statements.length };
 }
+// functions/api/_shared.js の末尾に、以下をそのまま追記してください。
+// (このファイル自体は追記用スニペットです。既存のcomputeWinningCombos・
+//  isTicketRefunded・findStoredRateServer・ticketMatchesComboServer は
+//  _shared.js内に既に定義済みの非export関数なので、そのまま参照できます。
+//  新たにimport/exportし直す必要はありません。)
+
+// ---- 複数レースをまとめて処理するバルク版(2026-08-30追加) ----
+export async function recomputeTicketPayoutsForRaces(db, updates) {
+  const targets = (updates || []).filter((u) => u && u.raceId);
+  if (!db || !targets.length) return { updated: 0 };
+
+  const raceIds = targets.map((u) => u.raceId);
+  const placeholders = raceIds.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(`SELECT id, race_id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id IN (${placeholders})`)
+    .bind(...raceIds)
+    .all();
+  if (!results || !results.length) return { updated: 0 };
+
+  const ticketsByRace = new Map();
+  for (const t of results) {
+    if (!ticketsByRace.has(t.race_id)) ticketsByRace.set(t.race_id, []);
+    ticketsByRace.get(t.race_id).push(t);
+  }
+
+  const statements = [];
+  for (const u of targets) {
+    const raceTickets = ticketsByRace.get(u.raceId);
+    if (!raceTickets || !raceTickets.length) continue;
+    const refunds = (u.payoutsObj && Array.isArray(u.payoutsObj.refunds)) ? u.payoutsObj.refunds : [];
+
+    for (const t of raceTickets) {
+      let selections;
+      try {
+        selections = JSON.parse(t.selections || "[]");
+      } catch {
+        selections = [];
+      }
+
+      let newPayout = null;
+      let newRefunded = 0;
+
+      if (refunds.length && isTicketRefunded(t.bet_type, selections, refunds)) {
+        newPayout = Number(t.amount);
+        newRefunded = 1;
+      } else if (u.finishOrder && u.payoutsObj && u.payoutsObj[t.bet_type]) {
+        const combos = computeWinningCombos(t.bet_type, u.finishOrder, u.entries);
+        if (combos.some((c) => c.combo === null)) {
+          newPayout = null;
+        } else {
+          let matchedRate = null;
+          for (const c of combos) {
+            const rate = findStoredRateServer(u.payoutsObj, t.bet_type, c.combo);
+            if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
+              matchedRate = rate;
+              break;
+            }
+          }
+          newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
+        }
+      }
+
+      const currentPayout = t.payout === undefined ? null : t.payout;
+      const currentRefunded = Number(t.refunded || 0);
+      if (newPayout !== currentPayout || newRefunded !== currentRefunded) {
+        statements.push(db.prepare(`UPDATE tickets SET payout = ?, refunded = ? WHERE id = ?`).bind(newPayout, newRefunded, t.id));
+      }
+    }
+  }
+
+  if (statements.length) await db.batch(statements);
+  return { updated: statements.length };
+}
+
+export async function upsertRaceResultsBulk(db, raceRecordsList) {
+  const targets = (raceRecordsList || []).filter((x) => x && x.raceId && Array.isArray(x.records) && x.records.length);
+  if (!db || !targets.length) return { updated: 0 };
+
+  const raceIds = targets.map((x) => x.raceId);
+  const placeholders = raceIds.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(`SELECT race_id, horse_number, incident_note, waku_number FROM race_results WHERE race_id IN (${placeholders})`)
+    .bind(...raceIds)
+    .all();
+  const existingMap = new Map(
+    (results || []).map((r) => [`${r.race_id}_${r.horse_number}`, { incident_note: r.incident_note || "", waku_number: r.waku_number ?? null }])
+  );
+
+  const statements = [];
+  const now = new Date().toISOString();
+
+  for (const { raceId, records } of targets) {
+    for (const r of records) {
+      const horseNumber = Number(r.horse_number);
+      if (!Number.isInteger(horseNumber)) continue;
+
+      const existing = existingMap.get(`${raceId}_${horseNumber}`) || null;
+
+      const newIncident = r.incident_note || null;
+      const existingIncident = existing ? existing.incident_note : null;
+      const incidentToSave = (!existingIncident || existingIncident === newIncident) ? newIncident : existingIncident;
+
+      const wakuToSave = (r.waku_number !== null && r.waku_number !== undefined) ? r.waku_number : (existing ? existing.waku_number : null);
+
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO race_results
+              (race_id, horse_number, waku_number, horse_name, sex_age, weight_carried, jockey,
+               status, finish_position, time_text, margin, corner_positions, final_furlong_time,
+               body_weight, body_weight_change, win_popularity, incident_note, created_at, updated_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             ON CONFLICT(race_id, horse_number) DO UPDATE SET
+               waku_number=excluded.waku_number,
+               horse_name=excluded.horse_name,
+               sex_age=excluded.sex_age,
+               weight_carried=excluded.weight_carried,
+               jockey=excluded.jockey,
+               status=excluded.status,
+               finish_position=excluded.finish_position,
+               time_text=excluded.time_text,
+               margin=excluded.margin,
+               corner_positions=excluded.corner_positions,
+               final_furlong_time=excluded.final_furlong_time,
+               body_weight=excluded.body_weight,
+               body_weight_change=excluded.body_weight_change,
+               win_popularity=excluded.win_popularity,
+               incident_note=excluded.incident_note,
+               updated_at=excluded.updated_at`
+          )
+          .bind(
+            raceId,
+            horseNumber,
+            wakuToSave,
+            r.horse_name || null,
+            r.sex_age || null,
+            r.weight_carried ?? null,
+            r.jockey || null,
+            r.status || "finished",
+            r.finish_position ?? null,
+            r.time_text || null,
+            r.margin || null,
+            r.corner_positions || null,
+            r.final_furlong_time ?? null,
+            r.body_weight ?? null,
+            r.body_weight_change || null,
+            r.win_popularity ?? null,
+            incidentToSave,
+            now,
+            now
+          )
+      );
+    }
+  }
+
+  if (statements.length) await db.batch(statements);
+  return { updated: statements.length };
+}
