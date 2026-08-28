@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now')),
+  last_login_at TEXT  -- 2026-08-30追加: ログイン成功のたびに更新する(未ログインはNULL)。
+                       -- 管理画面の登録ユーザー一覧で表示する。
 );
 
 -- 初期管理者アカウント: username=admin, password=password

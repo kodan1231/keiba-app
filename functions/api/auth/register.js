@@ -41,8 +41,11 @@ export async function onRequestPost(context) {
   }
 
   const passwordHash = await hashPassword(password);
+  // 2026-08-30追加: 新規登録は成功と同時にログイン状態になる(下記createSessionToken)ため、
+  // 登録時点の日時をそのまま最終ログイン日時としても記録しておく(管理画面の登録ユーザー
+  // 一覧で「最終ログイン日時」欄が、初回登録直後は常に空欄になってしまうのを避けるため)。
   const result = await env.DB.prepare(
-    "INSERT INTO users (username, password_hash) VALUES (?, ?)"
+    "INSERT INTO users (username, password_hash, last_login_at) VALUES (?, ?, datetime('now'))"
   ).bind(username, passwordHash).run();
 
   const { token, maxAgeSeconds } = await createSessionToken(env, {

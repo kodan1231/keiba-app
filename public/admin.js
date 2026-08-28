@@ -2,6 +2,7 @@
 // 「未登録レース一覧」: CSVインポートで参照されたがまだレース登録されていない
 // 日付・競馬場・レース番号を一覧表示し、レース登録画面へ事前入力付きで遷移できる。
 // 「登録ユーザー一覧」: users テーブルの閲覧のみ(編集・削除機能は無し)。
+//   2026-08-30追加: 登録日時に加えて最終ログイン日時(JST)も表示する。
 // 「騎手名エイリアス管理」(2026-08-16追加): 表記ゆれの騎手名を正しい表記へ統一するための
 // 対応表(jockey_aliases)の一覧表示・追加・削除、および既存データへの一括補正。
 // 詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
@@ -18,6 +19,7 @@ function formatDate(dateStr) {
 // で保存されている。この文字列をそのまま new Date() に渡すと、末尾にタイムゾーン指定が
 // 無い形式の解釈がブラウザによって異なる(UTCとして解釈されるとは限らない)ため、
 // 常に明示的にUTCとして解釈したうえで日本時間(JST)に変換して表示する。
+// last_login_at(2026-08-30追加)も同じ形式・同じ関数で表示する。
 function formatDateTime(s) {
   if (!s) return "";
   const hasTz = /[Zz]|[+-]\d{2}:?\d{2}$/.test(s);
@@ -73,12 +75,13 @@ async function loadUsers() {
   const data = await res.json();
   const items = data.items || [];
   table.innerHTML = `
-    <thead><tr><th>ユーザー名</th><th>登録日時(JST)</th></tr></thead>
+    <thead><tr><th>ユーザー名</th><th>登録日時(JST)</th><th>最終ログイン日時(JST)</th></tr></thead>
     <tbody>
       ${items.map((u) => `
         <tr>
           <td>${escapeHtml(u.username)}${u.username === window.currentUser?.username ? "(自分)" : ""}</td>
           <td>${formatDateTime(u.created_at)}</td>
+          <td>${u.last_login_at ? formatDateTime(u.last_login_at) : "未ログイン"}</td>
         </tr>
       `).join("")}
     </tbody>
