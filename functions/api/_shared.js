@@ -257,6 +257,28 @@ function normalizeHorseNameForMerge(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
 }
 
+// functions/api/_shared.js の既存の mergeEntriesByHorseName 関数を、
+// 以下の内容で丸ごと置き換えてください(直前に新しいヘルパー関数
+// computeWakuNumberFromHorseNumber が追加されています)。
+// normalizeHorseNameForMerge・sortEntriesByHorseNumberForMerge は
+// _shared.js に既存の関数のため、そのまま使えます(変更不要)。
+
+// 馬番から枠番を計算する(2026-08-30追加)。JRAでは馬番の抽選後、出走頭数に応じて
+// 機械的に枠番が割り当てられる(枠自体は抽選対象ではなく頭数から一意に決まる)ため、
+// 馬番が確定していれば枠番も確定させてよい。races.js「出走頭数から枠番の初期値を
+// 計算する」(defaultWakuNumber())と同じアルゴリズム。8頭以下は1頭1枠、9頭以上は
+// 余りを大きい枠番(7・8枠)側から順に1頭ずつ多く割り振る。
+function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
+  const base = Math.floor(horseCount / 8);
+  const remainder = horseCount % 8;
+  let n = horseNumber;
+  for (let waku = 1; waku <= 8; waku++) {
+    const size = waku > (8 - remainder) ? base + 1 : base;
+    if (n <= size) return waku;
+    n -= size;
+  }
+  return 8;
+}
 export function mergeEntriesByHorseName(existingEntries, incomingEntries) {
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
     .filter((e) => normalizeHorseNameForMerge(e?.horse_name));
@@ -302,6 +324,18 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries) {
     }
     // jockey も競合の概念を設けず、取込側に値があれば無条件で上書きする。
     if (incoming.jockey) existing.jockey = incoming.jockey;
+  }
+
+  // 2026-08-30追加: 馬番が確定している馬は、枠番も自動計算して確定値として埋める
+  // (PDFからは枠番をテキスト抽出できず常にnullで来るため、ここで計算しない限り
+  // 永久にnullのまま残ってしまう)。頭数は entries 配列全体の件数を使う
+  // (races.js の出走馬表編集画面が採用しているのと同じ基準)。既に枠番が入って
+  // いる馬(手動入力等で確定済み)は上書きしない。
+  const horseCount = merged.length;
+  for (const e of merged) {
+    if (Number.isInteger(e.horse_number) && (e.waku_number === null || e.waku_number === undefined)) {
+      e.waku_number = computeWakuNumberFromHorseNumber(e.horse_number, horseCount);
+    }
   }
 
   return { entries: sortEntriesByHorseNumberForMerge(merged), conflicts };
