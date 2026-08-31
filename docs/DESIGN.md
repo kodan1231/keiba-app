@@ -18,7 +18,7 @@
 | 予想印 | `prediction_marks` | **1頭につき1つまで**(ドロップダウン選択式)。印の種類: ◎○▲△☆消。ユーザーごとに分離(`UNIQUE(race_id, horse_number, user_id)`)。**`horse_number`はNOT NULL制約があるため、枠番・馬番が未確定の馬には印を付けられない** |
 | 予想メモ | `prediction_notes` | レース単位の自由記述メモ(`prediction.html`)。ユーザーごとに分離(`UNIQUE(race_id, user_id)`) |
 | 馬メモ | `horse_notes` | 馬名をキーに継続管理。馬名はtrim/空白正規化して保存。ユーザーごとに分離(`UNIQUE(horse_name, user_id)`)。**馬名がキーのため、枠番・馬番の有無に関係なく常に利用できる** |
-| ユーザーアカウント | `users` | ログイン画面から自己登録できる(招待コード等の制限なし) |
+| ユーザーアカウント | `users` | ログイン画面から自己登録できる(招待コード等の制限なし)。ログイン成功時刻を`last_login_at`に記録する |
 | レース | `races` | 出走馬表(予定)・着順(上位3着)・払戻・レース条件を保持。全ユーザー共有 |
 | レース結果詳細 | `race_results` | 馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
 
@@ -59,12 +59,11 @@
 レース一覧カード・払戻モーダル等の画面表示にはまだ反映していない。対応は`docs/BACKLOG.md`
 「クラスタN-4」として優先度低のタスクに残している。
 
-### 出走馬(`races.entries`)の枠番・馬番はnullを許容する
+### 出走馬(`races.entries`)の枠番・馬番
 
 出走馬一覧PDFインポート(下記参照)対応により、`races.entries`(JSON配列)内の各出走馬
-オブジェクトの`waku_number`・`horse_number`は**null になりうる**(枠番・馬番の抽選前に
-登録するケースに対応するため)。`entries`はスキーマレスなJSON列のため、この仕様に
-DBマイグレーションは不要。
+オブジェクトの`horse_number`は**null になりうる**(馬番の抽選前に登録するケースに対応する
+ため)。`entries`はスキーマレスなJSON列のため、この仕様にDBマイグレーションは不要。
 
 馬の同一性は、`horse_number`ではなく**`horse_name`(馬名)をキー**に判定する
 (未確定時は馬名しか手がかりがないため。`horse_notes`が馬名をキーにしているのと同じ考え方)。
@@ -72,6 +71,14 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 ただしPDF抽出結果の表記ゆれ(空白の入り方等)で同一馬が別馬として扱われないよう、
 比較前には`horse_notes`等と同じ正規化(全角スペース等の空白類を1つの半角スペースへ
 畳み込み・trim)を必ず通すこと。
+
+**枠番(`waku_number`)は馬番から自動計算して保存する(2026-08-30〜)**。JRAでは馬番の抽選後、
+出走頭数に応じて機械的に枠番が割り当てられる(枠自体は抽選対象ではなく、頭数と馬番から
+一意に決まる)ため、`horse_number`が確定していれば`waku_number`も確定させてよい。詳細は
+下記「枠番は馬番から自動計算して保存する」参照。そのため、`horse_number`が`null`の間は
+`waku_number`も計算しようがなく`null`のままだが、`horse_number`が確定すると同時に
+`waku_number`も自動的に埋まる(PDFからは枠番をテキスト抽出できないため、この自動計算を
+経由しない限り`waku_number`は永久に`null`のままになる)。
 
 `horse_number`がnullの馬が1頭でも含まれるレースは、以下のように扱われる:
 
@@ -84,7 +91,43 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 - **レース管理画面(`races.js`)**: 出走馬登録状況バッジに「(枠番未確定)」の表示が付く
 - **枠連(wakuren)の払戻判定**: `waku_number`が未確定の出走馬が絡む枠連馬券は、的中組み合わせ
   自体を算出できないため「不的中(0円)」と断定せず「判定不能(未確定のまま)」として扱う
-  (詳細は下記「払戻確定時のticket反映」参照)
+  (詳細は下記「払戻確定時のticket反映」参照。2026-08-30の自動計算導入後は、`horse_number`が
+  確定していれば`waku_number`も同時に確定するため、この「判定不能」状態は実運用上ほぼ
+  「馬番自体が未確定」の場合に限られる)
+
+### 枠番は馬番から自動計算して保存する(2026-08-30〜)
+
+JRAの馬番は抽選で決まるが、**枠番自体は抽選対象ではなく、出走頭数と馬番から機械的に
+一意に決まる**(8頭以下は1頭1枠、9頭以上は余りを大きい枠番(7・8枠)側から順に1頭ずつ
+多く割り振る)。そのため、**馬番が確定していれば枠番も確定できる**という前提のもと、
+`mergeEntriesByHorseName()`(`functions/api/_shared.js`)内で、馬番が確定していて枠番が
+未確定(`null`)の馬について自動計算し、確定値としてDBへ保存する。
+
+計算ロジック(`computeWakuNumberFromHorseNumber(horseNumber, horseCount)`)は`races.js`の
+出走馬表編集画面が使う`defaultWakuNumber()`と同じアルゴリズムをバックエンド側に複製した
+もの(`races.js`はフロント専用グローバルスクリプトのためモジュールimportができず、
+共通化していない)。`horseCount`は`entries`配列全体の件数を使う。
+
+この計算は`mergeEntriesByHorseName()`を経由する2つの取込経路
+(`functions/api/races/entries-import.js`・`functions/api/races/results-import.js`)の
+両方に自動的に適用される。既に確定済みの枠番(手動入力等)は上書きしない(`waku_number`が
+`null`の場合のみ計算する)。
+
+**過去に取り込んだレース(旧仕様で`waku_number`がnullのまま保存されているもの)を直すには**、
+該当PDFを同じインポート機能で再度取り込み直せばよい。マージ処理の中で既存`entries`の
+`waku_number`も同じロジックで埋められるため、専用の一括補正機能は用意していない。
+
+**枠連(wakuren)馬券の払戻判定への影響**: 枠連の的中判定は購入時点の`selections`ではなく、
+清算時点で`races.entries`から最新の`waku_number`を引いて判定する実装になっている
+(`computeWinningCombos`の`wakuOf()`)。そのため、この変更を適用した状態でレース確定・
+払戻計算を行えば、これまで「枠番未確定のため判定不能」だった枠連馬券も正しく的中/不的中
+判定されるようになる(既存の判定ロジック自体は変更していない)。
+
+**2026-08-30より前の設計との違い(履歴)**: 以前は「木・金の出走馬インポートが省略され
+結果PDFのみでレースが登録される運用がありうるため、推定値をDBに保存すると誤った
+的中/不的中が確定するリスクがある」という理由で、推定値は表示専用(`races.js`側がその場で
+計算するだけ)にとどめ、DBには保存しない方針だった。「馬番が確定すれば枠番は一意に決まる
+(抽選対象ではない)」という前提をプロジェクト側で確認できたため、この方針を転換した。
 
 ### `races.entries`への性齢・負担重量の追加
 
@@ -114,7 +157,6 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 ### 想定フロー
 
 ```
-月・火・水: 開催日程を手動登録(「開催日程を一括登録」)
 木        : 出走馬一覧(枠番・馬番未確定)PDFをインポート  ※任意。省略されうる
 金        : 出走馬一覧(枠番・馬番確定後)PDFを同じ機能で再インポート  ※任意。木を省略して
             金から始める運用もある
@@ -131,7 +173,7 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 | タイミング | 確定させる情報 | `recomputeTicketPayoutsForRace()`呼び出し |
 |---|---|---|
 | 木(entries未確定) | レース名・コース情報・条件詳細(weight_type/class_flags/course_direction)・馬名(五十音順)・性齢・負担重量(予定)・騎手名(記号付き) | **保険として呼ぶ**(finish_order/payouts未確定なら何もしないため無害) |
-| 金(entries確定) | 枠番・馬番(未確定→確定)・馬名を馬番順にソート・性齢・負担重量(予定の確定)・騎手名(不一致なら上書き) | **保険として呼ぶ**(同上) |
+| 金(entries確定) | 枠番(馬番から自動計算)・馬番(未確定→確定)・馬名を馬番順にソート・性齢・負担重量(予定の確定)・騎手名(不一致なら上書き) | **保険として呼ぶ**(同上) |
 | 土日(results) | 着順(全馬・`race_results`)・払戻・天候・馬場状態・馬体重・タイム・着差・コーナー通過順位・推定上り・単勝人気・騎手名(不一致なら上書き) | **必ず呼ぶ** |
 
 木・金時点での再計算呼び出しは、通常フローでは`finish_order`/`payouts`が存在しないため
@@ -157,6 +199,10 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 - **騎手名(`jockey`)は競合の概念を設けず、取込側の値があれば無条件で上書きする**
   (騎手変更の可能性を考慮するため)。見習い減量記号(☆▲△★◇)は騎手名の先頭に
   残したまま保存する(出走馬一覧PDF・結果PDFいずれの取込でも記号付きの表記に揃える)
+- **馬番(`horse_number`)が確定していて枠番(`waku_number`)が未確定の場合、出走頭数から
+  枠番を自動計算して確定値として埋める**(2026-08-30〜。詳細は上記「枠番は馬番から自動
+  計算して保存する」参照)。この処理は競合検出の対象外で、既に枠番が確定済みの馬は
+  上書きしない
 
 マージ前に、既存`entries`側の馬名が空の項目は除去してからマージする(空行がどの馬とも
 一致せず残り続けるのを防ぐため)。マージ後は`entries`を必ず馬番順にソートし直す
@@ -165,24 +211,26 @@ JRAの馬名は全国で一意に登録されるため、同一レース内に�
 (既存の管理者入力を上書きしない)。`weather`・`track_condition`はレース結果PDFのみに
 出現するため、結果インポート時に上書きしてよい(常に最新の結果PDFの値を正とする)。
 
-### 枠番の推定値をDBに保存しない(重要な設計方針)
+### 実装上の注意(サブリクエスト数対策・2026-08-30)
 
-木・金の出走馬インポートが省略され、結果PDFのみでレースが登録される運用がありうるため、
-**結果PDF側で枠番がテキストから取得できなかった場合、推定値を計算して埋めることはせず、
-`null`のまま送信する**。
+`functions/api/races/entries-import.js`・`functions/api/races/results-import.js`は、
+以前レースごとに個別クエリ(既存レース確認・出走馬表マージ後の書き込み・CSV未登録
+データの紐付け・馬名バックフィル・`race_results`のUPSERT・`tickets.payout`再計算)を
+逐次実行しており、12レース分のPDFを一括インポートするとCloudflare Pages Functionsの
+1リクエストあたりのサブリクエスト数上限に抵触し、「一括登録に失敗しました」という
+汎用エラーになる不具合があった(`functions/api/ticket-imports/index.js`で以前に
+発生したのと同じ構造の問題)。
 
-以前は簡易な推定値をその場で`entries.waku_number`に埋め込んでいたが、これをそのままDBに
-保存すると「単なる目安」が「確定値」として扱われてしまい、枠連馬券の的中判定にこの推定値が
-実データとして使われ、誤った的中/不的中が確定してしまうリスクがある。木・金を省略した
-運用では、この結果PDFのentriesがそのレースの`waku_number`の唯一の情報源になるため、
-影響が顕在化しやすい。
-
-枠番が本当に分からない場合は`null`(未確定)のまま保存し、枠連馬券は「判定不能」の
-ままとして扱う方が安全という判断による。一覧・編集画面での「目安の枠番表示」自体は
-`races.js`側が保存値とは別にその場で計算して表示する仕組み(`renderEntryRows()`内の
-`defaultWakuNumber()`呼び出し)が既にあるため、この方針変更によって表示上の目安が
-失われることはない(DBへの保存有無だけの話)。`race_results.waku_number`も同様に
-基本`null`のまま運用する(手動入力可能な列としてのみ保持する)。
+現在はいずれも「対象レースをまとめて1回のSELECTで取得→メモリ上で判定→
+`db.batch()`でまとめて書き込む」方式に書き直しており、クエリ回数はレース件数に
+依存せずほぼ一定になっている。`race_results`のUPSERT・`tickets.payout`再計算は
+複数レースをまとめて処理するバルク版(`upsertRaceResultsBulk()`・
+`recomputeTicketPayoutsForRaces()`。いずれも`functions/api/_shared.js`)を新設し、
+`results-import.js`から利用している。単一レースのみを扱う既存の
+`upsertRaceResults()`・`recomputeTicketPayoutsForRace()`(単数形)は、他の呼び出し元
+(`functions/api/races/[id].js`・`entries-import.js`・`functions/api/tickets/bulk.js`)の
+ために変更せずそのまま維持している。この関数(および同様に「1件ごとにDBへ問い合わせる
+ループ」を含む実装)を今後変更・追加する際は、同じ問題を再発させないよう注意すること。
 
 ### 今回スコープに含めないもの(BACKLOGへ引き継ぎ)
 
@@ -220,7 +268,9 @@ JRA公式サイトの「出走馬一覧」PDF(1開催日・1ファイルにつ�
   `(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+[\d.]+kg`のマッチ結果を利用し、`entries`へ含めて
   サーバーへ送信する)
 - `functions/api/races/entries-import.js`: 管理者専用API。マージ処理を行う(共通ヘルパー
-  `mergeEntriesByHorseName()`を呼び出す)
+  `mergeEntriesByHorseName()`を呼び出す)。12レース程度の一括インポートでも安定して動作
+  するよう、レースごとの逐次クエリではなくバッチ化した実装になっている(上記「実装上の
+  注意(サブリクエスト数対策)」参照)
 - `public/races.html`の「出走馬一覧PDFをインポート」ボタン(管理者のみ)からモーダルを開く
 
 ### マージロジック(レース行は絶対に削除・再作成しない)
@@ -243,10 +293,10 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
 ### 既知の制約
 
 - **枠番はPDFからテキストとして取得できない**(枠番・馬番確定後PDFであっても色付き
-  アイコン表示のみで、テキスト抽出できない)。馬番は取得できる。`waku_number`は基本的に
-  常にnullのまま運用される想定でよい(購入・予想印のガードは`horse_number`のみで判定して
-  おり影響しないが、枠連馬券の払戻判定には影響する。上記「枠番の推定値をDBに保存しない」
-  参照)
+  アイコン表示のみで、テキスト抽出できない)。馬番は取得できる。ただし馬番が確定していれば、
+  `mergeEntriesByHorseName()`が出走頭数から枠番を自動計算して確定値として保存するため、
+  `waku_number`が保存後もnullのまま残るのは「馬番自体が未確定」の場合のみになる
+  (2026-08-30〜。上記「枠番は馬番から自動計算して保存する」参照)
 - **単勝オッズは全馬分を保存しない**(今回のスコープ外。理由は下記「レース結果の詳細記録」
   参照)
 - **騎手名/調教師名の境界判定**は、PDF.jsが返す文字ごとの座標(タブ相当の列区切り、または
@@ -264,7 +314,9 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
 `race_results`への全着順)・払戻・レース条件詳細をまとめて登録する。未登録のレースは
 新規作成し、既存レースは確認のうえ更新できる。木・金の出走馬インポートを省略し、この
 インポートのみでレースが新規登録される運用もありうる(上記「出走馬インポート・レース結果
-インポートの運用フロー」参照)。
+インポートの運用フロー」参照)。12レース程度の一括登録でも安定して動作するよう、
+レースごとの逐次クエリではなくバッチ化した実装になっている(上記「実装上の注意
+(サブリクエスト数対策)」参照)。
 
 パーサーはクライアント側(`public/jra-result-pdf.js`)で完結しており、画面上の「解析診断
 情報」パネルで抽出行数・レース開始検出数・着順検出数・払戻検出数などを確認できる。
@@ -302,7 +354,9 @@ INSERT」方式。レース行(`races.id`)を削除して作り直すことは�
   揃え、木・金・土日いずれのインポート結果でも同じ表記で騎手名の一致/不一致を判定できる
   ようにするため)。出走馬は着順順ではなく**馬番昇順**に並べ替える(`races.js`側の
   「entries配列のi番目≒馬番(i+1)」という前提に合わせるため)
-- **枠番は取得できなければ`null`のまま送信する**(上記「枠番の推定値をDBに保存しない」参照)
+- **枠番はPDFから取得できないため常に`null`のまま送信するが**、`mergeEntriesByHorseName()`
+  側で馬番が確定していれば出走頭数から自動計算して確定値として保存する(2026-08-30〜。
+  上記「枠番は馬番から自動計算して保存する」参照)
 - **払戻表の解析**: 単勝/複勝/枠連/馬連/馬単/ワイド/3連複/3連単の3列グリッドレイアウトを
   解析する。複勝・ワイドのように複数行にまたがる式別は、2行目以降にラベル(「複勝」等)が
   再印字されないため、「組み合わせの頭数(1頭/2頭/3頭)ごとに直前式別を保持する」方式
@@ -370,17 +424,22 @@ U+F900–FAFF・CJK互換漢字補助、U+2F800–2FA1F)とは別のブロック
   `finish_order`/`payouts`のマージ方式(fill-emptyのみ)は変更していない**(既知の制約
   として残る。下記「既知の制約・未解決の課題」参照)
 - **`race_results`への反映**: 解析した全馬分の結果行(`finished`/`scratched`/`excluded`/
-  `stopped`)を`race_id`+`horse_number`で`INSERT ... ON CONFLICT DO UPDATE`し、既存の
-  `incident_note`(管理者が手動編集した内容)を**自動転記の内容で無条件上書きしない**
-  (下記「レース結果の詳細記録」の更新ルール参照)
+  `stopped`)を、複数レースをまとめて処理するバルク版`upsertRaceResultsBulk()`
+  (`functions/api/_shared.js`)で`race_id`+`horse_number`をキーに`INSERT ... ON CONFLICT
+  DO UPDATE`し、既存の`incident_note`(管理者が手動編集した内容)を**自動転記の内容で
+  無条件上書きしない**(下記「レース結果の詳細記録」の更新ルール参照)
 - 着順・払戻レートを更新した場合は、そのレースを購入した全ユーザーの`tickets.payout`を
-  `recomputeTicketPayoutsForRace()`で**必ず**再計算・反映する(下記「払戻確定時のticket反映」
+  複数レースをまとめて処理するバルク版`recomputeTicketPayoutsForRaces()`
+  (`functions/api/_shared.js`)で**必ず**再計算・反映する(下記「払戻確定時のticket反映」
   参照)。着順・払戻を書き換えるコードパスを新規に追加する際は、この関数の呼び出しが
   漏れていないか必ず確認すること
 - 出走馬(馬名・騎手)が更新された場合は、同じレース・馬番を参照しているCSV取込データ・
   購入履歴へ`backfillHorseNamesForRace()`でバックフィルする
 - レースが未登録のまま取り込まれていたCSVデータがあれば、`linkUnregisteredImportsToRace()`
   により自動的に紐付ける
+- 上記いずれも「まとめてSELECT→メモリ上で判定→`db.batch()`でまとめて書き込む」方式で
+  実装されており、レース件数によらずクエリ回数がほぼ一定になっている(上記「実装上の注意
+  (サブリクエスト数対策)」参照)
 
 ### 既知の制約・未解決の課題
 
@@ -397,13 +456,19 @@ U+F900–FAFF・CJK互換漢字補助、U+2F800–2FA1F)とは別のブロック
 - 実ブラウザのPDF.jsでの動作検証は完全には完了していない。次回実機で試す際は、
   `docs/TESTING.md`の該当項目、および「解析診断情報」パネルの抽出全文を確認し、
   結果をこのドキュメントに反映すること
+- 2026-08-30に実装したサブリクエスト数対策(バッチ化)・枠番自動計算は、いずれも実機
+  (実際のPDF・実DB)での動作検証が未実施(コードレビュー・構文チェックのみ)。
+  `docs/BACKLOG.md`「調査中の不具合」参照
 
 ### 関連ファイル
 
 - `public/jra-result-pdf.js`: クライアント側の解析ロジック本体
 - `functions/api/races/results-import.js`: サーバー側の反映処理
-- `functions/api/_shared.js`: `recomputeTicketPayoutsForRace()`・`backfillHorseNamesForRace()`・
-  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`・`loadJockeyAliasMap()`・
+- `functions/api/_shared.js`: `recomputeTicketPayoutsForRace()`・
+  `recomputeTicketPayoutsForRaces()`(複数レース一括版)・`backfillHorseNamesForRace()`・
+  `linkUnregisteredImportsToRace()`・`mergeEntriesByHorseName()`・
+  `computeWakuNumberFromHorseNumber()`・`upsertRaceResults()`・
+  `upsertRaceResultsBulk()`(複数レース一括版)・`loadJockeyAliasMap()`・
   `applyJockeyAliasMap()`・`normalizeExistingJockeyNames()`
 
 ## レース結果の詳細記録(race_results)
@@ -456,11 +521,14 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 
 保持しないもの(意図的に対象外): 単勝オッズ(全馬分は結果PDFに存在しない。存在するのは
 1着馬の払戻金額から逆算できる近似値のみで、正式なオッズ表示ではないため保存しない)、
-本賞金・付加賞、調教師名。
+本賞金・付加賞、調教師名。`race_results.waku_number`は`races.entries`側とは異なり自動計算
+の対象外で、手動入力可能な列としてのみ保持する(PDFから取得できないため常に`null`のまま
+運用する想定)。
 
 ### 更新ルール
 
-- `results-import.js`から`race_id`+`horse_number`をキーに`UPSERT`する
+- `results-import.js`から、複数レースをまとめて処理するバルク版`upsertRaceResultsBulk()`
+  (`functions/api/_shared.js`)を使い、`race_id`+`horse_number`をキーに`UPSERT`する
 - **`incident_note`は自動転記の対象になった場合でも、既存に管理者が手動で追記した内容が
   あれば無条件で上書きしない**。具体的には、既存の`incident_note`が空、または直前の
   自動転記内容と完全一致する場合のみ、新しい自動転記内容で上書きする(管理者が加筆した
@@ -633,6 +701,14 @@ CREATE TABLE jockey_aliases (
   リクエストごとに`context.data.isAdmin`へセットする
 - セッション: Cookieのペイロードに`user_id`・`username`・有効期限を含め、`env.APP_PASSWORD`を
   HMAC署名鍵として利用する(ログイン用パスワードとしては使わないが、署名鍵としては流用する)
+- **最終ログイン日時(`users.last_login_at`。2026-08-30〜)**: ログイン成功のたびに
+  `functions/api/auth/login.js`が`UPDATE users SET last_login_at = datetime('now')`で
+  更新する。新規登録(`functions/api/auth/register.js`)は成功と同時にログイン状態になる
+  ため、登録日時をそのまま初期値としてセットする(新規登録直後のユーザーが「未ログイン」
+  表示にならないようにするため)。この更新に失敗してもログイン処理自体は失敗させない
+  (致命的でない付随処理として扱う)。管理画面(`admin.html`)の登録ユーザー一覧に
+  「最終ログイン日時(JST)」列として表示する(`functions/api/admin/users.js`が返し、
+  `public/admin.js`が`created_at`と同じ方式でJSTに変換して表示する)
 - データの所有者(user_id)を持つテーブル: `tickets`・`imported_tickets`・
   `imported_ticket_groups`・`prediction_notes`・`prediction_marks`・`horse_notes`。
   いずれも全APIハンドラで`WHERE user_id = ?`のフィルタ、新規作成時の`user_id`セットを
@@ -719,7 +795,9 @@ CREATE TABLE jockey_aliases (
   レース参照をリクエスト単位でキャッシュする、重複候補検出は全行処理後に1回だけ行う、
   という方式でCloudflare Workersの1リクエストあたりのサブリクエスト数上限を回避している。
   この関数(および同様に「1件ごとにDBへ問い合わせるループ」を含む実装)を今後変更・追加する
-  際は、同じ問題を再発させないよう注意すること
+  際は、同じ問題を再発させないよう注意すること(`functions/api/races/entries-import.js`・
+  `functions/api/races/results-import.js`も同じ方式へ書き直し済み。上記「実装上の注意
+  (サブリクエスト数対策)」参照)
 - **集計への反映漏れ(未確認)**: `GET /api/ticket-imports`が返す各アイテムには
   `race_finish_order`/`race_payouts`(通常購入`tickets`側にはJOINで付与されているレース確定
   情報)が含まれていない。的中率集計への影響は`docs/BACKLOG.md`参照
@@ -769,10 +847,9 @@ CSV出力元によって表記ゆれがあるため、以下を吸収して解�
 ### モーダル/ダイアログ共通挙動
 
 出走馬編集(`race-entries-modal`)・払戻編集(`race-payout-modal`)・出走馬一覧PDFインポート
-(`jra-entries-import-modal`)・JRAレース結果PDFインポート(`jra-result-import-modal`)・
-開催日程一括登録(`schedule-modal`。以上いずれも`races.html`)、および馬券購入モーダル
-(`purchase-modal`。`index.html`)の**全6モーダル**は、**ESCキー押下時に「キャンセル」ボタンと
-同じ扱いで(保存・送信を一切行わず)閉じる**。
+(`jra-entries-import-modal`)・JRAレース結果PDFインポート(`jra-result-import-modal`)(以上
+いずれも`races.html`)、および馬券購入モーダル(`purchase-modal`。`index.html`)は、
+**ESCキー押下時に「キャンセル」ボタンと同じ扱いで(保存・送信を一切行わず)閉じる**。
 
 - 実装は`public/utils.js`の共通ヘルパー`registerEscToClose(modalEl, closeFn)`を、各画面の
   モーダル初期化コードから呼び出す方式(`public/races.js`・`public/jra-entries-pdf.js`・
@@ -847,6 +924,9 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
   「払戻確定時のticket反映」参照)
 - `race_results`(全着順・タイム・馬体重等・「競走中の出来事」)は専用の編集UIを用意せず、
   PDFインポート経由での自動登録のみとし、`incident_note`のみレース管理画面から編集できる
+- **開催日程を一括登録する機能は廃止した**(2026-08-30)。新規レースの登録は
+  「＋ レースを登録」ボタンから出走馬表モーダルを個別に開いて行う(競馬場が横並びカラムで
+  表示され「未登録」の枠をクリックする経路も従来通り利用できる)
 
 `history.html`の「払戻を編集(レース管理へ)」リンク(`races.html?edit=`)は払戻モーダルを
 直接開く。モーダルは開くたびにスクロール位置が先頭にリセットされる。払戻入力欄(式別
@@ -974,10 +1054,10 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 - D1の`created_at`等(`datetime('now')`で保存される列)はUTCの`"YYYY-MM-DD HH:MM:SS"`形式
   (タイムゾーン情報なし)で保存される。この文字列をそのまま`new Date()`に渡すと、閲覧環境に
   よって表示時刻がずれる可能性がある
-- 管理画面(`admin.html`)の「登録ユーザー一覧」の登録日時は、`public/admin.js`の
-  `formatDateTime()`で明示的にUTCとしてパースしたうえで、`Intl.DateTimeFormat`の
-  `timeZone: "Asia/Tokyo"`を使って常に日本時間(JST)に変換して表示する。見出しにも
-  「登録日時(JST)」と明記している
+- 管理画面(`admin.html`)の「登録ユーザー一覧」の登録日時・最終ログイン日時は、
+  `public/admin.js`の`formatDateTime()`で明示的にUTCとしてパースしたうえで、
+  `Intl.DateTimeFormat`の`timeZone: "Asia/Tokyo"`を使って常に日本時間(JST)に変換して表示する。
+  見出しにも「登録日時(JST)」「最終ログイン日時(JST)」と明記している
 - 同様の「DBの生UTC文字列をブラウザのローカルタイムゾーン解釈に依存したまま表示している
   箇所」が他にも残っている可能性がある。見つかった場合は同じ考え方(明示的にUTCとして
   パース→`Asia/Tokyo`へ変換)で対応する
@@ -1035,10 +1115,10 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 - コース種別(芝/ダート/障害)・距離(m)は任意入力。レース一覧カードには`courseTypeShort()`で
   短縮した表記(芝/ダ/障)+距離で表示する。**片方のみ入力の場合の表示ロジックは上記
   「レース情報のコース種別・距離」節の`formatCourseText()`(`public/utils.js`)を参照**
-- 出走馬(`entries`)の`waku_number`・`horse_number`はnullを許容する(出走馬一覧PDFインポート
-  対応。上記「出走馬(races.entries)の枠番・馬番のnullable化」参照)。手動での出走馬表編集
-  (`races.html`のフォーム)は従来通り枠番・馬番の入力を前提としており、この画面から新規に
-  空欄で保存することは想定していない(PDFインポート経由でのみnullになりうる)
+- 出走馬(`entries`)の`horse_number`はnullを許容する(出走馬一覧PDFインポート対応。上記
+  「出走馬(races.entries)の枠番・馬番」参照)。`waku_number`は`horse_number`が確定していれば
+  自動計算されるため、通常運用では手動で空欄のまま保存する場面はほぼ想定していない
+  (手動での出走馬表編集(`races.html`のフォーム)は従来通り枠番・馬番の入力を前提としている)
 
 ## 払戻確定時のticket反映(全ユーザー対応)
 
@@ -1048,44 +1128,49 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 
 - 払戻計算ロジック(`public/payout.js`の`computeWinningCombos`・`ticketMatchesCombo`・
   `findStoredRate`相当)は`functions/api/_shared.js`にサーバー側実装として移植されており、
-  `recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries)`として
-  公開されている
+  単一レース向けの`recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj,
+  entries)`と、複数レースをまとめて処理するバルク版`recomputeTicketPayoutsForRaces(db,
+  updates)`(`updates`は`{raceId, finishOrder, payoutsObj, entries}`の配列。2026-08-30追加)
+  の2種類が公開されている
 - 呼び出し元:
   - `functions/api/races/[id].js`の`onRequestPut`(レース管理画面の払戻編集モーダルからの
-    保存)
-  - `functions/api/races/results-import.js`(JRAレース結果PDF一括登録。**必ず**呼び出す)
+    保存。単一レース版を使う)
+  - `functions/api/races/results-import.js`(JRAレース結果PDF一括登録。**必ず**呼び出す。
+    複数レースをまとめて処理するバルク版`recomputeTicketPayoutsForRaces()`を使う。
+    詳細は上記「実装上の注意(サブリクエスト数対策)」参照)
   - `functions/api/races/entries-import.js`(出走馬一覧PDFインポート。**保険として**呼び出す。
     木・金の出走馬インポート時点では通常`finish_order`/`payouts`が存在しないため
     実質何もしないが、木金を省略して結果PDFが先に取り込まれるイレギュラーな運用への
-    備えとして呼び出す)
+    備えとして呼び出す。単一レース版を使う)
   - `functions/api/tickets/bulk.js`(通常購入。過去に購入した馬券の履歴を残す目的の購入
     操作であっても、対象レースが既に着順・払戻確定済みの場合、保存時点で`payout`が
     未確定のまま残ってしまう不具合があったため、チケットINSERT直後に対象レースの
     `finish_order`/`payouts`を確認し、いずれかが確定済みであれば呼び出す。未確定レースの
     場合は何もしない。呼び出しが失敗しても購入自体(履歴の記録)はロールバックしない
-    (`try/catch`で握りつぶし、ログのみ残す)。この呼び出しは`user_id`で絞り込まないため、
-    購入したのが誰であっても、同じレースを既に購入していた他ユーザーのticketsも
-    (値に変化がなければ実質無害な形で)一緒に再計算される)
+    (`try/catch`で握りつぶし、ログのみ残す)。単一レース版を使う。この呼び出しは`user_id`で
+    絞り込まないため、購入したのが誰であっても、同じレースを既に購入していた他ユーザーの
+    ticketsも(値に変化がなければ実質無害な形で)一緒に再計算される)
   上記いずれも、`user_id`で絞り込まず該当`race_id`の全`tickets`を対象に払戻額を
   再計算・一括更新(`db.batch()`)する
 - `races.js`側は、払戻モーダル内の「◯点購入」表示のためだけに`GET /api/tickets`由来の
   `currentTickets`を使う(表示専用。反映処理には使わない)。ticketを個別にPUTするループは
   持たない
 - `computeWinningCombos`が返す組み合わせ配列に`combo: null`(判定不能。枠番未確定の枠連等)が
-  含まれる場合、`computeTicketPayout`/`recomputeTicketPayoutsForRace`のいずれも、その馬券の
-  払戻を「0円(不的中確定)」にせず`null`(未確定のまま)を返す。枠連以外の式別(単勝・複勝・
-  馬連・ワイド・馬単・三連複・三連単)は`wakuOf()`を使わないため影響しない
+  含まれる場合、`computeTicketPayout`/`recomputeTicketPayoutsForRace`/
+  `recomputeTicketPayoutsForRaces`のいずれも、その馬券の払戻を「0円(不的中確定)」にせず
+  `null`(未確定のまま)を返す。枠連以外の式別(単勝・複勝・馬連・ワイド・馬単・三連複・
+  三連単)は`wakuOf()`を使わないため影響しない
 
 **今後の注意点**: `races.finish_order`/`races.payouts`を書き換えるコードパスを新規に
-追加・変更する場合は、必ず`recomputeTicketPayoutsForRace`の呼び出しが漏れていないか
-確認すること(現時点の呼び出し元は`functions/api/races/[id].js`・
-`functions/api/races/results-import.js`・`functions/api/races/entries-import.js`・
-`functions/api/tickets/bulk.js`の4箇所)。`races`(共有)と`tickets`/`prediction_marks`/
-`horse_notes`等(ユーザーごとに分離)をまたぐ処理を新たに書く際は、「今操作している
-ユーザーから見えているデータ」だけを更新対象にしないこと。出走馬一覧PDFインポート
-(`entries-import.js`)も同様の考え方で、`race_id`をキーに全ユーザー分の
-`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を適用している
-(user_idで絞り込まない)。
+追加・変更する場合は、必ず`recomputeTicketPayoutsForRace`(または複数レースをまとめて
+処理する場合は`recomputeTicketPayoutsForRaces`)の呼び出しが漏れていないか確認すること
+(現時点の呼び出し元は`functions/api/races/[id].js`・`functions/api/races/results-import.js`・
+`functions/api/races/entries-import.js`・`functions/api/tickets/bulk.js`の4箇所)。
+`races`(共有)と`tickets`/`prediction_marks`/`horse_notes`等(ユーザーごとに分離)をまたぐ
+処理を新たに書く際は、「今操作しているユーザーから見えているデータ」だけを更新対象に
+しないこと。出走馬一覧PDFインポート(`entries-import.js`)も同様の考え方で、`race_id`を
+キーに全ユーザー分の`imported_ticket_groups`/`tickets`へ`backfillHorseNamesForRace`を
+適用している(user_idで絞り込まない)。
 
 ### 払戻確定バッジ・的中率集計の判定
 
@@ -1154,16 +1239,16 @@ JRAレース結果PDFインポート由来の通常購入(`tickets`)のみを対
 ### 実装方針
 
 - 返還判定ロジック(`races.payouts.refunds`と買い目の突き合わせ)は**サーバー側
-  (`functions/api/_shared.js`の`recomputeTicketPayoutsForRace`)にのみ実装し、判定結果を
-  `tickets.refunded`へ確定保存する**。クライアント側(`public/payout.js`の
-  `computeTicketPayout`)は判定ロジックを複製せず、**取得済みの`ticket.refunded`フラグを
-  そのまま信頼する**(`ticket.refunded`が真であれば、常に`ticket.amount`をそのまま返す)。
-  **この設計にした理由**: 返還判定は「購入金額の変更に応じて再計算する必要がある値」では
-  なく「一度確定したら不変の状態」であるため、判定ロジック自体をクライアントに複製すると
-  サーバー・クライアントの実装がズレるリスクを増やすだけと判断した。`computeTicketPayout`は
-  購入履歴・予想登録画面で購入金額を編集した際に払戻額を再計算するために呼ばれるが、
-  返還確定済みの馬券は金額編集後も常に新しい購入金額と同額を返せば足りるため、この設計で
-  要件を満たせる
+  (`functions/api/_shared.js`の`recomputeTicketPayoutsForRace`/
+  `recomputeTicketPayoutsForRaces`)にのみ実装し、判定結果を`tickets.refunded`へ確定保存
+  する**。クライアント側(`public/payout.js`の`computeTicketPayout`)は判定ロジックを
+  複製せず、**取得済みの`ticket.refunded`フラグをそのまま信頼する**(`ticket.refunded`が
+  真であれば、常に`ticket.amount`をそのまま返す)。**この設計にした理由**: 返還判定は
+  「購入金額の変更に応じて再計算する必要がある値」ではなく「一度確定したら不変の状態」
+  であるため、判定ロジック自体をクライアントに複製するとサーバー・クライアントの実装が
+  ズレるリスクを増やすだけと判断した。`computeTicketPayout`は購入履歴・予想登録画面で
+  購入金額を編集した際に払戻額を再計算するために呼ばれるが、返還確定済みの馬券は金額編集後も
+  常に新しい購入金額と同額を返せば足りるため、この設計で要件を満たせる
 - サーバー側の判定は的中判定(`computeWinningCombos`によるコンボ照合)より**先に**行う。
   返還対象の買い目は、たとえ結果的に的中コンボと一致していたとしても、返還として扱う
   (返還は取消・除外により対象そのものが競走から除かれたことを意味するため、的中/不的中の
@@ -1258,8 +1343,8 @@ IF NOT EXISTS`など、途中で失敗しても安全な内容にすること。
 削除・巻き戻す可能性のある変更は極力行わない。追加的な変更(`ALTER TABLE ADD COLUMN`、
 `CREATE TABLE/INDEX IF NOT EXISTS`)を基本とし、どうしても削除的な変更が必要な場合は、
 影響範囲を明示した上で作業前に必ずユーザーの承認を得ること。なお、出走馬一覧PDFインポート
-機能の`waku_number`/`horse_number`のnullable化は、`entries`がスキーマレスなJSON列である
-ため、そもそもこのマイグレーション手順の対象外(DDL変更不要)である。
+機能の`horse_number`のnullable化は、`entries`がスキーマレスなJSON列であるため、
+そもそもこのマイグレーション手順の対象外(DDL変更不要)である。
 
 更新後に再デプロイします。
 

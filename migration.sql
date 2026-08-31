@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS jockey_aliases (
 -- (ALTER TABLE ADD COLUMNのみの非破壊的変更)。詳細はdocs/DESIGN.md「返還(refund)処理」参照。
 ALTER TABLE tickets ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
 
+-- @STEP: users_last_login
+-- 2026-08-30: 管理画面の登録ユーザー一覧に「最終ログイン日時」を表示するため、
+-- users に last_login_at 列を追加する(ALTER TABLE ADD COLUMNのみの非破壊的変更)。
+-- ログイン成功時(functions/api/auth/login.js)に更新し、新規登録時
+-- (functions/api/auth/register.js)は登録日時を初期値として設定する。
+-- 詳細はdocs/DESIGN.md「認証・複数ユーザー対応」参照。
+ALTER TABLE users ADD COLUMN last_login_at TEXT;
+
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。

@@ -16,6 +16,9 @@
 いずれの馬も`races.entries`へ反映されるよう修正(頭数・枠番計算のズレを解消)。あわせて、
 今回のスコープに含めなかった「返還(refund)処理」を新規タスクとして追加した。詳細は
 `archive/documents/BACKLOG_HISTORY.md`参照。
+2026-08-30: 「開催日程を一括登録」機能の廃止・`entries-import.js`/`results-import.js`の
+サブリクエスト数対策・最終ログイン日時(`users.last_login_at`)・枠番の自動計算への方針転換を
+実装した。詳細は下記「🔰 次のチャットで最初に読むこと」参照。
 
 このファイルは、要望としては承認済みだが未実装のタスク、および調査中・未解決の不具合を
 引き継ぐための一覧です。`README.md` / `docs/DESIGN.md` / `docs/TESTING.md`とは異なり
@@ -38,7 +41,7 @@
   行ってもらう運用になっている。実機検証が必要な項目は各タスク・`docs/TESTING.md`に
   明記してあるので、着手・完了報告の際は検証状況を明確にすること
 
-## 🔰 次のチャットで最初に読むこと(2026-08-19引き継ぎ)
+## 🔰 次のチャットで最初に読むこと(2026-08-30引き継ぎ)
 
 - アプリの全体像は`README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`、手動テスト項目は
   `docs/TESTING.md`を参照(いずれも現状を反映した生きたドキュメント)。過去の作業経緯・
@@ -52,23 +55,8 @@
   管理画面から登録し、今後の登録・取込時に自動正規化。既存データは管理画面の
   「一括補正」ボタンで補正)。詳細は`docs/DESIGN.md`「騎手名エイリアス管理(jockey_aliases)」
   参照
-- **未実施の運用作業が1件ある**: `migration.sql`の`-- @STEP: jockey_aliases`ブロックが、
-  2026-08-16時点でまだ実DBに未適用。`CREATE TABLE IF NOT EXISTS`のみの非破壊的変更のため、
-  以下の手順で速やかに適用すること:
-  ```bash
-  npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
-  npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
-  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
-  ```
-  適用後、`migration.sql`から該当ブロックを削除し、内容を`schema.sql`へ反映すること
-- `migration.sql`の`race_results_and_conditions`ステップは2026-08-12に本番DB
-  (keiba-yosou-db)へ適用済み・`schema_migrations`への記録も完了しており、内容は
-  `schema.sql`に統合済み(未適用の`-- @STEP`ブロックは残っていない)
 - 2026-08-16: ルートURL(`/`)へのアクセスを馬券購入画面(`buy.html`)へリダイレクトする
   対応を実施済み(`functions/_middleware.js`)。詳細はアーカイブ参照
-- **クラスタB「レース選択画面のnetkeiba風UI改修」のうち②コース情報表示・③競馬場カラム幅縮小・
-  ④メモありマーク(仕様は「▼」に変更)は2026-08-16に実装完了(モバイルの競馬場タブ化も
-  追加対応)。残るのは①レース番号とレース名の間隔詰めのみ(下記クラスタB参照)**
 - 2026-08-17: 購入画面のレース選択グリッド行(`.race-column-row`)のPC表示崩れ(レース名が
   ほぼ潰れる不具合)を修正し、モバイルと同じ2行構成へ統一した。騎手名エイリアス一覧の
   並び順も登録日時順から表記ゆれ側(`alias_display`)の文字列昇順へ変更した。いずれも実装完了
@@ -80,17 +68,55 @@
 - 2026-08-19〜20: 返還(refund)処理を実装完了(クラスタO)。取消・除外馬が絡む馬券は
   「不的中(0円)」ではなく「返還(購入金額と同額)」として扱われるようになった。「中止」は
   返還対象外(通常通り不的中判定)。`tickets.refunded`カラムを追加。詳細は
-  `docs/DESIGN.md`「返還(refund)処理」参照。**`migration.sql`への`-- @STEP`追記・
-  本番DBへの適用が未実施のため、下記の運用作業を確認すること**
+  `docs/DESIGN.md`「返還(refund)処理」参照。
+- **2026-08-30: 以下4件を実装完了した。**
+  1. **`entries-import.js`・`results-import.js`のサブリクエスト数対策**。
+     12レース分のPDF一括インポートでCloudflare Pages Functionsの1リクエストあたりの
+     サブリクエスト数上限に抵触し「一括登録に失敗しました」となる不具合を修正した。
+     いずれも「まとめてSELECT→メモリ上で判定→`db.batch()`でまとめて書き込む」方式に
+     書き直した。`functions/api/_shared.js`に複数レースをまとめて処理するバルク版
+     (`upsertRaceResultsBulk()`・`recomputeTicketPayoutsForRaces()`)を新設し、
+     `results-import.js`から利用している。単一レースのみを扱う既存の
+     `upsertRaceResults()`・`recomputeTicketPayoutsForRace()`(単数形)は、他の呼び出し元
+     (`functions/api/races/[id].js`・`entries-import.js`・`functions/api/tickets/bulk.js`)の
+     ために変更せずそのまま維持している。詳細はdocs/DESIGN.md「実装上の注意
+     (サブリクエスト数対策)」参照。**実機(実際のPDF・実DB)での動作検証は未実施
+     (コードレビュー・構文チェックのみ)。次回実機で試す際は、レース数の多い
+     (12レース程度の)PDFで一括登録が最後まで成功することを確認すること**
+  2. **「開催日程を一括登録」機能を廃止した**。`public/races.js`・`public/races.html`から
+     ボタン・モーダル・関連処理を削除し、`public/parse.js`から`parseSchedule()`と
+     専用定数`JRA_TRACKS`を削除、`functions/api/races/bulk.js`(`POST /api/races/bulk`)を
+     削除した。今後この機能への言及がREADME.md等に残っていないか、変更時に注意すること
+  3. **管理画面に「最終ログイン日時」を追加した**。`users`テーブルに`last_login_at`列を
+     追加(`migration.sql`の`-- @STEP: users_last_login`。**2026-08-30時点で本番DBへの
+     適用が未実施**。下記の運用作業チェックリストを参照)。
+     `functions/api/auth/login.js`がログイン成功のたびに更新し、
+     `functions/api/auth/register.js`は新規登録時(同時にログイン状態になるため)に
+     登録日時を初期値としてセットする。`functions/api/admin/users.js`・
+     `public/admin.js`が一覧に反映する
+  4. **枠番(waku_number)をDBへ自動保存する方針へ転換した**。以前は「馬番が確定していても
+     枠番の推定値はDBに保存しない」方針だったが、「馬番が確定していれば枠番は出走頭数から
+     一意に決まる(枠自体は抽選対象ではない)」という前提が確認できたため方針転換した。
+     `functions/api/_shared.js`の`mergeEntriesByHorseName()`内で、馬番確定・枠番未確定の
+     馬について自動計算して確定値として保存するようにした
+     (`computeWakuNumberFromHorseNumber()`)。既存レースも該当PDFを再取込すれば
+     自動的に枠番が埋まる(専用の一括補正機能は設けていない)。詳細はdocs/DESIGN.md
+     「枠番は馬番から自動計算して保存する」参照。**実機での動作検証は未実施**
+- **未実施の運用作業が2件ある**:
+  1. `migration.sql`の`-- @STEP: jockey_aliases`ブロックが、2026-08-16時点でまだ実DBに未適用。
+  2. `migration.sql`の`-- @STEP: tickets_refunded`ブロックが、2026-08-20時点でまだ実DBに未適用。
+  3. `migration.sql`の`-- @STEP: users_last_login`ブロックが、2026-08-30時点でまだ実DBに未適用。
+
+  いずれも`CREATE TABLE IF NOT EXISTS`または`ALTER TABLE ADD COLUMN`のみの非破壊的変更のため、
+  以下の手順で速やかに適用すること:
   ```bash
-  # migration.sqlに以下のブロックを追記してから実行(schema.sqlにも反映済み)
-  # -- @STEP: tickets_refunded
-  # ALTER TABLE tickets ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
   npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
   npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
+  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('tickets_refunded');"
+  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('users_last_login');"
   ```
-  適用後、`migration.sql`から該当ブロックを削除すること(内容は`schema.sql`へ反映済み)
+  適用後、`migration.sql`から該当ブロックをすべて削除すること(内容は`schema.sql`へ反映済み)
 - 次のセッションでは**クラスタN-1(出走馬表の馬番重複入力防止)**への着手を推奨する
 - `race_results`にデータが貯まり始めたら、**クラスタM**(馬名・騎手名ベースの集計参照画面)に
   着手できる
@@ -110,9 +136,11 @@
 | 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/DESIGN.md`「CSV取込の仕様」集計への反映漏れ |
 | 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/DESIGN.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要(2026-08-19: 「中止」は`status='stopped'`として対応済みのため、このリストから除外した) | `docs/DESIGN.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
-| 🔵 実機検証未完了 | 2026-08-19〜20に実装した返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)は、実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。**`migration.sql`への`-- @STEP`追記・本番DBへの適用も未実施**(下記参照) | `docs/DESIGN.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了 | 2026-08-19〜20に実装した返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)は、実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。**`migration.sql`への`-- @STEP`追記・本番DBへの適用も未実施**(上記参照) | `docs/DESIGN.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | 出走馬一覧PDFインポート・JRAレース結果PDFインポートはいずれも実ブラウザのPDF.jsでの動作検証が完全には済んでいない(Node上のロジック単体テストが中心)。次回実機で試す際は`docs/TESTING.md`「1.8」「1.7.1」の該当項目、および`docs/DESIGN.md`「JRAレース結果PDFインポート」の残件を確認すること。**2026-08-19に追加した「中止」馬の解析・`races.entries`への反映も同様に実機未検証** | `docs/TESTING.md`・`docs/DESIGN.md` |
 | 🔵 実機検証未完了 | 2026-08-16に実装した「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。次回実機で試す際は`docs/TESTING.md`「0.1」「4.5」該当項目を確認すること | `docs/TESTING.md` |
+| 🔵 実機検証未完了 | 2026-08-30に実装した`entries-import.js`/`results-import.js`のサブリクエスト数対策(バッチ化リファクタリング)は、実際のPDF・実DBでの動作検証が未実施(コードレビュー・構文チェックのみ)。レース数の多いPDF(12レース程度)で一括登録が成功すること、既存レースの更新・`race_results`のUPSERT・払戻再計算が従来通り正しく行われることを確認する必要がある | `docs/DESIGN.md`「実装上の注意(サブリクエスト数対策)」 |
+| 🔵 実機検証未完了 | 2026-08-30に実装した枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/DESIGN.md`「枠番は馬番から自動計算して保存する」 |
 
 ## クラスタO: 返還(refund)処理(2026-08-19設計・2026-08-20実装完了)
 
@@ -171,7 +199,6 @@
 - 件数が多くなった場合のページネーション・検索条件(期間・競馬場等の絞り込み)の要否
 - 個人の予想・購入履歴とは異なり`race_results`は全ユーザー共有データのため、閲覧権限を
   一般ユーザーにも開放するか、管理者限定にするかを着手時に確認する
-
 ## 未着手タスク(クラスタ単位)
 
 依存関係と「同じファイル/画面を触るのでまとめて着手すると効率的」という観点でクラスタに
@@ -287,7 +314,6 @@ const isPublicAuthRoute =
 
 | 優先度 | 内容 | 規模目安 |
 |---|---|---|
-| 中 | カレンダーの「今日」判定・日付切り替えをJST基準にする | 小〜中 |
 | 中 | 複数の履歴を選択してまとめて削除できる機能。一括削除用APIの新設が必要(tickets/ticket-importsでエンドポイントが異なる点に注意。規模が異なるため単独での切り出しを推奨) | 中〜大 |
 
 ### クラスタB: 馬券購入画面(buy.js)の改善
@@ -298,7 +324,6 @@ const isPublicAuthRoute =
 | 優先度 | 内容 | 規模目安 |
 |---|---|---|
 | 中 | レース選択画面(競馬場×R一覧のグリッド)のUIをnetkeiba風に寄せる。①レース番号とレース名の間隔を詰める(残タスク。②③④は2026-08-16実装完了) | 小 |
-| 中 | 結果確定済み(`finish_order`または`payouts`が確定済み)のレースを購入した場合、購入と同時にそのレースの確定情報から払戻(`payout`)を即計算して保存する(2026-08-16実装完了。`functions/api/tickets/bulk.js`参照)。**本項目は完了済みのため次回整理時にアーカイブへ移動すること** | - |
 
 ### クラスタC: 集計画面(stats.js)
 
@@ -360,7 +385,7 @@ JV-Link(Windows専用ActiveX)・JRA公式サイト(bot対策あり)・netkeiba�
 | `formatDate`の重複整理 | `formatDate`が`admin.js`・`prediction.js`・`races.js`・`stats.js`・`utils.js`の5箇所に存在し、出力形式がそれぞれ異なる(年あり/なし、曜日あり/なし等)。`utils.js`にオプション引数を持たせるか、用途別の複数関数を用意して集約し、各画面は現状と同じ見た目になるよう対応する関数を呼び出す形に変更する。着手前に各画面の表示例を記録しておくと比較しやすい | 中(表示形式の回帰に注意。自動テストが無いため目視確認が必要) |
 | `buy.js`(700行超)・`races.js`(700行超)の巨大ファイル分割 | 状態管理・API呼び出し・DOM描画・イベント登録が1ファイルに混在している。本アプリの中核機能であり自動テストが無いため、壊れた場合の影響が大きい。一度に全体を作り直すのではなく、関心事ごとに段階的に切り出す。着手前に分割方針をユーザーに提示して承認を得ること | 高 |
 | CSSキャッシュバスティングの一元化 | `style.css`変更のたびに全HTMLファイルの`?v=YYYYMMDDHHmm`クエリパラメータを手作業で書き換える運用(`docs/DESIGN.md`「CSSのキャッシュ対策」参照)。根本対応にはビルドツール導入が必要だが、本プロジェクトは「Node不要・wranglerのみで手動運用」という方針を掲げており、ビルド前提にするのは方針と衝突する。**着手しない方針を推奨**(将来的に再検討) | - |
-| トラック(競馬場)リストの重複整理 | `JRA_TRACKS`(`parse.js`)・`JRA_ENTRIES_TRACKS`(`jra-entries-pdf.js`)・`JRA_RESULT_PDF_TRACKS`(`jra-result-pdf.js`)・`RACE_TRACK_ORDER`(`buy.js`。2026-08-16追加)が類似の競馬場名配列として複数箇所に存在している。`utils.js`等への集約を検討 | 低(内容が完全一致ではない(用途によって中央10場のみ/中央+地方等)ため、集約時は用途差を吸収する設計が必要) |
+| トラック(競馬場)リストの重複整理 | `JRA_ENTRIES_TRACKS`(`jra-entries-pdf.js`)・`JRA_RESULT_PDF_TRACKS`(`jra-result-pdf.js`)・`RACE_TRACK_ORDER`(`buy.js`。2026-08-16追加)が類似の競馬場名配列として複数箇所に存在している(2026-08-30: `parse.js`の`JRA_TRACKS`は「開催日程を一括登録」機能の廃止に伴い削除済み)。`utils.js`等への集約を検討 | 低(内容が完全一致ではない(用途によって中央10場のみ/中央+地方等)ため、集約時は用途差を吸収する設計が必要) |
 
 (仕様矛盾の解消方針一覧は`archive/documents/BACKLOG_HISTORY.md`参照)
 

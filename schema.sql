@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   last_login_at TEXT  -- 2026-08-30追加: ログイン成功のたびに更新する(未ログインはNULL)。
-                       -- 管理画面の登録ユーザー一覧で表示する。
+                       -- 新規登録時は登録日時を初期値としてセットする。管理画面の
+                       -- 登録ユーザー一覧で表示する。詳細はdocs/DESIGN.md「認証・
+                       -- 複数ユーザー対応」参照。
 );
 
 -- 初期管理者アカウント: username=admin, password=password
@@ -61,9 +63,12 @@ CREATE TABLE IF NOT EXISTS races (
   weather TEXT,                   -- 天候(JRAレース結果PDFのみに出現)
   track_condition TEXT,           -- 馬場状態(JRAレース結果PDFのみに出現。天候とは別カラム)
   entries TEXT NOT NULL,          -- JSON配列 [{horse_number, waku_number, horse_name, jockey, mark, sex_age, weight_carried}]
-                                   -- waku_number/horse_numberはnullを許容する(出走馬一覧PDF
+                                   -- horse_numberはnullを許容する(出走馬一覧PDF
                                    -- インポート対応。docs/DESIGN.md「出走馬(races.entries)の
-                                   -- 枠番・馬番はnullを許容する」参照)
+                                   -- 枠番・馬番はnullを許容する」参照)。waku_numberは
+                                   -- horse_numberが確定していれば頭数から自動計算して
+                                   -- 保存されるため、horse_number確定後は基本的に常に
+                                   -- 値が入る(2026-08-30〜。同ドキュメント参照)
   finish_order TEXT,              -- JSON配列 [horse_number, ...] 着順順(1着から)。未確定はNULL
   payouts TEXT,                   -- JSON { 馬券式: [{combo:[馬番...], rate:100円あたり払戻}, ...] }
   created_at TEXT DEFAULT (datetime('now')),
@@ -79,7 +84,7 @@ CREATE TABLE IF NOT EXISTS race_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
   horse_number INTEGER,
-  waku_number INTEGER,         -- 常にnull想定。PDFからは取得できないため手動入力用の列としてのみ保持
+  waku_number INTEGER,         -- PDFからは取得できないため手動入力用の列としてのみ保持
   horse_name TEXT,
   sex_age TEXT,                 -- 性齢 例:"牡3"
   weight_carried REAL,          -- 負担重量 例:57.0
@@ -126,7 +131,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   amount INTEGER NOT NULL,        -- この1点の購入金額(円)
   payout INTEGER,                 -- この1点の払戻金額(円)。未確定はNULL。返還時は購入金額(amount)と同額
   refunded INTEGER NOT NULL DEFAULT 0, -- 返還(取消・除外馬が絡む買い目)によりpayoutが確定した場合は1。
-                                        -- 2026-08-20追加。的中による払戻(refunded=0)と区別するためのフラグ。
+                                        -- 的中による払戻(refunded=0)と区別するためのフラグ。
                                         -- docs/DESIGN.md「返還(refund)処理」参照
   memo TEXT,
   created_at TEXT DEFAULT (datetime('now'))
@@ -281,7 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_imported_items_group ON imported_ticket_items(gro
 CREATE INDEX IF NOT EXISTS idx_imported_items_race ON imported_ticket_items(race_id);
 
 -- ============================================================
--- 8. 騎手名エイリアス(2026-08-16追加)
+-- 8. 騎手名エイリアス
 -- ============================================================
 
 -- 同一騎手がPDFインポート・手動入力・netkeibaテキスト貼り付け等の経路によって
