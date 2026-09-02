@@ -10,6 +10,11 @@
 // 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
 // 実機未検証の結果PDFパーサーには手を入れず、独立ファイルとして新規作成している。
 //
+// 2026-09-01: 全角文字正規化・行内テキスト連結(ギャップ実測)・レース条件詳細抽出・
+// 天候抽出のロジックは public/jra-result-pdf.js と実質同一のため、public/jra-pdf-common.js
+// へ集約した。このファイルの該当関数は同ファイルの共通関数を呼ぶだけの薄いラッパーに
+// 変更している(関数名・呼び出し側は変更していないため、以下の他のロジックへの影響は無い)。
+//
 // 【既知の未検証事項→検証済み(2026-08-08)】枠番・馬番確定後の実PDFで検証した結果、
 // **枠番は確定後PDFでも色付きアイコン表示のみでテキストとしては取得できない**ことが
 // 判明した(JRAレース結果PDFと同様の制約。docs/JRA_RESULT_PDF_IMPORT_PAYOUT_ISSUE_
@@ -40,92 +45,31 @@
 // 参照先のみ差し替えている。
 const JRA_ENTRIES_TRACKS = JRA_CENTRAL_TRACKS;
 
-// 全角英数記号(Unicode Fullwidth Forms, U+FF01–FF5E)のみを対応する半角ASCII文字へ
-// 変換する。以前は String.prototype.normalize("NFKC") を使っていたが、NFKC正規化は
-// 全角/半角の統一だけでなく、CJK互換漢字(人名用の異体字を多く含むCJK Compatibility
-// Ideographs Supplement等)まで標準字形へ変換してしまう副作用があり、「戸崎」騎手の
-// ように人名で使われる異体字の字体が変わってしまう不具合があった(2026-08-14修正。
-// public/jra-result-pdf.jsと同時に対応)。日付・時刻・金額等のパースに必要な
-// 全角→半角変換の効果は維持しつつ、漢字(人名用の異体字を含む)には一切影響しない
-// 変換に置き換える。
+// 全角英数記号・部首文字の正規化、単位正規化、行内空白正規化はいずれも
+// public/jra-pdf-common.js の共通実装を呼ぶだけの薄いラッパー(2026-09-01)。
+// 呼び出し側(このファイル内の他の処理)は引き続き jraEntries〜 という名前で
+// 呼び出すため、このファイル内の変更はここだけで完結する。
 function jraEntriesToHalfwidthAscii(s) {
-  return String(s ?? "").replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  return jraPdfToHalfwidthAscii(s);
 }
 
-// 康熙部首(Kangxi Radicals, U+2F00–2FD5)・CJK部首補助(CJK Radicals Supplement,
-// U+2E80–2EF3)を、対応する標準のCJK統合漢字へ正規化する(2026-08-16修正)。
-//
-// 2026-08-14修正でNFKC正規化を廃止した副作用として、JRA PDFのテキスト抽出結果に
-// 含まれる「日」「月」「発」「走」「馬」等の通常の漢字が、見た目は同じでも上記2つの
-// Unicodeブロックの部首記号として抽出されるケースで、日付・発走時刻等の正規表現が
-// 軒並み不一致になり、レース開始検出が0件になる回帰不具合が発生していた
-// (2026-08-16報告。public/jra-result-pdf.jsと同時に対応)。
-//
-// この2ブロックは部首記号専用であり、「戸崎」問題の原因だったCJK互換漢字ブロック
-// (U+F900–FAFF・CJK互換漢字補助 U+2F800–2FA1F、人名異体字を含む)とは重複しない
-// ため、対象を該当ブロックの文字1文字ごとのNFKC正規化に限定することで、人名異体字
-// 問題を再発させずに検出不具合を解消できる。対象範囲は実際に確認できた特定の文字に
-// 限定せず、両ブロック全体を対象にする(将来別の部首文字が出現しても自動対応できる
-// ようにするため)。
 function jraEntriesNormalizeRadicals(s) {
-  return String(s ?? "").replace(/[\u2E80-\u2EF3\u2F00-\u2FD5]/g, (ch) => ch.normalize("NFKC"));
+  return jraPdfNormalizeRadicals(s);
 }
 
 function jraEntriesNormalizeUnit(s) {
-  return jraEntriesNormalizeRadicals(jraEntriesToHalfwidthAscii(s))
-    .replace(/\u3000/g, " ") // 全角スペース(以前はNFKCが半角化していた分の代替)
-    .replace(/\u00a0|\u202F/g, " ")
-    .replace(/[︓﹕]/g, ":")
-    .replace(/[﹣－−―–—]/g, "-");
+  return jraPdfNormalizeUnit(s);
 }
-// 2026-08-09修正: 以前はここで `\s+` → 半角スペース1つ、という一律変換をしており、
-// jraEntriesJoinRowItems が実測ギャップから慎重に判定した「タブ(列区切り)」の情報が
-// この時点で握りつぶされていた。タブは騎手名/調教師名の境界を判定する重要な signal
-// (jraEntriesParseHorseRow参照)のため、タブと半角スペースは別々に保ったまま
-// 連続分だけを1文字に圧縮する。
+
 function jraEntriesNormalizeLine(s) {
-  return jraEntriesNormalizeUnit(s).replace(/ +/g, " ").replace(/\t+/g, "\t").trim();
+  return jraPdfNormalizeLine(s);
 }
 
-// 行内テキストの連結。既存 public/jra-result-pdf.js の jraResultJoinRowItems と同じ
-// 考え方(直前要素との実測ギャップにより連結/スペース/タブを判定する)。本パーサーの
-// 正規表現はスペース・タブいずれも \s として扱うため、区別自体の重要性は低いが、
-// 単語内部に余計な区切りが入って正規表現が不一致になる事故を防ぐために踏襲する。
-//
-// 2026-08-09: 特定の騎手(複数レースに繰り返し登場する乗り鞍の多い騎手)でのみ、
-// 騎手名と調教師名の間の区切りが検出できず連結してしまう不具合が実機で報告された。
-// PDF内で同一文字列(騎手名リンク)が繰り返し使われる場合、PDF側が描画データを
-// 使い回す(キャッシュする)ことがあり、これによりPDF.jsが報告する文字幅(prev.w)が
-// 実際の見た目と異なる値になり、幅に比例するしきい値計算が異常値に引きずられて
-// 本来検出すべき区切りを見逃す可能性が考えられる(未確証・実機の実測値による
-// 検証が必要)。保険として、幅に比例する側のしきい値に上限を設け、
-// 万一prev.wが異常に大きく報告された場合でもしきい値が際限なく大きくならないようにする。
-const JRA_E_GAP_SPACE_RATIO = 0.3;
-const JRA_E_GAP_TAB_RATIO = 1.2;
-const JRA_E_GAP_SPACE_MIN = 1.0;
-const JRA_E_GAP_TAB_MIN = 6.0;
-const JRA_E_GAP_SPACE_MAX = 3.5; // これを超える幅比例しきい値は採用しない(保険)
-const JRA_E_GAP_TAB_MAX = 14.0;
-
+// 行内テキストの連結も public/jra-pdf-common.js の共通実装(jraPdfJoinRowItems)を
+// 呼ぶだけのラッパー(2026-09-01)。旧実装が個別に持っていたギャップしきい値定数
+// (JRA_E_GAP_*)は共通ファイル側の JRA_PDF_GAP_* に統合したため、このファイルからは削除した。
 function jraEntriesJoinRowItems(items) {
-  let text = "";
-  const gaps = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (i > 0) {
-      const prev = items[i - 1];
-      const gap = item.x - (prev.x + (prev.w || 0));
-      const spaceThreshold = Math.min(Math.max((prev.w || 0) * JRA_E_GAP_SPACE_RATIO, JRA_E_GAP_SPACE_MIN), JRA_E_GAP_SPACE_MAX);
-      const tabThreshold = Math.min(Math.max((prev.w || 0) * JRA_E_GAP_TAB_RATIO, JRA_E_GAP_TAB_MIN), JRA_E_GAP_TAB_MAX);
-      let sep = "";
-      if (gap > tabThreshold) sep = "\t";
-      else if (gap > spaceThreshold) sep = " ";
-      text += sep;
-      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結"), prevWidth: Math.round((prev.w || 0) * 100) / 100, prevStr: prev.str, curStr: item.str });
-    }
-    text += item.str;
-  }
-  return { text, gaps };
+  return jraPdfJoinRowItems(items);
 }
 
 function jraEntriesFindMeeting(text) {
@@ -153,35 +97,14 @@ function jraEntriesParseCourse(text) {
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g, "")) } : { course_type: null, distance: null };
 }
 
-// レース条件詳細(斤量区分・条件フラグ・回り)の抽出(2026-08-11追加)。
-// 例: "2歳 未勝利（混合）［指定］ 馬齢 コース：1,600メートル（芝・左）"
-//   → weight_type="馬齢", class_flags="未勝利（混合）［指定］", course_direction="左"
+// レース条件詳細(斤量区分・条件フラグ・回り)・天候抽出は public/jra-pdf-common.js の
+// 共通実装を呼ぶだけのラッパー(2026-09-01)。jra-result-pdf.js側と実装が完全一致していた。
 function jraEntriesParseConditions(text) {
-  const s = jraEntriesNormalizeUnit(text).replace(/\s+/g, " ");
-  let weight_type = null;
-  const wt = s.match(/(馬齢|定量|別定|ハンデ)/);
-  if (wt) weight_type = wt[1];
-
-  let course_direction = null;
-  const dir = s.match(/[（(]\s*(芝|ダート|障害)\s*[・･]\s*(左|右)\s*[)）]/);
-  if (dir) course_direction = dir[2];
-
-  // class_flags: 年齢条件〜斤量区分の手前までの生テキスト(コース情報を除く)。
-  // 例: "2歳 未勝利（混合）［指定］" の部分だけを取り出す。
-  let class_flags = null;
-  const cf = s.match(/^\s*(\S.*?)\s*(?:馬齢|定量|別定|ハンデ)\s*コース/);
-  if (cf) class_flags = cf[1].trim() || null;
-
-  return { weight_type, class_flags, course_direction };
+  return jraPdfParseConditions(text);
 }
 
-// 天候・馬場状態の抽出(2026-08-11追加)。結果PDFにのみ出現する行:
-// 例: "天候 晴 ダート 良" → weather="晴", track_condition="良"
 function jraEntriesParseWeather(text) {
-  const s = jraEntriesNormalizeUnit(text).replace(/\s+/g, " ");
-  const m = s.match(/天候\s*([^\s]+)\s*(芝|ダート|障害)\s*([^\s]+)/);
-  if (!m) return { weather: null, track_condition: null };
-  return { weather: m[1] || null, track_condition: m[3] || null };
+  return jraPdfParseWeather(text);
 }
 
 // 出走馬1行を解析する。
@@ -295,7 +218,7 @@ function jraEntriesParseHorseRow(rawLine) {
   };
 }
 
-const JRA_ENTRIES_PARSER_VERSION = "1.4.0-radical-fix";
+const JRA_ENTRIES_PARSER_VERSION = "1.5.0-shared-normalize";
 
 function jraEntriesParseExtractedPages(pages) {
   const lines = [];

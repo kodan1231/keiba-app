@@ -10,84 +10,39 @@ const JRA_RESULT_BET_MAP = {
   "ワイド": "wide", "3連複": "sanrenpuku", "3連単": "sanrentan"
 };
 
-// 全角英数記号(Unicode Fullwidth Forms, U+FF01–FF5E)のみを対応する半角ASCII文字へ
-// 変換する。以前は String.prototype.normalize("NFKC") を使っていたが、NFKC正規化は
-// 全角/半角の統一だけでなく、CJK互換漢字(人名用の異体字を多く含むCJK Compatibility
-// Ideographs Supplement等)まで標準字形へ変換してしまう副作用があり、「戸崎」騎手の
-// ように人名で使われる異体字の字体が変わってしまう不具合があった(2026-08-14修正)。
-// 日付・時刻・金額等のパースに必要な全角→半角変換の効果は維持しつつ、漢字(人名用の
-// 異体字を含む)には一切影響しない変換に置き換える。
+// 全角文字正規化・行内テキスト連結(ギャップ実測)・レース条件詳細抽出・天候抽出は
+// いずれも public/jra-pdf-common.js の共通実装を呼ぶだけの薄いラッパー(2026-09-01)。
+// 呼び出し側(このファイル内の他の処理)は引き続き jraResult〜 という名前で呼び出すため、
+// このファイル内の変更はここだけで完結する。
+//
+// 【重要・非対称バグの修正】旧実装では、このファイル(結果PDF側)の jraResultNormalizeLine
+// が `\s+` で改行内の全空白(タブ含む)を一律スペース1つへ潰しており、
+// public/jra-entries-pdf.js側だけに入っていた「タブ(列区切り)情報の保持」
+// 「ギャップしきい値の上限キャップ」という改善が反映されないままになっていた
+// (docs/BACKLOG.md「調査中の不具合」参照)。本ファイルを public/jra-pdf-common.js の
+// 共通実装(jraPdfNormalizeLine・jraPdfJoinRowItems)を呼ぶ形に変更したことで、
+// この非対称性は解消され、結果PDF側でもタブ保持・しきい値上限キャップが有効になる。
 function jraResultToHalfwidthAscii(s) {
-  return String(s ?? "").replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  return jraPdfToHalfwidthAscii(s);
 }
 
-// 康熙部首(Kangxi Radicals, U+2F00–2FD5)・CJK部首補助(CJK Radicals Supplement,
-// U+2E80–2EF3)を、対応する標準のCJK統合漢字へ正規化する(2026-08-16修正)。
-//
-// 2026-08-14修正でNFKC正規化を廃止した副作用として、JRA PDFのテキスト抽出結果に
-// 含まれる「日」「月」「土」「発」「走」「馬」等の通常の漢字が、見た目は同じでも
-// 上記2つのUnicodeブロックの部首記号として抽出されるケースで、「発走時刻」「年」
-// 「月」「日」等の正規表現が軒並み不一致になり、レース開始検出が0件になる回帰
-// 不具合が発生していた(2026-08-16報告)。
-//
-// この2ブロックは部首記号専用であり、「戸崎」問題の原因だったCJK互換漢字ブロック
-// (U+F900–FAFF・CJK互換漢字補助 U+2F800–2FA1F、人名異体字を含む)とは重複しない
-// ため、対象を該当ブロックの文字1文字ごとのNFKC正規化に限定することで、人名異体字
-// 問題を再発させずに日付・発走時刻等の検出不具合を解消できる。対象範囲は実際に
-// 確認できた特定の文字に限定せず、両ブロック全体を対象にする(将来別の部首文字が
-// 出現しても自動対応できるようにするため)。
 function jraResultNormalizeRadicals(s) {
-  return String(s ?? "").replace(/[\u2E80-\u2EF3\u2F00-\u2FD5]/g, (ch) => ch.normalize("NFKC"));
+  return jraPdfNormalizeRadicals(s);
 }
 
 function jraResultNormalizeUnit(s) {
-  return jraResultNormalizeRadicals(jraResultToHalfwidthAscii(s))
-    .replace(/\u3000/g, " ") // 全角スペース(以前はNFKCが半角化していた分の代替)
-    .replace(/\u00a0|\u2000-\u200B|\u202F/g, " ")
-    .replace(/[︓﹕]/g, ":")
-    .replace(/[︵]/g, "(").replace(/[︶]/g, ")")
-    .replace(/[﹣－−―–—]/g, "-");
+  return jraPdfNormalizeUnit(s);
 }
 
 function jraResultNormalizeLine(s) {
-  return jraResultNormalizeUnit(s).replace(/\s+/g, " ").trim();
+  return jraPdfNormalizeLine(s);
 }
 
-// ---------- 行内テキストの連結 ----------
-// PDF.jsが返す各テキスト断片は、見た目の間隔(スペースの有無)と1対1で対応しない。
-// 断片を間隔の大小を見ずに一律タブで連結すると、「発」と「走」の間、「２０２６」と
-// 「年」の間のように、本来隙間なく続く1つの単語の途中にもタブが挿入されてしまい、
-// 「文字同士が隙間なく連続している」ことを前提とする正規表現(発走時刻・年月日・
-// 開催回など)が軒並み不一致になる。
-// 直前の要素の右端から今回の要素の左端までの実際の隙間(gap)を計測し、
-//   - 隙間がごく小さい(同一単語内の文字とみなせる) → 連結(区切り文字なし)
-//   - 隙間が単語区切り相当           → 半角スペースで連結
-//   - 隙間が列区切り相当(表組みのセル間など) → タブで連結(表構造の解析に必要)
-// の3段階に振り分ける。
-const JRA_GAP_SPACE_RATIO = 0.3; // 直前文字幅に対し、これを超える隙間はスペース区切りとみなす
-const JRA_GAP_TAB_RATIO = 1.2;   // 直前文字幅に対し、これを超える隙間は列(タブ)区切りとみなす
-const JRA_GAP_SPACE_MIN = 1.0;   // 直前文字幅が極小(記号1文字等)の場合の、スペース判定の最低基準(pt)
-const JRA_GAP_TAB_MIN = 6.0;     // 同上、タブ判定の最低基準(pt)
-
+// 行内テキストの連結も public/jra-pdf-common.js の共通実装(jraPdfJoinRowItems)を
+// 呼ぶだけのラッパー(2026-09-01)。旧実装が個別に持っていたギャップしきい値定数
+// (JRA_GAP_*)は共通ファイル側の JRA_PDF_GAP_* に統合したため、このファイルからは削除した。
 function jraResultJoinRowItems(items) {
-  let text = "";
-  const gaps = []; // 閾値調整・診断用: 各要素間の実測ギャップと判定結果
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (i > 0) {
-      const prev = items[i - 1];
-      const gap = item.x - (prev.x + (prev.w || 0));
-      const spaceThreshold = Math.max((prev.w || 0) * JRA_GAP_SPACE_RATIO, JRA_GAP_SPACE_MIN);
-      const tabThreshold = Math.max((prev.w || 0) * JRA_GAP_TAB_RATIO, JRA_GAP_TAB_MIN);
-      let sep = "";
-      if (gap > tabThreshold) sep = "\t";
-      else if (gap > spaceThreshold) sep = " ";
-      text += sep;
-      gaps.push({ gap: Math.round(gap * 100) / 100, sep: sep === "\t" ? "TAB" : (sep === " " ? "SPACE" : "連結") });
-    }
-    text += item.str;
-  }
-  return { text, gaps };
+  return jraPdfJoinRowItems(items);
 }
 
 function jraResultParseDate(text) {
@@ -106,35 +61,14 @@ function jraResultParseCourse(text) {
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g,"")) } : {course_type:null,distance:null};
 }
 
-// レース条件詳細(斤量区分・条件フラグ・回り)の抽出(2026-08-11追加)。
-// 例: "3歳 未勝利（混合）［指定］ 馬齢 コース：1,400メートル（ダート・右）"
-//   → weight_type="馬齢", class_flags="3歳 未勝利（混合）［指定］", course_direction="右"
-// public/jra-entries-pdf.js の jraEntriesParseConditions と同じ考え方(実装は
-// グローバル名の衝突を避けるためこのファイル内に独立して持つ)。
+// レース条件詳細(斤量区分・条件フラグ・回り)・天候抽出は public/jra-pdf-common.js の
+// 共通実装を呼ぶだけのラッパー(2026-09-01)。jra-entries-pdf.js側と実装が完全一致していた。
 function jraResultParseConditions(text) {
-  const s = jraResultNormalizeUnit(text).replace(/\s+/g, " ");
-  let weight_type = null;
-  const wt = s.match(/(馬齢|定量|別定|ハンデ)/);
-  if (wt) weight_type = wt[1];
-
-  let course_direction = null;
-  const dir = s.match(/[（(]\s*(芝|ダート|障害)\s*[・･]\s*(左|右)\s*[)）]/);
-  if (dir) course_direction = dir[2];
-
-  let class_flags = null;
-  const cf = s.match(/^\s*(\S.*?)\s*(?:馬齢|定量|別定|ハンデ)\s*コース/);
-  if (cf) class_flags = cf[1].trim() || null;
-
-  return { weight_type, class_flags, course_direction };
+  return jraPdfParseConditions(text);
 }
 
-// 天候・馬場状態の抽出(2026-08-11追加)。結果PDFにのみ出現する行:
-// 例: "天候 晴 ダート 良" → weather="晴", track_condition="良"
 function jraResultParseWeather(text) {
-  const s = jraResultNormalizeUnit(text).replace(/\s+/g, " ");
-  const m = s.match(/天候\s*([^\s]+)\s*(芝|ダート|障害)\s*([^\s]+)/);
-  if (!m) return { weather: null, track_condition: null };
-  return { weather: m[1] || null, track_condition: m[3] || null };
+  return jraPdfParseWeather(text);
 }
 
 function jraResultParseNumberList(raw) {
@@ -504,7 +438,7 @@ function jraResultParseIncidentNotes(blockLines) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "9.3.0-stopped-status";
+const JRA_RESULT_PDF_PARSER_VERSION = "9.4.0-shared-normalize";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
