@@ -202,6 +202,12 @@
 <script src="jra-result-pdf.js?v=3"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
-<script src="races.js"></script>
+<!-- 2026-09-01: races.js をトークン消費削減のため3分割(docs/ROADMAP.md「クラスタI」参照)。
+     races.js(state・カレンダー・レース一覧) → races-entries-modal.js(出走馬表モーダル) →
+     races-payout-modal.js(払戻モーダル)の順で読み込む(いずれもraces.js側の
+     HORSE_COUNT_OPTIONSを参照するため、races.jsを先に読み込む必要がある)。 -->
+<script src="races.js?v=4"></script>
+<script src="races-entries-modal.js?v=1"></script>
+<script src="races-payout-modal.js?v=1"></script>
 </body>
 </html>
