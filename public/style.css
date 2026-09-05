@@ -177,6 +177,13 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 .masthead-actions { display: flex; gap: 10px; align-items: center; }
 .current-username { font-size: .85em; color: var(--ink-soft, #55524a); margin-right: 4px; }
+.current-username-clickable {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--ink-soft, #55524a);
+}
+.current-username-clickable:hover {
+  color: var(--ink);
+}
 
 /* ---------- サマリーバー ---------- */
 .summary-bar {
