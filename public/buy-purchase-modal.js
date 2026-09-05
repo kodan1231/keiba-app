@@ -533,6 +533,10 @@ function renderPreview() {
   if (!combos.length) {
     previewArea.innerHTML = "";
     submitBtn.disabled = true;
+    // 前回購入完了時の「✓ 購入完了」表示・メッセージが残らないようにリセットする
+    // (無効化はしているため機能上の実害は無いが、表示上の混乱を避けるため)。
+    submitBtn.textContent = "この内容で購入する";
+    submitMessage.hidden = true;
     return;
   }
 
@@ -572,7 +576,13 @@ function renderPreview() {
     };
   });
 
+  // 2026-09-04追加: 直前の購入が成功していると、ボタンは「✓ 購入完了」表示のまま
+  // 無効化されている(submitBtn.onclick参照)。ユーザーが買い目を組み替えて次の購入に
+  // 進んだ場合は、通常の「この内容で購入する」状態へ戻す(前回の完了表示・メッセージを
+  // 引きずらないようにするため)。
   submitBtn.disabled = false;
+  submitBtn.textContent = "この内容で購入する";
+  submitMessage.hidden = true;
 }
 
 document.getElementById("apply-amount-btn").onclick = () => {
@@ -624,6 +634,13 @@ submitBtn.onclick = async () => {
   submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
   if (res.ok) {
     submitMessage.textContent = `${combos.length}点を購入記録に保存しました。`;
+    // 2026-09-04修正: 以前は成功時も submitBtn.disabled = !res.ok (= false) により
+    // ボタンが再度クリック可能な状態に戻ってしまい、「購入できたか分からず連打して
+    // しまい二重購入した」という不具合報告があった。成功後はボタンを無効化したまま
+    // 「✓ 購入完了」表示に変えて、同じ買い目を誤って再送信できないようにする。
+    // 買い目を組み替えて次の購入に進んだ場合は renderPreview() が通常表示へ戻す。
+    submitBtn.disabled = true;
+    submitBtn.textContent = "✓ 購入完了";
     // 購入済みの色分けをこのレースにも反映させるため、購入済みレースID集合を
     // 更新してレース一覧を再描画する(モーダルは開いたままでよい)。
     await loadPurchasedRaceIds();
@@ -631,6 +648,7 @@ submitBtn.onclick = async () => {
   } else {
     const data = await res.json().catch(() => ({}));
     submitMessage.textContent = data.error || "保存に失敗しました。";
+    // 失敗時は従来通り再送信できるようにする。
+    submitBtn.disabled = false;
   }
-  submitBtn.disabled = !res.ok;
 };
