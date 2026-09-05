@@ -591,12 +591,23 @@ document.getElementById("apply-amount-btn").onclick = () => {
   renderPreview();
 };
 
-submitBtn.onclick = async () => {
+// 現在の選択状態(券種・購入方式・馬選択・組み合わせごとの金額)から、
+// POST /api/tickets/bulk へ送信する1件分のペイロードを組み立てる。
+//
+// 2026-09-05追加: 馬券かご機能(docs/ROADMAP.md クラスタF)導入の布石として、
+// submitBtn.onclick に直書きされていたペイロード組み立て処理をこの関数へ切り出した。
+// 現時点では即時購入(submitBtn.onclick)からのみ呼び出しているため挙動は変わらないが、
+// 将来「かごに追加」ボタンを実装する際は、この関数の戻り値をそのままかご配列へ
+// push できる想定(選択状態から購入用ペイロードを組み立てる責務と、実際にAPIへ
+// 送信する責務を分離しておくことで、かご機能側の実装をこの関数の呼び出し元を
+// 増やすだけで済むようにする)。
+// 組み合わせが1つも無い場合は null を返す。
+function buildCurrentPurchasePayload() {
   const combos = currentCombos();
-  if (!combos.length) return;
+  if (!combos.length) return null;
 
   const map = Object.fromEntries(selectedRace.entries.map(e => [e.horse_number, e]));
-  const payload = combos.map(c => ({
+  const payloadCombos = combos.map(c => ({
     selections: c.map(h => {
       const e = map[h] || {};
       return {
@@ -609,7 +620,23 @@ submitBtn.onclick = async () => {
     amount:comboAmounts.get(JSON.stringify(c)) || 0
   }));
 
-  if (payload.some(x => !x.amount)) {
+  return {
+    race_id:selectedRace.id,
+    race_date:selectedRace.race_date,
+    track:selectedRace.track,
+    race_number:selectedRace.race_number,
+    race_name:selectedRace.race_name,
+    bet_type:state.betType,
+    method:state.method,
+    combos:payloadCombos
+  };
+}
+
+submitBtn.onclick = async () => {
+  const purchasePayload = buildCurrentPurchasePayload();
+  if (!purchasePayload) return;
+
+  if (purchasePayload.combos.some(x => !x.amount)) {
     alert("金額を確認してください");
     return;
   }
@@ -618,22 +645,13 @@ submitBtn.onclick = async () => {
   const res = await authedFetch("/api/tickets/bulk", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      race_id:selectedRace.id,
-      race_date:selectedRace.race_date,
-      track:selectedRace.track,
-      race_number:selectedRace.race_number,
-      race_name:selectedRace.race_name,
-      bet_type:state.betType,
-      method:state.method,
-      combos:payload
-    })
+    body:JSON.stringify(purchasePayload)
   });
 
   submitMessage.hidden = false;
   submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
   if (res.ok) {
-    submitMessage.textContent = `${combos.length}点を購入記録に保存しました。`;
+    submitMessage.textContent = `${purchasePayload.combos.length}点を購入記録に保存しました。`;
     // 2026-09-04修正: 以前は成功時も submitBtn.disabled = !res.ok (= false) により
     // ボタンが再度クリック可能な状態に戻ってしまい、「購入できたか分からず連打して
     // しまい二重購入した」という不具合報告があった。成功後はボタンを無効化したまま
