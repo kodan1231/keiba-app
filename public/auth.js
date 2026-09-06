@@ -10,6 +10,13 @@
 // 本人確認は「現在のパスワードの照合」で行うため、他ユーザーのパスワードを
 // 変更することはできない。全画面共通のこのファイルに実装することで、
 // 各HTMLファイルを個別に編集せずに済む(モーダルのDOMはJSで動的に生成しbodyへ追加する)。
+//
+// 馬券かご連携(2026-09-06追加): ログイン成功時に "keiba-auth-ready"、ログアウト時に
+// "keiba-logout" のカスタムイベントをdocumentへ発火する。public/cart.js(全ページ共通で
+// 読み込まれる馬券かご機能)は、ログイン確定後(window.currentUser.username確定後)で
+// なければlocalStorageのキー(ユーザーごとに分離)を正しく組み立てられないため、この
+// イベントを合図にヘッダーバッジの初期描画を行う。ログアウト時はカゴのパネルを
+// 閉じる(パネルはdocument.body直下に生成され#app-screenの外側にあるため)。
 
 window.currentUser = { username: null, isAdmin: false };
 
@@ -55,6 +62,7 @@ function setupAuth(onReady) {
     loginScreen.hidden = true;
     appScreen.hidden = false;
     onReady();
+    document.dispatchEvent(new CustomEvent("keiba-auth-ready"));
   }
 
   function showLogin() {
@@ -94,6 +102,7 @@ function setupAuth(onReady) {
       await fetch("/api/auth/logout", { method: "POST" });
       window.currentUser = { username: null, isAdmin: false };
       showLogin();
+      document.dispatchEvent(new CustomEvent("keiba-logout"));
     });
   }
 

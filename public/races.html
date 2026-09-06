@@ -36,6 +36,7 @@
     </div>
     <div class="masthead-actions">
       <span id="current-username" class="current-username"></span>
+      <button type="button" id="cart-badge-btn" class="ghost-btn cart-badge-btn">かご<span id="cart-badge-count" class="cart-badge-count" hidden>0</span></button>
       <button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>
       <button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>
       <button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>
@@ -202,6 +203,7 @@
 <script src="jra-result-pdf.js?v=3"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
+<script src="cart.js"></script>
 <!-- 2026-09-01: races.js をトークン消費削減のため3分割(docs/ROADMAP.md「クラスタI」参照)。
      races.js(state・カレンダー・レース一覧) → races-entries-modal.js(出走馬表モーダル) →
      races-payout-modal.js(払戻モーダル)の順で読み込む(いずれもraces.js側の

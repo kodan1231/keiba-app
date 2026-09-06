@@ -1,10 +1,16 @@
-// 馬券購入画面: 購入モーダル一式(券種選択・購入方式・馬選択・組み合わせ生成・プレビュー・送信)。
+// 馬券購入画面: 購入モーダル一式(券種選択・購入方式・馬選択・組み合わせ生成・プレビュー・
+// 馬券かごへの追加)。
 //
 // 2026-09-01: buy.js から分割(トークン消費削減。docs/ROADMAP.md「クラスタI」参照)。
 // ESモジュールを使わないクラシックスクリプトのため buy.js とグローバルスコープを
 // 共有する。index.html では buy.js の後に読み込む(本ファイルは同期的にbuy.js側の
 // 変数を参照しないため厳密な順序依存は無いが、races.js分割との一貫性のためこの順序とする)。
-// 分割によって挙動・DOM構造・APIは変更していない。
+//
+// 2026-09-06: 馬券かご機能(docs/ROADMAP.md クラスタF)の導入に伴い、購入ボタンの役割を
+// 「即時購入(サーバーへ直接送信)」から「馬券かごへ追加(localStorageへ保存するのみ)」へ
+// 変更した。実際の購入確定はカゴ画面(public/cart.js)側で行う。本ファイルは
+// public/cart.js が公開するグローバル関数 addToCart() に依存するため、index.html では
+// buy-purchase-modal.js より前に cart.js を読み込む必要がある。
 
 let selectedRace = null;
 let comboAmounts = new Map();
@@ -533,9 +539,6 @@ function renderPreview() {
   if (!combos.length) {
     previewArea.innerHTML = "";
     submitBtn.disabled = true;
-    // 前回購入完了時の「✓ 購入完了」表示・メッセージが残らないようにリセットする
-    // (無効化はしているため機能上の実害は無いが、表示上の混乱を避けるため)。
-    submitBtn.textContent = "この内容で購入する";
     submitMessage.hidden = true;
     return;
   }
@@ -576,12 +579,9 @@ function renderPreview() {
     };
   });
 
-  // 2026-09-04追加: 直前の購入が成功していると、ボタンは「✓ 購入完了」表示のまま
-  // 無効化されている(submitBtn.onclick参照)。ユーザーが買い目を組み替えて次の購入に
-  // 進んだ場合は、通常の「この内容で購入する」状態へ戻す(前回の完了表示・メッセージを
-  // 引きずらないようにするため)。
+  // 買い目を組み替えた場合、直前の「◯点を馬券かごへ追加しました」メッセージを
+  // 引きずらないよう非表示に戻す(ボタンのテキストは常に固定なのでリセット不要)。
   submitBtn.disabled = false;
-  submitBtn.textContent = "この内容で購入する";
   submitMessage.hidden = true;
 }
 
@@ -592,15 +592,12 @@ document.getElementById("apply-amount-btn").onclick = () => {
 };
 
 // 現在の選択状態(券種・購入方式・馬選択・組み合わせごとの金額)から、
-// POST /api/tickets/bulk へ送信する1件分のペイロードを組み立てる。
+// 馬券かご(cart.js)へ追加する1グループ分のペイロードを組み立てる。
 //
-// 2026-09-05追加: 馬券かご機能(docs/ROADMAP.md クラスタF)導入の布石として、
-// submitBtn.onclick に直書きされていたペイロード組み立て処理をこの関数へ切り出した。
-// 現時点では即時購入(submitBtn.onclick)からのみ呼び出しているため挙動は変わらないが、
-// 将来「かごに追加」ボタンを実装する際は、この関数の戻り値をそのままかご配列へ
-// push できる想定(選択状態から購入用ペイロードを組み立てる責務と、実際にAPIへ
-// 送信する責務を分離しておくことで、かご機能側の実装をこの関数の呼び出し元を
-// 増やすだけで済むようにする)。
+// 2026-09-06更新: 馬券かご機能(docs/ROADMAP.md クラスタF)の導入により、この
+// モーダルの「購入する」ボタンは直接APIへ送信せず、カゴへ追加するだけの役割に
+// 変わった(実際の購入確定はカゴ画面側で行う)。この関数の役割自体は変わらず、
+// 引き続き選択状態から送信用ペイロードを組み立てるだけの責務に留める。
 // 組み合わせが1つも無い場合は null を返す。
 function buildCurrentPurchasePayload() {
   const combos = currentCombos();
@@ -632,7 +629,16 @@ function buildCurrentPurchasePayload() {
   };
 }
 
-submitBtn.onclick = async () => {
+// 2026-09-06: 馬券かご機能の導入により、このボタンは「馬券かごへ追加」の役割になった
+// (以前はここで直接 POST /api/tickets/bulk していたが、実際の購入確定はカゴ画面
+// (cart.js)側の「購入」操作で行う)。カゴへの追加はlocalStorageへの書き込みのみで
+// ネットワーク通信を伴わないため、以前あった「購入直後にボタンが再度押せる状態に
+// 戻ってしまい二重購入した」という問題はこの操作自体では起こり得ない(同じ内容を
+// 誤って二度カゴへ追加しても、カゴ画面でチェックを外す・削除するだけで済むため)。
+// 追加後は、続けて別の買い目を選べるよう券種選択からやり直す(選択済みの組み合わせを
+// 画面に残したままにすると、内容を変えたつもりが変わっていない、といった混乱の
+// もとになるため)。
+submitBtn.onclick = () => {
   const purchasePayload = buildCurrentPurchasePayload();
   if (!purchasePayload) return;
 
@@ -641,32 +647,23 @@ submitBtn.onclick = async () => {
     return;
   }
 
-  submitBtn.disabled = true;
-  const res = await authedFetch("/api/tickets/bulk", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(purchasePayload)
-  });
+  const count = purchasePayload.combos.length;
+  // addToCart() は public/cart.js が公開するグローバル関数。カゴ配列(localStorage)へ
+  // 常に新規グループとして追加し、ヘッダーバッジの件数表示も更新する。
+  addToCart(purchasePayload);
 
-  submitMessage.hidden = false;
-  submitMessage.className = `submit-message ${res.ok ? "success" : "error"}`;
-  if (res.ok) {
-    submitMessage.textContent = `${purchasePayload.combos.length}点を購入記録に保存しました。`;
-    // 2026-09-04修正: 以前は成功時も submitBtn.disabled = !res.ok (= false) により
-    // ボタンが再度クリック可能な状態に戻ってしまい、「購入できたか分からず連打して
-    // しまい二重購入した」という不具合報告があった。成功後はボタンを無効化したまま
-    // 「✓ 購入完了」表示に変えて、同じ買い目を誤って再送信できないようにする。
-    // 買い目を組み替えて次の購入に進んだ場合は renderPreview() が通常表示へ戻す。
-    submitBtn.disabled = true;
-    submitBtn.textContent = "✓ 購入完了";
-    // 購入済みの色分けをこのレースにも反映させるため、購入済みレースID集合を
-    // 更新してレース一覧を再描画する(モーダルは開いたままでよい)。
-    await loadPurchasedRaceIds();
-    renderGrid();
-  } else {
-    const data = await res.json().catch(() => ({}));
-    submitMessage.textContent = data.error || "保存に失敗しました。";
-    // 失敗時は従来通り再送信できるようにする。
-    submitBtn.disabled = false;
+  // 券種選択からやり直す(モーダル自体は開いたまま)。
+  resetState();
+  renderBetTypes();
+  hideDownstream();
+  if (state.betType === "tan") {
+    methodSection.hidden = true;
+    renderPicker();
   }
+
+  // 上記のリセット処理(hideDownstream・renderPreview経由)はいずれも
+  // submitMessageを非表示に戻すため、確認メッセージは最後に表示する。
+  submitMessage.hidden = false;
+  submitMessage.className = "submit-message success";
+  submitMessage.textContent = `${count}点を馬券かごへ追加しました。`;
 };

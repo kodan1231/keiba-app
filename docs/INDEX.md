@@ -17,7 +17,8 @@
 | CSVインポート | functions/api/ticket-imports/index.js |
 | 払戻計算ロジック | public/payout.js, functions/api/_lib/ticket-payout.js |
 | 認証・ユーザー管理 | functions/api/auth/*, functions/api/_lib/auth.js, public/auth.js |
-| 騎手名エイリアス | functions/api/admin/jockey-aliases/*, functions/api/_lib/jockey-alias.js |
+| 騎手名エイリアス(管理画面API) | functions/api/admin/jockey-aliases/* |
+| 騎手名エイリアス(正規化ロジック本体) | functions/api/_lib/jockey-alias.js |
 | DBスキーマ変更 | schema.sql, migration.sql (archive/migrationsは不要) |
 | 管理画面 | public/admin.js, public/admin.html, functions/api/admin/* |
 | 出走馬entriesマージ・バックフィル | functions/api/_lib/entries-merge.js |
