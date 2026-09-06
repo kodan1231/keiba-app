@@ -14,12 +14,14 @@
 | レース管理画面(手動編集) | public/races.js, public/races.html |
 | 出走馬一覧PDFインポート | public/jra-entries-pdf.js, functions/api/races/entries-import.js |
 | JRAレース結果PDFインポート | public/jra-result-pdf.js, functions/api/races/results-import.js |
-| 払戻計算ロジック | public/payout.js, functions/api/_shared.js(recomputeTicketPayoutsForRace系) |
 | CSVインポート | functions/api/ticket-imports/index.js |
-| 認証・ユーザー管理 | functions/api/auth/*, functions/api/_shared.js(セッション部分), public/auth.js |
-| 騎手名エイリアス | functions/api/admin/jockey-aliases/*, functions/api/_shared.js(jockey系) |
+| 払戻計算ロジック | public/payout.js, functions/api/_lib/ticket-payout.js |
+| 認証・ユーザー管理 | functions/api/auth/*, functions/api/_lib/auth.js, public/auth.js |
+| 騎手名エイリアス | functions/api/admin/jockey-aliases/*, functions/api/_lib/jockey-alias.js |
 | DBスキーマ変更 | schema.sql, migration.sql (archive/migrationsは不要) |
 | 管理画面 | public/admin.js, public/admin.html, functions/api/admin/* |
+| 出走馬entriesマージ・バックフィル | functions/api/_lib/entries-merge.js |
+| race_results詳細記録 | functions/api/_lib/race-results.js |
 
 ## ドキュメント使い分け
 
@@ -78,6 +80,31 @@ DESIGN.mdは経緯説明(「以前は〜だったが2026-08-XXに修正」等)�
 - 集計ルール
 - CSSのキャッシュ対策
 - DBマイグレーションの運用 / DBファイルの役割
+
+## docs/TESTING.md 見出し索引(セクション指定で部分参照するため)
+
+- 0. セットアップ / 0.1 トップページ(/)の表示 / 0.2 開催日・レース選択画面のUI調整
+- 1. CSVインポート
+  - 1.5 レース登録・編集
+  - 1.6 CSV取込データへの馬名・騎手の反映
+  - 1.7 払戻確定時のticket反映(1.7.1 PDF一括登録 / 1.7.2 枠番自動計算・枠連判定)
+  - 1.8 出走馬一覧PDFインポート
+  - 1.9 レース結果詳細(race_results)・レース条件詳細カラム
+- 2. 予想印・出走馬表示(2.0.1 馬メモの有無 / 2.1 購入馬券欄の開閉)
+- 2.5 予想登録画面のレイアウト
+- 3. 馬メモ
+- 4. 馬券購入(組み合わせ生成)
+  - 4.2 三連複・三連単「2頭軸」のUI
+  - 4.4 「購入済み」表示 / 4.5 結果確定済ラベル(4.5.0 誤表示防止 / 4.5.1 即時反映)
+  - 4.6 レース選択画面のUI改修(タブ・コース情報・メモマーク)
+- 5. 集計(stats)
+- 6. マイグレーション整合性
+- 7. レース管理画面のレイアウト(7.1 コース種別・距離表示)
+- 8. 購入履歴のカレンダー表示(8.1 モバイルのレースカード表示)
+- 9. 全画面共通の表示(9.1 モバイルヘッダー)
+- 10. 複数ユーザー対応
+- 11. モーダル/ダイアログ共通挙動
+- 12. 騎手名エイリアス管理
 
 ## 運用ルール
 
