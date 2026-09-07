@@ -33,6 +33,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |
 | 認証・ユーザー管理 | `functions/api/auth/*`, `functions/api/_lib/auth.js`, `public/auth.js` |
+| 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
 | 出走馬entriesマージ・バックフィル・枠番自動計算 | `functions/api/_lib/entries-merge.js` |

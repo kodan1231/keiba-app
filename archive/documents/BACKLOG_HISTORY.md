@@ -382,3 +382,23 @@
 - **対象外**: `ticket-imports/index.js`(CSV取込。`formData()`使用・エラー形が `{ok:false,error}` で
   他と異なる)、`_middleware.js`(認証前の一度きりの応答)は変更しない
 - `node --check`(19ファイル)のみ。実機検証は未実施
+
+**① HTML共通シェル(masthead/nav/login-screen)を `public/shell.js` へ集約(完了)**
+- 6HTML(index/history/stats/prediction/races/admin)がログイン画面(`#login-screen` 約14行)と
+  ヘッダー(`header.masthead` 約6〜10行)を丸ごと重複保持しており、ナビ項目変更・ログイン画面の
+  文言変更のたびに6ファイル編集が必要だった(かごバッジ追加時に実際に発生)
+- `public/shell.js` を新設(IIFE。各HTMLで `utils.js` の直後・`auth.js` より前に読込)。
+  実行時に `#login-screen` と `header.masthead` の中身を生成注入する。各HTMLは
+  `<body data-page="...">` + 空の `<div id="login-screen">` + 空の `<header class="masthead">` だけ持つ
+- ナビ項目は `NAV_ITEMS` 配列、ページ固有ヘッダーボタン(history のCSVインポート、races の
+  PDFインポート×2・レース登録)は `PAGE_ACTIONS` で一元管理。ボタンidは従来通りのため
+  `app.js`/`races.js` のイベント登録は無変更で動作。`data-admin-only` も従来通り付与し
+  `auth.js` が表示切替
+- `<head>`(フォント・`style.css?v=3`)は各HTMLに残置(FOUC回避・`?v=` 運用のため)
+- 生成HTMLは従来のDOM構造と同一(空白のみ差異)。`#app-screen`/`#login-screen` は
+  `hidden` 状態で注入されるため描画のちらつきは無い
+- 各HTMLが概ね半減(例: history.html 76→約40行)
+- `node --check`(shell.js)・静的レビュー・生成文字列と旧HTMLの突き合わせのみ。
+  実ブラウザでの6画面(ログイン前後・ナビ遷移・管理者/一般切替・かごバッジ・
+  パスワード変更モーダル)の確認は未実施
+- 仕様は `docs/design/screens.md`「全画面共通シェル(shell.js)」に追記

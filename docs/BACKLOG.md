@@ -75,6 +75,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 🔵 実機検証未完了 | 枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
 | 🔵 実機検証未完了 | 日付・金額フォーマッタの`public/utils.js`集約(2026-09-07。`formatDate`/`formatDateMdW`/`formatDateMd`/`formatYen`/`formatSignedYen`/`formatSignedNum`)は`node --check`・静的レビューのみ。全画面(購入履歴・集計・予想・レース管理・管理・かご)で日付が「2026/08/24(日)」、金額が従来通りに表示されること、特に**予想画面・レース管理画面・かごの日付が月日1桁→2桁に変わった**箇所の目視確認が必要 | `docs/design/screens.md`「日付・金額の共通フォーマッタ」 |
 | 🔵 実機検証未完了 | サーバハンドラの定型コード集約(2026-09-07。`functions/api/_lib/http.js`新設・`readJsonBody`/`parsePositiveIntId`/`jsonError`、17ファイル書き換え)は`node --check`のみ。ログイン・新規登録・パスワード変更・レース登録/編集/削除・予想保存・馬メモ保存・出走馬/結果PDFインポート・かご一括購入・購入履歴編集/削除・騎手名エイリアス追加/削除の各APIが従来通り動作すること(特に400/404/409エラー時のレスポンス)の確認が必要 | `CLAUDE.md`「共有ヘルパーの構成」`_lib/http.js` |
+| 🔵 実機検証未完了 | HTML共通シェル集約(2026-09-08。`public/shell.js`新設・6HTMLの`#login-screen`と`header.masthead`を実行時注入化)は`node --check`・静的突き合わせのみ。6画面(index/history/stats/prediction/races/admin)で①ログイン画面が表示され新規登録トグルも動く ②ログイン後ヘッダーのナビ・ユーザー名・かごバッジ・退場が表示される ③現在ページのナビが`active` ④管理者ログインで「レース管理」「管理」リンクとracesのPDF/登録ボタンが出る、一般ユーザーで出ない ⑤historyのCSVインポート、racesの各ボタンが従来通り機能する ⑥ユーザー名クリックでパスワード変更モーダルが開く、の確認が必要 | `docs/design/screens.md`「全画面共通シェル(shell.js)」 |
 
 ## 未着手タスク(クラスタ単位)
 

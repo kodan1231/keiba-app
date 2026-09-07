@@ -4,13 +4,40 @@
 
 # 画面仕様
 
+### 全画面共通シェル(`public/shell.js`)
+
+6つのHTML(`index.html`・`history.html`・`prediction.html`・`stats.html`・`races.html`・
+`admin.html`)に共通する **ログイン画面(`#login-screen`)** と **ヘッダー(`header.masthead`。
+タイトル・ナビ・ユーザー名・かごバッジ・退場ボタン)** のマークアップは、`public/shell.js` が
+実行時に生成して注入する。各HTMLが持つのは以下の空の受け皿だけ:
+
+```html
+<body data-page="stats">                              <!-- ナビのactive判定に使う -->
+<div id="login-screen" class="screen" hidden></div>   <!-- 空。中身はshell.jsが生成 -->
+<div id="app-screen" class="screen" hidden>
+  <header class="masthead"></header>                  <!-- 空。中身はshell.jsが生成 -->
+  <main> ... ページ本体 ... </main>
+</div>
+```
+
+- `shell.js` は各HTMLで **`utils.js` の直後・`auth.js` より前** に読み込む。`auth.js` が
+  `#login-username` 等・`[data-admin-only]` 要素を参照するため、それらが生成済みである必要がある
+- ナビ項目は `shell.js` の `NAV_ITEMS` 配列で一元管理。`adminOnly: true` の項目には
+  `data-admin-only hidden` が付き、`auth.js` の `applyAdminVisibility()` が表示を切り替える
+- ページ固有のヘッダーアクションボタン(`history` の「CSVインポート」、`races` の
+  「出走馬一覧PDFをインポート」「JRAレース結果PDFをインポート」「＋ レースを登録」)は
+  `shell.js` の `PAGE_ACTIONS` で `data-page` 別に定義。ボタンのidは従来通りで、
+  イベント登録は各ページのJS(`app.js`・`races.js`等)が実行時に `getElementById` で行う
+- すでに中身が入っている受け皿は上書きしない(段階的移行の安全策)
+- `<head>`(フォント・`style.css?v=N`)は各HTMLに残す(FOUC回避、および `?v=` の
+  キャッシュバスティング運用のため。`docs/ROADMAP.md` クラスタI「CSSキャッシュバスティングの
+  一元化」は着手しない方針)
+
 ### トップページ(`/`)の表示について
 
-各画面(`index.html`・`history.html`・`prediction.html`・`stats.html`・`races.html`・
-`admin.html`)はそれぞれ独立してログイン画面(`#login-screen`)を内包しており、ログイン成功後に
-別ページへ自動遷移する仕組みは持たない(そのページ内でログイン画面→アプリ画面に切り替わる
-だけ)。そのため「ログイン後の初期画面」は実質的に**サイトのルートURL(`/`)へアクセスした際に
-どのファイルが表示されるか**で決まる。
+各画面はログイン成功後に別ページへ自動遷移する仕組みを持たない(そのページ内でログイン画面
+→アプリ画面に切り替わるだけ)。そのため「ログイン後の初期画面」は実質的に**サイトのルート
+URL(`/`)へアクセスした際にどのファイルが表示されるか**で決まる。
 
 対応方式は**ファイル名リネーム**で実現している: 元々「購入履歴」画面だった`index.html`を
 `history.html`にリネームし、元々「馬券購入」画面だった`buy.html`を`index.html`にリネームした。
