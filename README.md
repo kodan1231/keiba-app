@@ -2,21 +2,14 @@
 
 **FIX ver1.0**(2026-08-10整理)
 
-> **2026-08-16(2)追記**: トップページ(`/`)を「馬券購入」画面にするための実装方式を、
-> `functions/_middleware.js`によるHTTPリダイレクトから、**ファイル名を実際の画面の役割に
-> 合わせてリネームする方式**に変更した(`buy.html`→`index.html`、旧`index.html`(購入履歴)→
-> `history.html`)。詳細は`docs/design/screens.md`「トップページ(`/`)の表示について」参照。
-
 Cloudflare Pages + Pages Functions + D1 で動く、無料で使える疑似馬券購入・収支管理アプリです。
 単勝・複勝・枠連・馬連・ワイド・馬単・三連複・三連単、および通常・ボックス・流し・フォーメーションの
 購入方式に対応しています。PC・スマホどちらからもアクセスできます。
 
-> **ドキュメントの読み方**: このREADME・`docs/DESIGN.md`・`docs/TESTING.md`は、
-> 常に「現時点の仕様・現時点のテスト項目」だけを記す生きたドキュメントです。
-> 過去の不具合修正・調査の経緯や日付単位の作業ログは持たず、`archive/documents/`
-> 配下に退避しています。未着手のタスク・調査中の不具合は`docs/BACKLOG.md`を参照してください。
-> JRAレース結果PDFインポート機能の詳細仕様は`docs/design/results-import.md`「JRAレース結果PDFインポート」
-> 節に統合されています(独立したドキュメントは廃止しました)。
+> **ドキュメントの読み方**: 開発時はまず `CLAUDE.md`(Claude が自動読み込み)と `docs/INDEX.md` を見て、
+> 仕様は `docs/DESIGN.md`(索引)→ `docs/design/<機能>.md`、テスト観点は `docs/TESTING.md`(索引)→
+> `docs/testing/<機能>.md` の該当1ファイルだけを参照してください。未着手タスク・調査中の不具合は
+> `docs/BACKLOG.md`。過去の作業ログ・完了済みタスクの経緯は `archive/documents/` に退避しています。
 
 ## ページ構成(メニュー順)
 
@@ -38,8 +31,8 @@ Cloudflare Pages + Pages Functions + D1 で動く、無料で使える疑似馬�
 - **レース未登録でも購入可能**: 出走馬が未登録のレースでも、馬番を直接入力して購入できます(あとからレース管理で馬名・騎手を追記可能)
 - **組み合わせごとの個別金額**: ボックス・流し・フォーメーションで生成された組み合わせは、一括金額を設定したうえで個別に金額を上書きできます
 - **出走馬情報の一括入力**: netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けると、出走馬の入力欄に自動反映します(読み取り結果は必ず保存前に確認・修正できます)
-- **出走馬一覧PDFの一括インポート**: JRA公式サイトの「出走馬一覧」PDF(枠番・馬番未確定/確定後いずれも可)を解析し、出走馬(馬名・騎手・枠番・馬番)を一括登録・更新できます。詳細は`docs/design/entries-import.md`「出走馬一覧PDFインポート」参照
-- **JRAレース結果PDFの一括インポート**: JRA公式サイトの「レース結果一覧」PDFを解析し、着順・払戻を一括登録できます。詳細は`docs/design/results-import.md`「JRAレース結果PDFインポート」参照
+- **出走馬一覧PDFの一括インポート**: JRA公式サイトの「出走馬一覧」PDF(枠番・馬番未確定/確定後いずれも可)を解析し、出走馬(馬名・騎手・枠番・馬番)を一括登録・更新できます。詳細は`docs/design/entries-import.md`参照
+- **JRAレース結果PDFの一括インポート**: JRA公式サイトの「レース結果一覧」PDFを解析し、着順・払戻を一括登録できます。詳細は`docs/design/results-import.md`参照
 - **払戻金額の一括入力**: レース編集画面で、そのレースに紐づく全ての購入グループの払戻金額をまとめて入力できます
 - **的中率**: クラブJRA-netと同じ考え方(レース単位。1レースでいずれかの馬券が的中していれば「的中」)で算出します
 - **予想印・馬メモ**: 予想登録画面で、レースごとに出走馬へ予想印(◎○▲△☆消。1頭1つまで)を付けたり、馬名をキーにした継続メモ(通算成績や気づき等)を残せます
@@ -67,51 +60,27 @@ JRA公式サイトやnetkeibaへの**プログラムによる自動アクセス(
 
 ## 構成
 
+画面・API・共有ヘルパーと「機能→触るファイル」の対応は `CLAUDE.md` と `docs/INDEX.md` を参照。
+リポジトリ直下・`docs/` の構成は以下:
+
 ```
-public/
-  index.html / buy.js       ... 馬券購入(レース選択→予想登録画面へ遷移。?race=IDで購入モーダルを直接表示。
-                                  サイトのルートURL(/)へアクセスするとこの画面が表示される)
-  prediction.html / prediction.js ... 予想登録(予想印・馬メモ・購入済み馬券確認・購入画面への導線)
-  history.html / app.js     ... 購入履歴一覧(通常購入+CSVインポート統合表示・読み取り専用)
-  stats.html / stats.js     ... 集計(収支・回収率・的中率)
-  races.html / races.js     ... レース管理(出走馬表・PDFインポート・払戻入力。管理者のみ)
-  admin.html / admin.js     ... 管理画面(未登録レース一覧・登録ユーザー一覧。管理者のみ)
-  auth.js                   ... 全ページ共通のログイン/ログアウト処理
-  bettypes.js                ... 馬券種類・購入方式の定義(共通)
-  combos.js                  ... 組み合わせ生成ロジック(ボックス/流し/フォーメーション)
-  parse.js                   ... テキスト貼り付けの解析ロジック(出走馬情報)
-  payout.js                  ... 着順から的中組み合わせを算出するロジック(共通)
-  jra-entries-pdf.js         ... 出走馬一覧PDFの解析ロジック(クライアント側PDF.js)
-  jra-result-pdf.js          ... JRAレース結果PDFの解析ロジック(クライアント側PDF.js)
-  utils.js                   ... 共通ユーティリティ関数(HTMLエスケープ等)
-functions/
-  _middleware.js             ... 認証チェック(/api/*のセッション検証のみ。ルートURLの
-                                  リダイレクト処理は2026-08-16(2)に廃止済み。上記注記参照)
-  api/_shared.js             ... 共通処理(管理者判定・馬名バックフィル・払戻再計算等)
-  api/auth/                  ... ログイン/ログアウト/認証確認/新規ユーザー登録
-  api/races/                 ... レースの一覧・登録・編集・削除・PDFインポート。登録・編集・削除は管理者限定
-  api/tickets/                ... 購入履歴の一覧・一括登録(bulk・組み合わせごとの金額対応)・払戻更新・削除
-  api/ticket-imports/        ... CSVインポート(取込・一覧・削除)
-  api/predictions/           ... 予想印・予想メモの登録・取得
-  api/horse-notes/           ... 馬メモの登録・取得
-  api/admin/                 ... 管理者向けAPI(未登録レース一覧・登録ユーザー一覧)。管理者限定
+public/                      ... フロントエンド(各画面の .html / .js、共通の style.css)
+functions/                   ... Cloudflare Pages Functions(/api/*。認証ミドルウェア含む)
 schema.sql                   ... D1データベースの最新版テーブル定義(新規セットアップ用)
-migration.sql                ... 既存DBを最新版へ更新する統合マイグレーション(未適用分のみ)
-archive/migrations/          ... 過去の番号付きmigration・過去のmigration.sql(旧latest1.sql)のアーカイブ(通常は実行しない)
-archive/documents/           ... 過去の作業ログ・調査メモ・完了済みタスクの経緯のアーカイブ(通常は参照しない)
-docs/DESIGN.md                ... 設計方針の索引(2026-09-07に機能単位で分割)
-docs/design/                 ... データ構造・インポート・払戻・画面仕様などの詳細設計(機能ごと1ファイル。生きたドキュメント)
-docs/TESTING.md                ... 手動テストチェックリストの索引(2026-09-07に機能単位で分割)
-docs/testing/                ... 機能ごとの手動テスト観点(機能ごと1ファイル。生きたドキュメント)
-docs/BACKLOG.md                 ... 承認済みだが未実装のタスクの引継ぎメモ
+migration.sql                ... 既存DBを最新版へ更新する統合マイグレーション(未適用の -- @STEP のみ)
+archive/migrations/          ... 過去の番号付きmigration・単発マイグレーションの保管(通常は実行しない)
+archive/documents/           ... 過去の作業ログ・調査メモ・完了済みタスクの経緯(通常は参照しない)
+docs/DESIGN.md               ... 設計方針の索引 → docs/design/<機能>.md(現状の仕様。生きたドキュメント)
+docs/TESTING.md              ... 手動テストチェックリストの索引 → docs/testing/<機能>.md(生きたドキュメント)
+docs/INDEX.md                ... ドキュメント・ファイル索引(トークン節約用)
+docs/BACKLOG.md              ... 承認済みだが未実装のタスク・調査中の不具合の引継ぎメモ
+docs/ROADMAP.md              ... 大型・保留・将来構想タスク
 wrangler.toml
 ```
 
-このREADME、`docs/DESIGN.md`、`docs/TESTING.md`はいずれも常に現状を反映する
-「生きたドキュメント」として管理します。過去の作業ログ・修正メモの類はファイルとして
-残さず、コミットメッセージ側に記録する方針です。`docs/BACKLOG.md`のみ例外で、
-「現状」ではなく「承認済みだが未着手のタスク・調査中の不具合」を引き継ぐためのドキュメントです。
-着手時に該当項目を削除し、他の生きたドキュメントへ反映します。
+README・`docs/design/`・`docs/testing/` はいずれも常に現状を反映する「生きたドキュメント」として
+管理します。過去の作業ログ・修正メモの類はファイルとして残さず、コミットメッセージ側に記録します。
+`docs/BACKLOG.md` のみ例外で「これから対応すること」を引き継ぎます。
 
 ## データの考え方
 
@@ -124,51 +93,16 @@ wrangler.toml
 
 ## DBマイグレーション方針
 
-DBスキーマは最新版を基準に管理します。
+DBスキーマは最新版(`schema.sql`)を基準に管理します。詳細な運用手順は
+`docs/design/ops.md`「DBマイグレーションの運用」を参照。要点:
 
-**運用ルール(node不要・wranglerコマンドのみで手動運用)**
-- **初期セットアップ(まっさらな新規DB)のときだけ`schema.sql`を1回実行する。**
-  それ以外(=日々の変更適用)では`schema.sql`は使わない
-- **本番は既に運用中でユーザーの実データが入っている。テーブルやデータを削除する
-  ような変更(`DROP TABLE`、`DELETE`、既存データを上書き/巻き戻すような`UPDATE`等)は
-  極力行わない。** カラムの追加(`ALTER TABLE ADD COLUMN`)や新規テーブルの追加
-  (`CREATE TABLE IF NOT EXISTS`)など、既存データに影響しない変更のみを基本とする。
-  どうしても削除的な変更が必要な場合は、影響範囲(消えるデータ・対象範囲)を明示した
-  上で、**必ず作業前に承認を得ること**
-- `migration.sql`には**まだ本番へ適用していないスキーマ変更のみ**を、末尾に
-  `-- @STEP: 名前`ブロックとして追記していく。適用が完了したブロックは、
-  ファイルからは削除し(内容は`schema.sql`に反映し、必要なら
-  `archive/migrations/`へ退避する)、常に「これから適用すべき差分だけ」が
-  ファイルに残っている状態を保つ
+- 初期セットアップ(まっさらな新規DB)のときだけ `schema.sql` を1回実行する
+- `migration.sql` には**まだ本番へ適用していないスキーマ変更のみ**を `-- @STEP: 名前` ブロックで追記。
+  適用済みブロックは削除し、内容を `schema.sql` に反映する
+- 本番は実データが入っている。`DROP TABLE`・`DELETE`・巻き戻す `UPDATE` など**破壊的な変更は
+  必ず作業前に承認を得る**。基本は `ALTER TABLE ADD COLUMN` / `CREATE TABLE IF NOT EXISTS` のみ
 
-### スキーマ変更の適用手順(手動・wranglerのみ)
-
-1. `migration.sql`に新しい`-- @STEP: 名前`ブロックを追記する
-2. そのブロックのSQLだけを一時ファイル(例: `step.sql`)にコピーし、まず`--local`で試す
-
-   ```bash
-   npx wrangler d1 execute keiba-yosou-db --local --file=step.sql
-   ```
-3. 問題なければ`--remote`(本番)に適用する
-
-   ```bash
-   npx wrangler d1 execute keiba-yosou-db --remote --file=step.sql
-   ```
-4. 成功したら`schema_migrations`に適用記録を追加する
-
-   ```bash
-   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('新しいステップ名');"
-   ```
-5. `migration.sql`から該当ブロックを削除し、`schema.sql`へ内容を反映する(新規DBでも
-   最初から最新構造になるように)
-
-途中で失敗した場合は、`ALTER TABLE ADD COLUMN`のような非破壊的な変更なら
-「既に列がある」旨のエラーで気づけるので、`PRAGMA table_info`等で実際に
-どこまで反映されているかを確認してから、schema_migrationsへの記録や
-残りのSQLを個別に対応する。`DROP`/`RENAME`を伴う変更は再実行すると
-データを壊す恐れがあるため、特に慎重に確認すること。
-
-更新後に再デプロイします。
+更新後の再デプロイ:
 
 ```bash
 npx wrangler pages deploy public --project-name=keiba-yosou-app
@@ -176,9 +110,8 @@ npx wrangler pages deploy public --project-name=keiba-yosou-app
 
 > 注意: `migration.sql` は既存DBを最新版へ更新するためのものです。新規DBは `schema.sql` を使用してください。
 > 既存DBに複数ユーザー対応のマイグレーションを適用した場合は、管理者アカウント作成後に
-> `archive/migrations/assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに割り当ててください
-> (下記「複数ユーザー対応について」参照)。
-
+> `archive/migrations/assign_existing_data_to_admin.sql` を1回実行して、既存データを管理者アカウントに
+> 割り当ててください(下記「複数ユーザー対応について」参照)。
 
 ## セットアップ手順(新規の場合)
 

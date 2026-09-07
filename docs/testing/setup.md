@@ -19,7 +19,7 @@ npx wrangler d1 execute keiba-yosou-db --local --file=./migration.sql
 ```
 
 (未適用ブロックがある場合、実行後に該当ブロック名を`schema_migrations`へ`INSERT`する。
-詳細はREADME「スキーマ変更の適用手順」参照)
+詳細は`docs/design/ops.md`「DBマイグレーションの運用」参照)
 
 **前提**: `migration.sql`の`-- @STEP: users_last_login`ブロックを事前に適用しておくこと
 (`users.last_login_at`列が存在しない状態だと、管理画面の登録ユーザー一覧APIが
