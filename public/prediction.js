@@ -89,7 +89,7 @@ function renderPurchasedTickets(items) {
   ticketsEl.innerHTML = `
     <div class="prediction-tickets-head">
       <h2 class="prediction-tickets-title">このレースの購入馬券</h2>
-      <span class="group-money">購入¥${totalAmount.toLocaleString()}${hasSettled ? ` / 払戻¥${settledPayout.toLocaleString()}` : ""}</span>
+      <span class="group-money">購入${formatYen(totalAmount)}${hasSettled ? ` / 払戻${formatYen(settledPayout)}` : ""}</span>
     </div>
     ${Array.from(groups.entries())
       .map(([groupId, group]) => {
@@ -105,9 +105,9 @@ function renderPurchasedTickets(items) {
               <span class="method-badge">${methodLabel(first.method)}</span>
               <span class="point-count">${group.length}点</span>
               ${first.imported ? `<span class="import-source-badge">CSV取込</span>` : ""}
-              <span class="group-money">購入¥${group.reduce((s, t) => s + Number(t.amount || 0), 0).toLocaleString()}${
+              <span class="group-money">購入${formatYen(group.reduce((s, t) => s + Number(t.amount || 0), 0))}${
                 group.some((t) => t.payout !== null && t.payout !== undefined)
-                  ? ` / 払戻¥${group.filter((t) => t.payout !== null && t.payout !== undefined).reduce((s, t) => s + Number(t.payout || 0), 0).toLocaleString()}`
+                  ? ` / 払戻${formatYen(group.filter((t) => t.payout !== null && t.payout !== undefined).reduce((s, t) => s + Number(t.payout || 0), 0))}`
                   : ""
               }</span>
             </div>
@@ -119,9 +119,9 @@ function renderPurchasedTickets(items) {
                   <div class="group-detail-row" data-id="${escapeAttr(String(t.id))}" data-imported="${t.imported ? "1" : "0"}">
                     <div class="sel-line">${formatSelections(t.bet_type, t.selections)}</div>
                     ${t.imported
-                      ? `<span class="import-source-badge">CSV取込</span><span class="detail-payout">購入¥${Number(t.amount || 0).toLocaleString()}${
+                      ? `<span class="import-source-badge">CSV取込</span><span class="detail-payout">購入${formatYen(t.amount)}${
                           t.payout !== null && t.payout !== undefined
-                            ? ` / 払戻¥${Number(t.payout).toLocaleString()}`
+                            ? ` / 払戻${formatYen(t.payout)}`
                             : " / 未確定"
                         }</span>`
                       : `<label class="payout-label">購入額
@@ -129,7 +129,7 @@ function renderPurchasedTickets(items) {
                         </label>
                         <span class="detail-payout">${
                           t.payout !== null && t.payout !== undefined
-                            ? `${t.refunded ? "返還" : "払戻"}¥${Number(t.payout).toLocaleString()}`
+                            ? `${t.refunded ? "返還" : "払戻"}${formatYen(t.payout)}`
                             : "未確定"
                         }</span>`
                     }
@@ -490,11 +490,8 @@ function applyHorseNotes() {
 
 function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+/g, " ").trim(); }
 
-// escapeHtml / escapeAttr は utils.js のものを使用する
-function formatDate(s) {
-  return new Date(`${s}T00:00:00`).toLocaleDateString("ja-JP", {
-    year:"numeric", month:"numeric", day:"numeric", weekday:"short"
-  });
-}
+// escapeHtml / escapeAttr / formatDate は utils.js のものを使用する
+// (2026-09-07: ローカルの formatDate 定義を撤去。utils.js に統合し全画面で
+//  「2026/08/24(日)」表記に統一した)
 
 setupAuth(loadRaces);

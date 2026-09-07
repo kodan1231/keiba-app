@@ -7,13 +7,9 @@
 // 対応表(jockey_aliases)の一覧表示・追加・削除、および既存データへの一括補正。
 // 詳細はdocs/design/jockey-aliases.md「騎手名エイリアス管理」参照。
 
-// escapeHtml は utils.js のものを使用する
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
-}
+// escapeHtml / formatDateMdW は utils.js のものを使用する
+// (2026-09-07: ローカルの formatDate("8/24(日)"形式)を撤去し utils.js の
+//  formatDateMdW に統合。呼び出し側も formatDateMdW へ変更済み)
 
 // D1の created_at (datetime('now')) はUTCの "YYYY-MM-DD HH:MM:SS" 形式(タイムゾーン情報なし)
 // で保存されている。この文字列をそのまま new Date() に渡すと、末尾にタイムゾーン指定が
@@ -54,12 +50,12 @@ async function loadUnregisteredRaces() {
     <tbody>
       ${items.map((it) => `
         <tr>
-          <td>${formatDate(it.race_date)}</td>
+          <td>${formatDateMdW(it.race_date)}</td>
           <td>${escapeHtml(it.track || "")}</td>
           <td>${it.race_number}R</td>
           <td>${escapeHtml(it.race_name || "")}</td>
           <td>${it.group_count}件</td>
-          <td>¥${Number(it.total_amount || 0).toLocaleString()}</td>
+          <td>${formatYen(it.total_amount)}</td>
           <td><a class="ghost-btn" href="races.html?new_date=${encodeURIComponent(it.race_date)}&new_track=${encodeURIComponent(it.track || "")}&new_race_number=${encodeURIComponent(it.race_number)}">登録する</a></td>
         </tr>
       `).join("")}

@@ -556,7 +556,7 @@ function renderPreview() {
   previewArea.innerHTML = `
     <div class="preview-summary">
       <b>${combos.length}点</b>
-      <b>合計 ¥${total.toLocaleString()}</b>
+      <b>合計 ${formatYen(total)}</b>
     </div>
     <div class="preview-combo-list">
       ${combos.map(c => {

@@ -161,15 +161,15 @@ function renderOverall(items) {
   el.innerHTML = `
     <div class="overall-card">
       <span class="overall-label">総購入金額</span>
-      <span class="overall-value">¥${s.totalAmount.toLocaleString()}</span>
+      <span class="overall-value">${formatYen(s.totalAmount)}</span>
     </div>
     <div class="overall-card">
       <span class="overall-label">総払戻金額(確定分)</span>
-      <span class="overall-value">¥${s.settledPayout.toLocaleString()}</span>
+      <span class="overall-value">${formatYen(s.settledPayout)}</span>
     </div>
     <div class="overall-card">
       <span class="overall-label">収支</span>
-      <span class="overall-value ${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${s.profit >= 0 ? "+" : ""}¥${s.profit.toLocaleString()}</span>
+      <span class="overall-value ${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(s.profit)}</span>
     </div>
     <div class="overall-card">
       <span class="overall-label">回収率</span>
@@ -201,9 +201,9 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
 
   const columns = STAT_COLUMNS_BY_TABLE[tableKey] || STAT_COLUMNS;
   const CELL_RENDERERS = {
-    totalAmount: (s) => `<td>¥${s.totalAmount.toLocaleString()}</td>`,
-    settledPayout: (s) => `<td>¥${s.settledPayout.toLocaleString()}</td>`,
-    profit: (s) => `<td class="${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${s.profit >= 0 ? "+" : ""}¥${s.profit.toLocaleString()}</td>`,
+    totalAmount: (s) => `<td>${formatYen(s.totalAmount)}</td>`,
+    settledPayout: (s) => `<td>${formatYen(s.settledPayout)}</td>`,
+    profit: (s) => `<td class="${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(s.profit)}</td>`,
     rate: (s) => `<td>${s.rate !== null ? s.rate + "%" : "-"}</td>`,
     hitRate: (s) => `<td>${s.hitRate !== null ? s.hitRate + "%" : "-"}</td>`,
   };
@@ -247,7 +247,7 @@ function renderRaceTable(items) {
   raceRows = Array.from(groups.entries()).map(([key, tickets]) => {
     const t0 = tickets[0];
     return {
-      name: `${formatDate(t0.race_date)} ${t0.track} ${t0.race_number}R${t0.race_name ? " " + t0.race_name : ""}`,
+      name: `${formatDateMd(t0.race_date)} ${t0.track} ${t0.race_number}R${t0.race_name ? " " + t0.race_name : ""}`,
       // 初期表示は「日付・競馬場・レース番号」の順でソートするため、この3つを連結したキーで比較する。
       dateKey: `${t0.race_date}_${t0.track}_${String(t0.race_number).padStart(2, "0")}`,
       stats: computeGroupStats(tickets),
@@ -305,11 +305,8 @@ async function loadAndRender() {
   renderJockeyTable(all);
 }
 
-// escapeHtml は utils.js のものを使用する
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
-}
+// escapeHtml / formatDateMd は utils.js のものを使用する
+// (2026-09-07: ローカルの formatDate("8/24"形式)を撤去し utils.js の
+//  formatDateMd に統合。呼び出し側も formatDateMd へ変更済み)
 
 setupAuth(loadAndRender);

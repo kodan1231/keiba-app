@@ -7,10 +7,12 @@
 // ファイルに限りIIFEで内部実装を隠蔽し、必要な公開関数のみwindowへ明示的に
 // 公開する方針とした)。
 //
-// 依存する共有関数: escapeHtml(utils.js)・authedFetch(auth.js)・formatDate(utils.js
-// またはページ固有スクリプトが上書きしたもの)・betTypeLabel/methodLabel/
-// formatSelections(bettypes.js)。bettypes.jsは元々admin.htmlに読み込まれていな
-// かったため、本対応にあわせてadmin.htmlにも追加した。
+// 依存する共有関数: escapeHtml/formatDate/formatYen(すべてutils.js)・
+// authedFetch(auth.js)・betTypeLabel/methodLabel/formatSelections(bettypes.js)。
+// bettypes.jsは元々admin.htmlに読み込まれていなかったため、本対応にあわせて
+// admin.htmlにも追加した。
+// (2026-09-07: formatDate はページ固有スクリプトによる上書きを廃止し、
+//  全画面 utils.js の「2026/08/24(日)」表記に統一した)
 //
 // データモデル(localStorage、ユーザーごとにキーを分離): 配列
 //   [{ groupKey, race_id, race_date, track, race_number, race_name, bet_type,
@@ -230,7 +232,7 @@
       ? cart.map((g) => renderGroupHtml(g)).join("")
       : `<p class="cart-empty">カゴは空です。購入画面で買い目を選んで「馬券かごへ追加」してください。</p>`;
 
-    footTotal.textContent = `${checkedCount(cart)}点 ／ 合計¥${checkedAmount(cart).toLocaleString()}`;
+    footTotal.textContent = `${checkedCount(cart)}点 ／ 合計${formatYen(checkedAmount(cart))}`;
 
     bindPanelEvents();
   }
@@ -251,7 +253,7 @@
           <span class="bet-badge">${escapeHtml(betTypeLabel(g.bet_type))}</span>
           <span class="method-badge">${escapeHtml(methodLabel(g.method))}</span>
           <span>${g.combos.length}点</span>
-          <span class="cart-group-money">¥${subtotal.toLocaleString()}</span>
+          <span class="cart-group-money">${formatYen(subtotal)}</span>
           <button type="button" class="icon-btn delete cart-delete-group" data-key="${g.groupKey}" title="削除">×</button>
         </div>
         <div class="cart-group-body" ${expanded ? "" : "hidden"}>

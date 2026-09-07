@@ -21,18 +21,86 @@ function escapeAttr(str) {
 }
 
 /**
- * 日付文字列をフォーマット
- * @param {string} dateStr - YYYY-MM-DD形式の日付文字列
- * @returns {string} フォーマット済み日付（日本語表示）
+ * 日付文字列を「2026/08/24(日)」形式へ。全画面共通の標準日付表示。
+ *
+ * 2026-09-07統合: 以前は utils.js・prediction.js・races.js がそれぞれ
+ * `formatDate` という同名関数をグローバルスコープに定義しており、
+ * HTMLのscript読込順によって「2026/08/24(日)」(月日2桁)と
+ * 「2026/8/24(日)」(月日1桁)のどちらが有効になるかが変わっていた。
+ * その結果、全画面共通の cart.js の日付表示が画面ごとに1桁/2桁で
+ * 揺れる不具合があった。月日2桁ゼロ埋め表記へ統一し、各画面固有だった
+ * 「年なし(8/24(日))」「年・曜日なし(8/24)」表記は用途別の
+ * formatDateMdW / formatDateMd に分けて残す。
+ * @param {string} dateStr - YYYY-MM-DD形式(先頭10文字のみ使用)
+ * @returns {string} 例: "2026/08/24(日)"。パース不能時は入力をそのまま返す
  */
 function formatDate(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
+  const d = new Date(`${String(dateStr ?? "").slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(dateStr ?? "");
   return d.toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     weekday: "short"
   });
+}
+
+/**
+ * 日付文字列を「8/24(日)」形式(年なし)へ。admin.html「未登録レース一覧」用。
+ * @param {string} dateStr - YYYY-MM-DD形式(先頭10文字のみ使用)
+ * @returns {string} 例: "8/24(日)"。パース不能時は入力をそのまま返す
+ */
+function formatDateMdW(dateStr) {
+  const d = new Date(`${String(dateStr ?? "").slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(dateStr ?? "");
+  return `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
+}
+
+/**
+ * 日付文字列を「8/24」形式(年・曜日なし)へ。集計画面のレース別集計名用。
+ * @param {string} dateStr - YYYY-MM-DD形式(先頭10文字のみ使用)
+ * @returns {string} 例: "8/24"。パース不能時は入力をそのまま返す
+ */
+function formatDateMd(dateStr) {
+  const d = new Date(`${String(dateStr ?? "").slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(dateStr ?? "");
+  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
+}
+
+/**
+ * 金額を「¥1,234」形式へ。数値以外・null・undefined は 0 扱い。
+ *
+ * 2026-09-07追加: `¥${n.toLocaleString()}` の直書きが約35箇所に散在しており、
+ * 表記統一と桁区切りの一貫性のため集約した。文字列が渡ってきた場合でも
+ * Number() で数値化してから桁区切りするため、"1234" → "¥1,234" になる。
+ * @param {number|string|null} n
+ * @returns {string} 例: "¥1,234" / "¥-500"
+ */
+function formatYen(n) {
+  return `¥${Number(n || 0).toLocaleString()}`;
+}
+
+/**
+ * 収支など符号付き金額を「+¥1,234」「¥-500」形式へ。
+ * 従来コード(`${v>=0?"+":""}¥${v.toLocaleString()}`)の見た目を維持しており、
+ * 負値の「-」は ¥ の後ろに出る(toLocaleString由来)。
+ * @param {number|string|null} n
+ * @returns {string} 例: "+¥1,234" / "¥-500" / "+¥0"
+ */
+function formatSignedYen(n) {
+  const v = Number(n || 0);
+  return `${v >= 0 ? "+" : ""}${formatYen(v)}`;
+}
+
+/**
+ * 符号付き数値(¥記号なし)を「+1,234」「-500」形式へ。
+ * 購入履歴カレンダーの日別収支セル表示用。
+ * @param {number|string|null} n
+ * @returns {string} 例: "+1,234" / "-500" / "+0"
+ */
+function formatSignedNum(n) {
+  const v = Number(n || 0);
+  return `${v >= 0 ? "+" : ""}${v.toLocaleString()}`;
 }
 
 /**

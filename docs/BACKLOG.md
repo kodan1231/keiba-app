@@ -73,6 +73,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 🔵 実機検証未完了 | 「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ) | `docs/TESTING.md` |
 | 🔵 実機検証未完了 | `entries-import.js`/`results-import.js`のサブリクエスト数対策(バッチ化リファクタリング)は、実際のPDF・実DBでの動作検証が未実施(コードレビュー・構文チェックのみ)。レース数の多いPDF(12レース程度)で一括登録が成功すること、既存レースの更新・`race_results`のUPSERT・払戻再計算が従来通り正しく行われることを確認する必要がある | `docs/design/import-flow.md`「実装上の注意(サブリクエスト数対策)」 |
 | 🔵 実機検証未完了 | 枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
+| 🔵 実機検証未完了 | 日付・金額フォーマッタの`public/utils.js`集約(2026-09-07。`formatDate`/`formatDateMdW`/`formatDateMd`/`formatYen`/`formatSignedYen`/`formatSignedNum`)は`node --check`・静的レビューのみ。全画面(購入履歴・集計・予想・レース管理・管理・かご)で日付が「2026/08/24(日)」、金額が従来通りに表示されること、特に**予想画面・レース管理画面・かごの日付が月日1桁→2桁に変わった**箇所の目視確認が必要 | `docs/design/screens.md`「日付・金額の共通フォーマッタ」 |
 
 ## 未着手タスク(クラスタ単位)
 

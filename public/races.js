@@ -312,11 +312,8 @@ async function deleteRace(id) {
 }
 
 // ---------- ユーティリティ ----------
-// escapeHtml / escapeAttr は utils.js のものを使用する
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", weekday: "short" });
-}
+// escapeHtml / escapeAttr / formatDate は utils.js のものを使用する
+// (2026-09-07: ローカルの formatDate 定義を撤去。utils.js に統合し全画面で
+//  「2026/08/24(日)」表記に統一した)
 
 setupAuth(loadRaces);

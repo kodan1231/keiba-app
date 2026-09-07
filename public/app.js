@@ -76,7 +76,7 @@ function renderHistoryCalendar() {
     const totals = dailyTotals.get(key);
     const profit = totals ? totals.payout - totals.amount : null;
     const moneyHtml = totals
-      ? `<span class="calendar-day-money ${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}${profit.toLocaleString()}</span>`
+      ? `<span class="calendar-day-money ${profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedNum(profit)}</span>`
       : "";
     html += `<button type="button" class="calendar-day money-cell ${key === selectedHistoryDate ? "selected" : ""} ${totals ? "has-race" : ""}" data-date="${key}">
       <span>${d}</span>${moneyHtml}
@@ -177,15 +177,15 @@ function renderSummary(items) {
   summaryBar.innerHTML = `
     <div class="summary-item">
       <span class="summary-label">総購入</span>
-      <span class="summary-value">¥${totalAmount.toLocaleString()}</span>
+      <span class="summary-value">${formatYen(totalAmount)}</span>
     </div>
     <div class="summary-item">
       <span class="summary-label">総払戻(確定分)</span>
-      <span class="summary-value">¥${totalPayout.toLocaleString()}</span>
+      <span class="summary-value">${formatYen(totalPayout)}</span>
     </div>
     <div class="summary-item">
       <span class="summary-label">収支</span>
-      <span class="summary-value ${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}¥${profit.toLocaleString()}</span>
+      <span class="summary-value ${profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(profit)}</span>
     </div>
     <div class="summary-item">
       <span class="summary-label">回収率</span>
@@ -225,9 +225,9 @@ function renderRaceCard(race) {
       ${race.race_name ? `<span class="race-name">${escapeHtml(race.race_name)}</span>` : ""}
     </div>
     <div class="race-total">
-      購入¥${totalAmount.toLocaleString()}
-      ${settledTickets.length > 0 ? ` / 払戻¥${totalPayout.toLocaleString()} / ` : ""}
-      ${settledTickets.length > 0 ? `<span class="${profit >= 0 ? "profit-plus" : "profit-minus"}">${profit >= 0 ? "+" : ""}¥${profit.toLocaleString()}</span>` : ""}
+      購入${formatYen(totalAmount)}
+      ${settledTickets.length > 0 ? ` / 払戻${formatYen(totalPayout)} / ` : ""}
+      ${settledTickets.length > 0 ? `<span class="${profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(profit)}</span>` : ""}
     </div>
   `;
   card.appendChild(head);
@@ -274,8 +274,8 @@ function renderGroupRow(group) {
     <span class="method-badge">${methodLabel(first.method)}</span>
     <span class="point-count">${group.length}点</span>
     <span class="group-money">
-      購入¥${totalAmount.toLocaleString()}
-      ${settledTickets.length > 0 ? ` / 払戻¥${totalPayout.toLocaleString()}` : ""}
+      購入${formatYen(totalAmount)}
+      ${settledTickets.length > 0 ? ` / 払戻${formatYen(totalPayout)}` : ""}
     </span>
     <span class="status-badge ${allSettled ? "settled" : ""}">${allSettled ? "確定済み" : settledTickets.length > 0 ? "一部確定" : "未確定"}</span>
   `;
@@ -304,7 +304,7 @@ function renderGroupRow(group) {
                     <input type="number" class="amount-edit-input" min="100" step="100" value="${t.amount}" />
                   </label>`
               }
-              <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `${t.refunded ? "返還" : "払戻"}¥${t.payout.toLocaleString()}` : "未確定"}</span>
+              <span class="detail-payout">${t.payout !== null && t.payout !== undefined ? `${t.refunded ? "返還" : "払戻"}${formatYen(t.payout)}` : "未確定"}</span>
               ${t.imported && !t.legacy_import ? `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>` : (t.imported ? "" : `<button type="button" class="icon-btn delete detail-delete-btn" title="削除">×</button>`)}
             </div>
           `
