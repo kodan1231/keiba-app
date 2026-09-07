@@ -73,7 +73,7 @@ function formatCourseText(courseType, distance) {
  * 保持することがある。以前は `Object.keys(payouts).length > 0` によって
  * 「確定済」を判定していたため、返還対象馬がいるだけで実際の払戻レートが
  * 1件も登録されていないレースでも「確定済」と誤判定される不具合があった
- * (docs/DESIGN.md「払戻確定バッジの判定」参照)。
+ * (docs/design/payout-refund.md「払戻確定バッジの判定」参照)。
  *
  * この関数は refunds キーを判定対象から除外し、他の式別キーに実際のレート配列
  * (要素数1以上)があるかどうかだけを見る。

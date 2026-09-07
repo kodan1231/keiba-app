@@ -8,7 +8,7 @@ let allItems = [];
 // 2026-08-21: 画面を開いた直後から当日を選択済みの状態にする(必ずどこかの日付が
 // 選択されている状態を保つ方針に変更。同じ日付の再クリックによる選択解除は廃止した)。
 // 2026-08-24: 「今日」の判定ロジック(todayDateKey())は public/buy.js(馬券購入画面)と
-// 共有するため、public/utils.js へ移動した(docs/DESIGN.md「『今日』ボタンの日付判定」
+// 共有するため、public/utils.js へ移動した(docs/design/screens.md「『今日』ボタンの日付判定」
 // 参照)。以前はこのファイル内にローカル定義を持っており、buy.js側は別のロジック
 // (UTC基準のtoISOString())を使っていたため、日付が変わってから午前9時頃までの間、
 // 画面によって「今日」の判定がずれる不具合があった。
@@ -201,7 +201,7 @@ function renderSummary(items) {
 // HTML構造自体はPC・モバイル共通で、見た目の並び替え(モバイルでの2行化・矢印の
 // 行末への移動)は public/style.css の @media (max-width: 700px) 内で
 // flexboxの order / flex-basis / margin-right:auto を使って行う
-// (docs/DESIGN.md「馬券履歴画面：レースカード表示」参照)。
+// (docs/design/screens.md「馬券履歴画面：レースカード表示」参照)。
 function renderRaceCard(race) {
   const raceKey = `${race.race_date}__${race.track}__${race.race_number}`;
   const isExpanded = expandedRaces.has(raceKey);

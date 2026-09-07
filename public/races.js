@@ -234,7 +234,7 @@ function renderRaceRow(r) {
   const hasEntries = r.entries.length > 0;
   // 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が未確定(null)の
   // 馬が混在するケースが発生するため、一覧上でも分かるようにする
-  // (詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  // (詳細はdocs/design/entries-import.md「出走馬一覧PDFインポート」参照)。
   const hasUnconfirmedNumbers = hasEntries && r.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
   const courseText = formatCourseText(r.course_type, r.distance);

@@ -225,7 +225,7 @@ async function selectRace() {
   // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
   // 確定済みであることがひと目でわかるようにする。
   // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、購入画面へのリンク先を
-  // index.html に更新する(docs/DESIGN.md「トップページ(/)の表示について」参照)。
+  // index.html に更新する(docs/design/screens.md「トップページ(/)の表示について」参照)。
   buyBtn.href = `index.html?race=${encodeURIComponent(selectedRace.id)}`;
   // 2026-08-23修正: selectedRace.payoutsに「返還」情報(payouts.refunds。取消・除外・
   // 中止馬の馬番/枠番の記録であり、実際の払戻レートではない)のみが入っている場合に、
@@ -313,7 +313,7 @@ function renderRaceHeader() {
 function renderHorses() {
   // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定(null)の馬が
   // 混在しうる。馬番でのソートができないため、未確定の馬がいる場合は馬名(五十音)順に
-  // フォールバックする(詳細はdocs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  // フォールバックする(詳細はdocs/design/entries-import.md「出走馬一覧PDFインポート」参照)。
   const hasUnconfirmedNumbers = selectedRace.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const entries = hasUnconfirmedNumbers
     ? [...selectedRace.entries].sort((a, b) => String(a.horse_name || "").localeCompare(String(b.horse_name || ""), "ja"))

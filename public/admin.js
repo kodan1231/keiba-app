@@ -5,7 +5,7 @@
 //   2026-08-30追加: 登録日時に加えて最終ログイン日時(JST)も表示する。
 // 「騎手名エイリアス管理」(2026-08-16追加): 表記ゆれの騎手名を正しい表記へ統一するための
 // 対応表(jockey_aliases)の一覧表示・追加・削除、および既存データへの一括補正。
-// 詳細はdocs/DESIGN.md「騎手名エイリアス管理」参照。
+// 詳細はdocs/design/jockey-aliases.md「騎手名エイリアス管理」参照。
 
 // escapeHtml は utils.js のものを使用する
 function formatDate(dateStr) {

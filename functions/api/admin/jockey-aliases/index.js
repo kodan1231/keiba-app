@@ -1,7 +1,7 @@
 import { requireAdmin, jockeyAliasKeyOf } from "../../_shared.js";
 
 // 管理者向け: 騎手名エイリアス(表記ゆれ→正しい表記)の一覧取得・追加。
-// 詳細な設計方針はdocs/DESIGN.md「騎手名エイリアス管理(jockey_aliases)」参照。
+// 詳細な設計方針はdocs/design/jockey-aliases.md「騎手名エイリアス管理(jockey_aliases)」参照。
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;

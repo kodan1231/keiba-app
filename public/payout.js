@@ -51,14 +51,14 @@ function computeTicketPayout(ticket, race) {
   // で返還確定済みの場合は、購入金額(amount)の変更に追随して常に同額を返す。返還判定自体
   // (races.payouts.refundsとの突き合わせ)はサーバー側でのみ行い、この関数では確定済みの
   // ticket.refunded フラグを信頼するのみに留める(判定ロジックをクライアント側にも複製すると、
-  // サーバー・クライアントの実装がズレるリスクが増えるため。docs/DESIGN.md「返還(refund)処理」参照)。
+  // サーバー・クライアントの実装がズレるリスクが増えるため。docs/design/payout-refund.md「返還(refund)処理」参照)。
   if (ticket.refunded) return Number(ticket.amount);
   if (!race || !race.finish_order || !race.payouts || !race.payouts[ticket.bet_type]) return null;
   const combos = computeWinningCombos(ticket.bet_type, race.finish_order, race.entries);
   // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を算出できない
   // (combo === null)場合は、「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う。
   // 出走馬一覧PDFインポート機能では、確定後PDFでも枠番はテキスト抽出できず基本的に
-  // waku_numberがnullのままになる(docs/DESIGN.md「出走馬一覧PDFインポート」参照)。
+  // waku_numberがnullのままになる(docs/design/entries-import.md「出走馬一覧PDFインポート」参照)。
   if (combos.some((c) => c.combo === null)) return null;
   for (const c of combos) {
     const rate = findStoredRate(race.payouts, ticket.bet_type, c.combo);

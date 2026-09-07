@@ -195,7 +195,7 @@ function jraResultParseRefund(r, rawLine) {
 // 騎手名の見習い印(▲△☆◇)。
 // 2026-08-11方針変更: 以前は除去していたが、出走馬一覧PDFインポート側の表記
 // (記号を先頭に残す)と揃えるため、除去せずそのまま残すよう変更した
-// (docs/DESIGN.md「JRAレース結果PDFインポート」解析ロジックの要点 参照)。
+// (docs/design/results-import.md「JRAレース結果PDFインポート」解析ロジックの要点 参照)。
 function jraResultCleanJockeyName(raw) {
   const s = String(raw ?? "").trim();
   return s || null;
@@ -797,7 +797,7 @@ function jraResultParseExtractedPages(pages) {
             // 結果PDFのみをインポートした場合、取消・除外・中止馬がentriesから漏れて
             // 出走頭数が実際より少なく計算され、枠番の目安計算(defaultWakuNumber())や
             // 予想登録・購入画面の頭数・馬番一覧にズレが生じる不具合があった
-            // (docs/DESIGN.md「取消・除外・中止の扱い」参照)。
+            // (docs/design/race-results.md「取消・除外・中止の扱い」参照)。
             if (!current.entries.some(e => e.horse_number === scratchRow.horse_number)) {
               current.entries.push({ waku_number: scratchRow.waku_number ?? null, horse_number: scratchRow.horse_number, horse_name: scratchRow.horse_name, jockey: scratchRow.jockey ?? null });
             }
@@ -927,7 +927,7 @@ function jraResultParseExtractedPages(pages) {
       // 以前は defaultWakuNumber() で推定値を計算しその場で entries へ埋め込んで
       // いたが、この推定値が「確定値」としてDBに保存され枠連馬券の的中判定に
       // 誤って使われるリスクがあるため廃止した。取得できない場合は null のまま
-      // 送信する(docs/DESIGN.md「枠番の推定値をDBに保存しない」参照)。
+      // 送信する(docs/design/data-model.md「枠番は馬番から自動計算して保存する」参照)。
       // race_results.waku_number も同様に基本 null のまま送信する。
 
       current.race_results.sort((a,b)=>a.horse_number-b.horse_number);

@@ -34,7 +34,7 @@ export async function onRequestPut(context) {
     }
     // 2026-08-16追加: 手動編集(出走馬表フォーム経由。netkeibaテキスト貼り付け一括入力を
     // 含む)された騎手名を、保存前にjockey_aliasesテーブルで正規化する。
-    // docs/DESIGN.md「騎手名エイリアス管理」参照。
+    // docs/design/jockey-aliases.md「騎手名エイリアス管理」参照。
     const aliasMap = await loadJockeyAliasMap(env.DB);
     const normalizedEntries = applyJockeyAliasesToEntries(aliasMap, data.entries);
     fields.push("entries = ?");
@@ -75,7 +75,7 @@ export async function onRequestPut(context) {
   // 「全ユーザーの」tickets.payout を再計算して反映する
   // (races は共有データ、tickets はユーザーごとに分離されたデータであるため、
   //  user_idで絞り込まず該当race_idの全ticketsを対象にする必要がある。
-  //  詳細はdocs/DESIGN.md「払戻確定時のticket反映」参照)。
+  //  詳細はdocs/design/payout-refund.md「払戻確定時のticket反映」参照)。
   if ("finish_order" in data || "payouts" in data) {
     const race = await env.DB.prepare("SELECT entries, finish_order, payouts FROM races WHERE id = ?").bind(params.id).first();
     if (race) {

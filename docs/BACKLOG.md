@@ -23,7 +23,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 ## 進め方の基本パターン
 
-- ①要望の仕様矛盾・不足を確認→承認を得る → ②`docs/DESIGN.md`等を仕様に合わせて更新
+- ①要望の仕様矛盾・不足を確認→承認を得る → ②`docs/design/<機能>.md`等を仕様に合わせて更新
   → ③実装 → ④構文チェック(`node --check`等) → ⑤`docs/BACKLOG.md`のタスク表を更新
   (完了分は`archive/documents/BACKLOG_HISTORY.md`へ要約して移動)
   ※ 詳細は`CLAUDE.md`「進め方」を参照(このリポジトリはClaude Codeで直接編集する運用。
@@ -36,7 +36,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 ## 🔰 次のチャットで最初に読むこと(2026-08-30引き継ぎ)
 
 - まず`CLAUDE.md`(自動読み込み)と`docs/INDEX.md`で当たりをつける。アプリの全体像は
-  `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`(該当セクションのみ)、手動テスト項目は
+  `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`(索引)→`docs/design/<機能>.md`、手動テスト項目は
   `docs/TESTING.md`(該当セクションのみ)を参照(いずれも現状を反映した生きたドキュメント)。
   過去の作業経緯・完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`を参照
 - **未実施の運用作業が3件ある**(いずれも`CREATE TABLE IF NOT EXISTS`または
@@ -62,17 +62,17 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 | 状態 | 内容 | 詳細 |
 |---|---|---|
-| 🟡 未修正(別タスク) | `functions/api/races/results-import.js`の`finish_order`/`payouts`マージが「既存が完全に空の場合のみ」しか反映しない設計になっており、CSVインポート等で一部式別だけ既に登録されている場合、PDFインポートの新しい結果が反映されない | `docs/DESIGN.md`「JRAレース結果PDFインポート」既知の制約 |
-| 🟡 未検証 | PDF側の払戻金額抽出正規表現が組み合わせの矢印区切り(→)に対応していない可能性(馬単・三連単で該当しうる) | `docs/DESIGN.md`「JRAレース結果PDFインポート」既知の制約 |
-| 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/DESIGN.md`「CSV取込の仕様」要確認 |
-| 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/DESIGN.md`「CSV取込の仕様」集計への反映漏れ |
-| 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/DESIGN.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
-| 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/DESIGN.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
-| 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)は、実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。**`migration.sql`への`-- @STEP`追記・本番DBへの適用も未実施**(上記参照) | `docs/DESIGN.md`「返還(refund)処理」 |
+| 🟡 未修正(別タスク) | `functions/api/races/results-import.js`の`finish_order`/`payouts`マージが「既存が完全に空の場合のみ」しか反映しない設計になっており、CSVインポート等で一部式別だけ既に登録されている場合、PDFインポートの新しい結果が反映されない | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
+| 🟡 未検証 | PDF側の払戻金額抽出正規表現が組み合わせの矢印区切り(→)に対応していない可能性(馬単・三連単で該当しうる) | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
+| 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
+| 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
+| 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/design/entries-import.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
+| 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
+| 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)は、実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。**`migration.sql`への`-- @STEP`追記・本番DBへの適用も未実施**(上記参照) | `docs/design/payout-refund.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | 出走馬一覧PDFインポート・JRAレース結果PDFインポートはいずれも実ブラウザのPDF.jsでの動作検証が完全には済んでいない(Node上のロジック単体テストが中心) | `docs/TESTING.md`・`docs/DESIGN.md` |
 | 🔵 実機検証未完了 | 「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ) | `docs/TESTING.md` |
-| 🔵 実機検証未完了 | `entries-import.js`/`results-import.js`のサブリクエスト数対策(バッチ化リファクタリング)は、実際のPDF・実DBでの動作検証が未実施(コードレビュー・構文チェックのみ)。レース数の多いPDF(12レース程度)で一括登録が成功すること、既存レースの更新・`race_results`のUPSERT・払戻再計算が従来通り正しく行われることを確認する必要がある | `docs/DESIGN.md`「実装上の注意(サブリクエスト数対策)」 |
-| 🔵 実機検証未完了 | 枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/DESIGN.md`「枠番は馬番から自動計算して保存する」 |
+| 🔵 実機検証未完了 | `entries-import.js`/`results-import.js`のサブリクエスト数対策(バッチ化リファクタリング)は、実際のPDF・実DBでの動作検証が未実施(コードレビュー・構文チェックのみ)。レース数の多いPDF(12レース程度)で一括登録が成功すること、既存レースの更新・`race_results`のUPSERT・払戻再計算が従来通り正しく行われることを確認する必要がある | `docs/design/import-flow.md`「実装上の注意(サブリクエスト数対策)」 |
+| 🔵 実機検証未完了 | 枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
 
 ## 未着手タスク(クラスタ単位)
 
@@ -209,7 +209,7 @@ const isPublicAuthRoute =
 
 外部サイトへの自動アクセスは行わない方式(ユーザーが手動保存したPDFの解析)のため、
 bot対策等の技術的制約は無く着手可能。「JRAレース結果PDFをインポート」機能自体は実装済み
-(仕様は`docs/DESIGN.md`「JRAレース結果PDFインポート」参照)。残課題は上記「調査中の不具合」
+(仕様は`docs/design/results-import.md`「JRAレース結果PDFインポート」参照)。残課題は上記「調査中の不具合」
 表の払戻マージ・矢印区切り対応、および実機検証。
 
 (仕様矛盾の解消方針一覧は`archive/documents/BACKLOG_HISTORY.md`参照)

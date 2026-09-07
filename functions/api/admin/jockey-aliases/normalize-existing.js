@@ -4,7 +4,7 @@ import { requireAdmin, normalizeExistingJockeyNames } from "../../_shared.js";
 // races.entries / race_results.jockey / tickets.selections /
 // imported_ticket_items.selections から検索し、一致するものだけをまとめて
 // 正しい表記へ書き換える(未登録の表記ゆれは変更しない=誤爆防止)。
-// 詳細はdocs/DESIGN.md「騎手名エイリアス管理(jockey_aliases)」参照。
+// 詳細はdocs/design/jockey-aliases.md「騎手名エイリアス管理(jockey_aliases)」参照。
 //
 // 明示的にこのエンドポイントを呼んだ時だけ実行される(自動実行はしない)。
 // 何度実行しても安全(冪等)。

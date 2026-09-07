@@ -53,7 +53,7 @@ function validateGroup(g) {
 // Cloudflare Pages Functionsの1リクエストあたりのサブリクエスト数上限に抵触しない
 // よう、レース情報の取得は1回のSELECT(IN句)にまとめ、全グループのINSERT文を
 // 配列化してdb.batch()で一括実行する(過去にCSV/PDFインポートで同種の問題が
-// 発生した教訓。docs/DESIGN.md「実装上の注意(サブリクエスト数対策)」参照)。
+// 発生した教訓。docs/design/import-flow.md「実装上の注意(サブリクエスト数対策)」参照)。
 export async function onRequestPost(context) {
   const { request, env } = context;
   const userId = context.data.userId;
@@ -140,7 +140,7 @@ export async function onRequestPost(context) {
   }
 
   // 2026-08-16に導入した「既に着順・払戻が確定済みのレースへ後から購入した場合、
-  // 購入直後に払戻を即時反映する」仕様(docs/DESIGN.md「払戻確定時のticket反映」参照)を、
+  // 購入直後に払戻を即時反映する」仕様(docs/design/payout-refund.md「払戻確定時のticket反映」参照)を、
   // 複数レースをまとめて処理するバルク版(recomputeTicketPayoutsForRaces)で維持する。
   // 既に確定済みのレース(finish_orderまたはpayoutsがあるレース)のみを対象にする
   // (未確定レースを含めても実質何もしないため、対象を絞って無駄な処理を避ける)。

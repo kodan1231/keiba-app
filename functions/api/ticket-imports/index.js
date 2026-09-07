@@ -215,7 +215,7 @@ export async function onRequestPost(context){
     const userId=context.data.userId;
     let imported=0, skipped=0, conflicted=0;
     // imported_ticket_groups の一意制約(uq_imported_group_source_key)は user_id を
-    // 含まない設計(docs/DESIGN.md「CSV取込の仕様」参照。同じJRA-Netアカウントを複数
+    // 含まない設計(docs/design/csv-import.md「CSV取込の仕様」参照。同じJRA-Netアカウントを複数
     // ユーザーが共有する想定をしていないため通常は起こらない)。万が一group_keyが
     // 別ユーザーの既存データと衝突した場合、該当行だけをスキップしてconflictedとして
     // 数え、他の行の取込は継続する。

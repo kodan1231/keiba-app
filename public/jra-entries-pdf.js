@@ -4,7 +4,7 @@
 // 木曜(枠番・馬番未確定)/金曜(確定後)のいずれの状態のPDFも同じ形式のため、
 // 同じ解析ロジック・同じインポート機能で対応する。枠番・馬番が印字されていない
 // 場合はnullのままサーバーに送信し、サーバー側(functions/api/races/entries-import.js)
-// で既存の出走馬情報と馬名をキーにマージする(詳細はdocs/DESIGN.md「出走馬一覧PDF
+// で既存の出走馬情報と馬名をキーにマージする(詳細はdocs/design/entries-import.md「出走馬一覧PDF
 // インポート」参照)。
 //
 // 実装方針は既存の public/jra-result-pdf.js (レース結果PDFインポート) を踏襲するが、
@@ -32,7 +32,7 @@
 // 実機で見つかった場合も同様に調整が必要。
 //
 // 2026-08-11追加: 性齢(sex_age)・負担重量(weight_carried)を抽出し、entriesへ含めて
-// サーバーへ送信するようにした(docs/DESIGN.md「races.entriesへの性齢・負担重量の追加」
+// サーバーへ送信するようにした(docs/design/data-model.md「races.entriesへの性齢・負担重量の追加」
 // 参照)。抽出済みの正規表現マッチ結果(牡/牝/せん/セ/騸 + 年齢 + kg)をそのまま流用する。
 
 // 2026-08-17リファクタリング: この配列は public/utils.js の JRA_CENTRAL_TRACKS と

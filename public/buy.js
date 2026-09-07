@@ -14,7 +14,7 @@ let races = [];
 // 自分(ログインユーザー)が既に購入済みのレースID(races.id)の集合。
 // 通常購入(tickets)・CSVインポート分(ticket-imports)の両方を対象とする。
 // GET /api/tickets・GET /api/ticket-imports はいずれもログインユーザー自身のデータのみを
-// 返すため、他ユーザーの購入は含まれない(docs/DESIGN.md「画面仕様」参照)。
+// 返すため、他ユーザーの購入は含まれない(docs/design/screens.md「画面仕様」参照)。
 let purchasedRaceIds = new Set();
 
 // 自分(ログインユーザー)が空でないメモを登録済みの馬名の集合(2026-08-16追加)。
@@ -75,7 +75,7 @@ const today = new Date();
 // 2026-08-24修正: 以前は today.toISOString().slice(0,10) (UTC基準)を使っていたため、
 // 日本(JST=UTC+9)で日付が変わってから午前9時頃までの間、馬券履歴画面(todayDateKey()を
 // 使用)と「今日」の判定がずれる不具合があった。共有関数 todayDateKey()(public/utils.js。
-// ローカルタイムゾーン基準)に統一する(docs/DESIGN.md「『今日』ボタンの日付判定」参照)。
+// ローカルタイムゾーン基準)に統一する(docs/design/screens.md「『今日』ボタンの日付判定」参照)。
 let selectedDate = new URLSearchParams(location.search).get("date")
   || todayDateKey(today);
 let calendarMonth = new Date(`${selectedDate}T00:00:00`);
@@ -273,7 +273,7 @@ todayBtn?.addEventListener("click", () => {
   calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   // 2026-08-24修正: UTC基準のtoISOString()から、共有関数todayDateKey()
   // (public/utils.js。ローカルタイムゾーン基準)へ統一した。上記の初期表示時の
-  // 修正と同じ理由(docs/DESIGN.md「『今日』ボタンの日付判定」参照)。
+  // 修正と同じ理由(docs/design/screens.md「『今日』ボタンの日付判定」参照)。
   selectedDate = todayDateKey(now);
   dateInput.value = selectedDate;
   selectedTrackTab = null; // 日付が変わるため、タブ選択を先頭競馬場へリセットする

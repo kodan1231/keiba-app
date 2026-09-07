@@ -44,7 +44,7 @@ export async function onRequestPost(context) {
   // 出走馬の騎手名を、保存前にjockey_aliasesテーブルで正規化する。これにより、
   // 例えば「戸崎圭」のように表記が欠落・ゆれた状態で入力されても、事前にエイリアスへ
   // 「戸崎圭 → 戸崎圭太」を登録しておけば、以後この経路で登録されるデータは
-  // 統一された表記で保存される(docs/DESIGN.md「騎手名エイリアス管理」参照)。
+  // 統一された表記で保存される(docs/design/jockey-aliases.md「騎手名エイリアス管理」参照)。
   const aliasMap = await loadJockeyAliasMap(env.DB);
   const normalizedEntries = applyJockeyAliasesToEntries(aliasMap, entries);
 

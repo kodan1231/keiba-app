@@ -84,7 +84,7 @@ export async function backfillHorseNamesForRace(db, raceId, entries) {
 // ---- 出走馬情報(entries)の共通マージロジック ----
 // 出走馬一覧PDFインポート(entries-import.js)・JRAレース結果PDFインポート(results-import.js)の
 // 両方から呼び出す共通ヘルパー。馬名(horse_name)をキーに1頭ずつマージする。
-// 詳細仕様は docs/DESIGN.md「出走馬情報(entries)のマージルールは共通」参照。
+// 詳細仕様は docs/design/import-flow.md「出走馬情報(entries)のマージルールは共通」参照。
 //
 // マージルール:
 //   - 新しい馬名 → entries に追加

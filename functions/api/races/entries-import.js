@@ -7,7 +7,7 @@ import {
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
-// 詳細な設計方針は docs/DESIGN.md「出走馬一覧PDFインポート」参照。
+// 詳細な設計方針は docs/design/entries-import.md「出走馬一覧PDFインポート」参照。
 //
 // 重要: 既存レースがある場合、レース行(races.id)は絶対に削除・再作成しない。
 // DELETE→INSERTしてしまうと、prediction_marks/prediction_notesがON DELETE CASCADEで

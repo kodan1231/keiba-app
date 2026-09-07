@@ -88,7 +88,7 @@ function findStoredRateServer(payouts, betType, combo) {
 //   そのためこの関数は中止馬についてはfalseを返し、呼び出し元では通常の的中判定へ進む
 //   (中止馬向けの分岐を別途設ける必要はない)
 //
-// 詳細はdocs/DESIGN.md「返還(refund)処理」参照。
+// 詳細はdocs/design/payout-refund.md「返還(refund)処理」参照。
 function isTicketRefunded(betType, selections, refunds) {
   if (!Array.isArray(refunds) || !refunds.length || !Array.isArray(selections) || !selections.length) return false;
   if (betType === "wakuren") {

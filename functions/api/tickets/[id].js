@@ -12,7 +12,7 @@ export async function onRequestPut(context) {
   let data; try { data = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
   const ticket = await getTicket(env, params.id, userId);
   if (!ticket) return Response.json({ error: "購入履歴が見つかりません" }, { status: 404 });
-  // 通常購入は着順・払戻の確定有無にかかわらず常に編集できる(ロック無し。docs/DESIGN.md「ロック仕様」参照)。
+  // 通常購入は着順・払戻の確定有無にかかわらず常に編集できる(ロック無し。docs/design/race-edit-lock.md「ロック仕様」参照)。
   const fields=[]; const values=[];
   for (const key of EDITABLE_FIELDS) {
     if (key in data) {
