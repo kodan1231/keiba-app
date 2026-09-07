@@ -101,7 +101,8 @@ archive/migrations/          ... 過去の番号付きmigration・過去のmigra
 archive/documents/           ... 過去の作業ログ・調査メモ・完了済みタスクの経緯のアーカイブ(通常は参照しない)
 docs/DESIGN.md                ... 設計方針の索引(2026-09-07に機能単位で分割)
 docs/design/                 ... データ構造・インポート・払戻・画面仕様などの詳細設計(機能ごと1ファイル。生きたドキュメント)
-docs/TESTING.md                ... 手動テストチェックリスト(生きたドキュメント)
+docs/TESTING.md                ... 手動テストチェックリストの索引(2026-09-07に機能単位で分割)
+docs/testing/                ... 機能ごとの手動テスト観点(機能ごと1ファイル。生きたドキュメント)
 docs/BACKLOG.md                 ... 承認済みだが未実装のタスクの引継ぎメモ
 wrangler.toml
 ```

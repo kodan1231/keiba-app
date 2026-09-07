@@ -2,7 +2,7 @@
 
 Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支管理アプリ。
 アプリ概要は `README.md`、詳細仕様は `docs/design/<機能>.md`(索引は `docs/DESIGN.md`)、
-テスト観点は `docs/TESTING.md`。
+テスト観点は `docs/testing/<機能>.md`(索引は `docs/TESTING.md`)。
 
 ## トークンを無駄にしないための読み方
 
@@ -10,7 +10,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 - 仕様は `docs/DESIGN.md`(索引)→ `docs/design/<機能>.md` の**対象1ファイルだけ** Read する。
   機能↔ファイルの対応は `docs/DESIGN.md` / `docs/INDEX.md` の「design/ ファイル索引」。
   節をまたぐ「〜」参照は見出し名 → `grep -rn "見出し" docs/design/`。
-- `docs/TESTING.md` は Grep で該当見出しを探して**そのセクションだけ** Read する。
+- テスト観点は `docs/TESTING.md`(索引)→ `docs/testing/<機能>.md` の**対象1ファイルだけ** Read する。
 - design ファイルには「以前は〜だったが2026-08-XXに変更」という経緯記述が
   ロールバック防止のため本文に残っている。仕様の把握には読み飛ばしてよい。
 - `archive/` 配下は「過去の経緯を明示的に聞かれた場合のみ」読む。通常は不要。

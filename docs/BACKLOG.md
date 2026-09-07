@@ -37,7 +37,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 - まず`CLAUDE.md`(自動読み込み)と`docs/INDEX.md`で当たりをつける。アプリの全体像は
   `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`(索引)→`docs/design/<機能>.md`、手動テスト項目は
-  `docs/TESTING.md`(該当セクションのみ)を参照(いずれも現状を反映した生きたドキュメント)。
+  `docs/TESTING.md`(索引)→`docs/testing/<機能>.md`を参照(いずれも現状を反映した生きたドキュメント)。
   過去の作業経緯・完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`を参照
 - **未実施の運用作業が3件ある**(いずれも`CREATE TABLE IF NOT EXISTS`または
   `ALTER TABLE ADD COLUMN`のみの非破壊的変更):
