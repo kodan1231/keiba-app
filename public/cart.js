@@ -89,6 +89,14 @@
   function renderBadge() {
     const countEl = document.getElementById("cart-badge-count");
     if (!countEl) return;
+    // 2026-09-07修正: バッジ用CSS(.cart-badge-count の絶対配置スタイル)は、以前は
+    // カゴパネルを一度開いたとき(ensureOverlay()内)にしか注入されていなかった。
+    // そのため、パネルを開く前に「かごへ追加」しただけの状態では、数字が丸バッジ
+    // ではなく「かご」の直後にそのまま文字として並んでしまい、見た目上「かご1」
+    // 「かご2」のようにボタン自体の文字が変わったように見える不具合があった。
+    // renderBadge()は「かごへ追加」のたびに必ず呼ばれるため、ここでスタイル注入も
+    // 済ませておく(injectStyles()は二重注入を自身でガードしているので安全)。
+    injectStyles();
     const count = checkedCount(loadCart());
     countEl.textContent = String(count);
     countEl.hidden = count === 0;
