@@ -25,7 +25,9 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 - ①要望の仕様矛盾・不足を確認→承認を得る → ②`docs/DESIGN.md`等を仕様に合わせて更新
   → ③実装 → ④構文チェック(`node --check`等) → ⑤`docs/BACKLOG.md`のタスク表を更新
-  (完了分は`archive/documents/BACKLOG_HISTORY.md`へ要約して移動) → ⑥zipに固めてダウンロード提供
+  (完了分は`archive/documents/BACKLOG_HISTORY.md`へ要約して移動)
+  ※ 詳細は`CLAUDE.md`「進め方」を参照(このリポジトリはClaude Codeで直接編集する運用。
+  以前の「zipに固めてダウンロード提供」は不要)
 - 実機(wrangler dev / 本番)での動作確認は基本的に未実施。コードレビューとNode上での
   ロジック単体テスト・シミュレーションのみで検証しており、実機確認はユーザー側で
   行ってもらう運用になっている。実機検証が必要な項目は各タスク・`docs/TESTING.md`に
@@ -33,9 +35,10 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 ## 🔰 次のチャットで最初に読むこと(2026-08-30引き継ぎ)
 
-- アプリの全体像は`README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`、手動テスト項目は
-  `docs/TESTING.md`を参照(いずれも現状を反映した生きたドキュメント)。過去の作業経緯・
-  完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`を参照
+- まず`CLAUDE.md`(自動読み込み)と`docs/INDEX.md`で当たりをつける。アプリの全体像は
+  `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`(該当セクションのみ)、手動テスト項目は
+  `docs/TESTING.md`(該当セクションのみ)を参照(いずれも現状を反映した生きたドキュメント)。
+  過去の作業経緯・完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`を参照
 - **未実施の運用作業が3件ある**(いずれも`CREATE TABLE IF NOT EXISTS`または
   `ALTER TABLE ADD COLUMN`のみの非破壊的変更):
   1. `migration.sql`の`-- @STEP: jockey_aliases`ブロックが実DBに未適用
