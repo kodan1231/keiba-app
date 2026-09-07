@@ -43,11 +43,12 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 ## 共有ヘルパーの構成(重要)
 
 サーバー側の横断ヘルパーは `functions/api/_lib/` 配下に機能別に分割されている。
-`functions/api/_shared.js` は**それらを re-export するだけの薄い窓口**(全文でも21行)。
+`functions/api/_shared.js` は**それらを re-export するだけの薄い窓口**(全文でも22行)。
 既存の `import { X } from "../_shared.js"` はそのまま動く。**新しい関数は `_lib/` の該当ファイルに追記する。**
 
 | ファイル | 主な関数 |
 |---|---|
+| `_lib/http.js` | `jsonError(msg,status,extra?)` `readJsonBody(request)`→`{data}`\|`{error}` `parsePositiveIntId(raw,label?)`→`{id}`\|`{error}`。ハンドラは `const {data,error}=await readJsonBody(request); if(error) return error;` の形で使う |
 | `_lib/auth.js` | `hashPassword` `verifyPassword` `isAdminUsername` `requireAdmin` `createSessionToken` `verifySessionToken` |
 | `_lib/entries-merge.js` | `mergeEntriesByHorseName` `backfillHorseNamesForRace` `linkUnregisteredImportsToRace` `computeWakuNumberFromHorseNumber`(非export・内部) |
 | `_lib/jockey-alias.js` | `jockeyAliasKeyOf` `loadJockeyAliasMap` `applyJockeyAliasMap` `applyJockeyAliasesToEntries` `normalizeExistingJockeyNames` |

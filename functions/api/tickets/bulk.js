@@ -1,4 +1,4 @@
-import { recomputeTicketPayoutsForRaces } from "../_shared.js";
+import { recomputeTicketPayoutsForRaces, readJsonBody, jsonError } from "../_shared.js";
 
 const VALID_BET_TYPES = [
   "tan", "fuku", "wakuren", "umaren", "wide", "umatan", "sanrenpuku", "sanrentan",
@@ -58,16 +58,12 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const userId = context.data.userId;
 
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return Response.json({ error: "リクエストが不正です" }, { status: 400 });
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
   const groups = Array.isArray(data?.groups) ? data.groups : null;
   if (!groups || groups.length === 0) {
-    return Response.json({ error: "購入対象の買い目がありません" }, { status: 400 });
+    return jsonError("購入対象の買い目がありません", 400);
   }
 
   const results = [];

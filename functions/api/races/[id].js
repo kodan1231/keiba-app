@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
 
 // PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
 export async function onRequestPut(context) {
@@ -7,12 +7,8 @@ export async function onRequestPut(context) {
 
   const { request, env, params } = context;
 
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "リクエストが不正です" }), { status: 400 });
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
   const fields = [];
   const values = [];
@@ -30,7 +26,7 @@ export async function onRequestPut(context) {
   }
   if ("entries" in data) {
     if (!Array.isArray(data.entries)) {
-      return new Response(JSON.stringify({ error: "entriesの形式が不正です" }), { status: 400 });
+      return jsonError("entriesの形式が不正です", 400);
     }
     // 2026-08-16追加: 手動編集(出走馬表フォーム経由。netkeibaテキスト貼り付け一括入力を
     // 含む)された騎手名を、保存前にjockey_aliasesテーブルで正規化する。
@@ -50,7 +46,7 @@ export async function onRequestPut(context) {
   }
 
   if (fields.length === 0) {
-    return new Response(JSON.stringify({ error: "更新する項目がありません" }), { status: 400 });
+    return jsonError("更新する項目がありません", 400);
   }
 
   values.push(params.id);
@@ -94,10 +90,10 @@ export async function onRequestDelete(context) {
   if (deny) return deny;
 
   const { env, params } = context;
-  const id = Number(params.id);
-  if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "IDが不正です" }, { status: 400 });
+  const { id, error } = parsePositiveIntId(params.id);
+  if (error) return error;
   const race = await env.DB.prepare("SELECT id FROM races WHERE id = ?").bind(id).first();
-  if (!race) return Response.json({ error: "レースが見つかりません" }, { status: 404 });
+  if (!race) return jsonError("レースが見つかりません", 404);
   const counts = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS c FROM tickets WHERE race_id = ?").bind(id).first(),
     env.DB.prepare("SELECT COUNT(*) AS c FROM imported_ticket_groups WHERE race_id = ?").bind(id).first().catch(()=>({c:0})),
@@ -108,7 +104,7 @@ export async function onRequestDelete(context) {
   const url = new URL(context.request.url);
   const force = url.searchParams.get("force") === "1";
   if ((hasRelated || hasResult) && !force) {
-    return Response.json({ error: "購入履歴または結果が紐付いたレースです。削除する場合は明示的に確認してください。", requires_confirmation: true, has_related: hasRelated, has_result: hasResult }, { status: 409 });
+    return jsonError("購入履歴または結果が紐付いたレースです。削除する場合は明示的に確認してください。", 409, { requires_confirmation: true, has_related: hasRelated, has_result: hasResult });
   }
   // imported_ticket_groups が参照している imported_tickets(CSV原本)のIDを先に取得しておく。
   // これを削除しないと、レースを消してもCSV原本だけが「孤立した購入履歴」として

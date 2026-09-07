@@ -363,3 +363,22 @@
 - `node --check`(8ファイル)・静的レビューのみ実施。実ブラウザでの目視確認は未実施
   (`docs/BACKLOG.md`の🔵実機検証未完了に記載)
 - 仕様は`docs/design/screens.md`「日付・金額の共通フォーマッタ」に追記
+
+**③ サーバハンドラの定型コードを `functions/api/_lib/http.js` へ集約(完了)**
+- `let data; try { data = await request.json(); } catch { return <400> }` が13ファイル、
+  正の整数ID検証(`Number(x); if (!Number.isInteger(id) || id <= 0) return <400>`)が6ファイルに
+  独立して書かれていた。エラーレスポンスも `Response.json({error},{status})` と
+  `new Response(JSON.stringify({error}), {status, headers})` が混在(`predictions/index.js` は
+  独自の `jsonError` を持っていた)
+- `_lib/http.js` を新設し `_shared.js` から re-export:
+  - `jsonError(message, status = 400, extra?)` — `{ error, ...extra }` を返す(`Response.json`相当)
+  - `readJsonBody(request)` → 成功 `{ data }` / 失敗 `{ error: <400> }`
+  - `parsePositiveIntId(raw, label = "ID")` → 成功 `{ id }` / 失敗 `{ error: <400> }`
+- 17ファイルを書き換え。全エラーレスポンスを `jsonError` に統一(混在していた2形式を解消)。
+  `Content-Type` ヘッダが付いていなかった `new Response(JSON.stringify(...))` 系の400/500に
+  ヘッダが付くようになった(挙動改善。レスポンスボディは不変)
+- **メッセージの微変更**: クエリパラメータ欠落時の `race_id`(GET `predictions`・`horse-notes`)が
+  「race_idが必要です」→「race_idが不正です」に統一された
+- **対象外**: `ticket-imports/index.js`(CSV取込。`formData()`使用・エラー形が `{ok:false,error}` で
+  他と異なる)、`_middleware.js`(認証前の一度きりの応答)は変更しない
+- `node --check`(19ファイル)のみ。実機検証は未実施

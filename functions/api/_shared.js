@@ -14,6 +14,7 @@
 // 単体で完結しない横断的なヘルパーの場合のみ新しい _lib/*.js ファイルを追加して
 // ここに re-export 行を足すこと。
 
+export * from "./_lib/http.js";
 export * from "./_lib/auth.js";
 export * from "./_lib/entries-merge.js";
 export * from "./_lib/jockey-alias.js";

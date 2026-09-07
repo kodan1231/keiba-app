@@ -7,6 +7,8 @@ import {
   upsertRaceResultsBulk,
   loadJockeyAliasMap,
   applyJockeyAliasMap,
+  readJsonBody,
+  jsonError,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -31,10 +33,10 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const db = env.DB;
 
-  let body;
-  try { body = await request.json(); } catch { return Response.json({ error: "リクエストが不正です" }, { status: 400 }); }
+  const { data: body, error } = await readJsonBody(request);
+  if (error) return error;
   const races = Array.isArray(body?.races) ? body.races : [];
-  if (!races.length) return Response.json({ error: "インポート対象のレースがありません" }, { status: 400 });
+  if (!races.length) return jsonError("インポート対象のレースがありません", 400);
 
   const aliasMap = await loadJockeyAliasMap(db);
 

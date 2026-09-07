@@ -1,4 +1,4 @@
-import { requireAdmin, jockeyAliasKeyOf } from "../../_shared.js";
+import { requireAdmin, jockeyAliasKeyOf, readJsonBody, jsonError } from "../../_shared.js";
 
 // 管理者向け: 騎手名エイリアス(表記ゆれ→正しい表記)の一覧取得・追加。
 // 詳細な設計方針はdocs/design/jockey-aliases.md「騎手名エイリアス管理(jockey_aliases)」参照。
@@ -25,29 +25,25 @@ export async function onRequestPost(context) {
   if (deny) return deny;
 
   const { request, env } = context;
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return Response.json({ error: "リクエストが不正です" }, { status: 400 });
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
   const aliasDisplay = String(data?.alias_display || "").trim();
   const canonicalName = String(data?.canonical_name || "").trim();
 
   if (!aliasDisplay) {
-    return Response.json({ error: "表記ゆれ側の騎手名を入力してください" }, { status: 400 });
+    return jsonError("表記ゆれ側の騎手名を入力してください", 400);
   }
   if (!canonicalName) {
-    return Response.json({ error: "正しい表記を入力してください" }, { status: 400 });
+    return jsonError("正しい表記を入力してください", 400);
   }
   if (aliasDisplay.length > 100 || canonicalName.length > 100) {
-    return Response.json({ error: "騎手名が長すぎます" }, { status: 400 });
+    return jsonError("騎手名が長すぎます", 400);
   }
 
   const aliasKey = jockeyAliasKeyOf(aliasDisplay);
   if (!aliasKey) {
-    return Response.json({ error: "表記ゆれ側の騎手名が不正です" }, { status: 400 });
+    return jsonError("表記ゆれ側の騎手名が不正です", 400);
   }
 
   try {
@@ -66,12 +62,9 @@ export async function onRequestPost(context) {
     });
   } catch (e) {
     if (String(e).includes("UNIQUE")) {
-      return Response.json(
-        { error: "この表記(空白違いを含む)は既に登録されています。既存のエイリアスを削除してから登録し直してください。" },
-        { status: 409 }
-      );
+      return jsonError("この表記(空白違いを含む)は既に登録されています。既存のエイリアスを削除してから登録し直してください。", 409);
     }
     console.error("jockey alias insert error", e);
-    return Response.json({ error: "登録に失敗しました" }, { status: 500 });
+    return jsonError("登録に失敗しました", 500);
   }
 }

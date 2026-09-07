@@ -1,11 +1,11 @@
-import { requireAdmin } from "../../_shared.js";
+import { requireAdmin, readJsonBody, parsePositiveIntId, jsonError } from "../../_shared.js";
 
 // レース結果詳細(race_results)の一覧取得。全ユーザー共有データのため、
 // ログインしていれば誰でも閲覧できる(races本体と同じ扱い)。
 export async function onRequestGet(context) {
   const { env, params } = context;
-  const raceId = Number(params.id);
-  if (!Number.isInteger(raceId) || raceId <= 0) return Response.json({ error: "IDが不正です" }, { status: 400 });
+  const { id: raceId, error } = parsePositiveIntId(params.id);
+  if (error) return error;
 
   const { results } = await env.DB.prepare(
     `SELECT * FROM race_results WHERE race_id = ? ORDER BY
@@ -23,30 +23,24 @@ export async function onRequestPut(context) {
   if (deny) return deny;
 
   const { request, env, params } = context;
-  const raceId = Number(params.id);
-  if (!Number.isInteger(raceId) || raceId <= 0) return Response.json({ error: "IDが不正です" }, { status: 400 });
+  const { id: raceId, error: raceIdError } = parsePositiveIntId(params.id);
+  if (raceIdError) return raceIdError;
 
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return Response.json({ error: "リクエストが不正です" }, { status: 400 });
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
-  const horseNumber = Number(data?.horse_number);
-  if (!Number.isInteger(horseNumber) || horseNumber <= 0) {
-    return Response.json({ error: "horse_numberが不正です" }, { status: 400 });
-  }
+  const { id: horseNumber, error: horseNumberError } = parsePositiveIntId(data?.horse_number, "horse_number");
+  if (horseNumberError) return horseNumberError;
   const incidentNote = typeof data?.incident_note === "string" ? data.incident_note.trim() : "";
   if (incidentNote.length > 2000) {
-    return Response.json({ error: "メモは2000文字以内で入力してください" }, { status: 400 });
+    return jsonError("メモは2000文字以内で入力してください", 400);
   }
 
   const existing = await env.DB.prepare(
     "SELECT id FROM race_results WHERE race_id = ? AND horse_number = ?"
   ).bind(raceId, horseNumber).first();
   if (!existing) {
-    return Response.json({ error: "該当する結果レコードが見つかりません(先にPDFインポートで結果を登録してください)" }, { status: 404 });
+    return jsonError("該当する結果レコードが見つかりません(先にPDFインポートで結果を登録してください)", 404);
   }
 
   await env.DB.prepare(

@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, readJsonBody, jsonError } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 export async function onRequestGet(context) {
@@ -24,20 +24,13 @@ export async function onRequestPost(context) {
 
   const { request, env } = context;
 
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "リクエストが不正です" }), { status: 400 });
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
   const { race_date, track, race_number, race_name, course_type, distance, entries, finish_order, payouts } = data;
 
   if (!race_date || !track || !race_number || !Array.isArray(entries)) {
-    return new Response(
-      JSON.stringify({ error: "開催日・競馬場・レース番号は必須です" }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError("開催日・競馬場・レース番号は必須です", 400);
   }
 
   // 2026-08-16追加: 手動登録(netkeibaテキスト貼り付けからの一括入力を含む)された
@@ -78,11 +71,8 @@ export async function onRequestPost(context) {
     return Response.json({ ok: true, id: raceId });
   } catch (e) {
     if (String(e).includes("UNIQUE")) {
-      return new Response(
-        JSON.stringify({ error: "同じ開催日・競馬場・レース番号のレースが既に登録されています" }),
-        { status: 409, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonError("同じ開催日・競馬場・レース番号のレースが既に登録されています", 409);
     }
-    return new Response(JSON.stringify({ error: "登録に失敗しました" }), { status: 500 });
+    return jsonError("登録に失敗しました", 500);
   }
 }

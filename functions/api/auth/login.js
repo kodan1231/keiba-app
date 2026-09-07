@@ -1,27 +1,20 @@
-import { verifyPassword, createSessionToken } from "../_shared.js";
+import { verifyPassword, createSessionToken, readJsonBody, jsonError } from "../_shared.js";
 
 // usersテーブルに登録された個別のユーザー名+パスワードと照合する。
 export async function onRequestPost(context) {
   const { request, env } = context;
 
   if (!env.APP_PASSWORD) {
-    return new Response(
-      JSON.stringify({ error: "サーバー側にAPP_PASSWORDが設定されていません" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError("サーバー側にAPP_PASSWORDが設定されていません", 500);
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "リクエストが不正です" }), { status: 400 });
-  }
+  const { data: body, error } = await readJsonBody(request);
+  if (error) return error;
 
   const username = String(body.username || "").trim();
   const password = String(body.password || "");
   if (!username || !password) {
-    return Response.json({ error: "ユーザー名とパスワードを入力してください" }, { status: 400 });
+    return jsonError("ユーザー名とパスワードを入力してください", 400);
   }
 
   const user = await env.DB.prepare(
@@ -29,7 +22,7 @@ export async function onRequestPost(context) {
   ).bind(username).first();
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
-    return Response.json({ error: "ユーザー名またはパスワードが違います" }, { status: 401 });
+    return jsonError("ユーザー名またはパスワードが違います", 401);
   }
 
   // 2026-08-30追加: 管理画面の登録ユーザー一覧で「最終ログイン日時」を表示するため、

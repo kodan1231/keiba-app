@@ -1,11 +1,6 @@
-const ALLOWED_MARKS = new Set(["◎", "○", "▲", "△", "☆", "消"]);
+import { readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
 
-function jsonError(message, status = 400) {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
-}
+const ALLOWED_MARKS = new Set(["◎", "○", "▲", "△", "☆", "消"]);
 
 function normalizeMarks(marks) {
   if (!Array.isArray(marks)) return null;
@@ -34,11 +29,8 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const userId = context.data.userId;
   const url = new URL(request.url);
-  const raceId = Number(url.searchParams.get("race_id"));
-
-  if (!Number.isInteger(raceId) || raceId <= 0) {
-    return jsonError("race_idが必要です");
-  }
+  const { id: raceId, error } = parsePositiveIntId(url.searchParams.get("race_id"), "race_id");
+  if (error) return error;
 
   const race = await env.DB.prepare(
     "SELECT id, entries FROM races WHERE id = ?"
@@ -69,20 +61,14 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const userId = context.data.userId;
 
-  let data;
-  try {
-    data = await request.json();
-  } catch {
-    return jsonError("リクエストが不正です");
-  }
+  const { data, error } = await readJsonBody(request);
+  if (error) return error;
 
-  const raceId = Number(data?.race_id);
   const marks = normalizeMarks(data?.marks);
   const memo = typeof data?.memo === "string" ? data.memo.trim() : "";
 
-  if (!Number.isInteger(raceId) || raceId <= 0) {
-    return jsonError("race_idが不正です");
-  }
+  const { id: raceId, error: raceIdError } = parsePositiveIntId(data?.race_id, "race_id");
+  if (raceIdError) return raceIdError;
   if (!marks) {
     return jsonError("予想印の形式が不正です");
   }

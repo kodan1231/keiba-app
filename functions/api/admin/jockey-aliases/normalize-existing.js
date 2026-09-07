@@ -1,4 +1,4 @@
-import { requireAdmin, normalizeExistingJockeyNames } from "../../_shared.js";
+import { requireAdmin, normalizeExistingJockeyNames, jsonError } from "../../_shared.js";
 
 // 管理者向け: jockey_aliasesに登録済みのエイリアスと一致する騎手名を、
 // races.entries / race_results.jockey / tickets.selections /
@@ -18,6 +18,6 @@ export async function onRequestPost(context) {
     return Response.json({ ok: true, updated: result });
   } catch (e) {
     console.error("jockey alias bulk normalize error", e);
-    return Response.json({ error: "一括補正に失敗しました" }, { status: 500 });
+    return jsonError("一括補正に失敗しました", 500);
   }
 }
