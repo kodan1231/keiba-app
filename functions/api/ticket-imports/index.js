@@ -360,13 +360,23 @@ export async function onRequestGet(context){
     // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
     //  作り、それに含まれるitemsだけを対象にする)
     const groupIds=new Set(groups.map(g=>g.id));
+    // 集計画面「コース別収支」用に、各グループのレースのコース種別・距離をまとめて1回引く
+    // (グループごとに個別クエリしない。サブリクエスト数対策)。
+    const raceIds=[...new Set(groups.map(g=>g.race_id).filter(Boolean))];
+    const raceCourseById=new Map();
+    if(raceIds.length){
+      const ph=raceIds.map(()=>'?').join(',');
+      const rows=(await db.prepare(`SELECT id, course_type, distance FROM races WHERE id IN (${ph})`).bind(...raceIds).all()).results||[];
+      for(const r of rows) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
+    }
     const allItems=(await db.prepare(`SELECT * FROM imported_ticket_items ORDER BY group_id, id`).all()).results||[];
     const itemsByGroup=new Map();
     for(const item of allItems){ if(!groupIds.has(item.group_id)) continue; const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     const represented=new Set();
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
-      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
+      const rc=raceCourseById.get(g.race_id)||null;
+      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // v10以前に取り込まれたレガシー行(未正規化)も、履歴APIで後方互換表示する。
     // 2026-08-14〜: Club JRA-Net購入履歴CSVは既に決着済みという方針統一に合わせ、
@@ -374,7 +384,7 @@ export async function onRequestGet(context){
     // (以前は payout: refund||null で、refund=0の場合にnull=未確定のままだった。
     // docs/BACKLOG.md「クラスタE」参照)。
     const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
-    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
+    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_course_type:null,race_distance:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }

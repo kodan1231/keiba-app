@@ -635,3 +635,19 @@
   勝つため、`#bulk-action-bar[hidden]{display:none}` を明示)
 - `#history-filter-label` を `#history-filter-row`(flex)でラップ。`applyHistoryFilter()` は
   ラベル単体ではなくこの行を表示する
+
+**コース別収支(2026-09-08。旧クラスタC)**
+- 集計画面(`stats.html` / `stats.js`)の「競馬場別」タブを「コース別」に置換
+  (`data-tab`/`data-panel` を `track`→`course`、表 id `track-table`→`course-table`)
+- グループ単位 = 「競馬場 × コース種別(芝/ダート/障害) × 距離(正確な m 値)」。
+  ラベルは `formatCourseText()`(`courseTypeShort`: 芝/ダ/障)を使い「東京 芝1600m」等。
+  `course_type` 未登録の購入・レガシー取込は「(競馬場) コース未登録」に集約(フォールバック)
+- 先頭列ソートは表示名ではなく `sortKey`(`競馬場|芝ダ障順|距離ゼロ埋め`)で比較 →
+  「競馬場→芝→ダート→障害→距離昇順」に並ぶ。`sortRows()` の name 分岐に
+  `a.sortKey ?? a.name` を追加(track/jockey 表は sortKey 無しで従来通り)
+- サーバ: `GET /api/tickets` の SELECT に `r.course_type AS race_course_type` /
+  `r.distance AS race_distance` を追加。`GET /api/ticket-imports` はグループの `race_id` を
+  まとめて1回 `SELECT id,course_type,distance FROM races WHERE id IN (...)` して各アイテムに付与
+  (サブリクエスト数対策で個別クエリはしない)
+- `node --check` 通過。実ブラウザ確認はユーザー。`docs/design/screens.md`「集計画面」・
+  `docs/design/stats-rules.md` に反映

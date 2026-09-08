@@ -109,13 +109,13 @@ function groupBy(items, keyFn) {
 // compareValues() の仕様により、ソート方向によらず常に末尾に表示される。
 const sortState = {
   race: { key: "date", dir: "desc" },
-  track: { key: "totalAmount", dir: "desc" },
+  course: { key: "totalAmount", dir: "desc" },
   jockey: { key: "rate", dir: "desc" },
 };
 
 // ソート対象の行データ(再計算せず並べ替えだけで再描画できるようキャッシュしておく)
 let raceRows = [];
-let trackRows = [];
+let courseRows = [];
 let jockeyRows = [];
 
 const STAT_COLUMNS = [
@@ -130,7 +130,7 @@ const STAT_COLUMNS = [
 // 的中率列を除外する。競馬場別・騎手別は複数レースにまたがる集計のため引き続き表示する。
 const STAT_COLUMNS_BY_TABLE = {
   race: STAT_COLUMNS.filter((c) => c.key !== "hitRate"),
-  track: STAT_COLUMNS,
+  course: STAT_COLUMNS,
   jockey: STAT_COLUMNS,
 };
 
@@ -150,7 +150,9 @@ function compareValues(av, bv, dir) {
 function sortRows(rows, key, dir) {
   return [...rows].sort((a, b) => {
     if (key === "date") return compareValues(a.dateKey, b.dateKey, dir);
-    if (key === "name") return compareValues(a.name, b.name, dir);
+    // 名前列は、表示名とは別に sortKey があればそれで比較する
+    // (コース別: 「競馬場→芝/ダ/障→距離昇順」で並ぶよう padding 済みキーを使う)。
+    if (key === "name") return compareValues(a.sortKey ?? a.name, b.sortKey ?? b.name, dir);
     return compareValues(a.stats[key], b.stats[key], dir);
   });
 }
@@ -190,7 +192,7 @@ function sortIndicator(tableKey, key) {
 
 function renderTable(elId, tableKey, labelHeader, labelKey) {
   const table = document.getElementById(elId);
-  const rowsCache = { race: raceRows, track: trackRows, jockey: jockeyRows }[tableKey];
+  const rowsCache = { race: raceRows, course: courseRows, jockey: jockeyRows }[tableKey];
   const state = sortState[tableKey];
   const rows = sortRows(rowsCache, state.key, state.dir);
 
@@ -256,10 +258,35 @@ function renderRaceTable(items) {
   renderTable("race-table", "race", "レース", "date");
 }
 
-function renderTrackTable(items) {
-  const groups = groupBy(items, (t) => t.track);
-  trackRows = Array.from(groups.entries()).map(([track, tickets]) => ({ name: track, stats: computeGroupStats(tickets) }));
-  renderTable("track-table", "track", "競馬場", "name");
+// コース別収支: 「競馬場 × コース種別(芝/ダート/障害) × 距離」でまとめる。
+// レースにコース情報が無い(course_type未入力)購入は「(競馬場)コース未登録」に集約する
+// フォールバック。course_typeはあるが距離だけ無い場合は「(競馬場) 芝」のように距離を省く
+// (formatCourseTextの挙動)。距離は正確な値ごとに1行(例: 東京 芝1600m)。
+// コース種別(芝/ダート/障害)が分からない購入は、距離が入っていても「コース未登録」に
+// 集約する(芝1600かダ1600かを区別できないため)。
+function courseGroupLabel(t) {
+  const track = String(t.track || "").trim() || "競馬場不明";
+  if (!t.race_course_type) return `${track} コース未登録`;
+  return `${track} ${formatCourseText(t.race_course_type, t.race_distance)}`; // "東京 芝1600m" / "東京 芝"
+}
+function courseSortKey(t) {
+  const track = String(t.track || "").trim() || "￿";
+  const surfaceOrder = { "芝": "1", "ダート": "2", "障害": "3" }[t.race_course_type] || "9";
+  const dist = t.race_course_type ? String(Number(t.race_distance) || 0).padStart(5, "0") : "00000";
+  return `${track}|${surfaceOrder}|${dist}`;
+}
+function renderCourseTable(items) {
+  const groups = groupBy(items, (t) => {
+    const track = String(t.track || "").trim();
+    const ct = t.race_course_type || "";
+    const dist = ct ? (t.race_distance || "") : "";
+    return `${track}|${ct}|${dist}`;
+  });
+  courseRows = Array.from(groups.values()).map((tickets) => {
+    const t0 = tickets[0];
+    return { name: courseGroupLabel(t0), sortKey: courseSortKey(t0), stats: computeGroupStats(tickets) };
+  });
+  renderTable("course-table", "course", "コース", "name");
 }
 
 function renderJockeyTable(items) {
@@ -289,7 +316,7 @@ async function loadAndRender() {
   const all = [...(Array.isArray(items) ? items : []), ...imported];
   renderOverall(all);
   renderRaceTable(all);
-  renderTrackTable(all);
+  renderCourseTable(all);
   renderJockeyTable(all);
 }
 
