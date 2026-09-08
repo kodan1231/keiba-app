@@ -25,6 +25,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 馬券かご(カート) | `public/cart.js`, `public/buy-purchase-modal.js` |
 | 購入履歴画面 | `public/app.js`, `public/history.html` |
 | 予想登録画面(予想印・馬メモ) | `public/prediction.js`, `public/prediction.html` |
+| 購入馬券グループ表示の共通部品(履歴・予想の両画面) | `public/ticket-view.js`(`groupTicketsByGroupId` `ticketMoneyText` `ticketGroupStatus` `selectionCellHtml` 等。history/prediction のみ読込) |
 | 集計画面 | `public/stats.js`, `public/stats.html` |
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
 | 出走馬一覧PDFインポート | `public/jra-entries-pdf.js`, `functions/api/races/entries-import.js` |

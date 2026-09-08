@@ -75,25 +75,19 @@ function renderPurchasedTickets(items) {
     return;
   }
   ticketsEl.hidden = false;
-  const groups = new Map();
-  for (const t of items) {
-    if (!groups.has(t.group_id)) groups.set(t.group_id, []);
-    groups.get(t.group_id).push(t);
-  }
-  const totalAmount = items.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const hasSettled = items.some((t) => t.payout !== null && t.payout !== undefined);
-  const settledPayout = items
-    .filter((t) => t.payout !== null && t.payout !== undefined)
-    .reduce((s, t) => s + Number(t.payout || 0), 0);
+  // group_id 単位のグルーピング・金額表示は public/ticket-view.js の共通実装
+  // (groupTicketsByGroupId / ticketMoneyText)を使う。
+  const groups = groupTicketsByGroupId(items);
 
   ticketsEl.innerHTML = `
     <div class="prediction-tickets-head">
       <h2 class="prediction-tickets-title">このレースの購入馬券</h2>
-      <span class="group-money">購入${formatYen(totalAmount)}${hasSettled ? ` / 払戻${formatYen(settledPayout)}` : ""}</span>
+      <span class="group-money">${ticketMoneyText(items)}</span>
     </div>
-    ${Array.from(groups.entries())
-      .map(([groupId, group]) => {
+    ${groups
+      .map((group) => {
         const first = group[0];
+        const groupId = first.group_id;
         // 開閉状態はgroup_idをキーに保持する(通常購入=UUID、CSV取込=import-<id>等、
         // いずれも文字列のため型の不一致は起きない)。デフォルトは閉じた状態。
         const isExpanded = expandedTicketGroups.has(groupId);
@@ -105,11 +99,7 @@ function renderPurchasedTickets(items) {
               <span class="method-badge">${methodLabel(first.method)}</span>
               <span class="point-count">${group.length}点</span>
               ${first.imported ? `<span class="import-source-badge">CSV取込</span>` : ""}
-              <span class="group-money">購入${formatYen(group.reduce((s, t) => s + Number(t.amount || 0), 0))}${
-                group.some((t) => t.payout !== null && t.payout !== undefined)
-                  ? ` / 払戻${formatYen(group.filter((t) => t.payout !== null && t.payout !== undefined).reduce((s, t) => s + Number(t.payout || 0), 0))}`
-                  : ""
-              }</span>
+              <span class="group-money">${ticketMoneyText(group)}</span>
             </div>
             <div class="group-detail" ${isExpanded ? "" : "hidden"}>
               <div class="group-detail-rows">

@@ -426,3 +426,22 @@
 - `races.js`/`buy.js` 冒頭コメントの `JRA_CENTRAL_TRACKS` を例に挙げた記述を一般化
 - `docs/ROADMAP.md` クラスタI の「トラックリスト重複整理」「buy.js/races.js巨大ファイル分割」を
   完了化。新たに「jra-result-pdf.js パーサ分割」「app.js⇄prediction.js グループ描画共通化」を追加
+
+**B: 購入馬券グループ表示の共通部品化(2026-09-08。方向1=部品のみ共通化)**
+- 購入履歴画面(`app.js` `renderGroupRow`)と予想登録画面(`prediction.js`
+  `renderPurchasedTickets`)は、`.group-card > .group-card-head` + `.group-detail` の
+  同型UIを持つが、編集可否・削除ボタン・ステータスバッジ・買い目の馬名表示有無等の
+  機能セットが異なる。単一の設定駆動レンダラに寄せると差分吸収フラグが約7個必要で
+  可読性・リグレッション面が不利と判断し、**差分の無い純粋関数だけ**を新規
+  `public/ticket-view.js` に集約:
+  - `groupTicketsByGroupId(tickets)` / `sumTicketAmount` / `sumSettledPayout`
+  - `ticketMoneyText(tickets)` → `<span class="group-money">` の「購入¥… / 払戻¥…」文字列
+  - `ticketGroupStatus(group)` → 「確定済み」「一部確定」「未確定」
+  - `selectionCellHtml(betType, selections)` → 馬名付き `.sel-item` markup(app.js の IIFE を抽出)
+- レンダラ本体・DOMイベント配線・変更後の再描画方式は両ファイルに残置
+- `ticket-view.js` は `history.html` と `prediction.html` のみ読込(`utils.js`/`bettypes.js` の後、
+  `app.js`/`prediction.js` の前)
+- 予想画面の買い目セルは馬番のみ(`formatSelections`)据え置き。`selectionCellHtml`(馬名付き)は
+  現状 app.js のみ使用(将来 prediction が採用可能)
+- 挙動は維持。app.js の `t.amount` 直参照が `Number(t.amount||0)` になり不正データ耐性が向上
+- `app.js` −30行 / `prediction.js` −12行、`ticket-view.js` +61行。`node --check` 3ファイル通過

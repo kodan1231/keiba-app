@@ -147,14 +147,9 @@ function groupByRace(items) {
   });
 }
 
-function groupByGroupId(tickets) {
-  const map = new Map();
-  for (const t of tickets) {
-    if (!map.has(t.group_id)) map.set(t.group_id, []);
-    map.get(t.group_id).push(t);
-  }
-  return Array.from(map.values());
-}
+// group_id 単位のグルーピング・金額集計・買い目セル markup は public/ticket-view.js の
+// 共通実装(groupTicketsByGroupId / sumTicketAmount / sumSettledPayout / ticketMoneyText /
+// ticketGroupStatus / selectionCellHtml)を使う。
 
 function renderList(items) {
   raceList.innerHTML = "";
@@ -207,8 +202,8 @@ function renderRaceCard(race) {
   const isExpanded = expandedRaces.has(raceKey);
 
   const settledTickets = race.tickets.filter((t) => t.payout !== null && t.payout !== undefined);
-  const totalAmount = race.tickets.reduce((s, t) => s + t.amount, 0);
-  const totalPayout = settledTickets.reduce((s, t) => s + t.payout, 0);
+  const totalAmount = sumTicketAmount(race.tickets);
+  const totalPayout = sumSettledPayout(race.tickets);
   const profit = totalPayout - totalAmount;
 
   const card = document.createElement("div");
@@ -236,7 +231,7 @@ function renderRaceCard(race) {
   body.className = "race-card-body";
   body.hidden = !isExpanded;
 
-  const purchaseGroups = groupByGroupId(race.tickets);
+  const purchaseGroups = groupTicketsByGroupId(race.tickets);
   for (const group of purchaseGroups) {
     body.appendChild(renderGroupRow(group));
   }
@@ -255,10 +250,7 @@ function renderRaceCard(race) {
 
 function renderGroupRow(group) {
   const first = group[0];
-  const settledTickets = group.filter((t) => t.payout !== null && t.payout !== undefined);
-  const allSettled = settledTickets.length === group.length;
-  const totalAmount = group.reduce((s, t) => s + t.amount, 0);
-  const totalPayout = settledTickets.reduce((s, t) => s + t.payout, 0);
+  const status = ticketGroupStatus(group);
 
   const wrap = document.createElement("div");
   wrap.className = "group-card";
@@ -273,11 +265,8 @@ function renderGroupRow(group) {
     <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
     <span class="method-badge">${methodLabel(first.method)}</span>
     <span class="point-count">${group.length}点</span>
-    <span class="group-money">
-      購入${formatYen(totalAmount)}
-      ${settledTickets.length > 0 ? ` / 払戻${formatYen(totalPayout)}` : ""}
-    </span>
-    <span class="status-badge ${allSettled ? "settled" : ""}">${allSettled ? "確定済み" : settledTickets.length > 0 ? "一部確定" : "未確定"}</span>
+    <span class="group-money">${ticketMoneyText(group)}</span>
+    <span class="status-badge ${status === "確定済み" ? "settled" : ""}">${status}</span>
   `;
   wrap.appendChild(head);
 
@@ -290,14 +279,7 @@ function renderGroupRow(group) {
         .map(
           (t) => `
       <div class="group-detail-row" data-id="${t.id}" data-imported="${t.imported ? "1" : ""}">
-              <div class="sel-line">${(() => {
-                // 不正/未知の bet_type (壊れたインポートデータ等)でも描画がクラッシュしないよう
-                // フォールバック値を用意する。
-                const def = BET_TYPES[t.bet_type] || { ordered: false };
-                return t.selections
-                  .map((s) => `<span class="sel-item"><span class="sel-num">${s.horse_number}</span>${escapeHtml(s.horse_name || "")}</span>`)
-                  .join(def.ordered ? '<span class="sel-arrow">→</span>' : '<span class="sel-dash">-</span>');
-              })()}</div>
+              <div class="sel-line">${selectionCellHtml(t.bet_type, t.selections)}</div>
               ${t.imported
                 ? `<span class="import-source-badge">CSV取込</span><label class="payout-label">購入額 <input type="number" class="amount-edit-input import-edit-input" min="0" step="100" value="${t.amount}" /></label><label class="payout-label">払戻 <input type="number" class="payout-edit-input import-edit-input" min="0" step="1" value="${t.payout ?? ""}" placeholder="未確定" /></label>`
                 : `<label class="payout-label">購入額

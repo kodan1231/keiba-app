@@ -289,6 +289,14 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
   レース内で購入方式(`group_id`)ごとに保持され、再描画をまたいでも維持される
   (`expandedTicketGroups`)。折りたたみ時でも、そのグループの購入額・払戻額(確定分)は
   ヘッダーに要約表示される
+- 購入履歴画面(`app.js`)と予想登録画面(`prediction.js`)の購入馬券グループ表示は、
+  差分の無い純粋関数を`public/ticket-view.js`に共通化している(`groupTicketsByGroupId`・
+  `ticketMoneyText`=「購入¥… / 払戻¥…」文字列・`ticketGroupStatus`・`selectionCellHtml`
+  =馬名付き買い目セルmarkup)。レンダラ本体とDOMイベント配線は両画面それぞれに残す
+  (履歴画面は購入額・払戻の編集/削除/管理者リンク/ステータスバッジを持ち、予想画面は
+  通常購入の購入額編集のみで削除・ステータスバッジを持たない、という機能差があるため)。
+  予想画面の買い目セルは馬番のみ(`formatSelections`)で、`selectionCellHtml`(馬名付き)は
+  現状履歴画面のみが使う
 - 枠番・馬番が未確定(null)の馬は予想印セレクトが無効化される。一覧の並び順は、未確定の
   馬がいる場合は馬名(五十音)順にフォールバックする。「このレースの馬券を購入」ボタンは
   「枠番・馬番未確定(購入不可)」表示に変わる
