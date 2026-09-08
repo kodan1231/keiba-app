@@ -58,6 +58,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
+| 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
 
 ## 未着手タスク(クラスタ単位)
 
