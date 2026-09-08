@@ -98,10 +98,17 @@ JRAの馬番は抽選で決まるが、**枠番自体は抽選対象ではなく
 `mergeEntriesByHorseName()`(`functions/api/_lib/entries-merge.js`)内で、馬番が確定していて枠番が
 未確定(`null`)の馬について自動計算し、確定値としてDBへ保存する。
 
-計算ロジック(`computeWakuNumberFromHorseNumber(horseNumber, horseCount)`)は`races.js`の
+計算ロジック(`computeWakuNumberFromHorseNumber(horseNumber, horseCount)`)は`races-entries-modal.js`の
 出走馬表編集画面が使う`defaultWakuNumber()`と同じアルゴリズムをバックエンド側に複製した
-もの(`races.js`はフロント専用グローバルスクリプトのためモジュールimportができず、
-共通化していない)。`horseCount`は`entries`配列全体の件数を使う。
+もの(フロント専用グローバルスクリプトのためモジュールimportができず、共通化していない)。
+`horseCount`は`entries`配列全体の件数を使う。
+
+> **既知の不具合(2026-09-08)**: 現行アルゴリズムは`horseCount<=7`のとき`base=Math.floor(horseCount/8)=0`
+> となり、若い枠から順に「0頭」が割り当たって枠番が全体的に後ろへずれる(例: 5頭立てで
+> 馬番1→枠4、馬番5→枠8。正しくは馬番=枠番)。8頭以上は正常。修正は「`horseCount<=8`なら
+> `waku=horseNumber`を返す」早期リターンを2ファイル(`entries-merge.js`・`races-entries-modal.js`)に
+> 追加する。既に誤った値で保存済みのレースは`waku_number`が非nullのため再インポートでも
+> 上書きされない点に注意(`docs/BACKLOG.md`参照)。
 
 この計算は`mergeEntriesByHorseName()`を経由する2つの取込経路
 (`functions/api/races/entries-import.js`・`functions/api/races/results-import.js`)の
