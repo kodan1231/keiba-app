@@ -564,3 +564,24 @@
   判定不能(`combo === null` = 枠番未確定等)のときも CSV 由来の値を維持
 - `node --check` 通過。実DB・実ブラウザでの確認はユーザー。
   仕様は `docs/design/payout-refund.md`・`csv-import.md` に反映
+
+**N-4 第1段階 — 性齢・負担重量の表示(2026-09-08。A段)**
+- `entries[].sex_age`(性齢 "牡4")・`weight_carried`(負担重量 56.0)はPDFインポートで保存済みだが
+  どの画面にも出していなかった。予想登録画面(`public/prediction.js` `renderHorses()`)の
+  馬名行に、馬名の右へ小さめ文字で「性齢 ・ 負担重量 ・ 騎手」を「・」区切り表示
+  (従来は騎手名のみ表示していた `<small>` を拡張)
+- 値の無い項目は連結しない(手動登録レースは性齢・負担重量が無い)。全項目空なら `<small>` ごと出さない
+- 負担重量は `Number(w).toFixed(1)` で `56.0kg` 表示(文字列/数値どちらで来ても対応)
+- スコープは「予想画面の馬一覧のみ」(ユーザー選択)。race一覧カード/払戻モーダルの
+  `weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition` は第2段階として据え置き
+- CSS変更なし。`node --check` 通過。`docs/design/screens.md`「予想登録画面」に反映
+
+**CSSキャッシュ一元化(2026-09-08。E段→完了)**
+- 従来は全HTMLで `style.css?v=1` / `xxx.js?v=3` の連番クエリを手動更新しており、更新漏れで
+  変更が反映されない事故が起きやすかった
+- `public/_headers`(Cloudflare Pages)を新規作成し、`/*.css` と `/*.js` に
+  `Cache-Control: no-cache`(キャッシュはさせるが使用前に必ず再検証。未変更なら304即返し)
+- 全6HTML(index/history/stats/prediction/races/admin)から `?v=` を除去。以後 CSS/JS 変更時の
+  HTML編集は不要
+- `shell.js` に `<link>` 生成を寄せる当初案は不採用(FOUC回避のため `<head>` 直書きを維持)
+- `docs/design/ops.md`「CSS / JS のキャッシュ対策」を全面改訂。`?v=` は復活させない旨を明記

@@ -18,8 +18,8 @@
 - **未適用のマイグレーションは無い**(2026-09-08確認済み。`migration.sql` は `@STEP` 空)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
-- **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉/
-  N-4 性齢・負担重量の表示 / CSSキャッシュ一元化)。
+- **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
+  片付いたら B 段へ。
 
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
 
@@ -38,13 +38,14 @@
 | タスク | コスト | 内容 |
 |---|---|---|
 | **CSV返還行の payout 見直し** | 小〜中 | **早め対応。CSVサンプルをユーザーからもらうのが前提**。「的中/返還」列が「的中」を含まない返還行(出走取消等)の payout が全損計算になっている可能性。PDFインポート側の返還処理と設計を揃える |
-| **N-4 性齢・負担重量の表示** | 中 | `entries[].sex_age`(性齢)・`weight_carried`(負担重量)は保存済みだが**どの画面にも未表示**。まず予想画面の馬一覧等に表示。race一覧カード/払戻モーダルの `weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition` は第2段階。**表示位置の精査 = クラスタB のグリッド調整も同時に見る** |
-| CSSキャッシュバスティング一元化 | 小〜中 | `shell.js` が `<link rel="stylesheet">` を生成し、`?v=` を shell.js 内の定数1箇所に集約。FOUC 対策(現状は各HTMLの `<head>` に直書き)との兼ね合いを要検討 |
 
 > 完了済み(2026-09-08 = このセッション): N-3 ログアウト401 / 払戻の矢印区切り(結果PDFは
 > 全式別 `-` で問題なしと実PDF確認。`→` 対応は保険として追加)/ payout マージを常に上書きに
 > (結果PDFは `mode:"overwrite"`)/ **CSV取込後の再計算**(`recomputeTicketPayoutsForRace(s)` が
-> `imported_ticket_items` も再計算)。詳細は BACKLOG_HISTORY 期間9。
+> `imported_ticket_items` も再計算)/ **N-4 第1段階**(予想画面の馬一覧に性齢・負担重量・騎手を
+> 「・」区切り表示。race一覧カード/払戻モーダルの `weight_type` 等は第2段階として据え置き)/
+> **CSSキャッシュ一元化**(`public/_headers` で `/*.css` `/*.js` を `Cache-Control: no-cache`。
+> 全HTMLから `?v=` を除去。`docs/design/ops.md` 参照)。詳細は BACKLOG_HISTORY 期間9。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 
@@ -69,7 +70,7 @@
 
 - 騎手名連結の不具合 → 「とりあえず解決」判定(騎手エイリアス運用でカバー)。⚠️ から削除
 - ROADMAP クラスタH 外部データ自動取得 → 不要
-- ROADMAP クラスタI CSSキャッシュ → A 段へ移動(上記の代替案で対応)
+- ROADMAP クラスタI CSSキャッシュ → 完了(2026-09-08。`public/_headers` 方式。`shell.js` 生成案は不採用)
 
 ---
 
@@ -125,7 +126,11 @@
 `weather`(天候)・`track_condition`(馬場状態)は、スキーマ追加とPDFインポート時の取込・
 保存までを優先して先行実装したもので、意図的にどの画面表示にも反映していない。
 
-**対応内容(未着手)**:
+**第1段階(2026-09-08 完了)**: `entries[].sex_age`(性齢)・`weight_carried`(負担重量)を
+予想登録画面(`prediction.js` `renderHorses()`)の馬名行に「性齢 ・ 負担重量 ・ 騎手」の
+「・」区切りで表示。値の無い項目は出さない。`docs/design/screens.md`「予想登録画面」参照。
+
+**対応内容(第2段階・未着手)**:
 - レース一覧カード(`renderRaceRow()`)・払戻モーダルの読み取り専用情報
   (`openPayoutModal()`)に、`weight_type`/`class_flags`/`course_direction`を追記するか検討する
   (例: 「3歳 未勝利（混合）［指定］・馬齢・右回り」のような表示)

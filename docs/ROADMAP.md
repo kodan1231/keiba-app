@@ -29,8 +29,8 @@ C: Windows常時稼働機で JV-Link 中継サーバー)は git 履歴を参照�
 分割・`jra-result-pdf.js` パーサ分割・購入馬券グループ描画の部品共通化)。
 **経緯の詳細は `archive/documents/BACKLOG_HISTORY.md` 期間9。**
 
-CSSキャッシュバスティングの一元化は `docs/BACKLOG.md` の「優先順位」A 段へ移動
-(`shell.js` で `<link>` を生成して `?v=` を1箇所に集約する軽い代替案で対応する)。
+CSS/JS キャッシュ制御も完了(2026-09-08)。`public/_headers` の `Cache-Control: no-cache` へ
+移行し、全HTMLから `?v=` を除去した(`docs/design/ops.md`「CSS / JS のキャッシュ対策」)。
 
 ## クラスタM: race_resultsを使った集計・参照画面
 

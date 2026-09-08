@@ -331,7 +331,17 @@ function renderHorses() {
           <span class="prediction-horse-name">
             <span class="prediction-horse-name-line">
               <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
-              ${e.jockey ? `<small>${escapeHtml(e.jockey)}</small>` : ""}
+              ${(() => {
+                // 性齢(sex_age)・負担重量(weight_carried)は出走馬一覧/結果PDFインポートでのみ
+                // 入る(手動登録レースには無い)。値がある項目だけを「・」で連結して表示する。
+                const w = e.weight_carried;
+                const meta = [
+                  e.sex_age ? escapeHtml(String(e.sex_age)) : null,
+                  (w !== null && w !== undefined && w !== "" && !Number.isNaN(Number(w))) ? `${Number(w).toFixed(1)}kg` : null,
+                  e.jockey ? escapeHtml(e.jockey) : null,
+                ].filter(Boolean).join(" ・ ");
+                return meta ? `<small>${meta}</small>` : "";
+              })()}
             </span>
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">

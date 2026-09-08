@@ -1,0 +1,14 @@
+# Cloudflare Pages のレスポンスヘッダー設定。
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# JS / CSS はブラウザにキャッシュはさせるが、使う前に必ずサーバーへ再検証させる
+# (no-cache)。変更が無ければ 304 が数百バイトで即返るため実質コストは小さく、
+# style.css や各 *.js を変更したら次回読み込みで確実に反映される。
+# これにより、以前 HTML 側で全ファイルに付けていた ?v= クエリによる
+# 手動キャッシュバスティングが不要になった(2026-09-08。docs/design/ops.md 参照)。
+
+/*.css
+  Cache-Control: no-cache
+
+/*.js
+  Cache-Control: no-cache

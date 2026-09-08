@@ -2,14 +2,19 @@
 > 「〜」参照 は `docs/design/` 内の見出し名(`grep -rn "見出し" docs/design/` で辿れる)。
 > 過去の経緯・完了履歴は `archive/documents/BACKLOG_HISTORY.md`。
 
-# CSSのキャッシュ対策
+# CSS / JS のキャッシュ対策
 
-`style.css`は全画面から`<link rel="stylesheet" href="style.css?v=YYYYMMDDHHmm">`の形で
-バージョン付きクエリパラメータ付きで読み込む。Cloudflare Pagesや端末側のキャッシュにより、
-デプロイ後もCSSの変更が反映されない事象を避けるため、**CSSを変更してデプロイするたびに、
-このクエリパラメータの値(タイムスタンプ)を全HTMLファイルで更新すること**。更新を忘れると、
-見た目の変更がユーザーに反映されない場合がある。本来の運用ルール(タイムスタンプ形式)に
-沿うのが望ましいが、現状は簡易的な連番運用(`v=1`, `v=2`, ...)になっている。
+`public/_headers`(Cloudflare Pages のレスポンスヘッダー設定ファイル)で、`/*.css` と
+`/*.js` に `Cache-Control: no-cache` を付与する。これはブラウザにキャッシュ自体はさせるが、
+**使う前に必ずサーバーへ再検証させる**指定で、変更が無ければ 304(数百バイト)が即返るため
+実質コストは小さく、`style.css` や各 `*.js` を変更・デプロイしたら次回読み込みで確実に反映される。
+
+HTML からは `<link rel="stylesheet" href="style.css">` / `<script src="xxx.js">` の形で
+**クエリパラメータを付けずに**参照する。CSSやJSを変更しても HTML 側の編集は不要。
+
+> 2026-09-08 以前は全 HTML で `style.css?v=YYYYMMDDHHmm`(実際には `v=1`, `v=2`, ... の
+> 連番)という手動キャッシュバスティングを行っていたが、更新漏れで反映されない事故が
+> 起きやすいため `_headers` 方式へ移行し、全 HTML から `?v=` を除去した。`?v=` は復活させない。
 
 ## DBマイグレーションの運用(node不要・wranglerコマンドのみで手動運用)
 
