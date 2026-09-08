@@ -475,6 +475,12 @@
   クラスタI(全完了)を要約1段落に圧縮(ROADMAP 123→88行)
 - `docs/BACKLOG.md` 🔵実機検証未完了から、ユーザーが実運用で確認済みの3件
   (PDFインポート / 一括購入・redirect / サブリクエスト数対策)を削除
+- **migration 3件の本番適用状況を確認**(ユーザーが `wrangler d1 execute --remote` で照会):
+  `jockey_aliases`(91行)・`tickets_refunded`(列あり)・`users_last_login`(列あり)は
+  いずれもスキーマ適用済み。`schema_migrations` 台帳は `users_last_login` のみ記録済みで
+  `jockey_aliases` / `tickets_refunded` は記録漏れ。`migration.sql` から3つの `@STEP` ブロックを
+  削除(内容は `schema.sql` に反映済み・再実行リスク消滅)。台帳の記録漏れは
+  `INSERT OR IGNORE INTO schema_migrations ...` で埋められるが必須ではない
 
 **枠番自動計算の不具合修正(2026-09-08)**
 - `computeWakuNumberFromHorseNumber()`(`_lib/entries-merge.js`)・`defaultWakuNumber()`

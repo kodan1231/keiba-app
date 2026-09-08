@@ -38,19 +38,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未実施の運用作業(要ユーザー操作)**: `migration.sql` の 3 つの `-- @STEP` ブロック
-  (`jockey_aliases` / `tickets_refunded` / `users_last_login`)が実DBに未適用。いずれも
-  非破壊的(`CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ADD COLUMN`)。適用手順:
-
-  ```bash
-  npx wrangler d1 execute keiba-yosou-db --local  --file=migration.sql
-  npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
-  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
-  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('tickets_refunded');"
-  npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('users_last_login');"
-  ```
-
-  適用後、`migration.sql` から該当 3 ブロックを削除する(内容は `schema.sql` に反映済み)。
+- **未適用のマイグレーションは無い**(2026-09-08確認済み。`migration.sql` は `@STEP` 空)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリングを完了
   (`docs/ROADMAP.md` クラスタI = 全項目対応済み。詳細は BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
@@ -68,7 +56,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
 | 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/design/entries-import.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
-| 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)は、実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ)。**`migration.sql`への`-- @STEP`追記・本番DBへの適用も未実施**(上記参照) | `docs/design/payout-refund.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 
 ## 未着手タスク(クラスタ単位)
