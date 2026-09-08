@@ -35,6 +35,7 @@
   const PAGE_ACTIONS = {
     history:
       '<input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />' +
+      '<button id="history-select-btn" class="ghost-btn">選択削除</button>' +
       '<button id="csv-import-btn" class="ghost-btn">CSVインポート</button>',
     races:
       '<button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>' +

@@ -24,7 +24,7 @@
   `#login-username` 等・`[data-admin-only]` 要素を参照するため、それらが生成済みである必要がある
 - ナビ項目は `shell.js` の `NAV_ITEMS` 配列で一元管理。`adminOnly: true` の項目には
   `data-admin-only hidden` が付き、`auth.js` の `applyAdminVisibility()` が表示を切り替える
-- ページ固有のヘッダーアクションボタン(`history` の「CSVインポート」、`races` の
+- ページ固有のヘッダーアクションボタン(`history` の「選択削除」「CSVインポート」、`races` の
   「出走馬一覧PDFをインポート」「JRAレース結果PDFをインポート」「＋ レースを登録」)は
   `shell.js` の `PAGE_ACTIONS` で `data-page` 別に定義。ボタンのidは従来通りで、
   イベント登録は各ページのJS(`app.js`・`races.js`等)が実行時に `getElementById` で行う
@@ -81,6 +81,29 @@ URL(`/`)へアクセスした際にどのファイルが表示されるか**で�
 即座に一覧へ反映する(失敗時のエラーメッセージは`alert()`で表示する)。「今日」ボタンは
 表示月を当月に切り替え、今日の日付を選択状態にして履歴も絞り込む。PC(幅`700px`超)では
 CSVインポートボタンを表示し、それ以下では非表示にする(機能・APIは維持したまま表示のみ制御)。
+
+#### 履歴の一括削除(選択モード)
+
+- ヘッダーの「選択削除」ボタンで**選択モード**をON/OFFする(ボタン文言は
+  「選択削除」⇔「選択削除を終了」)。
+- **対象は通常購入(`tickets`)のみ**。CSV取込分(`imported_ticket_items` / レガシー
+  `imported_tickets`)にはチェックボックスを出さない(CSV取込は一括削除も行ごと削除もしない)。
+- 選択モード中の表示:
+  - 通常購入の買い目を含む**グループカード**ヘッダーにチェックボックス。ONでそのグループの
+    全買い目(`tickets.id`)を選択に入れる。
+  - **レースカード**ヘッダーにもチェックボックス。ONでそのレース内の通常購入の全 `tickets.id`
+    を選択。子グループの選択状況に応じて `checked` / `indeterminate`(部分選択)を反映する。
+  - 行内の購入額編集input・行ごとの「×」削除ボタン・「払戻を編集(レース管理へ)」リンクは
+    CSSで非表示にする(`body.history-selection-mode`。誤操作防止)。
+  - 画面下部に固定アクションバー(`#bulk-action-bar`)。「選択中 N 点 / キャンセル / 削除する」。
+- 選択(`selectedTicketIds`)は**再描画をまたいで保持しない**。日付切り替え・削除後の再読込
+  (`applyHistoryFilter()`)で必ずクリアし、チェック状態は `syncBulkSelectionUi()` が付け直す。
+- 「削除する」→ `confirm()`(`N 件の買い目を削除します。元に戻せません。`)→
+  `POST /api/tickets/bulk-delete`(`{ ids: number[] }`)→ 選択モード解除 → `loadTickets()` で再描画。
+- **着順・払戻には触れないため、サーバ側でも `recomputeTicketPayoutsForRace(s)` は呼ばない**
+  (購入履歴の削除は `races` / `race_results` および他ユーザーの `tickets.payout` に影響しない)。
+  `bulk-delete` は `DELETE FROM tickets WHERE user_id = ? AND id IN (...)` を `db.batch()` で
+  実行(id は100件ずつチャンク)。
 
 #### レースカードの表示(モバイルのみ2行化)
 

@@ -811,6 +811,45 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .group-card-head .status-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); }
 .group-card-head .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
 
+/* ---------- 購入履歴の一括削除(選択モード) ---------- */
+.bulk-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin: -6px 2px -6px 0;
+  padding: 6px;
+  cursor: pointer;
+}
+.bulk-check-wrap input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+/* 選択モード中は行ごとの編集input・削除ボタン・レース管理リンクを隠す(誤操作防止) */
+body.history-selection-mode .amount-edit-input,
+body.history-selection-mode .payout-edit-input,
+body.history-selection-mode .detail-delete-btn,
+body.history-selection-mode .group-detail-actions {
+  display: none !important;
+}
+#bulk-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--paper-raised);
+  border-top: 1px solid var(--rule-strong);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
+}
+#bulk-action-bar .bulk-bar-spacer { flex: 1; }
+#bulk-count { font-weight: 700; font-size: 14px; }
+/* .race-list は既に padding-bottom:80px を持つため、固定バー(約56px)ぶんの余白は足りている */
+
 /* ---------- 結果・払戻入力ページ ---------- */
 .result-main {
   max-width: 720px;

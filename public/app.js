@@ -5,6 +5,11 @@ let expandedGroups = new Set();
 let expandedRaces = new Set();
 let races = [];
 let allItems = [];
+// 一括削除(通常購入 tickets のみ・CSV取込分は対象外)の選択モード。
+// selectedTicketIds は数値の tickets.id。applyHistoryFilter() のたびにクリアするため、
+// 選択は「今表示している一覧の中でだけ」有効(日付切り替え・再読込で失われる)。
+let selectionMode = false;
+let selectedTicketIds = new Set();
 // 2026-08-21: 画面を開いた直後から当日を選択済みの状態にする(必ずどこかの日付が
 // 選択されている状態を保つ方針に変更。同じ日付の再クリックによる選択解除は廃止した)。
 // 2026-08-24: 「今日」の判定ロジック(todayDateKey())は public/buy.js(馬券購入画面)と
@@ -98,11 +103,16 @@ function renderHistoryCalendar() {
 // (案内文表示等)は廃止した。サマリーも全期間ではなく選択中の日付の合計に変更する
 // (「集計」画面の総合成績とは別に、その日の収支だけを見たいという要望のため)。
 function applyHistoryFilter() {
+  // 選択(一括削除)は再描画をまたいで保持しない。表示中の日付が切り替わったり、
+  // 削除後に再読込したりしたタイミングで必ずクリアする(見えていない選択が
+  // 残って誤削除されるのを防ぐ)。チェックは syncBulkSelectionUi() が付け直す。
+  selectedTicketIds.clear();
   const dayItems = allItems.filter((t) => t.race_date === selectedHistoryDate);
   renderSummary(dayItems);
   historyFilterLabel.hidden = false;
   historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
   renderList(dayItems);
+  if (selectionMode) syncBulkSelectionUi();
 }
 
 async function loadTickets() {
@@ -206,12 +216,21 @@ function renderRaceCard(race) {
   const totalPayout = sumSettledPayout(race.tickets);
   const profit = totalPayout - totalAmount;
 
+  // レース内の通常購入(非CSV取込)の tickets.id 一覧。1件以上あれば選択モードで
+  // レース単位のチェックボックスを出す(そのレースの通常購入グループを全選択/解除する)。
+  const raceTicketIds = race.tickets
+    .filter((t) => !t.imported)
+    .map((t) => Number(t.id))
+    .filter((n) => Number.isInteger(n));
+  const showRaceCheck = selectionMode && raceTicketIds.length > 0;
+
   const card = document.createElement("div");
   card.className = "race-card";
 
   const head = document.createElement("div");
   head.className = "race-card-head";
   head.innerHTML = `
+    ${showRaceCheck ? `<label class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-race" data-ids="${raceTicketIds.join(",")}" /></label>` : ""}
     <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
     <div class="race-card-head-main">
       <span class="race-date">${formatDate(race.race_date)}</span>
@@ -237,13 +256,25 @@ function renderRaceCard(race) {
   }
   card.appendChild(body);
 
-  head.addEventListener("click", () => {
+  head.addEventListener("click", (e) => {
+    if (e.target.closest(".bulk-check-wrap")) return; // チェックボックス操作では開閉しない
     const nowHidden = !body.hidden;
     body.hidden = nowHidden;
     if (nowHidden) expandedRaces.delete(raceKey);
     else expandedRaces.add(raceKey);
     head.querySelector(".expand-arrow").textContent = body.hidden ? "▸" : "▾";
   });
+
+  const raceCheck = head.querySelector(".bulk-check-race");
+  if (raceCheck) {
+    raceCheck.addEventListener("change", () => {
+      for (const id of raceTicketIds) {
+        if (raceCheck.checked) selectedTicketIds.add(id);
+        else selectedTicketIds.delete(id);
+      }
+      syncBulkSelectionUi();
+    });
+  }
 
   return card;
 }
@@ -258,9 +289,14 @@ function renderGroupRow(group) {
   const groupKey = first.group_id;
   const isExpanded = expandedGroups.has(groupKey);
 
+  // 一括削除の対象は通常購入のみ。CSV取込・レガシー取込グループにはチェックボックスを出さない。
+  const groupTicketIds = first.imported ? [] : group.map((t) => Number(t.id)).filter((n) => Number.isInteger(n));
+  const showGroupCheck = selectionMode && groupTicketIds.length > 0;
+
   const head = document.createElement("div");
   head.className = "group-card-head";
   head.innerHTML = `
+    ${showGroupCheck ? `<label class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-group" data-ids="${groupTicketIds.join(",")}" /></label>` : ""}
     <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
     <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
     <span class="method-badge">${methodLabel(first.method)}</span>
@@ -299,13 +335,26 @@ function renderGroupRow(group) {
   `;
   wrap.appendChild(detail);
 
-  head.addEventListener("click", () => {
+  head.addEventListener("click", (e) => {
+    if (e.target.closest(".bulk-check-wrap")) return; // チェックボックス操作では開閉しない
     const nowHidden = !detail.hidden;
     detail.hidden = nowHidden;
     if (nowHidden) expandedGroups.delete(groupKey);
     else expandedGroups.add(groupKey);
     head.querySelector(".expand-arrow").textContent = detail.hidden ? "▸" : "▾";
   });
+
+  const groupCheck = head.querySelector(".bulk-check-group");
+  if (groupCheck) {
+    groupCheck.checked = groupTicketIds.every((id) => selectedTicketIds.has(id));
+    groupCheck.addEventListener("change", () => {
+      for (const id of groupTicketIds) {
+        if (groupCheck.checked) selectedTicketIds.add(id);
+        else selectedTicketIds.delete(id);
+      }
+      syncBulkSelectionUi();
+    });
+  }
 
   detail.querySelectorAll(".import-edit-input").forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
@@ -397,6 +446,82 @@ csvImportInput?.addEventListener("change", async () => {
     csvImportBtn.disabled = false;
     csvImportBtn.textContent = "CSVインポート";
     csvImportInput.value = "";
+  }
+});
+
+// ---------- 一括削除(選択モード) ----------
+// 通常購入(tickets)のみが対象。CSV取込分(imported_ticket_items 等)はチェックボックスを
+// 出さない。着順・払戻は削除の影響を受けないため、サーバ側でも recomputeTicketPayouts* は呼ばない。
+const historySelectBtn = document.getElementById("history-select-btn");
+
+const bulkBar = document.createElement("div");
+bulkBar.id = "bulk-action-bar";
+bulkBar.hidden = true;
+bulkBar.innerHTML = `
+  <span id="bulk-count">選択中 0 点</span>
+  <span class="bulk-bar-spacer"></span>
+  <button type="button" id="bulk-cancel-btn" class="ghost-btn">キャンセル</button>
+  <button type="button" id="bulk-delete-btn" class="stamp-btn" disabled>削除する</button>
+`;
+document.getElementById("app-screen")?.appendChild(bulkBar);
+
+function setSelectionMode(on) {
+  selectionMode = on;
+  selectedTicketIds.clear();
+  bulkBar.hidden = !on;
+  if (historySelectBtn) historySelectBtn.textContent = on ? "選択削除を終了" : "選択削除";
+  document.body.classList.toggle("history-selection-mode", on);
+  applyHistoryFilter();
+}
+
+function syncBulkSelectionUi() {
+  raceList.querySelectorAll(".bulk-check-group").forEach((cb) => {
+    const ids = (cb.dataset.ids || "").split(",").filter(Boolean).map(Number);
+    cb.checked = ids.length > 0 && ids.every((id) => selectedTicketIds.has(id));
+  });
+  raceList.querySelectorAll(".bulk-check-race").forEach((cb) => {
+    const ids = (cb.dataset.ids || "").split(",").filter(Boolean).map(Number);
+    const sel = ids.filter((id) => selectedTicketIds.has(id)).length;
+    cb.checked = sel > 0 && sel === ids.length;
+    cb.indeterminate = sel > 0 && sel < ids.length;
+  });
+  const n = selectedTicketIds.size;
+  const countEl = document.getElementById("bulk-count");
+  const delBtn = document.getElementById("bulk-delete-btn");
+  if (countEl) countEl.textContent = `選択中 ${n} 点`;
+  if (delBtn) delBtn.disabled = n === 0;
+}
+
+historySelectBtn?.addEventListener("click", () => setSelectionMode(!selectionMode));
+document.getElementById("bulk-cancel-btn")?.addEventListener("click", () => setSelectionMode(false));
+
+document.getElementById("bulk-delete-btn")?.addEventListener("click", async () => {
+  const ids = [...selectedTicketIds];
+  if (ids.length === 0) return;
+  if (!confirm(`${ids.length} 件の買い目を削除します。元に戻せません。`)) return;
+  const btn = document.getElementById("bulk-delete-btn");
+  btn.disabled = true;
+  btn.textContent = "削除中…";
+  try {
+    const res = await authedFetch("/api/tickets/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "削除に失敗しました。");
+      return;
+    }
+    selectionMode = false;
+    document.body.classList.remove("history-selection-mode");
+    bulkBar.hidden = true;
+    if (historySelectBtn) historySelectBtn.textContent = "選択削除";
+    await loadTickets();
+  } catch (e) {
+    alert("削除に失敗しました: " + (e.message || e));
+  } finally {
+    btn.textContent = "削除する";
   }
 });
 

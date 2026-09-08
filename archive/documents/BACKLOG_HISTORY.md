@@ -597,3 +597,20 @@
   HTML編集は不要
 - `shell.js` に `<link>` 生成を寄せる当初案は不採用(FOUC回避のため `<head>` 直書きを維持)
 - `docs/design/ops.md`「CSS / JS のキャッシュ対策」を全面改訂。`?v=` は復活させない旨を明記
+
+**購入履歴の一括削除(2026-09-08。旧クラスタA)**
+- 対象は**通常購入(`tickets`)のみ**。ユーザー方針で CSV取込分(`imported_ticket_items` /
+  レガシー `imported_tickets`)は一括削除も行ごと削除も対象外と確定 → チェックボックスを出さない
+- 新設 API `POST /api/tickets/bulk-delete`(`functions/api/tickets/bulk-delete.js`)。
+  body `{ ids: number[] }`。`DELETE FROM tickets WHERE user_id=? AND id IN (...)` を
+  `db.batch()`(100件ずつチャンク)で実行し `{ ok, deleted }` を返す。
+  **着順・払戻に影響しないため `recomputeTicketPayouts*` は呼ばない**
+- UI(`public/app.js` / `shell.js` / `style.css`): ヘッダー「選択削除」ボタンで選択モード。
+  グループカード/レースカードのヘッダーにチェックボックス(レース側は子グループの
+  `checked`/`indeterminate` を反映)。下部固定バー `#bulk-action-bar`(選択中 N 点 /
+  キャンセル / 削除する)。選択モード中は行内編集input・行削除×・レース管理リンクを
+  CSS(`body.history-selection-mode`)で非表示
+- `selectedTicketIds` は再描画をまたいで保持しない(`applyHistoryFilter()` でクリア →
+  `syncBulkSelectionUi()` がチェックを付け直す)
+- `node --check` 通過。実ブラウザ確認はユーザー。`docs/design/screens.md`「購入履歴画面」に
+  「履歴の一括削除(選択モード)」節を追加
