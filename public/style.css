@@ -864,6 +864,8 @@ body.history-selection-mode .group-detail-actions {
   border-top: 1px solid var(--rule-strong);
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
 }
+/* id セレクタの display:flex が [hidden] の display:none に勝ってしまうため明示する */
+#bulk-action-bar[hidden] { display: none; }
 #bulk-action-bar .bulk-bar-spacer { flex: 1; }
 #bulk-count { font-weight: 700; font-size: 14px; }
 /* .race-list は既に padding-bottom:80px を持つため、固定バー(約56px)ぶんの余白は足りている */
@@ -1744,11 +1746,30 @@ body.modal-open { overflow: hidden; }
 }
 .calendar-day.empty{border:0;background:transparent;cursor:default}
 
+.history-filter-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:10px 0;
+}
 .history-filter-label{
   display:block;
-  margin:10px 0;
+  flex:1;
+  min-width:0;
+  margin:0;
   font-size:.82rem;
   color:#777;
+}
+/* 「◯◯の履歴を表示中」の右に置く小さめの選択削除トグル */
+.history-select-btn{
+  flex:0 0 auto;
+  padding:4px 10px;
+  font-size:.78rem;
+}
+.history-select-btn.active{
+  background:var(--hanko);
+  color:#fff;
+  border-color:var(--hanko);
 }
 .calendar-day.money-cell{
   min-height:56px;

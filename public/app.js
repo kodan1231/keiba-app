@@ -109,7 +109,8 @@ function applyHistoryFilter() {
   selectedTicketIds.clear();
   const dayItems = allItems.filter((t) => t.race_date === selectedHistoryDate);
   renderSummary(dayItems);
-  historyFilterLabel.hidden = false;
+  const filterRow = document.getElementById("history-filter-row");
+  if (filterRow) filterRow.hidden = false;
   historyFilterLabel.textContent = `${formatDate(selectedHistoryDate)}の履歴を表示中`;
   renderList(dayItems);
   if (selectionMode) syncBulkSelectionUi();
@@ -476,7 +477,10 @@ function setSelectionMode(on) {
   selectionMode = on;
   selectedTicketIds.clear();
   bulkBar.hidden = !on;
-  if (historySelectBtn) historySelectBtn.textContent = on ? "選択削除を終了" : "選択削除";
+  if (historySelectBtn) {
+    historySelectBtn.textContent = on ? "やめる" : "選択削除";
+    historySelectBtn.classList.toggle("active", on);
+  }
   document.body.classList.toggle("history-selection-mode", on);
   applyHistoryFilter();
 }
@@ -528,10 +532,7 @@ document.getElementById("bulk-delete-btn")?.addEventListener("click", async () =
       alert(data.error || "削除に失敗しました。");
       return;
     }
-    selectionMode = false;
-    document.body.classList.remove("history-selection-mode");
-    bulkBar.hidden = true;
-    if (historySelectBtn) historySelectBtn.textContent = "選択削除";
+    setSelectionMode(false);
     await loadTickets();
   } catch (e) {
     alert("削除に失敗しました: " + (e.message || e));

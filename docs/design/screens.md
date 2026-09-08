@@ -24,7 +24,7 @@
   `#login-username` 等・`[data-admin-only]` 要素を参照するため、それらが生成済みである必要がある
 - ナビ項目は `shell.js` の `NAV_ITEMS` 配列で一元管理。`adminOnly: true` の項目には
   `data-admin-only hidden` が付き、`auth.js` の `applyAdminVisibility()` が表示を切り替える
-- ページ固有のヘッダーアクションボタン(`history` の「選択削除」「CSVインポート」、`races` の
+- ページ固有のヘッダーアクションボタン(`history` の「CSVインポート」、`races` の
   「出走馬一覧PDFをインポート」「JRAレース結果PDFをインポート」「＋ レースを登録」)は
   `shell.js` の `PAGE_ACTIONS` で `data-page` 別に定義。ボタンのidは従来通りで、
   イベント登録は各ページのJS(`app.js`・`races.js`等)が実行時に `getElementById` で行う
@@ -84,8 +84,12 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
 
 #### 履歴の一括削除(選択モード)
 
-- ヘッダーの「選択削除」ボタンで**選択モード**をON/OFFする(ボタン文言は
-  「選択削除」⇔「選択削除を終了」)。
+- 「◯◯の履歴を表示中」ラベルの右にある小さめの「選択削除」ボタン
+  (`#history-select-btn`。`history.html` の `#history-filter-row` 内)で**選択モード**を
+  ON/OFF する。ON中はボタン文言が「やめる」・`.active`(赤)になる。
+  下部の固定アクションバー(`#bulk-action-bar`)は選択モード中のみ表示する
+  (`#bulk-action-bar[hidden]{display:none}` を明示。id セレクタの `display:flex` が
+  `[hidden]` に勝つため)。
 - **対象は通常購入(`tickets`)のみ**。CSV取込分(`imported_ticket_items` / レガシー
   `imported_tickets`)にはチェックボックスを出さない(CSV取込は一括削除も行ごと削除もしない)。
 - 選択モード中の表示・操作:

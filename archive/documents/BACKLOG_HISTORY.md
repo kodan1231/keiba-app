@@ -624,3 +624,14 @@
 - 一覧先頭に操作説明(`.bulk-hint`)、下部バーは未選択時「タップして購入を選択」表示
 - モバイル(`600px`以下)のレース見出し2行化(矢印を行末へ送る `order` 調整)は
   選択モード時だけ解除
+
+**同・トグルボタンの配置と初期表示の修正(2026-09-08。フィードバック2巡目)**
+- 「選択削除」トグルを共通ヘッダー(`shell.js` `PAGE_ACTIONS`)から、
+  「◯◯の履歴を表示中」ラベル右の小ボタン(`history.html` `#history-filter-row` 内の
+  `#history-select-btn`)へ移動。モバイルでヘッダーに埋もれて見つけにくかったため。
+  ON中は文言「やめる」+ `.active`(赤)
+- 下部バー `#bulk-action-bar` が初期表示から出ていた不具合を修正
+  (`#bulk-action-bar` の `display:flex`〈id, 1,0,0〉が `[hidden]` の `display:none`〈0,1,0〉に
+  勝つため、`#bulk-action-bar[hidden]{display:none}` を明示)
+- `#history-filter-label` を `#history-filter-row`(flex)でラップ。`applyHistoryFilter()` は
+  ラベル単体ではなくこの行を表示する
