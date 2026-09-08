@@ -73,6 +73,7 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 🔵 実機検証未完了 | 「確定済みレースへの購入時の払戻即時反映」(`functions/api/tickets/bulk.js`)・「ルートURLのリダイレクト」(`functions/_middleware.js`)は、いずれも実ブラウザ・実DBでの動作検証が未実施(コードレビューのみ) | `docs/TESTING.md` |
 | 🔵 実機検証未完了 | `entries-import.js`/`results-import.js`のサブリクエスト数対策(バッチ化リファクタリング)は、実際のPDF・実DBでの動作検証が未実施(コードレビュー・構文チェックのみ)。レース数の多いPDF(12レース程度)で一括登録が成功すること、既存レースの更新・`race_results`のUPSERT・払戻再計算が従来通り正しく行われることを確認する必要がある | `docs/design/import-flow.md`「実装上の注意(サブリクエスト数対策)」 |
 | 🔵 実機検証未完了 | 枠番自動計算(`computeWakuNumberFromHorseNumber()`)は、実際のPDFインポート・実DBでの動作検証が未実施。枠連馬券の払戻判定が正しく改善されること、既存レースの再取込で枠番が正しく埋まることを確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
+| 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 
 ## 未着手タスク(クラスタ単位)
 

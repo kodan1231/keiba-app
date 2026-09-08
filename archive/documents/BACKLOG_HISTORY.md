@@ -445,3 +445,26 @@
   現状 app.js のみ使用(将来 prediction が採用可能)
 - 挙動は維持。app.js の `t.amount` 直参照が `Number(t.amount||0)` になり不正データ耐性が向上
 - `app.js` −30行 / `prediction.js` −12行、`ticket-view.js` +61行。`node --check` 3ファイル通過
+
+**C: jra-result-pdf.js のパーサ関数分割(2026-09-08)**
+- `jraResultParseExtractedPages`(527行・コードベース最大の関数)を、**ロジック不変**で
+  2つのヘルパーに関数抽出:
+  - `detectRaceHeaders(lines, contexts, diagnostics, pushSample)` → レース境界(ヘッダー)
+    検出の2パス(約120行)
+  - `parseRaceBlock(block, header, number, diagnostics)` → レース1件分のブロックから
+    race/raceDiag を抽出、`{race, raceDiag, include}` を返す(約250行)
+  - 本体は約130行のオーケストレータ(①行フラット化 → ②`detectRaceHeaders` → ③per-race
+    ループで`parseRaceBlock` → ④マージ・検証)
+- **意図的な差分は6箇所のみ**:
+  1. `JRA_RESULT_PDF_PARSER_VERSION` に `-split` 接尾辞(診断パネルで新コードだと分かる)
+  2〜4. ループ変数 `h` → 関数引数 `header`(`h.date`/`h.track` の参照3行)
+  5〜6. `pageStart`/`pageEnd` の `lines[h.index].page` → `block[0].page`
+        (`block = lines.slice(h.index, end)` なので `block[0] === lines[h.index]`)
+  7. `records.push({race:current,diag:raceDiag})`(try内)→ `include = true` フラグ +
+     呼び出し側 `if (include) records.push(...)`。判定条件・`raceDiagnostics.push` は不変
+- パース処理のコード(正規表現・`jraResult*` 呼び出し・`diagnostics.*++`・`current.*.push` 等)は
+  **1行も変更していない**。原本と新版の「実行文の行集合」を突き合わせて、上記6箇所以外の
+  差分ゼロを確認
+- `node --check` 通過。実PDF(複数レース入り)での動作確認・診断パネルの各カウンタ一致確認は
+  ユーザー(実機検証環境なし)
+- 仕様は `docs/design/results-import.md`「解析ロジックの要点」に追記

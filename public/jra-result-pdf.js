@@ -389,7 +389,7 @@ function jraResultParseIncidentNotes(blockLines) {
 }
 
 
-const JRA_RESULT_PDF_PARSER_VERSION = "9.4.0-shared-normalize";
+const JRA_RESULT_PDF_PARSER_VERSION = "9.4.0-shared-normalize-split";
 
 function jraResultFindMeeting(text) {
   const s = jraResultNormalizeUnit(text);
@@ -436,100 +436,10 @@ function jraResultParseCourseLoose(text) {
   return m ? {course_type:m[2],distance:Number(m[1].replace(/,/g,""))} : {course_type:null,distance:null};
 }
 
-function jraResultParseExtractedPages(pages) {
-  const lines = [];
-  pages.forEach((page,pageIndex)=>{
-    page.forEach((row,rowIndex)=>{
-      const raw = typeof row === "string" ? row : (row?.text || "");
-      const text = jraResultNormalizeLine(raw);
-      if (text) lines.push({
-        text, raw,
-        page:pageIndex+1,
-        row:rowIndex+1,
-        y:typeof row === "object" ? row.y : null,
-        items:typeof row === "object" ? (row.items||[]) : [],
-        gaps:typeof row === "object" ? (row.gaps||[]) : []
-      });
-    });
-  });
-
-  const diagnostics = {
-    parserVersion:JRA_RESULT_PDF_PARSER_VERSION,
-    pages:pages.length,
-    rows:lines.length,
-    rawChars:lines.reduce((n,x)=>n+x.raw.length,0),
-    normalizedChars:lines.reduce((n,x)=>n+x.text.length,0),
-    meetingCandidates:0,
-    dateCandidates:0,
-    startLabelCandidates:0,
-    startTimeCandidates:0,
-    timeBasedHeaderCandidates:0,
-    rejectedStartTimeCandidates:0,
-    raceHeaders:0,
-    resultRows:0,
-    finishRanks:0,
-    fullResultRowsDetected:0,
-    fullResultRowsFailed:0,
-    scratchedRowsDetected:0,
-    stoppedRowsDetected:0,
-    payoutLines:0,
-    payoutItems:0,
-    refundLines:0,
-    records:0,
-    validRecords:0,
-    racesWithEntries:0,
-    racesWithFinish:0,
-    racesWithPayouts:0,
-    errors:[],
-    headerCandidates:[],
-    rawSamples:[],
-    gapSamples:[] // 行内文字間隔の実測サンプル(連結閾値の調整用の診断情報)
-  };
-
-  // 解析前の実データを診断できるよう、各ページ先頭と「発走/日付/開催」候補を保存。
-  const pushSample=(obj)=>{
-    if(diagnostics.rawSamples.length<120) diagnostics.rawSamples.push(obj);
-  };
-
-  const contexts = [];
-  let ctxDate = null, ctxTrack = null;
-  for(let i=0;i<lines.length;i++){
-    const s=lines[i].text;
-
-    // 行内文字間隔サンプル(閾値調整用)。全行ではなく先頭付近から一定数だけ収集する。
-    if (diagnostics.gapSamples.length < 25 && lines[i].gaps && lines[i].gaps.length) {
-      diagnostics.gapSamples.push({
-        page: lines[i].page, row: lines[i].row,
-        text: lines[i].text.slice(0, 60),
-        gaps: lines[i].gaps
-      });
-    }
-
-    const meeting=jraResultFindMeeting(s);
-    const looseMeeting=jraResultFindMeetingLoose(s);
-    if(meeting || looseMeeting?.track){
-      diagnostics.meetingCandidates++;
-      const m=meeting || looseMeeting;
-      if(m.date) ctxDate=m.date;
-      if(m.track) ctxTrack=m.track;
-    } else if(jraResultParseDate(s) && !/生\b/.test(s)) {
-      diagnostics.dateCandidates++;
-      ctxDate=jraResultParseDate(s);
-    }
-    contexts[i]={date:ctxDate,track:ctxTrack};
-    if(jraResultIsStartLabel(s)){
-      diagnostics.startLabelCandidates++;
-      pushSample({type:"start-label",page:lines[i].page,row:lines[i].row,text:s});
-    }
-    if(jraResultFindStartTime(s)){
-      diagnostics.startTimeCandidates++;
-      pushSample({type:"start-time",page:lines[i].page,row:lines[i].row,text:s});
-    }
-    if((meeting||jraResultParseDate(s)) && diagnostics.headerCandidates.length<80){
-      pushSample({type:meeting?"meeting":"date",page:lines[i].page,row:lines[i].row,text:s});
-    }
-  }
-
+// レース境界(ヘッダー)検出。「発走ラベル+時刻」方式 → 「時刻のみ」フォールバック方式の
+// 2パスで headerCandidates を組み立てる。2026-09-08: jraResultParseExtractedPages から
+// ロジック不変で関数抽出(呼び出し側の diagnostics.raceHeaders 集計は据え置き)。
+function detectRaceHeaders(lines, contexts, diagnostics, pushSample) {
   // 発走ラベルと時刻が同一行でない場合に備えて、最大4行先まで探す。
   const headerCandidates=[];
   const usedHeaderIndices=new Set();
@@ -648,25 +558,18 @@ function jraResultParseExtractedPages(pages) {
   }
 
   headerCandidates.sort((a,b)=>a.index-b.index);
-  diagnostics.raceHeaders=headerCandidates.filter(h=>h.date&&h.track).length;
+  return headerCandidates;
+}
 
-  const records=[];
-  const counters=new Map();
-
-  for(let hIndex=0;hIndex<headerCandidates.length;hIndex++){
-    const h=headerCandidates[hIndex];
-    if(!h.date||!h.track) continue;
-    const nextHeader=headerCandidates.slice(hIndex+1).find(x=>x.index>h.index);
-    const end=nextHeader?nextHeader.index:lines.length;
-    const block=lines.slice(h.index,end);
-    const key=`${h.date}__${h.track}`;
-    const number=(counters.get(key)||0)+1;
-    counters.set(key,number);
-    const current=jraResultCreateRace(h.date,h.track,number);
+// レース1件分のブロック(ヘッダー行〜次ヘッダー直前)から race / raceDiag を抽出する。
+// 2026-09-08: jraResultParseExtractedPages の per-race ループ本体をロジック不変で関数抽出。
+// include=true のときだけ呼び出し側が records に載せる。
+function parseRaceBlock(block, header, number, diagnostics) {
+    const current=jraResultCreateRace(header.date,header.track,number);
     const raceDiag={
-      key:`${h.date} ${h.track} ${number}R`,
-      pageStart:lines[h.index].page,
-      pageEnd:block.length?block[block.length-1].page:lines[h.index].page,
+      key:`${header.date} ${header.track} ${number}R`,
+      pageStart:block[0].page,
+      pageEnd:block.length?block[block.length-1].page:block[0].page,
       startDetected:true,
       raceInfo:false,
       entries:0,
@@ -676,6 +579,7 @@ function jraResultParseExtractedPages(pages) {
       errors:[],
       sample:block.slice(0,20).map(x=>`[p${x.page}:${x.row}] ${x.text}`)
     };
+  let include = false;
 
     try{
       // レース名・コース・条件詳細はヘッダー直後の広い範囲から取得。
@@ -902,7 +806,7 @@ function jraResultParseExtractedPages(pages) {
       if(!current.race_results.length)raceDiag.errors.push("race_results用の詳細行を取得できませんでした(全着順・タイム等の記録は行われません)");
 
       if(current.finish_order.length||raceDiag.payouts||current.entries.length){
-        records.push({race:current,diag:raceDiag});
+        include = true;
       } else {
         raceDiag.errors.push("有効データがないため登録候補から除外しました");
       }
@@ -910,6 +814,123 @@ function jraResultParseExtractedPages(pages) {
       raceDiag.errors.push(`例外: ${e.message||String(e)}`);
       diagnostics.errors.push(`${raceDiag.key}: ${e.message||String(e)}`);
     }
+
+  return { race: current, raceDiag, include };
+}
+
+function jraResultParseExtractedPages(pages) {
+  const lines = [];
+  pages.forEach((page,pageIndex)=>{
+    page.forEach((row,rowIndex)=>{
+      const raw = typeof row === "string" ? row : (row?.text || "");
+      const text = jraResultNormalizeLine(raw);
+      if (text) lines.push({
+        text, raw,
+        page:pageIndex+1,
+        row:rowIndex+1,
+        y:typeof row === "object" ? row.y : null,
+        items:typeof row === "object" ? (row.items||[]) : [],
+        gaps:typeof row === "object" ? (row.gaps||[]) : []
+      });
+    });
+  });
+
+  const diagnostics = {
+    parserVersion:JRA_RESULT_PDF_PARSER_VERSION,
+    pages:pages.length,
+    rows:lines.length,
+    rawChars:lines.reduce((n,x)=>n+x.raw.length,0),
+    normalizedChars:lines.reduce((n,x)=>n+x.text.length,0),
+    meetingCandidates:0,
+    dateCandidates:0,
+    startLabelCandidates:0,
+    startTimeCandidates:0,
+    timeBasedHeaderCandidates:0,
+    rejectedStartTimeCandidates:0,
+    raceHeaders:0,
+    resultRows:0,
+    finishRanks:0,
+    fullResultRowsDetected:0,
+    fullResultRowsFailed:0,
+    scratchedRowsDetected:0,
+    stoppedRowsDetected:0,
+    payoutLines:0,
+    payoutItems:0,
+    refundLines:0,
+    records:0,
+    validRecords:0,
+    racesWithEntries:0,
+    racesWithFinish:0,
+    racesWithPayouts:0,
+    errors:[],
+    headerCandidates:[],
+    rawSamples:[],
+    gapSamples:[] // 行内文字間隔の実測サンプル(連結閾値の調整用の診断情報)
+  };
+
+  // 解析前の実データを診断できるよう、各ページ先頭と「発走/日付/開催」候補を保存。
+  const pushSample=(obj)=>{
+    if(diagnostics.rawSamples.length<120) diagnostics.rawSamples.push(obj);
+  };
+
+  const contexts = [];
+  let ctxDate = null, ctxTrack = null;
+  for(let i=0;i<lines.length;i++){
+    const s=lines[i].text;
+
+    // 行内文字間隔サンプル(閾値調整用)。全行ではなく先頭付近から一定数だけ収集する。
+    if (diagnostics.gapSamples.length < 25 && lines[i].gaps && lines[i].gaps.length) {
+      diagnostics.gapSamples.push({
+        page: lines[i].page, row: lines[i].row,
+        text: lines[i].text.slice(0, 60),
+        gaps: lines[i].gaps
+      });
+    }
+
+    const meeting=jraResultFindMeeting(s);
+    const looseMeeting=jraResultFindMeetingLoose(s);
+    if(meeting || looseMeeting?.track){
+      diagnostics.meetingCandidates++;
+      const m=meeting || looseMeeting;
+      if(m.date) ctxDate=m.date;
+      if(m.track) ctxTrack=m.track;
+    } else if(jraResultParseDate(s) && !/生\b/.test(s)) {
+      diagnostics.dateCandidates++;
+      ctxDate=jraResultParseDate(s);
+    }
+    contexts[i]={date:ctxDate,track:ctxTrack};
+    if(jraResultIsStartLabel(s)){
+      diagnostics.startLabelCandidates++;
+      pushSample({type:"start-label",page:lines[i].page,row:lines[i].row,text:s});
+    }
+    if(jraResultFindStartTime(s)){
+      diagnostics.startTimeCandidates++;
+      pushSample({type:"start-time",page:lines[i].page,row:lines[i].row,text:s});
+    }
+    if((meeting||jraResultParseDate(s)) && diagnostics.headerCandidates.length<80){
+      pushSample({type:meeting?"meeting":"date",page:lines[i].page,row:lines[i].row,text:s});
+    }
+  }
+
+  // ヘッダー検出・レースブロック抽出は detectRaceHeaders() / parseRaceBlock() に分離
+  // (2026-09-08。ロジック不変)。
+  const headerCandidates = detectRaceHeaders(lines, contexts, diagnostics, pushSample);
+  diagnostics.raceHeaders=headerCandidates.filter(h=>h.date&&h.track).length;
+
+  const records=[];
+  const counters=new Map();
+
+  for(let hIndex=0;hIndex<headerCandidates.length;hIndex++){
+    const h=headerCandidates[hIndex];
+    if(!h.date||!h.track) continue;
+    const nextHeader=headerCandidates.slice(hIndex+1).find(x=>x.index>h.index);
+    const end=nextHeader?nextHeader.index:lines.length;
+    const block=lines.slice(h.index,end);
+    const key=`${h.date}__${h.track}`;
+    const number=(counters.get(key)||0)+1;
+    counters.set(key,number);
+    const { race, raceDiag, include } = parseRaceBlock(block, h, number, diagnostics);
+    if (include) records.push({ race, diag: raceDiag });
     if(!diagnostics.raceDiagnostics)diagnostics.raceDiagnostics=[];
     diagnostics.raceDiagnostics.push(raceDiag);
   }
