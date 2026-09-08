@@ -1268,23 +1268,54 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
   text-align: center;
 }
 
+/* 2026-09-08: 馬番の丸を枠色で塗る(枠番の独立バッジを廃止したため)。
+   枠色は --waku-1..8。waku-0(枠未確定)は色を付けず輪郭のみの丸にする。 */
+.prediction-horse-number.waku-tint {
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  font-size: 12px;
+}
+.prediction-horse-number.waku-1 { background: var(--waku-1); color: var(--waku-1-ink); }
+.prediction-horse-number.waku-2 { background: var(--waku-2); color: var(--waku-2-ink); }
+.prediction-horse-number.waku-3 { background: var(--waku-3); color: var(--waku-3-ink); }
+.prediction-horse-number.waku-4 { background: var(--waku-4); color: var(--waku-4-ink); }
+.prediction-horse-number.waku-5 { background: var(--waku-5); color: var(--waku-5-ink); }
+.prediction-horse-number.waku-6 { background: var(--waku-6); color: var(--waku-6-ink); }
+.prediction-horse-number.waku-7 { background: var(--waku-7); color: var(--waku-7-ink); }
+.prediction-horse-number.waku-8 { background: var(--waku-8); color: var(--waku-8-ink); }
+
 .prediction-horse-name {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  line-height: 1.25;
 }
 
 .prediction-horse-name strong {
   font-size: 14px;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 性齢・負担重量・騎手は馬名の下段に小さく1行で表示(はみ出しは省略)。
+   下段は行の高さを増やさないよう詰めたサイズにしている。 */
 .prediction-horse-name small {
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.2;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prediction-mark-buttons {
@@ -1593,11 +1624,13 @@ body.modal-open { overflow: hidden; }
 /* 2026-08-20: 行の高さをやや詰めるためpaddingを12px→9pxに削減。また、開閉
    トグル(＋/－)の隣にメモ有無を示す「▼」マーク(.note-toggle-tail内)を
    並べて表示できるよう、末尾列の幅を30px→42pxに広げた。 */
-.horse-note-toggle{width:100%;display:grid;grid-template-columns:34px 38px minmax(130px,1fr) minmax(80px,1.5fr) 42px;align-items:center;gap:8px;padding:9px 12px;border:0;background:transparent;text-align:left;cursor:pointer}.horse-note-toggle:hover{background:rgba(0,0,0,.035)}
+/* 2026-09-08: 枠番の独立バッジ(.mini-waku)を廃止し、馬番の丸を枠色で塗る方式へ
+   変更。列は「馬番・馬名(下段に性齢/負担重量/騎手)・予想印・開閉」の4列。 */
+.horse-note-toggle{width:100%;display:grid;grid-template-columns:38px minmax(120px,1fr) auto 42px;align-items:center;gap:8px;padding:9px 12px;border:0;background:transparent;text-align:left;cursor:pointer}.horse-note-toggle:hover{background:rgba(0,0,0,.035)}
 .note-toggle-tail{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px}
 .note-toggle-tail .memo-mark{margin-left:0}.current-horse-note{font-size:.82rem;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.horse-note-editor{padding:12px;border-top:1px solid rgba(0,0,0,.08);background:rgba(0,0,0,.02)}.horse-note-editor textarea{width:100%;box-sizing:border-box;margin-top:8px}.horse-note-actions{display:flex;gap:10px;align-items:center;margin-top:8px}.horse-note-status{font-size:.85rem;color:#2c6e49}.prediction-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.prediction-actions a{text-decoration:none}.prediction-mark-btn.selected{font-weight:800;transform:translateY(-1px);box-shadow:0 0 0 2px currentColor inset}
 .purchase-dialog-modern{max-width:980px}.purchase-dialog-modern .purchase-dialog-body{display:flex;flex-direction:column;gap:14px}.method-options{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}.inline-options,.toggle-option{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,.035)}.inline-options label,.toggle-option{cursor:pointer}.bet-horse-table-head{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;padding:8px 10px;font-size:.8rem;color:#777;border-bottom:1px solid rgba(0,0,0,.12)}.bet-horse-list{border:1px solid rgba(0,0,0,.1);border-radius:10px;overflow:hidden}.bet-horse-row{display:grid;grid-template-columns:40px 48px minmax(140px,1fr) minmax(100px,.8fr) minmax(220px,1fr);gap:8px;align-items:center;padding:10px;border-top:1px solid rgba(0,0,0,.07)}.bet-horse-row:first-child{border-top:0}.bet-horse-control{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.control-label{display:inline-flex;gap:5px;align-items:center;font-size:.86rem}.radio-inline,.check-inline{display:inline-flex;gap:4px;align-items:center}.preview-combo-row{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}.preview-combo-amount{width:100%;box-sizing:border-box}.purchase-dialog-modern .purchase-panel{margin:0}.purchase-dialog-modern .purchase-panel[hidden]{display:none}.date-picker-label{display:flex;flex-direction:column;gap:4px;max-width:220px}.date-picker-label input{padding:8px}.buy-main .buy-step{margin-bottom:20px}
-@media(max-width:700px){.race-track-column{min-width:220px}.horse-note-toggle{grid-template-columns:30px 32px minmax(100px,1fr) 28px}.current-horse-note{display:none}.bet-horse-table-head{display:none}.bet-horse-row{grid-template-columns:30px 38px minmax(100px,1fr);gap:6px}.bet-horse-jockey{display:none}.bet-horse-control{grid-column:1/-1;padding-left:68px}.preview-combo-row{grid-template-columns:1fr 90px}.purchase-dialog-modern{width:calc(100vw - 16px);max-height:92vh;overflow:auto}}
+@media(max-width:700px){.race-track-column{min-width:220px}.horse-note-toggle{grid-template-columns:34px minmax(90px,1fr) auto 34px}.current-horse-note{display:none}.bet-horse-table-head{display:none}.bet-horse-row{grid-template-columns:30px 38px minmax(100px,1fr);gap:6px}.bet-horse-jockey{display:none}.bet-horse-control{grid-column:1/-1;padding-left:68px}.preview-combo-row{grid-template-columns:1fr 90px}.purchase-dialog-modern{width:calc(100vw - 16px);max-height:92vh;overflow:auto}}
 
 /* ---------- カレンダー・購入履歴一覧 ---------- */
 .race-calendar{
@@ -1792,23 +1825,6 @@ body.modal-open { overflow: hidden; }
   text-align: center;
   padding: 0 4px;
 }
-.prediction-horse-name-line {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-.prediction-horse-name-line strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.prediction-horse-name-line small {
-  flex: 0 0 auto;
-  color: var(--ink-soft);
-  font-size: 11px;
-}
 .horse-note-toggle {
   cursor: pointer;
 }
@@ -1965,18 +1981,21 @@ body.modal-open { overflow: hidden; }
   .calendar-day-money {
     font-size:.52rem;
   }
-  /* クラスタJ-3: 予想登録画面の馬行は5列(枠番・馬番・馬名・予想印・メモ展開)を
-     明示し、予想印を暗黙列へ押し出さない。これにより小型画面でも印セレクトが
-     画面右端から見切れず、馬名～騎手～印の余白も必要最小限にする。 */
+  /* クラスタJ-3 / 2026-09-08: 予想登録画面の馬行は4列(馬番・馬名・予想印・メモ展開)。
+     馬名列は下段に性齢/負担重量/騎手を折り返さず表示。予想印を暗黙列へ押し出さず、
+     小型画面でも印セレクトが画面右端から見切れないようにする。 */
   .horse-note-toggle {
-    /* 2026-08-20: 末尾列を24px→34pxに拡張し、▼マーク+開閉トグルが並んでも
-       見切れないようにした。paddingも他の幅と同様にやや詰めている。 */
-    grid-template-columns:18px 22px minmax(0,1fr) 64px 34px;
-    gap:4px;
-    padding:7px 8px;
+    grid-template-columns:26px minmax(0,1fr) 64px 30px;
+    gap:5px;
+    padding:6px 8px;
   }
-  .prediction-horse-number {
-    width:20px;
+  .prediction-horse-number.waku-tint {
+    width:24px;
+    height:24px;
+    font-size:11px;
+  }
+  .prediction-horse-name strong {
+    font-size:13px;
   }
   .prediction-mark-inline {
     margin-left:0;

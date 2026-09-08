@@ -326,23 +326,20 @@ function renderHorses() {
         data-horse-number="${n !== null ? n : ""}"
         data-horse-name="${escapeAttr(e.horse_name || "")}">
         <div class="horse-note-toggle" role="button" tabindex="0">
-          <span class="mini-waku waku-${e.waku_number || 0}">${e.waku_number || "-"}</span>
-          <span class="prediction-horse-number">${n !== null ? n : "-"}</span>
+          <span class="prediction-horse-number waku-tint waku-${e.waku_number || 0}">${n !== null ? n : "-"}</span>
           <span class="prediction-horse-name">
-            <span class="prediction-horse-name-line">
-              <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
-              ${(() => {
-                // 性齢(sex_age)・負担重量(weight_carried)は出走馬一覧/結果PDFインポートでのみ
-                // 入る(手動登録レースには無い)。値がある項目だけを「・」で連結して表示する。
-                const w = e.weight_carried;
-                const meta = [
-                  e.sex_age ? escapeHtml(String(e.sex_age)) : null,
-                  (w !== null && w !== undefined && w !== "" && !Number.isNaN(Number(w))) ? `${Number(w).toFixed(1)}kg` : null,
-                  e.jockey ? escapeHtml(e.jockey) : null,
-                ].filter(Boolean).join(" ・ ");
-                return meta ? `<small>${meta}</small>` : "";
-              })()}
-            </span>
+            <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+            ${(() => {
+              // 性齢(sex_age)・負担重量(weight_carried)は出走馬一覧/結果PDFインポートでのみ
+              // 入る(手動登録レースには無い)。値がある項目だけを「・」で連結し、馬名の下段に表示する。
+              const w = e.weight_carried;
+              const meta = [
+                e.sex_age ? escapeHtml(String(e.sex_age)) : null,
+                (w !== null && w !== undefined && w !== "" && !Number.isNaN(Number(w))) ? `${Number(w).toFixed(1)}kg` : null,
+                e.jockey ? escapeHtml(e.jockey) : null,
+              ].filter(Boolean).join(" ・ ");
+              return meta ? `<small>${meta}</small>` : "";
+            })()}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
             <select class="prediction-mark-select" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>

@@ -576,6 +576,18 @@
   `weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition` は第2段階として据え置き
 - CSS変更なし。`node --check` 通過。`docs/design/screens.md`「予想登録画面」に反映
 
+**N-4 に伴う予想画面・馬行レイアウト調整(2026-09-08。iPhone SE3 で馬名が2〜3文字しか
+見えない問題への対応)**
+- 枠番の独立バッジ(`.mini-waku`)を予想画面から廃止。馬番の丸(`.prediction-horse-number.waku-tint`)
+  の背景色を枠色(`--waku-1`〜`--waku-8`)にして枠番を表現。`waku-0`(未確定)は輪郭のみ
+- 馬名列を2段組みに変更(1段目=馬名、2段目=「性齢 ・ 負担重量 ・ 騎手」を1行・省略記号あり)。
+  行の高さは元々予想印セレクト(32px)で決まっており、馬名2段ぶんがその中に収まるため実質不変
+- `.horse-note-toggle` のグリッドを5列→4列(馬番・馬名・予想印・開閉)に。base /
+  `@media(max-width:700px)` / `@media(max-width:430px)` の3か所すべて更新
+  (従来は700px以下のルールが4列指定のまま5要素で崩れていた)
+- `.mini-waku` の CSS 自体は購入モーダル(`buy-purchase-modal.js`)で使用中のため残す
+- `node --check` 通過。`docs/design/screens.md`「予想登録画面」「レスポンシブ」を更新
+
 **CSSキャッシュ一元化(2026-09-08。E段→完了)**
 - 従来は全HTMLで `style.css?v=1` / `xxx.js?v=3` の連番クエリを手動更新しており、更新漏れで
   変更が反映されない事故が起きやすかった
