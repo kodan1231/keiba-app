@@ -33,30 +33,30 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
   行ってもらう運用になっている。実機検証が必要な項目は各タスク・`docs/TESTING.md`に
   明記してあるので、着手・完了報告の際は検証状況を明確にすること
 
-## 🔰 次のチャットで最初に読むこと(2026-08-30引き継ぎ)
+## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-08)
 
-- まず`CLAUDE.md`(自動読み込み)と`docs/INDEX.md`で当たりをつける。アプリの全体像は
-  `README.md`、データ構造・仕様の詳細は`docs/DESIGN.md`(索引)→`docs/design/<機能>.md`、手動テスト項目は
-  `docs/TESTING.md`(索引)→`docs/testing/<機能>.md`を参照(いずれも現状を反映した生きたドキュメント)。
-  過去の作業経緯・完了済みタスクの詳細は`archive/documents/BACKLOG_HISTORY.md`を参照
-- **未実施の運用作業が3件ある**(いずれも`CREATE TABLE IF NOT EXISTS`または
-  `ALTER TABLE ADD COLUMN`のみの非破壊的変更):
-  1. `migration.sql`の`-- @STEP: jockey_aliases`ブロックが実DBに未適用
-  2. `migration.sql`の`-- @STEP: tickets_refunded`ブロックが実DBに未適用
-  3. `migration.sql`の`-- @STEP: users_last_login`ブロックが実DBに未適用
+- **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
+  `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
+  `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
+- **未実施の運用作業(要ユーザー操作)**: `migration.sql` の 3 つの `-- @STEP` ブロック
+  (`jockey_aliases` / `tickets_refunded` / `users_last_login`)が実DBに未適用。いずれも
+  非破壊的(`CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ADD COLUMN`)。適用手順:
 
-  適用手順:
   ```bash
-  npx wrangler d1 execute keiba-yosou-db --local --file=migration.sql
+  npx wrangler d1 execute keiba-yosou-db --local  --file=migration.sql
   npx wrangler d1 execute keiba-yosou-db --remote --file=migration.sql
   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('jockey_aliases');"
   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('tickets_refunded');"
   npx wrangler d1 execute keiba-yosou-db --remote --command "INSERT INTO schema_migrations (name) VALUES ('users_last_login');"
   ```
-  適用後、`migration.sql`から該当ブロックをすべて削除すること(内容は`schema.sql`へ反映済み)
-- 次のセッションでは**クラスタN-1(出走馬表の馬番重複入力防止)**への着手を推奨する
-- `race_results`にデータが貯まり始めたら、`docs/ROADMAP.md`の**クラスタM**
-  (馬名・騎手名ベースの集計参照画面)に着手できる
+
+  適用後、`migration.sql` から該当 3 ブロックを削除する(内容は `schema.sql` に反映済み)。
+- **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリングを完了
+  (`docs/ROADMAP.md` クラスタI = 全項目対応済み。詳細は BACKLOG_HISTORY 期間9)。
+  下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
+- **次に着手できるタスク**: クラスタN-1(出走馬表の馬番重複入力防止・仕様確定済み)が最有力。
+  他は下記「未着手タスク(クラスタ単位)」。`race_results` にデータが貯まったら
+  `docs/ROADMAP.md` クラスタM に着手可能。
 
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
 

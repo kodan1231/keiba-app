@@ -76,7 +76,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 ## 進め方
 
 1. 要望の仕様矛盾・不足を確認 → 承認を得る
-2. `docs/DESIGN.md` 等を新仕様に合わせて更新(経緯記述は削らない)
+2. `docs/design/<機能>.md`(該当ファイル)を新仕様に合わせて更新(経緯記述は削らない)
 3. 実装
 4. 構文チェック(`node --check <file>`)
 5. `docs/BACKLOG.md` のタスク表を更新(完了分は `archive/documents/BACKLOG_HISTORY.md` へ要約移動)
