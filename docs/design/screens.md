@@ -29,9 +29,9 @@
   `shell.js` の `PAGE_ACTIONS` で `data-page` 別に定義。ボタンのidは従来通りで、
   イベント登録は各ページのJS(`app.js`・`races.js`等)が実行時に `getElementById` で行う
 - すでに中身が入っている受け皿は上書きしない(段階的移行の安全策)
-- `<head>`(フォント・`style.css?v=N`)は各HTMLに残す(FOUC回避、および `?v=` の
-  キャッシュバスティング運用のため。`docs/ROADMAP.md` クラスタI「CSSキャッシュバスティングの
-  一元化」は着手しない方針)
+- `<head>`(フォント・`style.css?v=N`)は現状は各HTMLに残す(FOUC回避)。ただし `?v=` を
+  全HTMLで手作業更新する運用の負担を減らすため、`shell.js` が `<link rel="stylesheet">` を
+  生成して `?v=` を1箇所に集約する案が `docs/BACKLOG.md` の「優先順位」A 段にある
 
 ### トップページ(`/`)の表示について
 
