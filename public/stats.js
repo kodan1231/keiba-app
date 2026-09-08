@@ -280,18 +280,6 @@ function renderJockeyTable(items) {
   renderTable("jockey-table", "jockey", "騎手", "name");
 }
 
-
-async function fetchImportedTicketHistory() {
-  try {
-    const res = await authedFetch("/api/ticket-imports");
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-  } catch {
-    return [];
-  }
-}
-
 async function loadAndRender() {
   const [ticketRes, importedRes] = await Promise.all([authedFetch("/api/tickets"), authedFetch("/api/ticket-imports")]);
   if (!ticketRes.ok) return;

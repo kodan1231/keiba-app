@@ -404,3 +404,25 @@
 - ユーザーが実ブラウザで ②(日付・金額表記)③(各APIのエラー応答含む動作)①(6画面の
   ログイン前後・ナビ・管理者/一般切替・かごバッジ・パスワード変更モーダル)を確認し、
   問題なしと判断。`docs/BACKLOG.md` の🔵実機検証未完了3件は解消済み
+
+**馬券かごバッジ: 0件時の非表示修正(2026-09-08)**
+- `cart.js` が注入する `.cart-badge-count { display: inline-flex }` が `hidden` 属性の
+  デフォルト `display:none` を上書きしており、選択中0件でも赤丸「0」が表示され続けていた。
+  `.cart-badge-count[hidden] { display: none }` を注入スタイルに追加して打ち消した
+
+**デッドコード削除(2026-09-08)**
+- 呼び出し元が0件の関数・定数を約146行削除(`node --check` と全文検索で0ヒットを確認):
+  - `combos.js`: `slotsForNormal` `slotsForBox` `slotsForFormation` `slotsForAxis1Unordered`
+    `slotsForAxis1Ordered` `slotsForAxis2Ordered`(buy.jsの2分割・購入モーダル再実装で不要化)
+  - `bettypes.js`: `availableMethods`(`buy-purchase-modal.js` の `methodsFor()` に置換済み)
+  - `stats.js`: `fetchImportedTicketHistory`(`loadAndRender` が直接 `authedFetch` 済み)
+  - `jra-result-pdf.js`: `jraResultToHalfwidthAscii` `jraResultNormalizeRadicals`
+    `jraResultParseTrack` `jraResultParseCourse` `jraResultParseNumberList`
+    `jraResultPayoutTypeAt` + 定数 `JRA_RESULT_PDF_TRACKS` `JRA_RESULT_BET_MAP`
+  - `jra-entries-pdf.js`: `jraEntriesToHalfwidthAscii` `jraEntriesNormalizeRadicals`
+    `jraEntriesParseWeather` + 定数 `JRA_ENTRIES_TRACKS`
+  - `utils.js`: 定数 `JRA_CENTRAL_TRACKS`(上記トラック配列エイリアスを全て削除した結果、
+    参照元が消滅。将来必要になれば1行で再追加できる)
+- `races.js`/`buy.js` 冒頭コメントの `JRA_CENTRAL_TRACKS` を例に挙げた記述を一般化
+- `docs/ROADMAP.md` クラスタI の「トラックリスト重複整理」「buy.js/races.js巨大ファイル分割」を
+  完了化。新たに「jra-result-pdf.js パーサ分割」「app.js⇄prediction.js グループ描画共通化」を追加

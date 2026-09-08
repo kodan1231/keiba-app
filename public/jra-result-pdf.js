@@ -1,15 +1,3 @@
-// 2026-08-17リファクタリング: この配列は public/utils.js の JRA_CENTRAL_TRACKS と
-// 内容が完全に同一だったため、重複定義を解消し共有定数を参照する形に変更した
-// (docs/BACKLOG.md「クラスタI」参照)。races.html では utils.js がこのファイルより
-// 先に読み込まれるため、参照時点で JRA_CENTRAL_TRACKS は定義済みである。この配列を
-// 使う jraResultParseTrack() はファイル内のどこからも呼ばれていない(未使用関数だが、
-// 削除は今回のスコープに含めない)。変数名・挙動維持を優先し、参照先のみ差し替えている。
-const JRA_RESULT_PDF_TRACKS = JRA_CENTRAL_TRACKS;
-const JRA_RESULT_BET_MAP = {
-  "単勝": "tan", "複勝": "fuku", "枠連": "wakuren", "馬連": "umaren", "馬単": "umatan",
-  "ワイド": "wide", "3連複": "sanrenpuku", "3連単": "sanrentan"
-};
-
 // 全角文字正規化・行内テキスト連結(ギャップ実測)・レース条件詳細抽出・天候抽出は
 // いずれも public/jra-pdf-common.js の共通実装を呼ぶだけの薄いラッパー(2026-09-01)。
 // 呼び出し側(このファイル内の他の処理)は引き続き jraResult〜 という名前で呼び出すため、
@@ -22,14 +10,6 @@ const JRA_RESULT_BET_MAP = {
 // (docs/BACKLOG.md「調査中の不具合」参照)。本ファイルを public/jra-pdf-common.js の
 // 共通実装(jraPdfNormalizeLine・jraPdfJoinRowItems)を呼ぶ形に変更したことで、
 // この非対称性は解消され、結果PDF側でもタブ保持・しきい値上限キャップが有効になる。
-function jraResultToHalfwidthAscii(s) {
-  return jraPdfToHalfwidthAscii(s);
-}
-
-function jraResultNormalizeRadicals(s) {
-  return jraPdfNormalizeRadicals(s);
-}
-
 function jraResultNormalizeUnit(s) {
   return jraPdfNormalizeUnit(s);
 }
@@ -50,17 +30,6 @@ function jraResultParseDate(text) {
   return m ? `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}` : null;
 }
 
-function jraResultParseTrack(text) {
-  const s = jraResultNormalizeUnit(text);
-  return JRA_RESULT_PDF_TRACKS.find(t => s.includes(t)) || null;
-}
-
-function jraResultParseCourse(text) {
-  const s = jraResultNormalizeUnit(text);
-  const m = s.match(/コ\s*ー\s*ス\s*[:：]?\s*([0-9,]+)\s*メ\s*ー\s*ト\s*ル\s*[（(]\s*(芝|ダート|障害)/);
-  return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g,"")) } : {course_type:null,distance:null};
-}
-
 // レース条件詳細(斤量区分・条件フラグ・回り)・天候抽出は public/jra-pdf-common.js の
 // 共通実装を呼ぶだけのラッパー(2026-09-01)。jra-entries-pdf.js側と実装が完全一致していた。
 function jraResultParseConditions(text) {
@@ -69,10 +38,6 @@ function jraResultParseConditions(text) {
 
 function jraResultParseWeather(text) {
   return jraPdfParseWeather(text);
-}
-
-function jraResultParseNumberList(raw) {
-  return String(raw).split(/[-,、]/).map(x => Number(x.trim())).filter(Number.isInteger);
 }
 
 function jraResultCreateRace(date, track, number) {
@@ -84,20 +49,6 @@ function jraResultCreateRace(date, track, number) {
     entries: [], finish_order: [], payouts: {}, refunds: [],
     race_results: [], // 2026-08-11追加: 馬単位の確定結果(全着順・タイム・馬体重等)
   };
-}
-
-function jraResultPayoutTypeAt(text, pos) {
-  const labels = [
-    ["sanrentan","3連単"],["sanrenpuku","3連複"],["umatan","馬単"],
-    ["umaren","馬連"],["wakuren","枠連"],["wide","ワイド"],
-    ["fuku","複勝"],["tan","単勝"]
-  ];
-  let best = null;
-  for (const [type,label] of labels) {
-    const idx = text.indexOf(label, pos);
-    if (idx >= 0 && (!best || idx < best.index)) best = {type,label,index:idx};
-  }
-  return best;
 }
 
 function jraResultAddPayout(r, type, label, rate) {

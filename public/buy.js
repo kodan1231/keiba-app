@@ -6,8 +6,7 @@
 //   - buy.js(本ファイル): state・カレンダー・競馬場タブ・レース選択グリッド描画
 //   - buy-purchase-modal.js: 購入モーダル一式(券種選択・購入方式・馬選択・組み合わせ生成・送信)
 // いずれもESモジュールを使わないクラシックスクリプトのため、2ファイルは同一の
-// グローバルスコープを共有する(races.js分割時と同じ前提。既存のpublic/utils.jsの
-// JRA_CENTRAL_TRACKS共有パターンで検証済み)。index.html での読み込み順は
+// グローバルスコープを共有する(races.js分割時と同じ前提)。index.html での読み込み順は
 // buy.js → buy-purchase-modal.js。分割によって画面の挙動・DOM構造・APIは変更していない。
 
 let races = [];

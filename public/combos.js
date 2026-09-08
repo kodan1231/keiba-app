@@ -49,14 +49,6 @@ function dedupeUnordered(results) {
   return deduped;
 }
 
-function slotsForNormal(orderedPicks) {
-  return orderedPicks.map((h) => [h]);
-}
-
-function slotsForBox(n, selectedHorses) {
-  return Array.from({ length: n }, () => selectedHorses);
-}
-
 function slotsForNagashiUnordered(n, axisHorses, partnerHorses) {
   const axisSlots = axisHorses.map((h) => [h]);
   const remaining = n - axisHorses.length;
@@ -70,28 +62,6 @@ function slotsForNagashiOrdered(n, axisHorse, axisPosition, partnerHorses) {
     slots.push(i === axisPosition ? [axisHorse] : partnerHorses);
   }
   return slots;
-}
-
-function slotsForFormation(candidatesPerSlot) {
-  return candidatesPerSlot;
-}
-
-// 1頭軸。
-// 三連複などの順不同券種では、軸1頭＋相手2頭を生成。
-// 三連単では、軸馬を指定着順に固定して相手2頭を残り着順に展開。
-function slotsForAxis1Unordered(n, axisHorse, partnerHorses) {
-  if (n === 2) return [[axisHorse], partnerHorses];
-  return [[axisHorse], partnerHorses, partnerHorses];
-}
-
-function slotsForAxis1Ordered(n, axisHorse, axisPosition, partnerHorses) {
-  return slotsForNagashiOrdered(n, axisHorse, axisPosition, partnerHorses);
-}
-
-// 3連単2頭軸・着順固定。
-// axisOrder[0]を1着、axisOrder[1]を2着、partnerを3着に固定。
-function slotsForAxis2Ordered(axisOrder, partnerHorses) {
-  return [[axisOrder[0]], [axisOrder[1]], partnerHorses];
 }
 
 // 3連単2頭軸マルチ。

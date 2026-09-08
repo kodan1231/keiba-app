@@ -35,28 +35,10 @@
 // サーバーへ送信するようにした(docs/design/data-model.md「races.entriesへの性齢・負担重量の追加」
 // 参照)。抽出済みの正規表現マッチ結果(牡/牝/せん/セ/騸 + 年齢 + kg)をそのまま流用する。
 
-// 2026-08-17リファクタリング: この配列は public/utils.js の JRA_CENTRAL_TRACKS と
-// 内容が完全に同一だったため、重複定義を解消し共有定数を参照する形に変更した
-// (docs/BACKLOG.md「クラスタI」参照)。races.html では utils.js がこのファイルより
-// 先に読み込まれるため、参照時点で JRA_CENTRAL_TRACKS は定義済みである。なお本配列は
-// 現時点でこのファイル内から参照されていない(開催情報の検出は下記
-// jraEntriesFindMeeting/jraEntriesFindMeetingLoose 内でハードコードされた正規表現を
-// 使っており、この配列を経由していない)。変数名・挙動維持を優先し、削除はせず
-// 参照先のみ差し替えている。
-const JRA_ENTRIES_TRACKS = JRA_CENTRAL_TRACKS;
-
 // 全角英数記号・部首文字の正規化、単位正規化、行内空白正規化はいずれも
 // public/jra-pdf-common.js の共通実装を呼ぶだけの薄いラッパー(2026-09-01)。
 // 呼び出し側(このファイル内の他の処理)は引き続き jraEntries〜 という名前で
 // 呼び出すため、このファイル内の変更はここだけで完結する。
-function jraEntriesToHalfwidthAscii(s) {
-  return jraPdfToHalfwidthAscii(s);
-}
-
-function jraEntriesNormalizeRadicals(s) {
-  return jraPdfNormalizeRadicals(s);
-}
-
 function jraEntriesNormalizeUnit(s) {
   return jraPdfNormalizeUnit(s);
 }
@@ -97,14 +79,10 @@ function jraEntriesParseCourse(text) {
   return m ? { course_type: m[2], distance: Number(m[1].replace(/,/g, "")) } : { course_type: null, distance: null };
 }
 
-// レース条件詳細(斤量区分・条件フラグ・回り)・天候抽出は public/jra-pdf-common.js の
+// レース条件詳細(斤量区分・条件フラグ・回り)は public/jra-pdf-common.js の
 // 共通実装を呼ぶだけのラッパー(2026-09-01)。jra-result-pdf.js側と実装が完全一致していた。
 function jraEntriesParseConditions(text) {
   return jraPdfParseConditions(text);
-}
-
-function jraEntriesParseWeather(text) {
-  return jraPdfParseWeather(text);
 }
 
 // 出走馬1行を解析する。

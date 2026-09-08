@@ -6,9 +6,8 @@
 //   - races-entries-modal.js: 出走馬表 登録・編集モーダル
 //   - races-payout-modal.js: 払戻 登録・編集モーダル
 // いずれもESモジュールを使わないクラシックスクリプトのため、3ファイルは同一の
-// グローバルスコープ(let/constの束縛も含む)を共有する。この前提は
-// public/utils.js の JRA_CENTRAL_TRACKS を他ファイルが `const JRA_TRACKS =
-// JRA_CENTRAL_TRACKS;` として参照している既存パターンと同じ。races.html での
+// グローバルスコープ(let/constの束縛も含む)を共有する(先に読み込まれた
+// ファイルの関数・定数を後続ファイルがそのまま参照できる)。races.html での
 // 読み込み順は races.js → races-entries-modal.js → races-payout-modal.js
 // (この順序自体に機能的な依存は無いが、両モーダルファイルが参照する
 // HORSE_COUNT_OPTIONS の定義元である races.js を先に読み込む必要がある)。

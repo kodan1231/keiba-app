@@ -25,22 +25,6 @@ const METHODS = {
   import: { label: "CSV取込" },
 };
 
-function availableMethods(betType) {
-  const def = BET_TYPES[betType];
-  if (!def || def.n === 1) return ["normal"];
-
-  if (betType === "sanrentan") {
-    return ["normal", "box", "nagashi", "axis1", "axis2", "multi", "axis2_multi", "formation"];
-  }
-  if (betType === "sanrenpuku") {
-    return ["normal", "box", "nagashi", "axis1", "axis2", "formation"];
-  }
-  if (def.ordered) {
-    return ["normal", "box", "nagashi", "axis1", "formation"];
-  }
-  return ["normal", "box", "nagashi", "axis1", "formation"];
-}
-
 function betTypeLabel(key) {
   return BET_TYPES[key] ? BET_TYPES[key].label : key;
 }

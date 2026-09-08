@@ -87,9 +87,11 @@ JV-Link(Windows専用ActiveX)・JRA公式サイト(bot対策あり)・netkeiba�
 | 候補 | 内容 | リスク |
 |---|---|---|
 | ~~`formatDate`の重複整理~~ | **2026-09-07対応済み**。`formatDate`(全画面共通「2026/08/24(日)」)・`formatDateMdW`(年なし)・`formatDateMd`(年・曜日なし)・`formatYen`/`formatSignedYen`/`formatSignedNum`(金額)を`public/utils.js`に集約し、各画面のローカル重複定義を撤去。全画面の日付表記を月日2桁ゼロ埋めへ統一した。詳細は`docs/design/screens.md`「日付・金額の共通フォーマッタ」。実機での目視確認は未実施 | - |
-| `buy.js`(700行超)・`races.js`(700行超)の巨大ファイル分割 | 状態管理・API呼び出し・DOM描画・イベント登録が1ファイルに混在している。本アプリの中核機能であり自動テストが無いため、壊れた場合の影響が大きい。一度に全体を作り直すのではなく、関心事ごとに段階的に切り出す。着手前に分割方針をユーザーに提示して承認を得ること | 高 |
+| ~~`buy.js`・`races.js`の巨大ファイル分割~~ | **2026-09-01対応済み**。`buy.js`→`buy.js`(284行)+`buy-purchase-modal.js`、`races.js`→`races.js`(319行)+`races-entries-modal.js`+`races-payout-modal.js`に分割。関心事ごとの段階的切り出し方針で実施 | - |
+| `jra-result-pdf.js`(1194行)のパーサ分割 | 単一関数`jraResultParseExtractedPages`が527行(コードベース最大)。内部は「行フラット化+診断」「レースヘッダー検出(2方式)」「レースブロック単位の抽出(try本体だけで約230行)」「マージ・重複除去・検証」の4フェーズに分かれる。3番目を`parseRaceBlock()`に抽出するだけで527→約300行。**関数抽出のみ・ロジック不変**に厳格限定し、実機テスト環境が無いため単独セッションで慎重に | 高(ヒューリスティックの塊・parser version 9.4.0・実機検証不可) |
 | CSSキャッシュバスティングの一元化 | `style.css`変更のたびに全HTMLファイルの`?v=YYYYMMDDHHmm`クエリパラメータを手作業で書き換える運用。根本対応にはビルドツール導入が必要だが、本プロジェクトは「Node不要・wranglerのみで手動運用」という方針を掲げており、ビルド前提にするのは方針と衝突する。**着手しない方針を推奨**(将来的に再検討) | - |
-| トラック(競馬場)リストの重複整理 | `JRA_ENTRIES_TRACKS`(`jra-entries-pdf.js`)・`JRA_RESULT_PDF_TRACKS`(`jra-result-pdf.js`)・`RACE_TRACK_ORDER`(`buy.js`)が類似の競馬場名配列として複数箇所に存在している。`utils.js`等への集約を検討 | 低(内容が完全一致ではない(用途によって中央10場のみ/中央+地方等)ため、集約時は用途差を吸収する設計が必要) |
+| ~~トラック(競馬場)リストの重複整理~~ | **2026-09-08対応済み**。`JRA_ENTRIES_TRACKS`・`JRA_RESULT_PDF_TRACKS`・集約先の`JRA_CENTRAL_TRACKS`はいずれも実際には参照されていないデッドコードだったため削除。`buy.js`の`RACE_TRACK_ORDER`(表示順序用・地方競馬場含む)は用途が異なるため対象外で存置 | - |
+| `app.js`⇄`prediction.js`の購入馬券グループ描画の共通化 | 両ファイルに「`group_id`単位で購入馬券をまとめ、開閉カードで表示」する同型ロジックがある(コードコメントも「app.jsの.group-cardパターンと同じ」と明記)。`public/ticket-groups.js`等に共通レンダラを切り出す。両ファイルとも編集頻度が高い | 中(app.js側は金額編集input・削除ボタン・管理者アクション、prediction.js側は簡易表示。差分をオプション引数で吸収する設計と挙動保存レビューが必要) |
 
 ## クラスタM: race_resultsを使った集計・参照画面
 
