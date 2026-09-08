@@ -118,6 +118,11 @@
         min-width: 16px; height: 16px; padding: 0 3px; border-radius: 999px;
         display: inline-flex; align-items: center; justify-content: center;
       }
+      /* 選択中の点数が0のときは赤丸バッジ自体を非表示にする。
+         上の display: inline-flex が hidden 属性のデフォルト display:none を
+         上書きしてしまい、0件でも「0」が表示され続けていたため、
+         [hidden] 指定を明示的に足して打ち消す。 */
+      .cart-badge-count[hidden] { display: none; }
       .cart-overlay {
         position: fixed; inset: 0; z-index: 1100; display: flex;
         align-items: flex-end; justify-content: center;
