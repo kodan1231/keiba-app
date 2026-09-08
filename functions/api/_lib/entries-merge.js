@@ -111,10 +111,15 @@ function normalizeHorseNameForMerge(v) {
 
 // 馬番から枠番を計算する。JRAでは馬番の抽選後、出走頭数に応じて機械的に枠番が割り当てられる
 // (枠自体は抽選対象ではなく頭数から一意に決まる)ため、馬番が確定していれば枠番も確定させて
-// よい。races.js「出走頭数から枠番の初期値を計算する」(defaultWakuNumber())と同じ
-// アルゴリズム。8頭以下は1頭1枠、9頭以上は余りを大きい枠番(7・8枠)側から順に1頭ずつ
-// 多く割り振る。
+// よい。races-entries-modal.js の defaultWakuNumber() と同じアルゴリズム。
+// 8頭以下は1頭1枠(馬番=枠番)、9頭以上は余りを大きい枠番(7・8枠)側から順に1頭ずつ多く割り振る。
+//
+// 2026-09-08修正: 以前は8頭以下でも下のループを回していたが、horseCount<=7 のとき
+// base=Math.floor(horseCount/8)=0 になり、若い枠から順に「0頭」が割り当たって枠番が
+// 全体的に後ろへずれる不具合があった(例: 5頭立てで馬番1が枠4になる)。8頭以下は
+// 例外なく「枠番=馬番」なので早期リターンする。
 function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
+  if (horseCount <= 8) return horseNumber;
   const base = Math.floor(horseCount / 8);
   const remainder = horseCount % 8;
   let n = horseNumber;
@@ -175,12 +180,24 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries) {
 
   // 馬番が確定している馬は、枠番も自動計算して確定値として埋める(PDFからは枠番をテキスト
   // 抽出できず常にnullで来るため、ここで計算しない限り永久にnullのまま残ってしまう)。
-  // 頭数は entries 配列全体の件数を使う(races.js の出走馬表編集画面が採用しているのと
-  // 同じ基準)。既に枠番が入っている馬(手動入力等で確定済み)は上書きしない。
+  // 頭数は entries 配列全体の件数を使う(races-entries-modal.js の出走馬表編集画面が
+  // 採用しているのと同じ基準)。既に枠番が入っている馬(手動入力等で確定済み)は原則
+  // 上書きしないが、「馬番が1〜Nの連番で揃った8頭以下の出走馬表」に限っては枠番=馬番で
+  // 一意に決まる(選択の余地が無い)ため、旧アルゴリズムのバグで誤って保存された確定値も
+  // ここで補正する(2026-09-08)。
   const horseCount = merged.length;
+  const confirmedHorseNumbers = merged.map((e) => e.horse_number).filter(Number.isInteger);
+  const isCompleteSmallField =
+    horseCount <= 8 &&
+    confirmedHorseNumbers.length === horseCount &&
+    Math.max(...confirmedHorseNumbers) === horseCount;
   for (const e of merged) {
-    if (Number.isInteger(e.horse_number) && (e.waku_number === null || e.waku_number === undefined)) {
-      e.waku_number = computeWakuNumberFromHorseNumber(e.horse_number, horseCount);
+    if (!Number.isInteger(e.horse_number)) continue;
+    const computed = computeWakuNumberFromHorseNumber(e.horse_number, horseCount);
+    if (e.waku_number === null || e.waku_number === undefined) {
+      e.waku_number = computed;
+    } else if (isCompleteSmallField && e.waku_number !== computed) {
+      e.waku_number = computed;
     }
   }
 

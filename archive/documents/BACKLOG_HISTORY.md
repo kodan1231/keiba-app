@@ -468,3 +468,24 @@
 - `node --check` 通過。実PDF(複数レース入り)での動作確認・診断パネルの各カウンタ一致確認は
   ユーザー(実機検証環境なし)
 - 仕様は `docs/design/results-import.md`「解析ロジックの要点」に追記
+
+**ドキュメント整理・実機検証済み項目の棚卸し(2026-09-08)**
+- `docs/BACKLOG.md` 🔰セクションを 2026-08-30 付け → 現状に更新
+- `docs/ROADMAP.md` クラスタF(馬券かご=実装済み)の確定仕様44行をポインタ1段落に、
+  クラスタI(全完了)を要約1段落に圧縮(ROADMAP 123→88行)
+- `docs/BACKLOG.md` 🔵実機検証未完了から、ユーザーが実運用で確認済みの3件
+  (PDFインポート / 一括購入・redirect / サブリクエスト数対策)を削除
+
+**枠番自動計算の不具合修正(2026-09-08)**
+- `computeWakuNumberFromHorseNumber()`(`_lib/entries-merge.js`)・`defaultWakuNumber()`
+  (`races-entries-modal.js`)が **7頭以下のレースで誤った枠番**を返していた
+  (`horseCount<=7` で `base=Math.floor(horseCount/8)=0` になり、若い枠から順に「0頭」が
+  割り当たって枠番が全体的に後ろへずれる。例: 5頭立てで馬番1が枠4)。8頭以上は正常。
+- 両関数に `if (horseCount <= 8) return horseNumber;` の早期リターンを追加(8頭以下は
+  例外なく枠番=馬番)。
+- あわせて `mergeEntriesByHorseName()` に補正ロジックを追加: **馬番が1〜Nの連番で揃った
+  8頭以下の出走馬表**に限り、`waku_number` が `horse_number` と一致しない確定値を
+  再計算値で上書きする(8頭以下は枠番に選択の余地が無いため安全)。旧バグで誤保存された
+  レースは同じPDFを再インポートすれば自動補正される。
+- `node --check` 通過。修正後アルゴリズムの出力を頭数3〜18で確認しJRAの枠番割当ルールと一致。
+  実PDFでの確認はユーザー。仕様は `docs/design/data-model.md`「枠番は馬番から自動計算」に追記
