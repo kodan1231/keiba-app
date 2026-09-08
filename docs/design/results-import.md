@@ -96,7 +96,7 @@
 人名の異体字(主にCJK互換漢字ブロック、U+F900–FAFF・CJK互換漢字補助、U+2F800–2FA1F。
 「戸崎」騎手等)を`.normalize("NFKC")`で全文一括正規化すると標準字形へ変換されてしまう
 問題を避けるため、全角英数記号(U+FF01–FF5E)・全角スペース(U+3000)のみを半角化する独自
-変換(`jraResultToHalfwidthAscii()`/`jraEntriesToHalfwidthAscii()`)を基本とする。
+変換(`public/jra-pdf-common.js` の `jraPdfNormalizeUnit()`。両パーサーが共通で使う)を基本とする。
 
 一方でJRA PDFのテキスト抽出結果では、「日」「月」「土」「発」「走」「馬」などの通常の
 漢字が、見た目は同じでも**康熙部首(Kangxi Radicals, U+2F00–2FD5)・CJK部首補助

@@ -482,6 +482,21 @@
   削除(内容は `schema.sql` に反映済み・再実行リスク消滅)。台帳の記録漏れは
   `INSERT OR IGNORE INTO schema_migrations ...` で埋められるが必須ではない
 
+**BACKLOG の各タスク再精査(2026-09-08)**
+- ⚠️テーブルと未着手クラスタを実コードと突き合わせ、陳腐化した記述を修正:
+  - パーサー「非対称性(結果PDF側に未反映)」→ 2026-09-01 の `jra-pdf-common.js` 共通化で解消済み。
+    ⚠️の該当行から削除、特定騎手バグの記述のみ残す
+  - `GET /api/ticket-imports` の的中率漏れ → 「CSV取込は現在すべて payout 非null」で前提が
+    一部変化。実害は「CSV取込後にレース結果が確定しても `imported_ticket_items` が
+    再計算されない」点に修正
+  - PDF払戻の矢印区切り → 具体的な修正方針(区切りクラスに `→>` 追加)を追記
+  - クラスタE-1(CSV外れ馬券も確定扱い)→ 2026-08-14 実装済みのため削除
+  - クラスタG(結果一括登録の残課題)→ 中身は⚠️#1・#2 へのポインタのみだったため削除
+- **N-3(ログアウトAPI 401 でCookieが消えない)は「実装しない」で確定**(実害ほぼ無し・
+  ユーザー確認済み)。BACKLOG からは削除。将来対応する場合は `functions/_middleware.js` の
+  `isPublicAuthRoute` に `url.pathname === "/api/auth/logout"` を追加するだけ
+  (`logout.js` はセッションを参照せず常にCookieクリアを返すだけなので認証を外して安全)
+
 **枠番自動計算の不具合修正(2026-09-08)**
 - `computeWakuNumberFromHorseNumber()`(`_lib/entries-merge.js`)・`defaultWakuNumber()`
   (`races-entries-modal.js`)が **7頭以下のレースで誤った枠番**を返していた

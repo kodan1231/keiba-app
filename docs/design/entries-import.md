@@ -12,10 +12,11 @@ JRA公式サイトの「出走馬一覧」PDF(1開催日・1ファイルにつ�
 
 - `public/jra-entries-pdf.js`: クライアント側のPDF.js解析(全角英数記号・康熙部首/CJK部首補助の
   正規化・ギャップ実測による行連結・発走時刻/開催情報検出・出走馬行解析・診断パネル)。
-  全角→半角変換は、全角英数記号(U+FF01–FF5E)限定の`jraEntriesToHalfwidthAscii()`と、
-  康熙部首・CJK部首補助ブロック限定の`jraEntriesNormalizeRadicals()`の2段構成になっている
-  (`.normalize("NFKC")`を全文へ一括適用すると、CJK互換漢字ブロックに含まれる人名の異体字
-  (例: 「戸崎」)まで標準字形へ変換されてしまう副作用があるため、対象を限定している)。
+  全角→半角変換は、全角英数記号(U+FF01–FF5E)限定の半角化と、康熙部首・CJK部首補助
+  ブロック限定の`.normalize("NFKC")`適用の2段構成(実体は `public/jra-pdf-common.js` の
+  `jraPdfNormalizeUnit()`。`jra-entries-pdf.js` は薄いラッパー `jraEntriesNormalizeUnit()` で呼ぶ。
+  `jra-result-pdf.js` と共通)。`.normalize("NFKC")`を全文へ一括適用すると、CJK互換漢字ブロックに
+  含まれる人名の異体字(例: 「戸崎」)まで標準字形へ変換されてしまう副作用があるため、対象を限定している。
   性齢・負担重量の抽出も実装済み(騎手名/調教師名の境界判定で使っている
   `(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+[\d.]+kg`のマッチ結果を利用し、`entries`へ含めて
   サーバーへ送信する)

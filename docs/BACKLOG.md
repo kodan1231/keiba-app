@@ -51,10 +51,10 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 | 状態 | 内容 | 詳細 |
 |---|---|---|
 | 🟡 未修正(別タスク) | `functions/api/races/results-import.js`の`finish_order`/`payouts`マージが「既存が完全に空の場合のみ」しか反映しない設計になっており、CSVインポート等で一部式別だけ既に登録されている場合、PDFインポートの新しい結果が反映されない | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
-| 🟡 未検証 | PDF側の払戻金額抽出正規表現が組み合わせの矢印区切り(→)に対応していない可能性(馬単・三連単で該当しうる) | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
+| 🟡 未検証 | `jraResultParsePayoutLine()` の払戻組み合わせ抽出正規表現の区切り文字クラスが `[-,、]` のみで、矢印区切り(`→` / `>`)に非対応。馬単・三連単の払戻行で JRA PDF が `→` を使っている場合、組み合わせを正しく取れない。修正は区切りクラスに `→>` を追加するだけで安価。ただし JRA結果PDFの**払戻表**が実際に矢印を使うか(着順表示のみで払戻は `-` の可能性)は実PDFで要確認 | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
-| 🟡 未修正(実害は限定的と推測・未検証) | `GET /api/ticket-imports`のレスポンスに`race_finish_order`/`race_payouts`が含まれていない。CSVインポート分の馬券のうち`payout`が未確定(null)のままレース結果が後から確定したケースで、`stats.js`の的中率集計の判定対象(分母)から漏れる可能性がある | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
-| 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は`jra-entries-pdf.js`側には既に入っているが、`jra-result-pdf.js`側には未反映(パーサーの非対称性の統一は別タスク) | `docs/design/entries-import.md`「出走馬一覧PDFインポート」既知の制約・「JRAレース結果PDFインポート」既知の制約 |
+| 🟡 未修正(実害は限定的) | CSVインポート分の馬券は取込時点の `is_hit`/`payout` で確定扱いになり、取込後にそのレースの結果がPDFインポート等で確定・変更されても `imported_ticket_items` は再計算されない(`recomputeTicketPayoutsForRace` は `tickets` テーブルのみ対象)。「CSV取込 → 後日レース結果確定」の順だと的中判定がずれたまま残る。あわせて `GET /api/ticket-imports` は `race_finish_order`/`race_payouts` を返さないため `stats.js` 側で補正もできない | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
+| 🟡 調査中(未確証) | `jra-entries-pdf.js`(出走馬一覧PDF)で、特定の騎手(PDF内で同一文字列が繰り返し使われる場合)のみ、騎手名に調教師名が連結してしまうことがある。実ブラウザのPDF.jsが返す文字幅情報の異常が疑われるが未確証。タブ保持・ギャップしきい値上限キャップという対策は 2026-09-01 の `jra-pdf-common.js` 共通化で出走馬一覧PDF・結果PDFの両方に適用済み(以前あった「結果PDF側に未反映」という非対称性は解消済み)。それでも再現する場合は個別の解析バグとして調査する | `docs/design/entries-import.md`「出走馬一覧PDFインポート」既知の制約 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
@@ -70,9 +70,10 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 実行環境を用いない静的コードレビューにより発見。修正方針は確定済み。
 
-#### N-1(中優先度): 出走馬表(races.js)で馬番が重複入力できてしまう
+#### N-1(中優先度): 出走馬表モーダルで馬番が重複入力できてしまう
 
-**症状**: `public/races.js`の出走馬表フォーム(`entry-form-row`)は、各行の馬番セレクトが
+**症状**: 出走馬表モーダル(`public/races-entries-modal.js`。2026-09-01 の分割で `races.js` から
+分離。行は `.entry-form-row`、馬番セレクトは `.e-horse-number`)は、各行の馬番セレクトが
 互いに独立しており、同じ馬番を複数行に設定できてしまう。馬番が重複すると、購入時の
 組み合わせ紐付けや`computeWinningCombos`による的中判定が意図しない挙動になる可能性がある。
 
@@ -84,8 +85,8 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 
 **確定した修正方針(クライアント側のみ・スワップ方式)**:
 
-`public/races.js`の出走馬表フォームで、ある行の馬番セレクト(`.e-horse-number`)の値を
-変更した際、**送信前の時点で**重複が起きないよう、UIの操作性で防ぐ。
+`public/races-entries-modal.js`の出走馬表フォームで、ある行の馬番セレクト(`.e-horse-number`)の
+値を変更した際、**送信前の時点で**重複が起きないよう、UIの操作性で防ぐ。
 
 - 各行の馬番セレクトに、現在選択されている値を`dataset.horseNumber`として保持しておく
   (`renderEntryRows()`描画時に初期値をセットし、以後の変更のたびに更新する)
@@ -104,33 +105,8 @@ race_results集計画面)は`docs/ROADMAP.md`を参照してください。
 - サーバー側への重複チェック追加は今回は追加しない(必要になった時点で別途検討)
 - PDFインポート経由(`entries-import.js`のマージ結果)での重複チェックは対象外
 
-**実装対象ファイル**: `public/races.js`(`renderEntryRows()`・馬番セレクトの`change`
-イベントハンドラ)のみ。
-
-#### N-3(低優先度・記録のみ): ログアウトAPIが未認証(セッション切れ)状態だと401になりCookieが消えない
-
-**症状**: `functions/_middleware.js`の`isPublicAuthRoute`判定は`/api/auth/login`・
-`/api/auth/register`のみを未認証アクセス許可の対象にしており、`/api/auth/logout`は
-含まれていない。セッションCookieが既に無効(期限切れ・破損・削除済み)な状態で「退場」
-ボタンを押すと、`POST /api/auth/logout`自体が(ミドルウェアにより)401で弾かれ、
-Cookieクリア処理(`Set-Cookie`によるMax-Age=0)まで到達しない。
-
-**影響度(確認済み・低)**: `authedFetch`が401を検知した時点で`login-screen`を表示する
-実装になっているため、体感としては「ログアウトできている」ように見え、実害はほぼない。
-
-**確定した対応方針**: **今回は実装せず、方針の記録のみに留める**(ユーザー確認済み)。
-将来対応する場合は以下の方針で対応する。
-
-```js
-// functions/_middleware.js
-const isPublicAuthRoute =
-  url.pathname === "/api/auth/login" ||
-  url.pathname === "/api/auth/register" ||
-  url.pathname === "/api/auth/logout";
-```
-
-`logout.js`はセッション内容を一切参照せず、常にCookieクリアのレスポンスを返すだけの
-処理のため、認証チェックを外しても情報漏洩・不正操作のリスクはない。
+**実装対象ファイル**: `public/races-entries-modal.js`(`renderEntryRows()`・馬番セレクトの
+`change` イベントハンドラ)のみ。
 
 #### N-4(低優先度): レース条件詳細カラムの画面表示対応
 
@@ -163,7 +139,7 @@ const isPublicAuthRoute =
 
 | 優先度 | 内容 | 規模目安 |
 |---|---|---|
-| 中 | レース選択画面(競馬場×R一覧のグリッド)のUIをnetkeiba風に寄せる。レース番号とレース名の間隔を詰める(残タスク) | 小 |
+| 低 | レース選択グリッド(競馬場×R一覧)のUI微調整。「レース番号とレース名の間隔を詰める」が残タスクとされているが、**実装済みかどうか未確認**。着手前に実画面で現状を見て、既に十分なら本項目を削除する | 小 |
 
 ### クラスタC: 集計画面(stats.js)
 
@@ -188,14 +164,9 @@ const isPublicAuthRoute =
 
 | 優先度 | 内容 | 規模目安 |
 |---|---|---|
-| 中 | 取り込んだ結果は外れ馬券も含めすべて「確定」扱いにする(`hitText===''`の場合もpayout=0にする) | 小〜中 |
-| 中 | 返還(出走取消等)行の`payout`計算を、実際のCSV表記を確認したうえで見直す(上記「調査中の不具合」表参照)。サンプルCSV入手が前提。**PDFインポート側の返還処理と設計方針を揃えることが望ましい** | 小〜中 |
+| 中 | 返還(出走取消等)行の`payout`計算を、実際のCSV表記を確認したうえで見直す(上記「調査中の不具合」表の🟡「CSV『的中』なし返還行」と同一課題)。サンプルCSV入手が前提。**PDFインポート側の返還処理と設計方針を揃えることが望ましい** | 小〜中 |
 
-### クラスタG: レース結果一括登録の残課題
-
-外部サイトへの自動アクセスは行わない方式(ユーザーが手動保存したPDFの解析)のため、
-bot対策等の技術的制約は無く着手可能。「JRAレース結果PDFをインポート」機能自体は実装済み
-(仕様は`docs/design/results-import.md`「JRAレース結果PDFインポート」参照)。残課題は上記「調査中の不具合」
-表の払戻マージ・矢印区切り対応、および実機検証。
+> 「取り込んだ結果は外れ馬券も含めすべて確定扱いにする(`hitText===''` も payout=0)」は
+> 2026-08-14 に実装済み(`functions/api/ticket-imports/index.js`。docs/design/csv-import.md 参照)。
 
 (仕様矛盾の解消方針一覧は`archive/documents/BACKLOG_HISTORY.md`参照)
