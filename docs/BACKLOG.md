@@ -18,15 +18,13 @@
 - **未適用のマイグレーションは無い**(2026-09-08確認済み。`migration.sql` は `@STEP` 空)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
-- **次に着手するタスク**: 下記「優先順位」の A 段。特に軽いのは N-3(ログアウト401・1行)と
-  払戻の矢印区切り修正(regex 3箇所・バグ確定)。
+- **次に着手するタスク**: 下記「優先順位」の A 段(CSV取込後の再計算 / CSV返還行 payout /
+  N-4 性齢・負担重量の表示 / CSSキャッシュ一元化)。
 
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
 
 | 状態 | 内容 | 詳細 |
 |---|---|---|
-| 🟡 未修正(別タスク) | `functions/api/races/results-import.js`の`finish_order`/`payouts`マージが「既存が完全に空の場合のみ」しか反映しない設計になっており、CSVインポート等で一部式別だけ既に登録されている場合、PDFインポートの新しい結果が反映されない | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
-| 🟡 未検証 | `jraResultParsePayoutLine()` の払戻組み合わせ抽出正規表現の区切り文字クラスが `[-,、]` のみで、矢印区切り(`→` / `>`)に非対応。馬単・三連単の払戻行で JRA PDF が `→` を使っている場合、組み合わせを正しく取れない。修正は区切りクラスに `→>` を追加するだけで安価。ただし JRA結果PDFの**払戻表**が実際に矢印を使うか(着順表示のみで払戻は `-` の可能性)は実PDFで要確認 | `docs/design/results-import.md`「JRAレース結果PDFインポート」既知の制約 |
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未修正(実害は限定的) | CSVインポート分の馬券は取込時点の `is_hit`/`payout` で確定扱いになり、取込後にそのレースの結果がPDFインポート等で確定・変更されても `imported_ticket_items` は再計算されない(`recomputeTicketPayoutsForRace` は `tickets` テーブルのみ対象)。「CSV取込 → 後日レース結果確定」の順だと的中判定がずれたまま残る。あわせて `GET /api/ticket-imports` は `race_finish_order`/`race_payouts` を返さないため `stats.js` 側で補正もできない | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
@@ -40,13 +38,13 @@
 
 | タスク | コスト | 内容 |
 |---|---|---|
-| N-3 ログアウト401修正 | 極小(1行) | `functions/_middleware.js` の `isPublicAuthRoute` に `url.pathname === "/api/auth/logout"` を追加。`logout.js` はセッション参照せず常にCookieクリアを返すだけなので認証を外して安全 |
-| **払戻の矢印区切り修正** | 小(regex 3箇所) | **バグ確定**。JRA払戻表は連系=`-`・単系=`→`。`jra-result-pdf.js` の払戻抽出(`jraResultParsePayoutLine` の2つの regex・`jraResultAddPayout` の `.split`)が区切り `[-,、]` のみで、**馬単・三連単の払戻レートを取りこぼしている**。区切りクラスに `→` を追加する。既存の誤登録レースは結果PDF再インポートで補正される見込み(下記「payout マージ」実装後) |
-| payout マージを常に上書きに | 小〜中 | `results-import.js` の再インポートを、既存払戻を式別マージせず**無条件上書き**する仕様に変更(現状は「既存が空のときのみ反映」+ overwrite モード)。ユーザー方針「インポートしたら強制上書きでOK」 |
-| **CSV取込後の再計算** | 中 | **ユーザーが困っている**。CSV取込した馬券は取込時点の的中/払戻で固定。その後レース結果を登録しても `imported_ticket_items` は再計算されない。`recomputeTicketPayoutsForRace` を imported 側にも適用する(or 同等処理を追加)。`docs/design/csv-import.md`・`payout-refund.md` |
+| **CSV取込後の再計算** | 中 | **ユーザーが困っている**。CSV取込した馬券は取込時点の的中/払戻で固定。その後レース結果を登録しても `imported_ticket_items` は再計算されない。`recomputeTicketPayoutsForRace`/`recomputeTicketPayoutsForRaces` を imported 側にも適用する(or 同等処理を追加)。`docs/design/csv-import.md`・`payout-refund.md` |
 | **CSV返還行の payout 見直し** | 小〜中 | **早め対応。CSVサンプルをユーザーからもらうのが前提**。「的中/返還」列が「的中」を含まない返還行(出走取消等)の payout が全損計算になっている可能性。PDFインポート側の返還処理と設計を揃える |
 | **N-4 性齢・負担重量の表示** | 中 | `entries[].sex_age`(性齢)・`weight_carried`(負担重量)は保存済みだが**どの画面にも未表示**。まず予想画面の馬一覧等に表示。race一覧カード/払戻モーダルの `weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition` は第2段階。**表示位置の精査 = クラスタB のグリッド調整も同時に見る** |
 | CSSキャッシュバスティング一元化 | 小〜中 | `shell.js` が `<link rel="stylesheet">` を生成し、`?v=` を shell.js 内の定数1箇所に集約。FOUC 対策(現状は各HTMLの `<head>` に直書き)との兼ね合いを要検討 |
+
+> 完了済み(2026-09-08 = このセッション): N-3 ログアウト401 / 払戻の矢印区切り(`→`対応)/
+> payout マージを常に上書きに(結果PDFは `mode:"overwrite"`)。詳細は BACKLOG_HISTORY 期間9。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

@@ -157,7 +157,15 @@ export async function onRequestPost(context) {
       const values = [];
       let finishOrPayoutTouched = false;
 
-      const finishTouch = body.mode === "overwrite" || !it.existingFinish;
+      // mode:
+      //   "overwrite"   … 取込側に着順/払戻があれば、既存を式別マージせず丸ごと置き換える
+      //                   (取込側が空のレースは既存を維持。PDF解析が取れなかった分を消さない)。
+      //                   結果PDFインポートのデフォルト。docs/design/results-import.md 参照。
+      //   "fill-empty"  … 既存が空のときだけ埋める(旧デフォルト。手動で使い分けたい場合用に残す)。
+      //   "skip-existing"… 既存レースには一切触れない(上で continue 済み)。
+      const modeOverwrite = body.mode === "overwrite";
+
+      const finishTouch = modeOverwrite ? !!it.finishOrder : !it.existingFinish;
       if (finishTouch) {
         fields.push("finish_order = ?");
         values.push(it.finishOrder ? JSON.stringify(it.finishOrder) : null);
@@ -165,7 +173,9 @@ export async function onRequestPost(context) {
       }
       it.finalFinishOrder = finishTouch ? it.finishOrder : it.existingFinish;
 
-      const payoutTouch = body.mode === "overwrite" || !it.existingPayouts || Object.keys(it.existingPayouts || {}).length === 0;
+      const payoutTouch = modeOverwrite
+        ? Object.keys(it.payouts).length > 0
+        : (!it.existingPayouts || Object.keys(it.existingPayouts || {}).length === 0);
       if (payoutTouch) {
         fields.push("payouts = ?");
         values.push(Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null);

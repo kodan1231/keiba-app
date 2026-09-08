@@ -28,8 +28,13 @@ export async function onRequest(context) {
   const url = new URL(request.url);
 
   const isApi = url.pathname.startsWith("/api/");
+  // logout はセッション内容を一切参照せず常にCookieクリアを返すだけ(logout.js 参照)。
+  // 認証チェックを通すと、セッション切れ状態で「退場」を押したとき401で弾かれ
+  // Set-Cookie(Max-Age=0)まで到達しないため、未認証でも通す。
   const isPublicAuthRoute =
-    url.pathname === "/api/auth/login" || url.pathname === "/api/auth/register";
+    url.pathname === "/api/auth/login" ||
+    url.pathname === "/api/auth/register" ||
+    url.pathname === "/api/auth/logout";
 
   if (isApi && !isPublicAuthRoute) {
     if (!env.APP_PASSWORD) {

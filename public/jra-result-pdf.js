@@ -53,7 +53,9 @@ function jraResultCreateRace(date, track, number) {
 
 function jraResultAddPayout(r, type, label, rate) {
   if (!r || !type || !Number.isFinite(rate)) return;
-  const nums = String(label).split(/[-,、]/).map(Number).filter(Number.isInteger);
+  // 組み合わせの区切り: JRA払戻表は連系(馬連・ワイド・枠連・3連複)が「-」、
+  // 単系(馬単・3連単)が「→」。単系は順序が意味を持つため split 順をそのまま combo に使う。
+  const nums = String(label).split(/[-,、→]/).map(Number).filter(Number.isInteger);
   if (!nums.length || nums.some(n => n < 1 || n > 18)) return;
   const combo = (type === "tan" || type === "fuku") ? [nums[0]] : nums;
   (r.payouts[type] ||= []).push({label:String(label), combo, rate});
@@ -95,9 +97,9 @@ function jraResultParsePayoutLine(r, rawLine, carryState) {
   // ラベルが分からない区間: 組み合わせの頭数から直前の式別を引き継いで判定する。
   const extractBySize = (segment) => {
     if (!hasYen) return;
-    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
+    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、→]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
     for (const m of matches) {
-      const nums = m[1].replace(/\s+/g,'').split(/[-,、]/).filter(Boolean);
+      const nums = m[1].replace(/\s+/g,'').split(/[-,、→]/).filter(Boolean);
       const type = state[nums.length];
       if (!type) continue; // 該当する頭数の式別がまだ判明していない場合は無視(誤爆防止)
       jraResultAddPayout(r, type, m[1].replace(/\s+/g,''), Number(m[2].replace(/,/g,'')));
@@ -110,7 +112,7 @@ function jraResultParsePayoutLine(r, rawLine, carryState) {
     const size = JRA_PAYOUT_TYPE_COMBO_SIZE[type];
     if (size) state[size] = type;
     if (!hasYen) return;
-    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
+    const matches=[...segment.matchAll(/(\d+(?:\s*[-,、→]\s*\d+){0,2})\s+([0-9,]+)\s*円/g)];
     for (const m of matches) {
       jraResultAddPayout(r, type, m[1].replace(/\s+/g,''), Number(m[2].replace(/,/g,'')));
       count++;
@@ -1157,7 +1159,9 @@ jraImportSubmit?.addEventListener("click",async()=>{
   if(!confirm(`${jraParsedRecords.length}レースの結果・払戻を登録します。未登録レースは新規作成されます。実行しますか？`))return;
   jraImportSubmit.disabled=true;jraImportMessage.hidden=false;jraImportMessage.textContent="登録中です…";
   try{
-    const res=await authedFetch("/api/races/results-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({races:jraParsedRecords,mode:"fill-empty"})});
+    // mode:"overwrite" — 結果PDFに着順/払戻があるレースは、既存データを丸ごと置き換える
+    // (CSV等で一部式別だけ入っていたレースも、PDFの完全な払戻で上書きされる)。
+    const res=await authedFetch("/api/races/results-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({races:jraParsedRecords,mode:"overwrite"})});
     const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||"一括登録に失敗しました");
     const c=(data.results||[]).filter(x=>x.status==="created").length,u=(data.results||[]).filter(x=>x.status==="updated").length,s=(data.results||[]).filter(x=>x.status==="skipped").length;
     alert(`JRAレース結果を登録しました。\n新規登録：${c}レース\n既存更新：${u}レース${s?`\nスキップ：${s}レース`:""}`);

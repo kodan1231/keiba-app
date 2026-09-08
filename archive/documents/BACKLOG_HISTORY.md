@@ -522,3 +522,22 @@
   レースは同じPDFを再インポートすれば自動補正される。
 - `node --check` 通過。修正後アルゴリズムの出力を頭数3〜18で確認しJRAの枠番割当ルールと一致。
   実PDFでの確認はユーザー。仕様は `docs/design/data-model.md`「枠番は馬番から自動計算」に追記
+
+**A段バグ修正3件(2026-09-08。優先順位 A 段の軽い3つ)**
+- **N-3 ログアウト401**: `functions/_middleware.js` の `isPublicAuthRoute` に
+  `url.pathname === "/api/auth/logout"` を追加。セッション切れ状態で「退場」を押しても
+  Set-Cookie(Max-Age=0)が返るようになった
+- **払戻の矢印区切り対応**: JRA払戻表は連系(馬連・ワイド・枠連・3連複)=「-」、
+  単系(馬単・3連単)=「→」(ユーザー確認)。`jra-result-pdf.js` の払戻抽出
+  (`jraResultAddPayout` の `.split`、`jraResultParsePayoutLine` の2つの matchAll regex、
+  `extractBySize` の `.split`)の区切りクラス `[-,、]` に `→` を追加。これで馬単・3連単の
+  払戻レートが正しく `combo` に入る(単系は split 順=着順をそのまま使う)。
+  既に誤登録されているレースは下記 overwrite で再インポートすれば直る
+- **payout マージを常に上書きに**: `results-import.js` に `mode:"overwrite"` の挙動を追加し、
+  `jra-result-pdf.js` の送信を `fill-empty` → `overwrite` に変更。**取込側PDFに着順/払戻が
+  あるレースは、既存を式別マージせず丸ごと置き換える**(CSV等で一部式別だけ入っていた
+  レースも完全な払戻で上書き。⚠️「マージが all-or-nothing」も同時解消)。取込側が空
+  (PDF解析で取れなかった)のレースは既存を維持。`recomputeTicketPayoutsForRaces` は従来通り
+  呼ばれ、通常購入(`tickets`)の payout は再計算される(CSV分の再計算は別タスク=A段に残)
+- `node --check` 3ファイル通過。実PDFでの動作確認はユーザー。
+  仕様は `docs/design/results-import.md` に反映
