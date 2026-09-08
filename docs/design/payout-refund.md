@@ -4,9 +4,9 @@
 
 # 払戻確定時のticket反映(全ユーザー対応)
 
-`races`(共有データ)と`tickets`(ユーザーごとに分離されたデータ)がまたがる処理のため、
-着順・払戻レートが確定・更新された際は、**そのレースを購入した全ユーザーの
-`tickets.payout`**を再計算・反映する必要がある。
+`races`(共有データ)と購入馬券(ユーザーごとに分離されたデータ)がまたがる処理のため、
+着順・払戻レートが確定・更新された際は、**そのレースを購入した全ユーザーの購入馬券**の
+payout を再計算・反映する必要がある。
 
 - 払戻計算ロジック(`public/payout.js`の`computeWinningCombos`・`ticketMatchesCombo`・
   `findStoredRate`相当)は`functions/api/_lib/ticket-payout.js`にサーバー側実装として移植されており、
@@ -14,6 +14,12 @@
   entries)`と、複数レースをまとめて処理するバルク版`recomputeTicketPayoutsForRaces(db,
   updates)`(`updates`は`{raceId, finishOrder, payoutsObj, entries}`の配列。2026-08-30追加)
   の2種類が公開されている
+- **対象テーブル(2026-09-08〜)**: `tickets`(通常購入。`payout`・`refunded` を更新)に加えて
+  `imported_ticket_items`(CSV取込分。`payout`・`is_hit` を更新)も同じ計算ロジックで再計算する。
+  ただし Club JRA-Net購入履歴CSV は「既に決着済み」データのため、レース結果から的中が確認
+  できない場合に**既存の正の `payout` を 0 へ落とすことはしない**(`0`/`null` → 確定 と
+  増額方向の更新のみ)。これにより「CSV取込 → 後日レース結果を登録」の順で、CSV取込分の
+  的中判定・払戻が結果登録時に自動で埋まるようになった(それ以前は取込時点の値で固定されていた)
 - 呼び出し元:
   - `functions/api/races/[id].js`の`onRequestPut`(レース管理画面の払戻編集モーダルからの
     保存。単一レース版を使う)

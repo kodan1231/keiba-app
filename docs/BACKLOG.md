@@ -18,7 +18,7 @@
 - **未適用のマイグレーションは無い**(2026-09-08確認済み。`migration.sql` は `@STEP` 空)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
-- **次に着手するタスク**: 下記「優先順位」の A 段(CSV取込後の再計算 / CSV返還行 payout /
+- **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉/
   N-4 性齢・負担重量の表示 / CSSキャッシュ一元化)。
 
 ## ⚠️ 調査中の不具合(未解決・修正未承認)
@@ -26,7 +26,6 @@
 | 状態 | 内容 | 詳細 |
 |---|---|---|
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
-| 🟡 未修正(実害は限定的) | CSVインポート分の馬券は取込時点の `is_hit`/`payout` で確定扱いになり、取込後にそのレースの結果がPDFインポート等で確定・変更されても `imported_ticket_items` は再計算されない(`recomputeTicketPayoutsForRace` は `tickets` テーブルのみ対象)。「CSV取込 → 後日レース結果確定」の順だと的中判定がずれたまま残る。あわせて `GET /api/ticket-imports` は `race_finish_order`/`race_payouts` を返さないため `stats.js` 側で補正もできない | `docs/design/csv-import.md`「CSV取込の仕様」集計への反映漏れ |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
@@ -38,13 +37,14 @@
 
 | タスク | コスト | 内容 |
 |---|---|---|
-| **CSV取込後の再計算** | 中 | **ユーザーが困っている**。CSV取込した馬券は取込時点の的中/払戻で固定。その後レース結果を登録しても `imported_ticket_items` は再計算されない。`recomputeTicketPayoutsForRace`/`recomputeTicketPayoutsForRaces` を imported 側にも適用する(or 同等処理を追加)。`docs/design/csv-import.md`・`payout-refund.md` |
 | **CSV返還行の payout 見直し** | 小〜中 | **早め対応。CSVサンプルをユーザーからもらうのが前提**。「的中/返還」列が「的中」を含まない返還行(出走取消等)の payout が全損計算になっている可能性。PDFインポート側の返還処理と設計を揃える |
 | **N-4 性齢・負担重量の表示** | 中 | `entries[].sex_age`(性齢)・`weight_carried`(負担重量)は保存済みだが**どの画面にも未表示**。まず予想画面の馬一覧等に表示。race一覧カード/払戻モーダルの `weight_type`/`class_flags`/`course_direction`/`weather`/`track_condition` は第2段階。**表示位置の精査 = クラスタB のグリッド調整も同時に見る** |
 | CSSキャッシュバスティング一元化 | 小〜中 | `shell.js` が `<link rel="stylesheet">` を生成し、`?v=` を shell.js 内の定数1箇所に集約。FOUC 対策(現状は各HTMLの `<head>` に直書き)との兼ね合いを要検討 |
 
-> 完了済み(2026-09-08 = このセッション): N-3 ログアウト401 / 払戻の矢印区切り(`→`対応)/
-> payout マージを常に上書きに(結果PDFは `mode:"overwrite"`)。詳細は BACKLOG_HISTORY 期間9。
+> 完了済み(2026-09-08 = このセッション): N-3 ログアウト401 / 払戻の矢印区切り(結果PDFは
+> 全式別 `-` で問題なしと実PDF確認。`→` 対応は保険として追加)/ payout マージを常に上書きに
+> (結果PDFは `mode:"overwrite"`)/ **CSV取込後の再計算**(`recomputeTicketPayoutsForRace(s)` が
+> `imported_ticket_items` も再計算)。詳細は BACKLOG_HISTORY 期間9。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

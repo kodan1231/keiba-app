@@ -54,9 +54,15 @@
   際は、同じ問題を再発させないよう注意すること(`functions/api/races/entries-import.js`・
   `functions/api/races/results-import.js`も同じ方式へ書き直し済み。上記「実装上の注意
   (サブリクエスト数対策)」参照)
-- **集計への反映漏れ(未確認)**: `GET /api/ticket-imports`が返す各アイテムには
-  `race_finish_order`/`race_payouts`(通常購入`tickets`側にはJOINで付与されているレース確定
-  情報)が含まれていない。的中率集計への影響は`docs/BACKLOG.md`参照
+- **取込後のレース結果確定への追従(2026-09-08〜)**: CSV取込分(`imported_ticket_items`)の
+  `payout`・`is_hit`は取込時点のCSV列から決まるが、その後そのレースの`finish_order`/`payouts`が
+  結果PDFインポート・払戻編集モーダル等で確定・変更されると、`recomputeTicketPayoutsForRace(s)`
+  (`functions/api/_lib/ticket-payout.js`)が`tickets`と同じロジックで`imported_ticket_items`も
+  再計算する。ただしCSVは決着済みデータのため、既存の正の`payout`が0へ落ちることはない
+  (0/null → 確定 と増額方向のみ)。詳細は`docs/design/payout-refund.md`「払戻確定時のticket反映」参照
+- `GET /api/ticket-imports`が返す各アイテムには`race_finish_order`/`race_payouts`(通常購入
+  `tickets`側にはJOINで付与されているレース確定情報)が含まれていないため、`stats.js`側で
+  レース確定情報を使った補正はできない(上記の再計算で `payout`/`is_hit` 自体は追従する)
 - `imported_ticket_groups`の一意制約(`uq_imported_group_source_key`、`UNIQUE(source,
   group_key)`)には`user_id`を含めていない(同じJRA-Netアカウントを複数のアプリユーザーが
   共有する想定をしていないため)。万が一衝突した場合、`imported_ticket_groups`への

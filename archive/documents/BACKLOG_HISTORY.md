@@ -541,3 +541,26 @@
   呼ばれ、通常購入(`tickets`)の payout は再計算される(CSV分の再計算は別タスク=A段に残)
 - `node --check` 3ファイル通過。実PDFでの動作確認はユーザー。
   仕様は `docs/design/results-import.md` に反映
+
+**払戻の矢印区切り — 実PDFで検証(2026-09-08)**
+- ユーザー提供の JRA結果PDF(2026-09-06 4回中山2日・12レース)の払戻表を確認した結果、
+  **馬単・3連単も含め全式別が `-`(ハイフン)**(例: 馬単 `2-7`、3連単 `2-7-6`)。`→` は
+  払戻表には出現しない(`→` は Club JRA-Net購入履歴CSV 側の 3連単表記で、そちらは既存対応済み)。
+  → 結果PDFの払戻パースに不具合は無かった。上で追加した `→` 対応は将来のための保険として残す
+
+**CSV取込後の再計算(2026-09-08。A段)**
+- `imported_ticket_items`(CSV取込分の個別買い目)の `payout`・`is_hit` は取込時点のCSV列で
+  決まり、その後レース結果が確定・変更されても再計算されず、「CSV先 → 結果PDF後」の順だと
+  的中判定がずれたまま残っていた
+- `functions/api/_lib/ticket-payout.js` をリファクタ: 1枚分の払戻計算を `computeSettledPayout()`
+  に切り出し、`tickets` と `imported_ticket_items` の両方を同じ内部関数
+  `buildRecomputeStatements()` で処理するように変更
+- `recomputeTicketPayoutsForRace` / `recomputeTicketPayoutsForRaces` の**シグネチャは不変**。
+  内部で `imported_ticket_items` も SELECT → 再計算 → `db.batch()` で更新するようになった。
+  4つの呼び出し元([id].js / results-import.js / entries-import.js / tickets/bulk.js)は無変更で
+  CSV分も追従する
+- **安全策**: Club JRA-Net CSV は決着済みデータのため、レース結果から的中が確認できない場合に
+  既存の正の `payout` を 0 に落とすことはしない(0/null → 確定、増額方向のみ更新)。
+  判定不能(`combo === null` = 枠番未確定等)のときも CSV 由来の値を維持
+- `node --check` 通過。実DB・実ブラウザでの確認はユーザー。
+  仕様は `docs/design/payout-refund.md`・`csv-import.md` に反映

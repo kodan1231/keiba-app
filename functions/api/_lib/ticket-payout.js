@@ -1,27 +1,30 @@
-// 払戻確定時の全ユーザーticket反映(recomputeTicketPayoutsForRace(s))。
+// 払戻確定時の全ユーザーの購入馬券への反映(recomputeTicketPayoutsForRace(s))。
 // 2026-09-01: functions/api/_shared.js から分割(リファクタリング。詳細は_lib/auth.js冒頭の注記参照)。
 //
-// races.finish_order / races.payouts が確定した際、そのレースを購入した
-// 全ユーザーの tickets.payout を再計算して反映する。races は共有データ、
-// tickets はユーザーごとに分離されたデータであるため、user_idで絞り込まず
-// race_id単位で全ユーザーのticketsを対象にする必要がある。
+// races.finish_order / races.payouts が確定した際、そのレースに紐づく
+// 「全ユーザーの」購入馬券を再計算して反映する。races は共有データ、購入馬券は
+// ユーザーごとに分離されたデータであるため、user_idで絞り込まず race_id単位で対象にする。
+//
+// 対象テーブル:
+//   - tickets              … 通常購入(payout・refunded を更新)
+//   - imported_ticket_items … CSV取込分(payout・is_hit を更新。2026-09-08追加)。
+//     ただし CSV は「既に決着済み」の購入履歴のため、レース結果から的中が確認できない
+//     場合に既存の正の payout を 0 へ落とすことはしない(0→確定 と 増額方向のみ更新)。
+//
 // (ロジックは public/payout.js の computeWinningCombos 等をサーバー側へ移植したもの。
 //  クライアント側と実装がずれないよう、変更する際は両方を確認すること)
 //
-// 呼び出し元(2026-08-30時点):
+// 呼び出し元(2026-09-08時点):
 //   - functions/api/races/[id].js (レース管理画面の払戻編集モーダルからの保存。単一レース版)
 //   - functions/api/races/results-import.js (JRAレース結果PDF一括登録。複数レース一括版を使う)
 //   - functions/api/races/entries-import.js (出走馬一覧PDFインポート。保険として呼び出す。
 //     木・金の出走馬インポート時点では通常finish_order/payoutsが存在しないため実質
 //     何もしないが、木金を省略して結果PDFが先に取り込まれるイレギュラーな運用への備え。
 //     単一レース版を使う)
-//   - functions/api/tickets/bulk.js (通常購入。過去に購入した馬券の履歴を残す目的の
-//     購入操作であっても、対象レースが既に着順・払戻確定済みの場合、保存時点で
-//     payoutが未確定のまま残ってしまう不具合があったため、チケットINSERT直後に呼び出す。
+//   - functions/api/tickets/bulk.js (通常購入。対象レースが既に着順・払戻確定済みの場合、
+//     保存時点で payout が未確定のまま残る不具合の対策。チケットINSERT直後に呼び出す。
 //     単一レース版を使う)
-// 新しく finish_order / payouts を更新する処理を追加する場合は、必ずここも
-// 呼び出すこと(呼び忘れると、購入済みの馬券のpayoutが更新されないまま
-// 「未確定」表示が残ってしまう不具合になる)。
+// 新しく finish_order / payouts を更新する処理を追加する場合は、必ずここも呼ぶこと。
 
 const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
 
@@ -85,8 +88,7 @@ function findStoredRateServer(payouts, betType, combo) {
 //   (個別の返還馬番だけでは枠連の返還は判定しない。枠内に出走馬が1頭でも残っていれば、
 //   その枠連自体は返還にならないため)
 // - 「中止」(競走中止)は取消・除外と異なり発走しているため refunds には一切含まれない。
-//   そのためこの関数は中止馬についてはfalseを返し、呼び出し元では通常の的中判定へ進む
-//   (中止馬向けの分岐を別途設ける必要はない)
+//   そのためこの関数は中止馬についてはfalseを返し、呼び出し元では通常の的中判定へ進む。
 //
 // 詳細はdocs/design/payout-refund.md「返還(refund)処理」参照。
 function isTicketRefunded(betType, selections, refunds) {
@@ -103,67 +105,86 @@ function isTicketRefunded(betType, selections, refunds) {
   return selections.some((s) => refundHorses.has(s.horse_number));
 }
 
-// レースの着順・払戻レートが確定/更新された際、そのレースに紐づく
-// 「全ユーザーの」tickets.payout を再計算して反映する(user_idで絞り込まない)。
-// finishOrder / payoutsObj が無い(未確定に戻った)場合は payout を null に戻す。
-//
-// 返還判定は的中判定より先に行う。返還対象の買い目は、たとえ結果的に的中コンボと
-// 一致していたとしても返還として扱う(取消・除外により対象そのものが競走から除かれた
-// ことを意味するため、的中/不的中の判定自体が成立しない)。返還判定は payoutsObj.refunds
-// の有無だけで行える(finish_order/該当bet_typeのレート登録の有無に関係なく判定できる)
-// ため、既存の `finishOrder && payoutsObj && payoutsObj[t.bet_type]` という前提条件より
-// 外側でチェックする。
-export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries) {
-  if (!db || !raceId) return { updated: 0 };
-  const { results } = await db
-    .prepare(`SELECT id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id = ?`)
-    .bind(raceId)
-    .all();
-  if (!results || !results.length) return { updated: 0 };
-
+// ---- 1枚の買い目についての払戻計算(tickets / imported_ticket_items 共通) ----
+// 返還判定は的中判定より先に行う。返還対象の買い目は、結果的に的中コンボと一致していても
+// 返還として扱う(対象そのものが競走から除かれたため的中/不的中の判定が成立しない)。
+// 戻り値:
+//   payout === null … 判定不能(finish_order/payouts 未確定、または枠番未確定で
+//                      的中組み合わせを算出できない)
+//   payout === 0    … 不的中(確定)
+//   payout  >  0    … 的中(確定)/ 返還(= amount と同額)
+function computeSettledPayout(betType, selections, amount, finishOrder, payoutsObj, entries) {
   const refunds = (payoutsObj && Array.isArray(payoutsObj.refunds)) ? payoutsObj.refunds : [];
-
-  const statements = [];
-  for (const t of results) {
-    let selections;
-    try {
-      selections = JSON.parse(t.selections || "[]");
-    } catch {
-      selections = [];
-    }
-
-    let newPayout = null;
-    let newRefunded = 0;
-
-    if (refunds.length && isTicketRefunded(t.bet_type, selections, refunds)) {
-      newPayout = Number(t.amount);
-      newRefunded = 1;
-    } else if (finishOrder && payoutsObj && payoutsObj[t.bet_type]) {
-      const combos = computeWinningCombos(t.bet_type, finishOrder, entries);
-      // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を
-      // 算出できない(combo === null)ケースでは、「不的中(0円)」と断定せず
-      // 判定不能(null=未確定のまま)として扱う(0円へフォールバックすると、
-      // 実際には的中している可能性がある馬券まで不的中扱いになってしまうため)。
-      if (combos.some((c) => c.combo === null)) {
-        newPayout = null;
-      } else {
-        let matchedRate = null;
-        for (const c of combos) {
-          const rate = findStoredRateServer(payoutsObj, t.bet_type, c.combo);
-          if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
-            matchedRate = rate;
-            break;
-          }
-        }
-        newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
+  if (refunds.length && isTicketRefunded(betType, selections, refunds)) {
+    return { payout: Number(amount), refunded: 1 };
+  }
+  if (finishOrder && payoutsObj && payoutsObj[betType]) {
+    const combos = computeWinningCombos(betType, finishOrder, entries);
+    // 枠番未確定などで的中組み合わせ自体を算出できない場合は、「不的中」と断定せず
+    // 判定不能(null)として扱う(0円へフォールバックすると的中している可能性がある
+    // 馬券まで不的中扱いになってしまうため)。
+    if (combos.some((c) => c.combo === null)) return { payout: null, refunded: 0 };
+    let matchedRate = null;
+    for (const c of combos) {
+      const rate = findStoredRateServer(payoutsObj, betType, c.combo);
+      if (rate !== null && ticketMatchesComboServer(betType, selections, c.combo)) {
+        matchedRate = rate;
+        break;
       }
     }
+    return {
+      payout: matchedRate !== null ? Math.round((Number(amount) / 100) * matchedRate) : 0,
+      refunded: 0,
+    };
+  }
+  return { payout: null, refunded: 0 };
+}
+
+function parseSelections(json) {
+  try { return JSON.parse(json || "[]"); } catch { return []; }
+}
+
+// 1レース分の tickets / imported_ticket_items を再計算し、更新用 statement を statements へ push する。
+function buildRecomputeStatements(db, rows, importedRows, finishOrder, payoutsObj, entries, statements) {
+  for (const t of (rows || [])) {
+    const { payout: newPayout, refunded: newRefunded } =
+      computeSettledPayout(t.bet_type, parseSelections(t.selections), t.amount, finishOrder, payoutsObj, entries);
     const currentPayout = t.payout === undefined ? null : t.payout;
-    const currentRefunded = Number(t.refunded || 0);
-    if (newPayout !== currentPayout || newRefunded !== currentRefunded) {
+    if (newPayout !== currentPayout || newRefunded !== Number(t.refunded || 0)) {
       statements.push(db.prepare(`UPDATE tickets SET payout = ?, refunded = ? WHERE id = ?`).bind(newPayout, newRefunded, t.id));
     }
   }
+  for (const it of (importedRows || [])) {
+    const { payout: newPayout, refunded } =
+      computeSettledPayout(it.bet_type, parseSelections(it.selections), it.amount, finishOrder, payoutsObj, entries);
+    if (newPayout === null) continue; // 判定不能なら CSV 由来の値を維持
+    const currentPayout = it.payout === undefined ? null : it.payout;
+    // CSV は決着済みデータのため、レース結果から的中が確認できない場合でも既存の正の
+    // payout を 0 に落とさない(CSV の方が実際の払戻を持っている可能性がある)。
+    if (newPayout === 0 && Number(currentPayout || 0) > 0) continue;
+    // 返還は「払戻あり」だが「的中」ではないため is_hit は立てない
+    // (imported_ticket_items に refunded 列は無いので payout=amount のみで表現する)。
+    const newIsHit = (!refunded && newPayout > 0) ? 1 : 0;
+    if (newPayout !== currentPayout || newIsHit !== Number(it.is_hit || 0)) {
+      statements.push(db.prepare(`UPDATE imported_ticket_items SET payout = ?, is_hit = ? WHERE id = ?`).bind(newPayout, newIsHit, it.id));
+    }
+  }
+}
+
+// レースの着順・払戻レートが確定/更新された際、そのレースに紐づく購入馬券の payout を
+// 再計算して反映する(user_idで絞り込まない)。finishOrder / payoutsObj が無い場合は
+// tickets.payout を null に戻す(imported_ticket_items は上記の理由で維持)。
+export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, payoutsObj, entries) {
+  if (!db || !raceId) return { updated: 0 };
+
+  const [{ results: tks }, { results: items }] = await Promise.all([
+    db.prepare(`SELECT id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id = ?`).bind(raceId).all(),
+    db.prepare(`SELECT id, bet_type, selections, amount, payout, is_hit FROM imported_ticket_items WHERE race_id = ?`).bind(raceId).all(),
+  ]);
+  if ((!tks || !tks.length) && (!items || !items.length)) return { updated: 0 };
+
+  const statements = [];
+  buildRecomputeStatements(db, tks, items, finishOrder, payoutsObj, entries, statements);
   if (statements.length) await db.batch(statements);
   return { updated: statements.length };
 }
@@ -178,61 +199,34 @@ export async function recomputeTicketPayoutsForRaces(db, updates) {
 
   const raceIds = targets.map((u) => u.raceId);
   const placeholders = raceIds.map(() => "?").join(",");
-  const { results } = await db
-    .prepare(`SELECT id, race_id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id IN (${placeholders})`)
-    .bind(...raceIds)
-    .all();
-  if (!results || !results.length) return { updated: 0 };
+  const [{ results: tks }, { results: items }] = await Promise.all([
+    db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id IN (${placeholders})`).bind(...raceIds).all(),
+    db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, is_hit FROM imported_ticket_items WHERE race_id IN (${placeholders})`).bind(...raceIds).all(),
+  ]);
+  if ((!tks || !tks.length) && (!items || !items.length)) return { updated: 0 };
 
   const ticketsByRace = new Map();
-  for (const t of results) {
+  for (const t of (tks || [])) {
     if (!ticketsByRace.has(t.race_id)) ticketsByRace.set(t.race_id, []);
     ticketsByRace.get(t.race_id).push(t);
+  }
+  const importedByRace = new Map();
+  for (const it of (items || [])) {
+    if (!importedByRace.has(it.race_id)) importedByRace.set(it.race_id, []);
+    importedByRace.get(it.race_id).push(it);
   }
 
   const statements = [];
   for (const u of targets) {
-    const raceTickets = ticketsByRace.get(u.raceId);
-    if (!raceTickets || !raceTickets.length) continue;
-    const refunds = (u.payoutsObj && Array.isArray(u.payoutsObj.refunds)) ? u.payoutsObj.refunds : [];
-
-    for (const t of raceTickets) {
-      let selections;
-      try {
-        selections = JSON.parse(t.selections || "[]");
-      } catch {
-        selections = [];
-      }
-
-      let newPayout = null;
-      let newRefunded = 0;
-
-      if (refunds.length && isTicketRefunded(t.bet_type, selections, refunds)) {
-        newPayout = Number(t.amount);
-        newRefunded = 1;
-      } else if (u.finishOrder && u.payoutsObj && u.payoutsObj[t.bet_type]) {
-        const combos = computeWinningCombos(t.bet_type, u.finishOrder, u.entries);
-        if (combos.some((c) => c.combo === null)) {
-          newPayout = null;
-        } else {
-          let matchedRate = null;
-          for (const c of combos) {
-            const rate = findStoredRateServer(u.payoutsObj, t.bet_type, c.combo);
-            if (rate !== null && ticketMatchesComboServer(t.bet_type, selections, c.combo)) {
-              matchedRate = rate;
-              break;
-            }
-          }
-          newPayout = matchedRate !== null ? Math.round((Number(t.amount) / 100) * matchedRate) : 0;
-        }
-      }
-
-      const currentPayout = t.payout === undefined ? null : t.payout;
-      const currentRefunded = Number(t.refunded || 0);
-      if (newPayout !== currentPayout || newRefunded !== currentRefunded) {
-        statements.push(db.prepare(`UPDATE tickets SET payout = ?, refunded = ? WHERE id = ?`).bind(newPayout, newRefunded, t.id));
-      }
-    }
+    buildRecomputeStatements(
+      db,
+      ticketsByRace.get(u.raceId),
+      importedByRace.get(u.raceId),
+      u.finishOrder,
+      u.payoutsObj,
+      u.entries,
+      statements
+    );
   }
 
   if (statements.length) await db.batch(statements);
