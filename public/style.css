@@ -812,19 +812,37 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .group-card-head .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 /* ---------- 購入履歴の一括削除(選択モード) ---------- */
+/* チェックボックスは見た目だけ。実際のトグルは見出し(.bulk-selectable)全体のクリックで行う。 */
 .bulk-check-wrap {
   display: inline-flex;
   align-items: center;
-  margin: -6px 2px -6px 0;
-  padding: 6px;
-  cursor: pointer;
+  flex: 0 0 auto;
+  pointer-events: none;
 }
 .bulk-check-wrap input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin: 0;
-  cursor: pointer;
+  accent-color: var(--hanko);
 }
+/* 選択モード中の見出し行(レース/購入方式グループ)。行全体がタップ対象。 */
+.bulk-selectable { cursor: pointer; }
+.bulk-selectable:hover { background: rgba(199, 42, 42, 0.08); }
+.bulk-selectable.bulk-partial { background: rgba(199, 42, 42, 0.06); }
+.bulk-selectable.bulk-selected,
+.bulk-selectable.bulk-selected:hover { background: rgba(199, 42, 42, 0.16); }
+
+.bulk-hint {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--hanko);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
 /* 選択モード中は行ごとの編集input・削除ボタン・レース管理リンクを隠す(誤操作防止) */
 body.history-selection-mode .amount-edit-input,
 body.history-selection-mode .payout-edit-input,
@@ -849,6 +867,14 @@ body.history-selection-mode .group-detail-actions {
 #bulk-action-bar .bulk-bar-spacer { flex: 1; }
 #bulk-count { font-weight: 700; font-size: 14px; }
 /* .race-list は既に padding-bottom:80px を持つため、固定バー(約56px)ぶんの余白は足りている */
+
+/* モバイルのレース見出しは通常「2行化 + 矢印を行末へ」だが、選択モードでは矢印が無く
+   チェックボックスが先頭に来るため、見出しを素直な1〜2行のフローに戻す
+   (2行化ルールは @media (max-width: 600px) 側にある)。 */
+@media (max-width: 600px) {
+  body.history-selection-mode .race-card-head-main { flex: 1 1 auto; }
+  body.history-selection-mode .race-total { margin-right: 0; }
+}
 
 /* ---------- 結果・払戻入力ページ ---------- */
 .result-main {

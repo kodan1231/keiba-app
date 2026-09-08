@@ -165,6 +165,13 @@ function renderList(items) {
   raceList.innerHTML = "";
   emptyState.hidden = items.length !== 0;
 
+  if (selectionMode && items.length) {
+    const hint = document.createElement("p");
+    hint.className = "bulk-hint";
+    hint.textContent = "削除したい購入をタップして選択(レース見出しをタップするとそのレースの通常購入をまとめて選択)。選べるのは通常購入のみです。";
+    raceList.appendChild(hint);
+  }
+
   const raceGroups = groupByRace(items);
 
   for (const race of raceGroups) {
@@ -209,7 +216,8 @@ function renderSummary(items) {
 // (docs/design/screens.md「馬券履歴画面：レースカード表示」参照)。
 function renderRaceCard(race) {
   const raceKey = `${race.race_date}__${race.track}__${race.race_number}`;
-  const isExpanded = expandedRaces.has(raceKey);
+  // 選択モード中は全レースを開いた状態にして、グループ単位でも選べるようにする。
+  const isExpanded = selectionMode ? true : expandedRaces.has(raceKey);
 
   const settledTickets = race.tickets.filter((t) => t.payout !== null && t.payout !== undefined);
   const totalAmount = sumTicketAmount(race.tickets);
@@ -228,10 +236,10 @@ function renderRaceCard(race) {
   card.className = "race-card";
 
   const head = document.createElement("div");
-  head.className = "race-card-head";
+  head.className = "race-card-head" + (showRaceCheck ? " bulk-selectable" : "");
   head.innerHTML = `
-    ${showRaceCheck ? `<label class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-race" data-ids="${raceTicketIds.join(",")}" /></label>` : ""}
-    <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
+    ${showRaceCheck ? `<span class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-race" data-ids="${raceTicketIds.join(",")}" tabindex="-1" /></span>` : ""}
+    ${selectionMode ? "" : `<span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>`}
     <div class="race-card-head-main">
       <span class="race-date">${formatDate(race.race_date)}</span>
       <span class="track">${escapeHtml(race.track)}</span>
@@ -256,25 +264,24 @@ function renderRaceCard(race) {
   }
   card.appendChild(body);
 
-  head.addEventListener("click", (e) => {
-    if (e.target.closest(".bulk-check-wrap")) return; // チェックボックス操作では開閉しない
+  head.addEventListener("click", () => {
+    if (selectionMode) {
+      // レース見出しのタップ = そのレースの通常購入を「全選択 ⇔ 全解除」。
+      if (raceTicketIds.length === 0) return;
+      const allSelected = raceTicketIds.every((id) => selectedTicketIds.has(id));
+      for (const id of raceTicketIds) {
+        if (allSelected) selectedTicketIds.delete(id);
+        else selectedTicketIds.add(id);
+      }
+      syncBulkSelectionUi();
+      return;
+    }
     const nowHidden = !body.hidden;
     body.hidden = nowHidden;
     if (nowHidden) expandedRaces.delete(raceKey);
     else expandedRaces.add(raceKey);
     head.querySelector(".expand-arrow").textContent = body.hidden ? "▸" : "▾";
   });
-
-  const raceCheck = head.querySelector(".bulk-check-race");
-  if (raceCheck) {
-    raceCheck.addEventListener("change", () => {
-      for (const id of raceTicketIds) {
-        if (raceCheck.checked) selectedTicketIds.add(id);
-        else selectedTicketIds.delete(id);
-      }
-      syncBulkSelectionUi();
-    });
-  }
 
   return card;
 }
@@ -287,17 +294,18 @@ function renderGroupRow(group) {
   wrap.className = "group-card";
 
   const groupKey = first.group_id;
-  const isExpanded = expandedGroups.has(groupKey);
+  // 選択モード中はグループ明細を開かない(見出しタップ = 選択トグルに割り当てるため)。
+  const isExpanded = selectionMode ? false : expandedGroups.has(groupKey);
 
   // 一括削除の対象は通常購入のみ。CSV取込・レガシー取込グループにはチェックボックスを出さない。
   const groupTicketIds = first.imported ? [] : group.map((t) => Number(t.id)).filter((n) => Number.isInteger(n));
   const showGroupCheck = selectionMode && groupTicketIds.length > 0;
 
   const head = document.createElement("div");
-  head.className = "group-card-head";
+  head.className = "group-card-head" + (showGroupCheck ? " bulk-selectable" : "");
   head.innerHTML = `
-    ${showGroupCheck ? `<label class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-group" data-ids="${groupTicketIds.join(",")}" /></label>` : ""}
-    <span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>
+    ${showGroupCheck ? `<span class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-group" data-ids="${groupTicketIds.join(",")}" tabindex="-1" /></span>` : ""}
+    ${selectionMode ? "" : `<span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>`}
     <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
     <span class="method-badge">${methodLabel(first.method)}</span>
     <span class="point-count">${group.length}点</span>
@@ -336,25 +344,24 @@ function renderGroupRow(group) {
   wrap.appendChild(detail);
 
   head.addEventListener("click", (e) => {
-    if (e.target.closest(".bulk-check-wrap")) return; // チェックボックス操作では開閉しない
+    if (selectionMode) {
+      // 選択モード中は購入方式グループの見出しタップ = そのグループを選択 ⇔ 解除。
+      e.stopPropagation();
+      if (groupTicketIds.length === 0) return;
+      const allSelected = groupTicketIds.every((id) => selectedTicketIds.has(id));
+      for (const id of groupTicketIds) {
+        if (allSelected) selectedTicketIds.delete(id);
+        else selectedTicketIds.add(id);
+      }
+      syncBulkSelectionUi();
+      return;
+    }
     const nowHidden = !detail.hidden;
     detail.hidden = nowHidden;
     if (nowHidden) expandedGroups.delete(groupKey);
     else expandedGroups.add(groupKey);
     head.querySelector(".expand-arrow").textContent = detail.hidden ? "▸" : "▾";
   });
-
-  const groupCheck = head.querySelector(".bulk-check-group");
-  if (groupCheck) {
-    groupCheck.checked = groupTicketIds.every((id) => selectedTicketIds.has(id));
-    groupCheck.addEventListener("change", () => {
-      for (const id of groupTicketIds) {
-        if (groupCheck.checked) selectedTicketIds.add(id);
-        else selectedTicketIds.delete(id);
-      }
-      syncBulkSelectionUi();
-    });
-  }
 
   detail.querySelectorAll(".import-edit-input").forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
@@ -477,18 +484,26 @@ function setSelectionMode(on) {
 function syncBulkSelectionUi() {
   raceList.querySelectorAll(".bulk-check-group").forEach((cb) => {
     const ids = (cb.dataset.ids || "").split(",").filter(Boolean).map(Number);
-    cb.checked = ids.length > 0 && ids.every((id) => selectedTicketIds.has(id));
+    const on = ids.length > 0 && ids.every((id) => selectedTicketIds.has(id));
+    cb.checked = on;
+    cb.closest(".group-card-head")?.classList.toggle("bulk-selected", on);
   });
   raceList.querySelectorAll(".bulk-check-race").forEach((cb) => {
     const ids = (cb.dataset.ids || "").split(",").filter(Boolean).map(Number);
     const sel = ids.filter((id) => selectedTicketIds.has(id)).length;
-    cb.checked = sel > 0 && sel === ids.length;
+    const all = sel > 0 && sel === ids.length;
+    cb.checked = all;
     cb.indeterminate = sel > 0 && sel < ids.length;
+    const head = cb.closest(".race-card-head");
+    if (head) {
+      head.classList.toggle("bulk-selected", all);
+      head.classList.toggle("bulk-partial", sel > 0 && sel < ids.length);
+    }
   });
   const n = selectedTicketIds.size;
   const countEl = document.getElementById("bulk-count");
   const delBtn = document.getElementById("bulk-delete-btn");
-  if (countEl) countEl.textContent = `選択中 ${n} 点`;
+  if (countEl) countEl.textContent = n === 0 ? "タップして購入を選択" : `選択中 ${n} 点`;
   if (delBtn) delBtn.disabled = n === 0;
 }
 
