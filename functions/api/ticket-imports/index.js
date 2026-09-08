@@ -360,13 +360,14 @@ export async function onRequestGet(context){
     // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
     //  作り、それに含まれるitemsだけを対象にする)
     const groupIds=new Set(groups.map(g=>g.id));
-    // 集計画面「コース別収支」用に、各グループのレースのコース種別・距離をまとめて1回引く
-    // (グループごとに個別クエリしない。サブリクエスト数対策)。
-    const raceIds=[...new Set(groups.map(g=>g.race_id).filter(Boolean))];
+    // 集計画面「コース別収支」用に、各グループのレースのコース種別・距離を引く。
+    // race_id を IN (...) で渡すと、取込グループが参照するレース数が D1 の
+    // 「1クエリ100バインドパラメータ」上限を超えて GET 全体が失敗する
+    // (2026-09-08。実際にこの障害が発生した)。races は件数が少ないので
+    // 全件を1回SELECTしてメモリ上で引き当てる(全 items を1回SELECTするのと同じ方式)。
     const raceCourseById=new Map();
-    if(raceIds.length){
-      const ph=raceIds.map(()=>'?').join(',');
-      const rows=(await db.prepare(`SELECT id, course_type, distance FROM races WHERE id IN (${ph})`).bind(...raceIds).all()).results||[];
+    {
+      const rows=(await db.prepare(`SELECT id, course_type, distance FROM races`).all()).results||[];
       for(const r of rows) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
     }
     const allItems=(await db.prepare(`SELECT * FROM imported_ticket_items ORDER BY group_id, id`).all()).results||[];

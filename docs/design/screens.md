@@ -195,7 +195,7 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
 レースに `course_type` が登録されていない購入は「(競馬場) コース未登録」に集約する
 フォールバック。`course_type` はあるが `distance` が無い場合は距離を省いて「(競馬場) 芝」等。
 コース種別・距離は `GET /api/tickets`(`race_course_type` / `race_distance` をレースJOINで付与)
-および `GET /api/ticket-imports`(グループの `race_id` からまとめて1回引く)が返す。
+および `GET /api/ticket-imports`(`races` を全件1回SELECTしてメモリ照合)が返す。
 レガシー取込(`race_id` 無し)は常に「コース未登録」側になる。
 
 数値列(購入/払戻/収支/回収率/的中率)は初回クリックで降順、文字列・日付列(先頭列)は

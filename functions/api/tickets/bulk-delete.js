@@ -1,9 +1,8 @@
 import { readJsonBody, jsonError } from "../_shared.js";
 
-// 1文の IN 句に入れる id 数の上限。tickets は自ユーザー分のみが対象で、
-// 実際の選択数はせいぜい数百のため通常はチャンク分割されないが、想定外に
-// 大量の id が送られてきた場合に備えて分割する(1チャンク = 1 サブリクエスト)。
-const CHUNK_SIZE = 100;
+// 1文の IN 句に入れる id 数の上限。D1 は「1クエリ100バインドパラメータ」上限があり、
+// このクエリは id に加えて user_id も1つ bind するため、90 にして 90+1 で余裕を持たせる。
+const CHUNK_SIZE = 90;
 
 // 購入履歴(通常購入 tickets)の一括削除。
 // CSV取込分(imported_ticket_items 等)は対象外(履歴画面側でチェックボックスを出さない)。

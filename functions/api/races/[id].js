@@ -112,6 +112,9 @@ export async function onRequestDelete(context) {
   const importedSourceRows = (await env.DB.prepare(
     "SELECT source_row_id FROM imported_ticket_groups WHERE race_id = ? AND source_row_id IS NOT NULL"
   ).bind(id).all()).results || [];
+  // 注意: 下の DELETE ... IN (sourceRowIds) は「1レースを参照する全ユーザーの CSV原本行数」で
+  // バウンドされる前提(D1 の1クエリ100バインドパラメータ上限)。1レースにその数の
+  // 取込グループが付く設計に変える場合はチャンク分割が必要。
   const sourceRowIds = importedSourceRows.map((r) => r.source_row_id).filter((v) => v !== null && v !== undefined);
 
   await env.DB.batch([

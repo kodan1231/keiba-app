@@ -85,6 +85,9 @@ export async function onRequestPost(context) {
   // 対象レースをまとめて1回のSELECTで取得する(存在確認と、既に確定済みのレースへの
   // 払戻即時反映の両方に使う)。レースごとの個別SELECTはサブリクエスト数上限対策のため
   // 避ける。
+  // 注意: この IN 句は「1回のかご購入に含まれるユニークレース数」でバウンドされる前提。
+  // D1 の1クエリ100バインドパラメータ上限があるため、かご容量を100レース超に広げる等の
+  // 変更をする場合はチャンク分割が必要。
   const uniqueRaceIds = [...new Set(validGroups.map((g) => Number(g.race_id)))];
   const placeholders = uniqueRaceIds.map(() => "?").join(",");
   const { results: raceRows } = await env.DB

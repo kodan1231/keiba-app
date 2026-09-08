@@ -66,6 +66,11 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   (そのレースを購入した全ユーザーの `tickets.payout` 再計算)。
 - **レース単位のループで1件ずつ DB へ問い合わせない**。Cloudflare Pages Functions の
   サブリクエスト数上限に抵触する。「まとめてSELECT → メモリ上で判定 → `db.batch()` でまとめて書き込む」方式にする。
+- **`WHERE ... IN (?,?,…)` に渡す `?` の数は D1 の「1クエリ100バインドパラメータ」上限に注意**。
+  件数が「1レースの出走馬」「1回の取込PDFのレース」等で自然にバウンドされるなら可。
+  ユーザーの全履歴・全レース等、使い込むと増える集合を渡す場合は、対象テーブルが小さければ
+  全件SELECTしてメモリ照合、大きければ90件ずつチャンク分割する
+  (2026-09-08にこの上限超過で `GET /api/ticket-imports` が落ちる障害があった)。
 - **馬の同一性は `horse_number` ではなく `horse_name`(馬名)をキーに判定する**。
   比較前に必ず空白正規化(全角スペース等を半角1つへ畳み込み・trim)を通す。
 - `prediction_marks` は `horse_number NOT NULL` かつ `UNIQUE(race_id, horse_number, user_id)`。

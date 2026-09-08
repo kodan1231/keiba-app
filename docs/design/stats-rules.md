@@ -13,7 +13,8 @@
   ```
 - **コース別収支**: 「競馬場 × コース種別(芝/ダート/障害) × 距離」でまとめる。判定に使う
   `race_course_type` / `race_distance` は `GET /api/tickets`(レースをJOIN)・
-  `GET /api/ticket-imports`(グループの `race_id` からまとめて1回SELECT)が付与する。
+  `GET /api/ticket-imports`(`races` を全件1回SELECTしてメモリ照合。`race_id IN (...)` は
+  D1 の1クエリ100バインドパラメータ上限に触れるため使わない)が付与する。
   レースに `course_type` 未登録の購入・レガシー取込は「(競馬場) コース未登録」に集約する。
   収支・回収率・的中率の計算式は他の集計表と同じ(`computeGroupStats`)。
 - **的中率**: レース単位で、着順(`races.finish_order`)または払戻(`races.payouts`)の
