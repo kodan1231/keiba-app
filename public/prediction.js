@@ -285,16 +285,21 @@ function renderRaceHeader() {
     .filter(r => r.track === selectedRace.track)
     .sort((a, b) => Number(a.race_number) - Number(b.race_number));
 
-  // ヘッダーの表示順は「日付・競馬場名・レース番号・レース名・頭数」の順。
-  // 日付・競馬場名・レース番号はいずれもセレクトで、ページ遷移なしで別レースへ
-  // 切り替えられる。日付・競馬場を変えたときは現在のR番号をできるだけ維持する
-  // (switchToRaceKeeping)。
-  // 「このレースの馬券を購入」ボタンはレース名の近く(ヘッダー上部)に配置し、
-  // 出走頭数が多いレースでも下までスクロールせずに購入画面へ進めるようにする。
+  // ヘッダーは2行構成。
+  //  1行目: 日付・競馬場名・レース番号(いずれもセレクト。ページ遷移なしで別レースへ
+  //         切り替え。日付・競馬場変更時は現在のR番号をできるだけ維持=switchToRaceKeeping)
+  //         + 「このレースの馬券を購入」ボタン(右寄せ)
+  //  2行目: レース名・頭数・条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
+  // 牝馬限定は class_flags の生テキストに「牝」を含むか、ハンデ戦は weight_type
+  // (または class_flags)に「ハンデ」を含むかで判定する(docs/design/data-model.md
+  // 「レース条件の詳細カラム」参照。構造化されていない生テキストのため部分一致で見る)。
+  const classFlags = String(selectedRace.class_flags || "");
+  const isFillyOnly = classFlags.includes("牝");
+  const isHandicap = String(selectedRace.weight_type || "").includes("ハンデ") || classFlags.includes("ハンデ");
   raceHeader.innerHTML = `
     <div class="prediction-race-title">
       <select id="prediction-date-select" class="prediction-select" aria-label="開催日を選択">
-        ${dates.map(d => `<option value="${escapeAttr(d)}" ${d === selectedRace.race_date ? "selected" : ""}>${escapeHtml(formatDate(d))}</option>`).join("")}
+        ${dates.map(d => `<option value="${escapeAttr(d)}" ${d === selectedRace.race_date ? "selected" : ""}>${escapeHtml(formatDateMdW(d))}</option>`).join("")}
       </select>
       <select id="prediction-track-select" class="prediction-select" aria-label="競馬場を選択">
         ${tracks.map(t => `<option value="${escapeAttr(t)}" ${t === selectedRace.track ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
@@ -302,9 +307,13 @@ function renderRaceHeader() {
       <select id="prediction-racenum-select" class="prediction-select" aria-label="レース番号を選択">
         ${racesForTrack.map(r => `<option value="${r.id}" ${Number(r.id) === Number(selectedRace.id) ? "selected" : ""}>${r.race_number}R</option>`).join("")}
       </select>
+      <a id="buy-race-btn" class="stamp-btn" href="#">このレースの馬券を購入</a>
+    </div>
+    <div class="prediction-race-meta">
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
       <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
-      <a id="buy-race-btn" class="stamp-btn" href="#">このレースの馬券を購入</a>
+      ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
+      ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
     </div>
     <span id="prediction-message" class="submit-message" hidden></span>
   `;

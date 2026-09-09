@@ -88,6 +88,14 @@
 > 完了済み(2026-09-09): 上記の続き。**iPhone SE3(375px)でヘッダーの日付/競馬場/R
 > 3セレクトが1行に収まるよう `@media(max-width:430px)` でサイズ調整**(gap・font・
 > padding・min-width を圧縮)。`public/style.css` のみ。
+>
+> 完了済み(2026-09-09): さらに続き。**予想登録画面ヘッダーを2行構成に**。
+> 1行目=日付/競馬場/R/購入ボタン、2行目=レース名/頭数/条件バッジ(牝馬限定「牝」・
+> ハンデ戦「H」。`class_flags`・`weight_type` の部分一致で判定)。日付表示は
+> `formatDateMdW`(M/D(曜))へ変更。`public/prediction.js` `renderRaceHeader()` /
+> `public/style.css`(`.prediction-race-meta` `.race-cond-badge`)。
+> `docs/design/screens.md`「予想登録画面」・`docs/design/data-model.md`
+> 「レース条件の詳細カラム」(N-4 の一部進捗)更新済み。実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

@@ -1302,12 +1302,20 @@ body.history-selection-mode .group-detail-actions {
   font-weight: 500;
   font-size: 13px;
   color: var(--ink-soft);
-  min-width: 130px;
 }
+#prediction-date-select { min-width: 84px; }
 #prediction-track-select { min-width: 90px; }
 #prediction-racenum-select { min-width: 66px; }
 
-.prediction-race-title .race-name {
+/* ヘッダー2行目: レース名・頭数・条件バッジ(牝/H) */
+.prediction-race-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prediction-race-meta .race-name {
   color: var(--ink-soft);
   font-size: 14px;
 }
@@ -1317,6 +1325,26 @@ body.history-selection-mode .group-detail-actions {
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.race-cond-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.race-cond-filly {
+  background: var(--hanko-soft);
+  color: var(--hanko);
+  border-color: var(--hanko);
+}
+.race-cond-handi {
+  background: #fff;
+  color: var(--ink);
 }
 
 .prediction-race-title .stamp-btn {
@@ -2151,21 +2179,25 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
     padding-right:2px;
   }
 
-  /* iPhone SE3(幅375px)でも「日付・競馬場・レース番号」の3セレクトが
+  /* iPhone SE3(幅375px)でも「日付・競馬場・レース番号・購入ボタン」が
      ヘッダー1行目に収まるよう、幅・余白・フォントを詰める。
-     race-name / 頭数 / 購入ボタンは従来どおり2行目以降へ折り返す。 */
-  .prediction-race-header { padding:12px 12px; }
-  .prediction-race-title { gap:5px; }
+     レース名・頭数・条件バッジ(牝/H)は2行目(.prediction-race-meta)。 */
+  .prediction-race-header { padding:10px 10px; }
+  .prediction-race-title { gap:4px; }
   .prediction-select {
     font-size:12px;
-    padding:4px 4px;
+    padding:4px 3px;
   }
-  #prediction-date-select {
-    font-size:11px;
-    min-width:0;
-  }
+  #prediction-date-select { font-size:11px; min-width:0; }
   #prediction-track-select { min-width:0; }
   #prediction-racenum-select { min-width:0; }
+  .prediction-race-title .stamp-btn {
+    padding:5px 9px;
+    font-size:11px;
+    letter-spacing:0;
+  }
+  .prediction-race-meta { gap:6px; }
+  .prediction-race-meta .race-name { font-size:12px; }
 }
 
 /* レース一覧の圧縮 + 購入ショートカット */
