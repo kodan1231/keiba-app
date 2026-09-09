@@ -216,7 +216,9 @@ async function selectRace() {
   // 確定済みであることがひと目でわかるようにする。
   // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、購入画面へのリンク先を
   // index.html に更新する(docs/design/screens.md「トップページ(/)の表示について」参照)。
-  buyBtn.href = `index.html?race=${encodeURIComponent(selectedRace.id)}`;
+  // from=prediction を付けておくと、購入モーダルを×/ESCで閉じたときに購入画面へ
+  // 留まらず、この予想登録画面へ戻る(buy-purchase-modal.js closePurchaseModal 参照)。
+  buyBtn.href = `index.html?race=${encodeURIComponent(selectedRace.id)}&from=prediction`;
   // 2026-08-23修正: selectedRace.payoutsに「返還」情報(payouts.refunds。取消・除外・
   // 中止馬の馬番/枠番の記録であり、実際の払戻レートではない)のみが入っている場合に、
   // 誤って「結果確定済」と判定されてしまう不具合があった。実際の払戻レート(式別ごとの

@@ -61,6 +61,12 @@
 > (以前は常にその開催の先頭レースへ切り替わっていた。同じRが無い競馬場のみ先頭へ
 > フォールバック)。`public/prediction.js` `renderRaceHeader()` の track-select change
 > ハンドラ。`docs/design/screens.md`「予想登録画面」更新済み。実機確認は未実施。
+>
+> 完了済み(2026-09-09): **予想登録画面から開いた購入モーダルを×/ESCで閉じたら
+> 予想登録画面へ戻る**(以前は購入画面に留まっていた)。予想の購入ボタンURLに
+> `?from=prediction` を付与し、`closePurchaseModal()` がそれを見て `prediction.html`
+> へ戻す。`public/prediction.js` / `public/buy-purchase-modal.js`。
+> `docs/design/screens.md`「購入画面」「予想登録画面」更新済み。実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

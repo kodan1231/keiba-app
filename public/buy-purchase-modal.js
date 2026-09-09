@@ -148,6 +148,13 @@ function hideDownstream() {
 function closePurchaseModal() {
   modal.hidden = true;
   document.body.classList.remove("modal-open");
+  // 予想登録画面の「このレースの馬券を購入」から来た場合(?from=prediction)は、
+  // 購入画面に留まらず元の予想登録画面へ戻す。それ以外は購入画面にとどまる。
+  const params = new URLSearchParams(location.search);
+  if (params.get("from") === "prediction" && params.get("race")) {
+    location.href = `prediction.html?race=${encodeURIComponent(params.get("race"))}`;
+    return;
+  }
   // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、モーダルを閉じた際の
   // URL復帰先も index.html に合わせる(docs/design/screens.md「トップページ(/)の表示について」参照)。
   history.replaceState(null, "", "index.html");
