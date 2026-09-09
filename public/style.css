@@ -1286,13 +1286,6 @@ body.history-selection-mode .group-detail-actions {
   flex-wrap: wrap;
 }
 
-.prediction-date {
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 .prediction-select {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1302,6 +1295,14 @@ body.history-selection-mode .group-detail-actions {
   border-radius: 6px;
   background: #fff;
   color: var(--ink);
+}
+/* 開催日セレクトは補助情報寄りの見た目にする(等幅・やや小さめ) */
+#prediction-date-select {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink-soft);
+  min-width: 130px;
 }
 #prediction-track-select { min-width: 90px; }
 #prediction-racenum-select { min-width: 66px; }

@@ -78,6 +78,12 @@
 > `#purchase-modal` まで `visibility:hidden` になって予想画面から購入モーダルが
 > 開かなくなっていた。隠し対象を `.buy-step`(レース選択UIのみ。モーダルは兄弟要素で
 > 対象外)に変更。
+>
+> 完了済み(2026-09-09): **予想登録画面ヘッダーに開催日セレクトを追加**。競馬場・R に
+> 加え日付も切り替え可能に。日付/競馬場変更時は現在のRを維持(`switchToRaceKeeping()`。
+> 日付+競馬場+R → 日付+競馬場先頭R → その日付先頭)。`public/prediction.js` /
+> `public/style.css` `#prediction-date-select`。`docs/design/screens.md`
+> 「予想登録画面」更新済み。実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

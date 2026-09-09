@@ -250,8 +250,8 @@ async function selectRace() {
     .catch(() => { ticketsEl.innerHTML = ""; ticketsEl.hidden = true; });
 }
 
-// 予想登録画面から購入画面のカレンダーへ戻る手段がなかったため、同じ開催日内であれば
-// 競馬場・レース番号のセレクトからページ遷移なしで別レースへ切り替えられるようにする。
+// 予想登録画面から購入画面のカレンダーへ戻る手段がなかったため、開催日・競馬場・
+// レース番号のセレクトからページ遷移なしで別レースへ切り替えられるようにする。
 function racesOnSameDate() {
   return races.filter(r => r.race_date === selectedRace.race_date);
 }
@@ -264,19 +264,38 @@ function switchToRace(raceId) {
   selectRace();
 }
 
+// 指定の開催日・競馬場・レース番号にできるだけ近いレースへ切り替える。
+// 優先順: 「日付+競馬場+R」一致 → 「日付+競馬場」一致の先頭R → その日付の先頭レース。
+function switchToRaceKeeping(date, track, raceNumber) {
+  const onDate = races
+    .filter(r => r.race_date === date)
+    .sort((a, b) => Number(a.race_number) - Number(b.race_number));
+  if (!onDate.length) return;
+  const onTrack = onDate.filter(r => r.track === track);
+  const pool = onTrack.length ? onTrack : onDate;
+  const exact = pool.find(r => Number(r.race_number) === Number(raceNumber));
+  switchToRace((exact || pool[0]).id);
+}
+
 function renderRaceHeader() {
   const sameDate = racesOnSameDate();
+  const dates = [...new Set(races.map(r => r.race_date))].sort();
   const tracks = [...new Set(sameDate.map(r => r.track))];
   const racesForTrack = sameDate
     .filter(r => r.track === selectedRace.track)
     .sort((a, b) => Number(a.race_number) - Number(b.race_number));
 
   // ヘッダーの表示順は「日付・競馬場名・レース番号・レース名・頭数」の順。
+  // 日付・競馬場名・レース番号はいずれもセレクトで、ページ遷移なしで別レースへ
+  // 切り替えられる。日付・競馬場を変えたときは現在のR番号をできるだけ維持する
+  // (switchToRaceKeeping)。
   // 「このレースの馬券を購入」ボタンはレース名の近く(ヘッダー上部)に配置し、
   // 出走頭数が多いレースでも下までスクロールせずに購入画面へ進めるようにする。
   raceHeader.innerHTML = `
     <div class="prediction-race-title">
-      <span class="prediction-date">${escapeHtml(formatDate(selectedRace.race_date))}</span>
+      <select id="prediction-date-select" class="prediction-select" aria-label="開催日を選択">
+        ${dates.map(d => `<option value="${escapeAttr(d)}" ${d === selectedRace.race_date ? "selected" : ""}>${escapeHtml(formatDate(d))}</option>`).join("")}
+      </select>
       <select id="prediction-track-select" class="prediction-select" aria-label="競馬場を選択">
         ${tracks.map(t => `<option value="${escapeAttr(t)}" ${t === selectedRace.track ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
       </select>
@@ -290,16 +309,11 @@ function renderRaceHeader() {
     <span id="prediction-message" class="submit-message" hidden></span>
   `;
 
+  document.getElementById("prediction-date-select").addEventListener("change", (e) => {
+    switchToRaceKeeping(e.target.value, selectedRace.track, selectedRace.race_number);
+  });
   document.getElementById("prediction-track-select").addEventListener("change", (e) => {
-    const newTrack = e.target.value;
-    const candidates = sameDate
-      .filter(r => r.track === newTrack)
-      .sort((a, b) => Number(a.race_number) - Number(b.race_number));
-    if (!candidates.length) return;
-    // 競馬場を変えても同じレース番号(R)を維持する。切替先の競馬場に同じRが
-    // 無い場合のみ、その開催で最初のレースへフォールバックする。
-    const sameNumber = candidates.find(r => Number(r.race_number) === Number(selectedRace.race_number));
-    switchToRace((sameNumber || candidates[0]).id);
+    switchToRaceKeeping(selectedRace.race_date, e.target.value, selectedRace.race_number);
   });
   document.getElementById("prediction-racenum-select").addEventListener("change", (e) => {
     switchToRace(Number(e.target.value));
