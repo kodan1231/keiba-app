@@ -84,6 +84,10 @@
 > 日付+競馬場+R → 日付+競馬場先頭R → その日付先頭)。`public/prediction.js` /
 > `public/style.css` `#prediction-date-select`。`docs/design/screens.md`
 > 「予想登録画面」更新済み。実機確認は未実施。
+>
+> 完了済み(2026-09-09): 上記の続き。**iPhone SE3(375px)でヘッダーの日付/競馬場/R
+> 3セレクトが1行に収まるよう `@media(max-width:430px)` でサイズ調整**(gap・font・
+> padding・min-width を圧縮)。`public/style.css` のみ。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

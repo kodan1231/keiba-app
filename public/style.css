@@ -2150,6 +2150,22 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
     padding-left:2px;
     padding-right:2px;
   }
+
+  /* iPhone SE3(幅375px)でも「日付・競馬場・レース番号」の3セレクトが
+     ヘッダー1行目に収まるよう、幅・余白・フォントを詰める。
+     race-name / 頭数 / 購入ボタンは従来どおり2行目以降へ折り返す。 */
+  .prediction-race-header { padding:12px 12px; }
+  .prediction-race-title { gap:5px; }
+  .prediction-select {
+    font-size:12px;
+    padding:4px 4px;
+  }
+  #prediction-date-select {
+    font-size:11px;
+    min-width:0;
+  }
+  #prediction-track-select { min-width:0; }
+  #prediction-racenum-select { min-width:0; }
 }
 
 /* レース一覧の圧縮 + 購入ショートカット */
