@@ -9,6 +9,14 @@
 // グローバルスコープを共有する(races.js分割時と同じ前提)。index.html での読み込み順は
 // buy.js → buy-purchase-modal.js。分割によって画面の挙動・DOM構造・APIは変更していない。
 
+// 予想登録画面などから ?race= 付きで直接来たときは、購入モーダルが開くまでの一瞬
+// 購入画面本体がちらっと見えるのを防ぐため、本体(.buy-main)を隠しておく。
+// モーダルが開けばその上に覆われ、モーダルを(予想画面へ戻らずに)閉じた時点で
+// closePurchaseModal() が隠しクラスを外す。
+if (new URLSearchParams(location.search).get("race")) {
+  document.body.classList.add("deep-link-purchase");
+}
+
 let races = [];
 // 自分(ログインユーザー)が既に購入済みのレースID(races.id)の集合。
 // 通常購入(tickets)・CSVインポート分(ticket-imports)の両方を対象とする。
@@ -146,6 +154,7 @@ async function loadRaces() {
   if (id) {
     const race = races.find(x => Number(x.id) === id);
     if (race) await openPurchase(race);
+    else document.body.classList.remove("deep-link-purchase"); // レース不明なら通常表示に戻す
   }
 }
 

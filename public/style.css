@@ -1544,6 +1544,10 @@ body.history-selection-mode .group-detail-actions {
 /* ---------- 馬券購入UI: ステップ式ダイアログ ---------- */
 body.modal-open { overflow: hidden; }
 
+/* ?race= 付きで直接来た場合、購入モーダルが開くまで購入画面本体を隠す
+   (buy.js / buy-purchase-modal.js の deep-link-purchase クラス) */
+body.deep-link-purchase .buy-main { visibility: hidden; }
+
 .purchase-modal {
   position: fixed;
   inset: 0;

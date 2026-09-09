@@ -67,6 +67,12 @@
 > `?from=prediction` を付与し、`closePurchaseModal()` がそれを見て `prediction.html`
 > へ戻す。`public/prediction.js` / `public/buy-purchase-modal.js`。
 > `docs/design/screens.md`「購入画面」「予想登録画面」更新済み。実機確認は未実施。
+>
+> 完了済み(2026-09-09): 上記の続き。**×で閉じた直後に購入画面が一瞬見える問題を解消**。
+> (1) `?race=` 直リンク時は `body.deep-link-purchase` で `.buy-main` を隠す
+> (モーダルが開くまで/閉じるまで)。(2) `from=prediction` で戻るときはモーダルを
+> `hidden` にせずオーバーレイを不透明化してから遷移。`public/buy.js` /
+> `public/buy-purchase-modal.js` / `public/style.css`。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 
