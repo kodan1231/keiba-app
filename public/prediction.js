@@ -293,7 +293,11 @@ function renderRaceHeader() {
     const candidates = sameDate
       .filter(r => r.track === newTrack)
       .sort((a, b) => Number(a.race_number) - Number(b.race_number));
-    if (candidates.length) switchToRace(candidates[0].id);
+    if (!candidates.length) return;
+    // 競馬場を変えても同じレース番号(R)を維持する。切替先の競馬場に同じRが
+    // 無い場合のみ、その開催で最初のレースへフォールバックする。
+    const sameNumber = candidates.find(r => Number(r.race_number) === Number(selectedRace.race_number));
+    switchToRace((sameNumber || candidates[0]).id);
   });
   document.getElementById("prediction-racenum-select").addEventListener("change", (e) => {
     switchToRace(Number(e.target.value));

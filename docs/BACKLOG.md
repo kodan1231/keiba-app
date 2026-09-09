@@ -56,6 +56,11 @@
 > 全額計上・上位10名+その他)。`public/stats.js` `renderRatioBreakdowns()` /
 > `public/stats.html` / `public/style.css` `.ratio-*`。`docs/design/screens.md`
 > 「集計画面」・`docs/design/stats-rules.md` 更新済み。実機確認は未実施。
+>
+> 完了済み(2026-09-09): **予想登録画面の競馬場セレクト変更時に現在のR番号を維持**
+> (以前は常にその開催の先頭レースへ切り替わっていた。同じRが無い競馬場のみ先頭へ
+> フォールバック)。`public/prediction.js` `renderRaceHeader()` の track-select change
+> ハンドラ。`docs/design/screens.md`「予想登録画面」更新済み。実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 
