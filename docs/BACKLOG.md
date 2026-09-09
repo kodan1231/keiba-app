@@ -50,6 +50,12 @@
 > `docs/design/screens.md`「履歴の一括削除(選択モード)」)/ **旧クラスタC コース別収支**
 > (集計画面の「競馬場別」タブを「コース別」= 競馬場×芝/ダ/障×距離 に置換)。
 > 詳細は BACKLOG_HISTORY 期間9。
+>
+> 完了済み(2026-09-09): **集計画面「総合成績」タブに購入比率の棒グラフ3種を追加**
+> (馬券種別別 / 競馬場別 / 騎手別。金額ベース、分母は全購入合計。騎手別は各騎手へ
+> 全額計上・上位10名+その他)。`public/stats.js` `renderRatioBreakdowns()` /
+> `public/stats.html` / `public/style.css` `.ratio-*`。`docs/design/screens.md`
+> 「集計画面」・`docs/design/stats-rules.md` 更新済み。実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

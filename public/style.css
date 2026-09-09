@@ -452,6 +452,52 @@ textarea { resize: vertical; }
 .overall-label { font-size: 12px; color: var(--ink-soft); }
 .overall-value { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
 
+/* ---------- 総合成績: 購入比率バー ---------- */
+.ratio-block { margin-top: 28px; }
+.stats-subheading {
+  font-family: var(--font-display);
+  font-size: 16px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.ratio-bars { display: flex; flex-direction: column; gap: 8px; }
+.ratio-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 150px;
+  gap: 10px;
+  align-items: center;
+}
+.ratio-label {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ratio-bar {
+  position: relative;
+  height: 16px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.ratio-bar-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  min-width: 2px;
+  background: var(--ink);
+}
+.ratio-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+.ratio-value .ratio-pct { font-weight: 700; color: var(--ink); }
+.ratio-value .ratio-yen { margin-left: 6px; }
+.ratio-empty { font-size: 13px; color: var(--ink-soft); font-family: var(--font-body); }
+
 .table-wrap { overflow-x: auto; background: var(--paper-raised); border: 1px solid var(--rule-strong); }
 
 .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
@@ -472,6 +518,9 @@ textarea { resize: vertical; }
 /* ---------- レスポンシブ(スマホ) ---------- */
 @media (max-width: 700px) {
   .summary-bar { grid-template-columns: repeat(2, 1fr); }
+
+  .ratio-row { grid-template-columns: 68px 1fr auto; gap: 8px; }
+  .ratio-value .ratio-yen { display: none; }
 
   .race-card-head { align-items: flex-start; }
   .race-card-head-main { gap: 8px; }

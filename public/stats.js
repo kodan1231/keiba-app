@@ -184,6 +184,98 @@ function renderOverall(items) {
   `;
 }
 
+// ---------- 総合成績: 購入比率バー ----------
+// 3種類の棒グラフ(馬券種別別 / 競馬場別 / 騎手別)で購入金額の比率を表示する。
+// 分母はいずれも「全購入の合計金額(未確定を含む)」。バーの幅は比率(%)そのもの。
+//   - 馬券種別別: bet_type ごとに amount を合算。BET_TYPES の定義順で並べ、定義外の
+//     bet_type(不明等)は末尾に回す。
+//   - 競馬場別: track ごとに amount を合算。金額の多い順。track 空欄は「競馬場不明」。
+//   - 騎手別: 1枚に複数騎手が絡む場合は各騎手へ全額を計上する(按分しない。既存の
+//     「騎手別収支」表と同じ方針)。そのためバーの合計は 100% を超えることがある。
+//     金額の多い順に上位10名を表示し、残りは「その他(N名)」1本に集約する。
+//     騎手情報を持たない購入(CSV取込分など)は計上されない。
+const JOCKEY_RATIO_TOP_N = 10;
+
+function ratioRowsFromMap(amountByName, total) {
+  return Array.from(amountByName.entries())
+    .map(([name, amount]) => ({ name, amount, pct: total > 0 ? (amount / total) * 100 : 0 }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+function renderRatioBars(elId, rows, total) {
+  const el = document.getElementById(elId);
+  if (rows.length === 0 || total <= 0) {
+    el.innerHTML = `<p class="ratio-empty">データがありません</p>`;
+    return;
+  }
+  el.innerHTML = rows
+    .map(
+      (r) => `
+      <div class="ratio-row">
+        <span class="ratio-label" title="${escapeHtml(r.name)}">${escapeHtml(r.name)}</span>
+        <span class="ratio-bar"><span class="ratio-bar-fill" style="width:${Math.min(r.pct, 100).toFixed(1)}%"></span></span>
+        <span class="ratio-value"><span class="ratio-pct">${r.pct.toFixed(1)}%</span><span class="ratio-yen">${formatYen(r.amount)}</span></span>
+      </div>
+    `
+    )
+    .join("");
+}
+
+function renderRatioBreakdowns(items) {
+  const total = items.reduce((s, t) => s + Number(t.amount || 0), 0);
+
+  // 馬券種別別
+  const byBetType = new Map();
+  for (const t of items) {
+    const key = t.bet_type || "不明";
+    byBetType.set(key, (byBetType.get(key) || 0) + Number(t.amount || 0));
+  }
+  const betTypeRows = [];
+  for (const key of BET_TYPE_ORDER) {
+    if (!byBetType.has(key)) continue;
+    const amount = byBetType.get(key);
+    betTypeRows.push({ name: betTypeLabel(key), amount, pct: total > 0 ? (amount / total) * 100 : 0 });
+  }
+  for (const [key, amount] of byBetType) {
+    if (BET_TYPE_ORDER.includes(key)) continue;
+    betTypeRows.push({ name: betTypeLabel(key), amount, pct: total > 0 ? (amount / total) * 100 : 0 });
+  }
+  renderRatioBars("ratio-bettype", betTypeRows, total);
+
+  // 競馬場別(金額の多い順)
+  const byTrack = new Map();
+  for (const t of items) {
+    const key = String(t.track || "").trim() || "競馬場不明";
+    byTrack.set(key, (byTrack.get(key) || 0) + Number(t.amount || 0));
+  }
+  renderRatioBars("ratio-course", ratioRowsFromMap(byTrack, total), total);
+
+  // 騎手別(全額を各騎手に計上・金額の多い順・上位N + その他)
+  const byJockey = new Map();
+  for (const t of items) {
+    const jockeys = new Set(
+      (t.selections || [])
+        .map((s) => s.jockey)
+        .filter((j) => j && j.trim() !== "")
+    );
+    for (const jockey of jockeys) {
+      byJockey.set(jockey, (byJockey.get(jockey) || 0) + Number(t.amount || 0));
+    }
+  }
+  const jockeyRowsAll = ratioRowsFromMap(byJockey, total);
+  const jockeyRows = jockeyRowsAll.slice(0, JOCKEY_RATIO_TOP_N);
+  const rest = jockeyRowsAll.slice(JOCKEY_RATIO_TOP_N);
+  if (rest.length > 0) {
+    const restAmount = rest.reduce((s, r) => s + r.amount, 0);
+    jockeyRows.push({
+      name: `その他(${rest.length}名)`,
+      amount: restAmount,
+      pct: total > 0 ? (restAmount / total) * 100 : 0,
+    });
+  }
+  renderRatioBars("ratio-jockey", jockeyRows, total);
+}
+
 function sortIndicator(tableKey, key) {
   const state = sortState[tableKey];
   if (state.key !== key) return "";
@@ -315,6 +407,7 @@ async function loadAndRender() {
   const imported = Array.isArray(importedPayload.items) ? importedPayload.items : [];
   const all = [...(Array.isArray(items) ? items : []), ...imported];
   renderOverall(all);
+  renderRatioBreakdowns(all);
   renderRaceTable(all);
   renderCourseTable(all);
   renderJockeyTable(all);

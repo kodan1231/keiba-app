@@ -29,6 +29,20 @@
     <section class="stats-section stats-panel" data-panel="overall">
       <h2 class="stats-heading">総合成績</h2>
       <div class="overall-grid" id="overall-summary"></div>
+
+      <div class="ratio-block">
+        <h3 class="stats-subheading">馬券種別別 購入比率</h3>
+        <div class="ratio-bars" id="ratio-bettype"></div>
+      </div>
+      <div class="ratio-block">
+        <h3 class="stats-subheading">競馬場別 購入比率</h3>
+        <div class="ratio-bars" id="ratio-course"></div>
+      </div>
+      <div class="ratio-block">
+        <h3 class="stats-subheading">騎手別 購入比率</h3>
+        <p class="stats-note">1枚の馬券に複数の騎手が絡む場合、各騎手に全額を計上します(按分しません)。そのため合計は100%を超えることがあります。騎手情報を持たない購入(CSV取込分など)は含まれません。</p>
+        <div class="ratio-bars" id="ratio-jockey"></div>
+      </div>
     </section>
 
     <section class="stats-section stats-panel" data-panel="race" hidden>
