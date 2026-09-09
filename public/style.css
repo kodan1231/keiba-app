@@ -1544,9 +1544,11 @@ body.history-selection-mode .group-detail-actions {
 /* ---------- 馬券購入UI: ステップ式ダイアログ ---------- */
 body.modal-open { overflow: hidden; }
 
-/* ?race= 付きで直接来た場合、購入モーダルが開くまで購入画面本体を隠す
-   (buy.js / buy-purchase-modal.js の deep-link-purchase クラス) */
-body.deep-link-purchase .buy-main { visibility: hidden; }
+/* ?race= 付きで直接来た場合、購入モーダルが開くまでレース選択UIを隠す
+   (buy.js / buy-purchase-modal.js の deep-link-purchase クラス)。
+   #purchase-modal は .buy-step の外(.buy-main 直下の兄弟)にあるため
+   このセレクタの影響を受けない = モーダル自体は隠れない。 */
+body.deep-link-purchase .buy-step { visibility: hidden; }
 
 .purchase-modal {
   position: fixed;

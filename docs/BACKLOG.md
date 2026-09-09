@@ -73,6 +73,11 @@
 > (モーダルが開くまで/閉じるまで)。(2) `from=prediction` で戻るときはモーダルを
 > `hidden` にせずオーバーレイを不透明化してから遷移。`public/buy.js` /
 > `public/buy-purchase-modal.js` / `public/style.css`。
+>
+> 修正(2026-09-09): 上記(1)の隠し対象が広すぎ、`.buy-main` 内にある
+> `#purchase-modal` まで `visibility:hidden` になって予想画面から購入モーダルが
+> 開かなくなっていた。隠し対象を `.buy-step`(レース選択UIのみ。モーダルは兄弟要素で
+> 対象外)に変更。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 

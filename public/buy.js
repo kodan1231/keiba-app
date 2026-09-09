@@ -10,9 +10,10 @@
 // buy.js → buy-purchase-modal.js。分割によって画面の挙動・DOM構造・APIは変更していない。
 
 // 予想登録画面などから ?race= 付きで直接来たときは、購入モーダルが開くまでの一瞬
-// 購入画面本体がちらっと見えるのを防ぐため、本体(.buy-main)を隠しておく。
-// モーダルが開けばその上に覆われ、モーダルを(予想画面へ戻らずに)閉じた時点で
-// closePurchaseModal() が隠しクラスを外す。
+// レース選択UI(.buy-step)がちらっと見えるのを防ぐため隠しておく。
+// #purchase-modal は .buy-step の外にあるので隠れない。モーダルが開けばその上に
+// 覆われ、モーダルを(予想画面へ戻らずに)閉じた時点で closePurchaseModal() が
+// 隠しクラスを外す。
 if (new URLSearchParams(location.search).get("race")) {
   document.body.classList.add("deep-link-purchase");
 }
