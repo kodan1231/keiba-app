@@ -81,15 +81,23 @@ export async function onRequestGet(context) {
     const namedRR = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> ''"
     ).first();
-    // 突き合わせキーの先頭2文字での前方一致(空白違い以外のズレ=異体字等の検出用)
-    const likeHits = {};
+    // 突き合わせキーの先頭3文字での部分一致で、race_results 側の実際の馬名を拾う
+    // (空白違い以外のズレ=異体字・半角カナ等を目視できるように、生の horse_name と
+    //  そのレースの日付/場/Rも返す)
+    const likeSamples = {};
     for (const k of strippedKeys) {
-      const head = k.slice(0, 2);
+      const head = k.slice(0, 3);
       if (!head) continue;
-      const row = await env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM race_results WHERE horse_name LIKE ?"
-      ).bind(`%${head}%`).first();
-      likeHits[k] = row?.n ?? 0;
+      const { results: hits } = await env.DB.prepare(
+        `SELECT rr.horse_name, rr.race_id, r.race_date, r.track, r.race_number
+           FROM race_results rr LEFT JOIN races r ON r.id = rr.race_id
+          WHERE rr.horse_name LIKE ? LIMIT 5`
+      ).bind(`%${head}%`).all();
+      likeSamples[k] = (hits || []).map((h) => ({
+        name: h.horse_name,
+        matchesStrippedKey: stripSpaces(h.horse_name) === k,
+        race: `${h.race_date || "?"} ${h.track || "?"}${h.race_number || "?"}R (race_id ${h.race_id})`,
+      }));
     }
     return Response.json({
       _debug: {
@@ -99,7 +107,7 @@ export async function onRequestGet(context) {
         raceResultsTotalRows: totalRR?.n ?? 0,
         raceResultsRowsWithName: namedRR?.n ?? 0,
         exactMatchCounts: counts,
-        looseLikeCountsByHead2: likeHits,
+        looseLikeSamplesByHead3: likeSamples,
         joinedRows: (results || []).length,
       },
     });
