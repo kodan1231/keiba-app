@@ -20,6 +20,27 @@
   (致命的でない付随処理として扱う)。管理画面(`admin.html`)の登録ユーザー一覧に
   「最終ログイン日時(JST)」列として表示する(`functions/api/admin/users.js`が返し、
   `public/admin.js`が`created_at`と同じ方式でJSTに変換して表示する)
+- **パスワード変更(本人。2026-09〜)**: 全画面共通ヘッダーのユーザー名(`#current-username`)
+  クリックでモーダルを開き、現在のパスワードを照合したうえで自分のパスワードを変更する
+  (`POST /api/auth/change-password`、`public/auth.js`)。他人のパスワードは変更できない
+- **管理者によるパスワードリセット(2026-09-10〜)**: パスワードを忘れたユーザーの救済用。
+  管理画面(`admin.html`)の登録ユーザー一覧の各行「パスワードリセット」ボタンから、
+  管理者が入力した新しいパスワードで対象ユーザーの `password_hash` を上書きする
+  (`POST /api/admin/reset-user-password`。`requireAdmin` でガード。本人の現在パスワード
+  照合は行わない=管理者権限が本人確認を兼ねる)。自分自身は対象にできない
+  (自分はヘッダーのユーザー名から変更する)。新しいパスワードの伝達は管理者が別途行う
+  (メール等の通知手段は持たない)
+  - `users.password_reset_pending`(2026-09-10追加。`INTEGER NOT NULL DEFAULT 0`):
+    リセット実行で `1`。対象ユーザーがログイン中、全画面本文冒頭のバナー
+    (`public/auth.js` `renderPasswordResetBanner()`。`GET /api/auth/check` が
+    `password_reset_pending` を返す)で「パスワードを変更してください」と促す。
+    **強制ではない**(閉じるボタンは無いが、変更しなくても操作は可能)。
+    本人が `POST /api/auth/change-password` で自分のパスワードを変更すると `0` に戻り、
+    バナーは消える。管理画面のユーザー一覧にも「パスワードリセット済み(本人の変更待ち)」
+    と表示される
+  - セッションは `env.APP_PASSWORD` 署名のステートレストークンで DB に保存していないため、
+    パスワードリセットしても対象ユーザーの既存ログインセッションは失効しない
+    (本人のパスワード変更と同じ挙動)
 - データの所有者(user_id)を持つテーブル: `tickets`・`imported_tickets`・
   `imported_ticket_groups`・`prediction_notes`・`prediction_marks`・`horse_notes`。
   いずれも全APIハンドラで`WHERE user_id = ?`のフィルタ、新規作成時の`user_id`セットを

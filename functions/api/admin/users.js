@@ -1,6 +1,9 @@
 import { requireAdmin } from "../_shared.js";
 
-// 管理者向け: 登録済みユーザーの一覧(閲覧のみ。編集・削除機能は無し)。
+// 管理者向け: 登録済みユーザーの一覧。閲覧のほか、パスワードリセット
+// (POST /api/admin/reset-user-password)の対象選択に使う id・
+// password_reset_pending(リセット済み・本人の変更待ちフラグ)も返す。
+// ユーザー削除機能は無し。
 // 自己登録制(招待コード無し)のため、管理者が誰が登録したかを把握できるようにする。
 // 2026-08-30追加: last_login_at(最終ログイン日時)も返す。ログイン成功時に
 // functions/api/auth/login.js が更新し、新規登録時はfunctions/api/auth/register.js が
@@ -12,7 +15,8 @@ export async function onRequestGet(context) {
 
   const { env } = context;
   const { results } = await env.DB.prepare(
-    `SELECT id, username, created_at, last_login_at FROM users ORDER BY created_at ASC, id ASC`
+    `SELECT id, username, created_at, last_login_at, password_reset_pending
+     FROM users ORDER BY created_at ASC, id ASC`
   ).all();
 
   return Response.json({ ok: true, items: results || [] });

@@ -71,17 +71,134 @@ async function loadUsers() {
   const data = await res.json();
   const items = data.items || [];
   table.innerHTML = `
-    <thead><tr><th>ユーザー名</th><th>登録日時(JST)</th><th>最終ログイン日時(JST)</th></tr></thead>
+    <thead><tr><th>ユーザー名</th><th>登録日時(JST)</th><th>最終ログイン日時(JST)</th><th>操作</th></tr></thead>
     <tbody>
-      ${items.map((u) => `
+      ${items.map((u) => {
+        const isSelf = u.username === window.currentUser?.username;
+        return `
         <tr>
-          <td>${escapeHtml(u.username)}${u.username === window.currentUser?.username ? "(自分)" : ""}</td>
+          <td>${escapeHtml(u.username)}${isSelf ? "(自分)" : ""}${u.password_reset_pending ? '<span class="ticket-sub" style="display:block">パスワードリセット済み(本人の変更待ち)</span>' : ""}</td>
           <td>${formatDateTime(u.created_at)}</td>
           <td>${u.last_login_at ? formatDateTime(u.last_login_at) : "未ログイン"}</td>
-        </tr>
-      `).join("")}
+          <td>${isSelf ? "" : `<button type="button" class="ghost-btn user-reset-pw-btn" data-user-id="${u.id}" data-username="${escapeHtml(u.username)}">パスワードリセット</button>`}</td>
+        </tr>`;
+      }).join("")}
     </tbody>
   `;
+
+  table.querySelectorAll(".user-reset-pw-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openResetPasswordModal(btn.dataset.userId, btn.dataset.username);
+    });
+  });
+}
+
+// ---------- パスワードリセットモーダル(管理者用) ----------
+// 指定ユーザーのパスワードを、管理者が入力した新しいパスワードへ置き換える。
+// 本人へは全画面共通のバナーでパスワード変更を促す(functions/api/auth/check.js +
+// public/auth.js。強制ではない)。詳細はdocs/design/auth-multiuser.md参照。
+
+function ensureResetPasswordModal() {
+  let overlay = document.getElementById("reset-password-modal");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "reset-password-modal";
+  overlay.className = "modal-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>パスワードリセット</h2>
+      <p class="ticket-sub">対象ユーザー: <strong id="reset-pw-target-name"></strong></p>
+      <p class="ticket-sub">ここで設定した新しいパスワードを、本人に別途伝えてください。既存のログインセッションは維持されます。</p>
+      <form id="reset-password-form">
+        <label class="full">新しいパスワード(8文字以上)
+          <input type="password" id="reset-pw-new" autocomplete="new-password" minlength="8" required />
+        </label>
+        <label class="full">新しいパスワード(確認)
+          <input type="password" id="reset-pw-new-confirm" autocomplete="new-password" minlength="8" required />
+        </label>
+        <p id="reset-password-message" class="submit-message" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="reset-password-cancel-btn" class="ghost-btn">キャンセル</button>
+          <button type="submit" class="stamp-btn">リセットする</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const form = overlay.querySelector("#reset-password-form");
+  const messageEl = overlay.querySelector("#reset-password-message");
+  const newInput = overlay.querySelector("#reset-pw-new");
+  const confirmInput = overlay.querySelector("#reset-pw-new-confirm");
+
+  function close() {
+    overlay.hidden = true;
+    form.reset();
+    messageEl.hidden = true;
+    delete overlay.dataset.userId;
+  }
+
+  overlay.querySelector("#reset-password-cancel-btn").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  if (typeof registerEscToClose === "function") registerEscToClose(overlay, close);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    messageEl.hidden = true;
+
+    const userId = overlay.dataset.userId;
+    const next = newInput.value;
+    const confirmVal = confirmInput.value;
+
+    if (next !== confirmVal) {
+      messageEl.hidden = false;
+      messageEl.className = "submit-message error";
+      messageEl.textContent = "新しいパスワード(確認)が一致しません。";
+      return;
+    }
+    if (next.length < 8) {
+      messageEl.hidden = false;
+      messageEl.className = "submit-message error";
+      messageEl.textContent = "新しいパスワードは8文字以上で入力してください。";
+      return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+
+    const res = await authedFetch("/api/admin/reset-user-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: Number(userId), new_password: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    submitButton.disabled = false;
+    messageEl.hidden = false;
+
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `${data.username || ""} のパスワードをリセットしました。本人に新しいパスワードを伝え、ログイン後に変更するよう促してください。`;
+      await loadUsers();
+      setTimeout(close, 2000);
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "リセットに失敗しました。";
+    }
+  });
+
+  return overlay;
+}
+
+function openResetPasswordModal(userId, username) {
+  const overlay = ensureResetPasswordModal();
+  overlay.dataset.userId = userId;
+  overlay.querySelector("#reset-pw-target-name").textContent = username || "";
+  overlay.hidden = false;
+  const newInput = overlay.querySelector("#reset-pw-new");
+  if (newInput) newInput.focus();
 }
 
 // ---------- 騎手名エイリアス管理(2026-08-16追加) ----------

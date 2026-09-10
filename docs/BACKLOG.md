@@ -15,7 +15,8 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未適用のマイグレーションは無い**(2026-09-08確認済み。`migration.sql` は `@STEP` 空)。
+- **未適用のマイグレーション**: `users_password_reset_pending`(2026-09-10追加。本番DBへ
+  `wrangler d1 execute` で適用し `schema_migrations` に記録が必要。手順はREADME)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
@@ -50,6 +51,16 @@
 > `docs/design/screens.md`「履歴の一括削除(選択モード)」)/ **旧クラスタC コース別収支**
 > (集計画面の「競馬場別」タブを「コース別」= 競馬場×芝/ダ/障×距離 に置換)。
 > 詳細は BACKLOG_HISTORY 期間9。
+>
+> 完了済み(2026-09-10): **管理者によるパスワードリセット機能**。管理画面の登録ユーザー
+> 一覧に「パスワードリセット」ボタン(自分の行を除く)。管理者が入力した新パスワードで
+> `password_hash` を上書きし `users.password_reset_pending=1`。対象ユーザーには全画面
+> 冒頭のバナー(`GET /api/auth/check` が返す)で変更を促し、本人がパスワード変更すると
+> `0` に戻る。新規: `functions/api/admin/reset-user-password.js`。変更: `functions/api/auth/
+> {check,change-password}.js` / `functions/api/admin/users.js` / `public/{auth,admin}.js` /
+> `public/admin.html` は変更不要(モーダルはJS生成) / `public/style.css` `.password-reset-banner` /
+> `schema.sql` / `migration.sql`(`@STEP: users_password_reset_pending` **本番未適用**)。
+> `docs/design/auth-multiuser.md` 更新済み。`node --check` 済み・実機確認は未実施。
 >
 > 完了済み(2026-09-09): **集計画面「総合成績」タブに購入比率の棒グラフ3種を追加**
 > (馬券種別別 / 競馬場別 / 騎手別。金額ベース、分母は全購入合計。騎手別は各騎手へ

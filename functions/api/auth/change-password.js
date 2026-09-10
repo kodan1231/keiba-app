@@ -38,8 +38,11 @@ export async function onRequestPost(context) {
     return jsonError("新しいパスワードは現在のパスワードと異なるものを入力してください", 400);
   }
 
+  // password_reset_pending も0へ戻す(管理者リセット後に本人が変更した場合、
+  // 全画面共通の「パスワード変更を促すバナー」を消すため。通常の自主変更では
+  // 元から0なので影響なし)。詳細はdocs/design/auth-multiuser.md参照。
   const newHash = await hashPassword(newPassword);
-  await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+  await env.DB.prepare("UPDATE users SET password_hash = ?, password_reset_pending = 0 WHERE id = ?")
     .bind(newHash, userId)
     .run();
 

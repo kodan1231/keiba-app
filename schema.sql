@@ -26,10 +26,15 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  last_login_at TEXT  -- 2026-08-30追加: ログイン成功のたびに更新する(未ログインはNULL)。
+  last_login_at TEXT,  -- 2026-08-30追加: ログイン成功のたびに更新する(未ログインはNULL)。
                        -- 新規登録時は登録日時を初期値としてセットする。管理画面の
                        -- 登録ユーザー一覧で表示する。詳細はdocs/DESIGN.md「認証・
                        -- 複数ユーザー対応」参照。
+  password_reset_pending INTEGER NOT NULL DEFAULT 0
+                       -- 2026-09-10追加: 管理者がこのユーザーのパスワードをリセットすると1になる。
+                       -- 本人が自分でパスワードを変更すると0へ戻る。1の間は全画面共通の
+                       -- バナーで本人にパスワード変更を促す(強制ではない)。詳細は
+                       -- docs/design/auth-multiuser.md「管理者によるパスワードリセット」参照。
 );
 
 -- 初期管理者アカウント: username=admin, password=password

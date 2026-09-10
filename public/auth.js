@@ -18,7 +18,7 @@
 // イベントを合図にヘッダーバッジの初期描画を行う。ログアウト時はカゴのパネルを
 // 閉じる(パネルはdocument.body直下に生成され#app-screenの外側にあるため)。
 
-window.currentUser = { username: null, isAdmin: false };
+window.currentUser = { username: null, isAdmin: false, passwordResetPending: false };
 
 function setupAuth(onReady) {
   const loginScreen = document.getElementById("login-screen");
@@ -100,7 +100,8 @@ function setupAuth(onReady) {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
-      window.currentUser = { username: null, isAdmin: false };
+      window.currentUser = { username: null, isAdmin: false, passwordResetPending: false };
+      removePasswordResetBanner();
       showLogin();
       document.dispatchEvent(new CustomEvent("keiba-logout"));
     });
@@ -110,8 +111,13 @@ function setupAuth(onReady) {
     const res = await fetch("/api/auth/check");
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
-      window.currentUser = { username: data.username || null, isAdmin: Boolean(data.is_admin) };
+      window.currentUser = {
+        username: data.username || null,
+        isAdmin: Boolean(data.is_admin),
+        passwordResetPending: Boolean(data.password_reset_pending),
+      };
       applyAdminVisibility();
+      renderPasswordResetBanner();
     }
     return res.ok;
   }
@@ -155,6 +161,44 @@ async function authedFetch(url, options) {
     document.getElementById("app-screen").hidden = true;
   }
   return res;
+}
+
+// ---------- 管理者リセット通知バナー(全画面共通) ----------
+// 管理者に自分のパスワードをリセットされたユーザーへ、全画面の本文冒頭で
+// パスワード変更を促す(強制はしない。閉じるボタンも設けず、本人がパスワードを
+// 変更するまで表示し続ける)。詳細はdocs/design/auth-multiuser.md参照。
+
+function removePasswordResetBanner() {
+  const el = document.getElementById("password-reset-banner");
+  if (el) el.remove();
+}
+
+function renderPasswordResetBanner() {
+  if (!window.currentUser || !window.currentUser.passwordResetPending) {
+    removePasswordResetBanner();
+    return;
+  }
+  if (document.getElementById("password-reset-banner")) return;
+
+  const appScreen = document.getElementById("app-screen");
+  if (!appScreen) return;
+
+  const banner = document.createElement("div");
+  banner.id = "password-reset-banner";
+  banner.className = "password-reset-banner";
+  banner.innerHTML = `
+    <span>管理者によってパスワードがリセットされました。新しいパスワードにご自身で変更してください。</span>
+    <button type="button" id="password-reset-banner-btn" class="ghost-btn">パスワードを変更する</button>
+  `;
+  // マストヘッドの直後・本文の前に差し込む。
+  const masthead = appScreen.querySelector(".masthead");
+  if (masthead && masthead.nextSibling) {
+    appScreen.insertBefore(banner, masthead.nextSibling);
+  } else {
+    appScreen.insertBefore(banner, appScreen.firstChild);
+  }
+
+  banner.querySelector("#password-reset-banner-btn").addEventListener("click", openPasswordChangeModal);
 }
 
 // ---------- パスワード変更モーダル(全画面共通) ----------
@@ -251,6 +295,10 @@ function ensurePasswordChangeModal() {
     if (res.ok) {
       messageEl.className = "submit-message success";
       messageEl.textContent = "パスワードを変更しました。";
+      // 管理者リセット後のバナーを出していた場合は消す(サーバー側でも
+      // password_reset_pending が0に戻っている)。
+      window.currentUser.passwordResetPending = false;
+      removePasswordResetBanner();
       setTimeout(closePasswordChangeModal, 1200);
     } else {
       messageEl.className = "submit-message error";

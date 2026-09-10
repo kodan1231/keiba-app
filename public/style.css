@@ -103,6 +103,21 @@ body {
 
 .error-text { color: var(--hanko); font-size: 13px; margin-top: 14px; }
 
+/* ---------- 管理者リセット通知バナー(全画面共通) ---------- */
+.password-reset-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--hanko-soft);
+  border-bottom: 1px solid var(--hanko);
+  color: var(--ink);
+  font-size: 13px;
+}
+.password-reset-banner button { flex: none; }
+
 /* ---------- 共通ボタン ---------- */
 button { font-family: var(--font-body); cursor: pointer; }
 
