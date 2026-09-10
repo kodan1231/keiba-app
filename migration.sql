@@ -17,11 +17,10 @@
 -- SQLだけを --command または --file= で実行し、成功したら
 -- schema_migrations に INSERT で記録する(手順はREADME参照)。
 --
--- 2026-09-10時点: 未適用のマイグレーションは users_password_reset_pending の1件
--- (本番DBへ未適用。適用手順はREADME参照)。過去のステップ
+-- 2026-09-10時点: 未適用のマイグレーションは無い。過去のステップ
 -- (legacy_v13_multiuser, course_type_distance, race_results_and_conditions,
---  jockey_aliases, tickets_refunded, users_last_login)はいずれも本番DB
--- (keiba-yosou-db)へ適用済みで、最終結果は schema.sql に統合済みのため
+--  jockey_aliases, tickets_refunded, users_last_login, users_password_reset_pending)は
+--  いずれも本番DB(keiba-yosou-db)へ適用済みで、最終結果は schema.sql に統合済みのため
 -- 本ファイルからは削除してある。内容が必要な場合は git 履歴、または
 -- archive/migrations/latest1_until_course_type_distance.sql
 -- (race_results_and_conditions は archive/documents/BACKLOG_HISTORY.md「クラスタL」)を参照。
@@ -37,9 +36,3 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。
-
--- @STEP: users_password_reset_pending
--- 2026-09-10: 管理者によるパスワードリセット機能。管理者がリセットすると1、
--- 本人がパスワードを変更すると0へ戻る。1の間は本人にバナーで変更を促す。
--- 詳細は docs/design/auth-multiuser.md「管理者によるパスワードリセット」参照。
-ALTER TABLE users ADD COLUMN password_reset_pending INTEGER NOT NULL DEFAULT 0;

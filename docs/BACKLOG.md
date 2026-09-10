@@ -15,8 +15,8 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未適用のマイグレーション**: `users_password_reset_pending`(2026-09-10追加。本番DBへ
-  `wrangler d1 execute` で適用し `schema_migrations` に記録が必要。手順はREADME)。
+- **未適用のマイグレーションは無い**(2026-09-10確認。`users_password_reset_pending` は
+  本番DBへ適用・`schema_migrations` 記録済み。`migration.sql` の `@STEP` は空)。
 - **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
@@ -59,7 +59,8 @@
 > `0` に戻る。新規: `functions/api/admin/reset-user-password.js`。変更: `functions/api/auth/
 > {check,change-password}.js` / `functions/api/admin/users.js` / `public/{auth,admin}.js` /
 > `public/admin.html` は変更不要(モーダルはJS生成) / `public/style.css` `.password-reset-banner` /
-> `schema.sql` / `migration.sql`(`@STEP: users_password_reset_pending` **本番未適用**)。
+> `schema.sql`。マイグレーション `users_password_reset_pending` は本番DBへ適用・
+> `schema_migrations` 記録済み(2026-09-10)。
 > `docs/design/auth-multiuser.md` 更新済み。`node --check` 済み・実機確認は未実施。
 >
 > 完了済み(2026-09-09): **集計画面「総合成績」タブに購入比率の棒グラフ3種を追加**
