@@ -1,15 +1,17 @@
 import { jsonError } from "../_shared.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
-// race_results(馬単位の確定結果)と races.payouts(払戻)を、競馬場・コース種別・距離で
-// 絞って横断集計する。race_results / races は全ユーザー共有データのため requireAdmin しない
-// (GET /api/races/:id/horse-history と同じ扱い)。
+// レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
+// を、競馬場・コース種別・距離で絞って横断集計する。races / race_results は全ユーザー共有
+// データのため requireAdmin しない(GET /api/races/:id/horse-history と同じ扱い)。
 //
 // 仕様の詳細は docs/design/data-search.md。実装方針の要点:
 //   - レース単位のループで1件ずつ問い合わせない。サブリクエストは2本のみ
-//     (1: races 全件 / 2: race_results を races と JOIN して条件で WHERE)。
-//   - ① 平均単勝金額・○円以下率 / ② 平均馬連金額 は races.payouts が分母。
-//     ③④ 騎手率 / ⑤ 馬番別成績 は race_results が分母(分母が別々になる)。
+//     (1: races 全件 / 2: race_results を races と JOIN してフィルタ該当分だけ)。
+//   - ① 平均単勝金額・○円以下率 / ② 平均馬連金額 は races.payouts。
+//   - ③④⑤(騎手率・馬番別成績)の着順ソースは「race_results が全頭ぶん揃っていれば
+//     race_results(最も正)、そうでなければ finish_order(上位3着)+ entries」を
+//     レースごとに選ぶ(手入力・CSV・PDF未取込のレースもカバーするため)。
 
 const SURFACES = new Set(["芝", "ダート"]);
 const RIDDEN_STATUSES = new Set(["finished", "stopped"]);
@@ -29,6 +31,15 @@ function avg(arr) {
   return arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : null;
 }
 
+function parseJson(text, fallback) {
+  if (!text) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return fallback;
+  }
+}
+
 // payouts JSON の 1 式別(tan / umaren)の rate 群から「そのレースの1値」を返す。
 // 同着で複数エントリがある場合は平均。有効な rate が無ければ null。
 function raceRateValue(payoutsObj, key) {
@@ -38,6 +49,38 @@ function raceRateValue(payoutsObj, key) {
     .map((x) => Number(x && x.rate))
     .filter((n) => Number.isFinite(n) && n > 0);
   return rates.length ? avg(rates) : null;
+}
+
+// レース1件について「出走した各馬の {horse_number, jockey, ran, pos}」配列を作る。
+// pos は 1/2/3(3着以内)または null(着外)。着順データが取れなければ null を返す。
+function buildRaceLineup(entries, finishOrder, rrRows) {
+  // 1) race_results が全頭ぶん揃っていれば、それを正のソースにする
+  if (Array.isArray(rrRows) && entries.length > 0 && rrRows.length >= entries.length) {
+    return rrRows.map((r) => {
+      const status = r.status || "finished";
+      const fp = r.finish_position;
+      return {
+        horse_number: r.horse_number,
+        jockey: r.jockey,
+        ran: RIDDEN_STATUSES.has(status),
+        pos: fp != null && fp >= 1 && fp <= 3 ? fp : null,
+      };
+    });
+  }
+  // 2) フォールバック: finish_order(上位3着)+ entries(全出走馬)
+  if (Array.isArray(finishOrder) && finishOrder.length && entries.length) {
+    const posOf = (hn) => {
+      const i = finishOrder.indexOf(hn);
+      return i >= 0 && i < 3 ? i + 1 : null;
+    };
+    return entries.map((e) => ({
+      horse_number: e.horse_number,
+      jockey: e.jockey,
+      ran: true, // entries からは取消馬を判別できない
+      pos: posOf(e.horse_number),
+    }));
+  }
+  return null;
 }
 
 // 率ランキング上位N(5位同率は全員含める)。
@@ -77,48 +120,8 @@ export async function onRequestGet(context) {
 
   // --- クエリ1: races 全件(track/course_type/distance フィルタはメモリ側で適用) ---
   const { results: raceRows } = await env.DB.prepare(
-    "SELECT track, course_type, distance, payouts FROM races"
+    "SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races"
   ).all();
-
-  const trackOptionSet = new Set();
-  const distanceOptionSet = new Set();
-  const winValues = [];
-  const umarenValues = [];
-
-  const surfaceOk = (ct) => (surface ? ct === surface : ct == null || SURFACES.has(ct));
-
-  for (const row of raceRows || []) {
-    const ct = row.course_type || null;
-    if (row.track) trackOptionSet.add(row.track);
-
-    // 距離セレクトの選択肢: 芝/ダートのレースに実在する距離。競馬場・コース種別の
-    // 選択で絞る(距離フィルタ自体は掛けない)。
-    if (
-      row.distance != null &&
-      SURFACES.has(ct) &&
-      (!track || row.track === track) &&
-      (!surface || ct === surface)
-    ) {
-      distanceOptionSet.add(row.distance);
-    }
-
-    // ①② 払戻集計の対象レース
-    if (track && row.track !== track) continue;
-    if (!surfaceOk(ct)) continue;
-    if (distance != null && row.distance !== distance) continue;
-
-    let payoutsObj = null;
-    try {
-      payoutsObj = row.payouts ? JSON.parse(row.payouts) : null;
-    } catch {
-      payoutsObj = null;
-    }
-    if (!payoutsObj) continue;
-    const tanVal = raceRateValue(payoutsObj, "tan");
-    if (tanVal != null) winValues.push(tanVal);
-    const umaVal = raceRateValue(payoutsObj, "umaren");
-    if (umaVal != null) umarenValues.push(umaVal);
-  }
 
   // --- クエリ2: race_results を races と JOIN(races 側の条件で WHERE) ---
   const where = [];
@@ -147,47 +150,95 @@ export async function onRequestGet(context) {
     .bind(...binds)
     .all();
 
-  const jockeyMap = new Map(); // key -> { display, rides, wins, shows }
-  const resultRaceIds = new Set();
-  const byHorseNumber = new Map(); // number -> { starts, win, second, third }
-
+  const rrByRace = new Map();
   for (const row of rrRows || []) {
-    resultRaceIds.add(row.race_id);
-    const status = row.status || "finished";
-    const pos = row.finish_position;
+    let list = rrByRace.get(row.race_id);
+    if (!list) {
+      list = [];
+      rrByRace.set(row.race_id, list);
+    }
+    list.push(row);
+  }
 
-    // 騎手集計(取消・除外は騎乗回数に数えない)
-    const rawJockey = row.jockey;
-    if (rawJockey && String(rawJockey).trim() && RIDDEN_STATUSES.has(status)) {
-      const key = jockeyKey(rawJockey);
-      if (key) {
-        let e = jockeyMap.get(key);
-        if (!e) {
-          e = { display: jockeyDisplay(rawJockey), rides: 0, wins: 0, shows: 0 };
-          jockeyMap.set(key, e);
-        }
-        e.rides++;
-        if (pos === 1) e.wins++;
-        if (pos != null && pos <= 3) e.shows++;
-      }
+  const trackOptionSet = new Set();
+  const distanceOptionSet = new Set();
+  const winValues = [];
+  const umarenValues = [];
+  const jockeyMap = new Map(); // key -> { display, rides, wins, shows }
+  const byHorseNumber = new Map(); // number -> { starts, win, second, third }
+  let resultRaceCount = 0;
+
+  const surfaceOk = (ct) => (surface ? ct === surface : ct == null || SURFACES.has(ct));
+
+  for (const race of raceRows || []) {
+    const ct = race.course_type || null;
+    if (race.track) trackOptionSet.add(race.track);
+
+    // 距離セレクトの選択肢: 芝/ダートのレースに実在する距離。競馬場・コース種別の
+    // 選択で絞る(距離フィルタ自体は掛けない)。
+    if (
+      race.distance != null &&
+      SURFACES.has(ct) &&
+      (!track || race.track === track) &&
+      (!surface || ct === surface)
+    ) {
+      distanceOptionSet.add(race.distance);
     }
 
-    // 馬番別成績(取消・除外は出走数に数えない)
-    const hn = row.horse_number;
-    if (Number.isInteger(hn) && hn >= 1 && hn <= 18 && status !== "scratched" && status !== "excluded") {
-      let b = byHorseNumber.get(hn);
-      if (!b) {
-        b = { starts: 0, win: 0, second: 0, third: 0 };
-        byHorseNumber.set(hn, b);
+    // スコープ(フィルタ)判定
+    if (track && race.track !== track) continue;
+    if (!surfaceOk(ct)) continue;
+    if (distance != null && race.distance !== distance) continue;
+
+    // ①② 払戻
+    const payoutsObj = parseJson(race.payouts, null);
+    if (payoutsObj) {
+      const tanVal = raceRateValue(payoutsObj, "tan");
+      if (tanVal != null) winValues.push(tanVal);
+      const umaVal = raceRateValue(payoutsObj, "umaren");
+      if (umaVal != null) umarenValues.push(umaVal);
+    }
+
+    // ③④⑤ 着順集計
+    const entries = parseJson(race.entries, []) || [];
+    const finishOrder = parseJson(race.finish_order, null);
+    const lineup = buildRaceLineup(entries, finishOrder, rrByRace.get(race.id));
+    if (!lineup) continue;
+
+    resultRaceCount++;
+    for (const h of lineup) {
+      if (!h.ran) continue;
+
+      const rawJockey = h.jockey;
+      if (rawJockey && String(rawJockey).trim()) {
+        const key = jockeyKey(rawJockey);
+        if (key) {
+          let e = jockeyMap.get(key);
+          if (!e) {
+            e = { display: jockeyDisplay(rawJockey), rides: 0, wins: 0, shows: 0 };
+            jockeyMap.set(key, e);
+          }
+          e.rides++;
+          if (h.pos === 1) e.wins++;
+          if (h.pos != null) e.shows++;
+        }
       }
-      b.starts++;
-      if (pos === 1) b.win++;
-      else if (pos === 2) b.second++;
-      else if (pos === 3) b.third++;
+
+      const hn = h.horse_number;
+      if (Number.isInteger(hn) && hn >= 1 && hn <= 18) {
+        let b = byHorseNumber.get(hn);
+        if (!b) {
+          b = { starts: 0, win: 0, second: 0, third: 0 };
+          byHorseNumber.set(hn, b);
+        }
+        b.starts++;
+        if (h.pos === 1) b.win++;
+        else if (h.pos === 2) b.second++;
+        else if (h.pos === 3) b.third++;
+      }
     }
   }
 
-  const resultRaceCount = resultRaceIds.size;
   const minRides = Math.min(50, Math.max(5, Math.ceil(resultRaceCount * 0.05)));
   const jockeyEntries = [...jockeyMap.values()];
 

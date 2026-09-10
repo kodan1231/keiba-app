@@ -4,9 +4,14 @@
 
 # データ検索画面(レース成績集計)
 
-`race_results`(JRAレース結果PDF取込済みの馬単位の確定結果)と `races.payouts`(払戻)を
-横断集計して、競馬場・コース種別・距離ごとの傾向を表示する画面。ROADMAP「クラスタM」の
-「騎手名ベースの集計」に相当する。
+レース確定データ(`races.payouts` / `races.finish_order` / `races.entries` と、あれば
+`race_results`)を横断集計して、競馬場・コース種別・距離ごとの傾向を表示する画面。
+ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
+
+**着順の正のソースは `race_results`(結果PDF由来・全頭)だが、手入力・CSVインポート・
+結果PDF未取込のレースもカバーするため、`race_results` が全頭ぶん揃っていないレースは
+`races.finish_order`(上位3着)+ `races.entries`(全出走馬)へフォールバックする**
+(下記「③④⑤ 共通」参照)。
 
 - 画面: `public/data-search.html` / `public/data-search.js`
 - API: `GET /api/data-search/race-stats`(`functions/api/data-search/race-stats.js`)
@@ -49,17 +54,34 @@
 - 分母 = フィルタ該当かつ `payouts.umaren` が入っているレース(レース数も表示する)
 - 同着で複数組があればその平均を「そのレースの馬連金額」とし、対象レースで平均する
 
+### ③④⑤ 共通: 着順データの取り方(レースごとに2ソースを使い分ける)
+
+③④⑤ は「出走した各馬の (馬番・騎手・出走したか・1〜3着か)」というレース単位の配列を
+作って集計する。この配列を作るソースを**レースごとに**選ぶ:
+
+1. **`race_results` が全頭ぶん揃っているレース** → `race_results` を使う(最も正)。
+   「全頭ぶん」= そのレースの `race_results` 行数 ≥ `races.entries` の要素数。
+   結果PDFインポートで取り込んだレースはこちらになる。
+   - 出走したか = `status ∈ {finished, stopped}`(`scratched`(取消)・`excluded`(除外)は除外)
+   - 1〜3着 = `finish_position`(1/2/3。4着以下・NULL は「着外」)
+2. **上記に満たないレース**(手入力・CSVインポート・結果PDFのパース不完全など) →
+   `races.entries` + `races.finish_order`(上位3着)を使う。
+   - 出走したか = 常に true(`entries` から取消馬を判別できないため。※下記「既知の制約」)
+   - 1〜3着 = `finish_order` の 0/1/2 番目に一致すれば 1/2/3着
+
+`race_results` が1〜数頭しか無い(パース不完全な)レースは 1 の条件を満たさず、自動的に
+2 へフォールバックする。`entries` も `finish_order` も無いレースは ③④⑤ の対象外。
+
 ### ③ 高勝率騎手トップ5 / ④ 高複勝率騎手トップ5
 
-- 母集団 = フィルタ該当レースの `race_results` 行のうち `jockey` が非空のもの
-- **騎乗回数(分母)** = `status ∈ {finished, stopped}` の行数(`scratched`(取消)・
-  `excluded`(除外)は騎乗回数に数えない)
-- 勝率 = (`finish_position = 1` の回数) ÷ 騎乗回数
-- 複勝率 = (`finish_position ≤ 3` の回数) ÷ 騎乗回数(**出走頭数によらず一律「3着以内率」**。
+- 母集団 = 上記で作った各レースの配列のうち「出走した」かつ `jockey` 非空の馬
+- **騎乗回数(分母)** = その馬の数
+- 勝率 = (1着の回数) ÷ 騎乗回数
+- 複勝率 = (1〜3着の回数) ÷ 騎乗回数(**出走頭数によらず一律「3着以内率」**。
   少頭数レースの実際の複勝圏(7頭以下は2着まで)とはずれる)
 - **最低騎乗回数(足切り)** N = `max(5, ⌈対象レース数 × 0.05⌉)`、上限 50。
   騎乗回数が N 未満の騎手はランキング対象外。ここでの「対象レース数」は
-  **スコープ内で `race_results` が存在するレース数**(API レスポンスの `jockeys.resultRaceCount`)。
+  **スコープ内で着順データが取れたレース数**(API レスポンスの `jockeys.resultRaceCount`)。
   画面には「対象 R レース / 最低騎乗 N 回」を明記する
 - 騎手名の名寄せ: 先頭の見習い減量記号(`☆▲△★◇`)を除去し、空白を畳み込んだ文字列を
   集約キーにする(`jockeyAliasKeyOf` と同じ考え方。エイリアス正規化自体は取込・
@@ -71,7 +93,7 @@
 
 - `horse_number`(1〜18)ごとに: 出走数 / 1着 / 2着 / 3着 / 勝率 / 連対率(2着以内)/
   複勝率(3着以内)
-- 出走数 = その馬番の `race_results` 行数(`scratched`・`excluded` は除外)
+- 出走数 = その馬番で「出走した」馬の数
 - 出走数が 0 の馬番は行を出さない
 - **馬番18などは18頭立てのレースにしか出現しない**ため、大きい馬番ほど出走数が
   少なくなる(母数が偏る)。その旨を注記表示する
@@ -87,25 +109,28 @@
 
 レース単位のループで1件ずつ問い合わせない。以下の2クエリのみ:
 
-1. **払戻・選択肢用(フィルタ条件を掛けずに全 `races` を取得)**:
-   `SELECT track, course_type, distance, payouts FROM races`。メモリ上で
+1. **races 全件(フィルタ条件を掛けずに取得)**:
+   `SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races`。
+   メモリ上で
    - `trackOptions` = distinct `track`
    - `distanceOptions` = 「選択中の競馬場(未選択なら全部)」かつ `course_type ∈ {芝,ダート}`
      (選択中のコース種別があればそれに一致)かつ `distance` 非 NULL の distinct 昇順
-   - 払戻集計(①②)は `track` / `course_type`(`芝`/`ダート`、未指定時は
-     `NULL または 芝/ダート`)/ `distance` の各フィルタをメモリ側で適用してから集計
-   - `payouts` 列は 1 行 100 バイト前後。数千〜1万行程度なら全件取得でも許容範囲。
-     行数が増えて重くなったら precompute テーブルか期間フィルタ導入を検討する
-2. **騎手・馬番集計用**: `race_results` を `races` と JOIN し、`races` 側の
-   `track` / `course_type` / `distance` で WHERE(`race_results` は大きいテーブルのため
-   全件取得はしない)。
+   - `track` / `course_type`(`芝`/`ダート`、未指定時は `NULL または 芝/ダート`)/ `distance`
+     の各フィルタをメモリ側で適用してから、①② の払戻集計と ③④⑤ の着順集計を行う
+   - ③④⑤ は「③④⑤ 共通」のルールで、レースごとに `race_results`(クエリ2の結果を
+     `race_id` でグルーピング)か `finish_order`+`entries` を選んで集計する
+   - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲。行数が増えて
+     重くなったら precompute テーブルか期間フィルタ導入を検討する
+2. **`race_results`(フィルタ該当レースのぶんだけ)**: `race_results` を `races` と JOIN し、
+   `races` 側の `track` / `course_type` / `distance` で WHERE(`race_results` は大きい
+   テーブルのため全件取得はしない)。
    `SELECT rr.race_id, rr.horse_number, rr.jockey, rr.status, rr.finish_position
     FROM race_results rr JOIN races r ON r.id = rr.race_id <WHERE ...>`
    - JOIN 方式にすることで、対象レースが多くても `WHERE race_id IN (...)` のチャンク分割
      (=サブリクエスト増)が不要になる(`GET /api/races/:id/horse-history` と同じ方針)
    - `course_type` 未指定時の WHERE は `(r.course_type IS NULL OR r.course_type IN ('芝','ダート'))`
-   - `race_results` が無いレース(払戻だけ入力済み)はこのクエリの対象外。①②の分母と
-     ③④⑤の分母が別々になるのはこのため
+   - 取得後 `race_id` でグルーピングし、「行数 ≥ `entries` 要素数」のレースだけ
+     `race_results` を正のソースとして採用する(それ未満は `finish_order` へフォールバック)
 
 ### レスポンス
 
@@ -139,6 +164,11 @@
   `migration.sql` に `races(track, course_type, distance)` の複合インデックスを追加する
   (`@STEP: races_track_course_distance_index`)
 - 複勝率は一律「3着以内率」。少頭数レースの実際の複勝圏(2着以内)とはずれる
+- **`finish_order` フォールバックのレースでは取消・除外馬を判別できない**ため、その馬の
+  騎手の騎乗回数・その馬番の出走数がわずかに増える(結果PDF由来で全頭ぶんの
+  `race_results` があるレースでは `status` で正しく除外される)
+- **同着**は `finish_order` / `race_results.finish_position` の表現力の範囲でのみ扱う
+  (`finish_order` は同着を区別しない)
 - 降着・失格馬の `race_results.status` は今回対象外(`docs/BACKLOG.md` 参照)。
   現状は `finished` として扱われる
 - 馬名検索・騎手個別検索タブは未実装(検索ハブの土台だけ用意)
