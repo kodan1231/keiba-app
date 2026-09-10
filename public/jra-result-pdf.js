@@ -1094,10 +1094,13 @@ const jraImportFile=document.getElementById("jra-result-pdf-file");
 const jraImportPreview=document.getElementById("jra-result-import-preview");
 const jraImportSubmit=document.getElementById("jra-result-import-submit-btn");
 const jraImportMessage=document.getElementById("jra-result-import-message");
-let jraParsedRecords=[];let jraExistingMap=new Map();
+// jraParsedFiles: [{ fileName, ok, records, diagnostics, extracted, error }](複数ファイル対応。2026-09-10)
+// jraParsedRecords: 全ファイルのレコードをレースキーで重複排除したフラット配列(プレビュー・件数表示用)。
+//   登録(サーバー送信)はファイル単位で行うため、jraParsedFiles の方を使う。
+let jraParsedFiles=[];let jraParsedRecords=[];let jraExistingMap=new Map();
 
 document.getElementById("jra-result-import-btn")?.addEventListener("click",()=>{
-  jraImportFile.value="";jraImportPreview.innerHTML="";jraImportMessage.hidden=true;jraImportSubmit.disabled=true;jraParsedRecords=[];jraImportModal.hidden=false;
+  jraImportFile.value="";jraImportPreview.innerHTML="";jraImportMessage.hidden=true;jraImportSubmit.disabled=true;jraParsedFiles=[];jraParsedRecords=[];jraImportModal.hidden=false;
 });
 document.getElementById("jra-result-import-cancel-btn")?.addEventListener("click",closeJraResultImportModal);
 jraImportModal?.addEventListener("click",e=>{if(e.target===jraImportModal)closeJraResultImportModal();});
@@ -1112,34 +1115,44 @@ jraImportFile?.addEventListener("change",()=>{
   jraImportPreview.innerHTML="";
   jraImportMessage.hidden=true;
   jraImportSubmit.disabled=true;
+  jraParsedFiles=[];
   jraParsedRecords=[];
 });
 
 document.getElementById("jra-result-parse-btn")?.addEventListener("click",async()=>{
-  const file=jraImportFile.files?.[0];
-  if(!file){alert("PDFファイルを選択してください");return;}
+  const files=jraImportFile.files;
+  if(!files||!files.length){alert("PDFファイルを選択してください");return;}
   jraImportSubmit.disabled=true;
-  jraImportPreview.innerHTML=`<p>解析中です…<br>解析エンジン: ${JRA_RESULT_PDF_PARSER_VERSION}</p>`;
+  jraImportPreview.innerHTML=`<p>解析中です…(${files.length}ファイル)<br>解析エンジン: ${JRA_RESULT_PDF_PARSER_VERSION}</p>`;
   const logs=[];
   const log=(message)=>{
-    const line=`[${new Date().toLocaleTimeString()}] ${message}`;
-    logs.push(line);
+    logs.push(`[${new Date().toLocaleTimeString()}] ${message}`);
     console.log("[JRA PDF]",message);
   };
   try{
-    log(`START file=${file.name} size=${file.size}`);
-    const extracted=await jraResultExtractPdfPages(file,log);
-    log(`EXTRACT DONE pages=${extracted.pdfPages}`);
-    const parsed=jraResultParseExtractedPages(extracted.pages);
-    log(`PARSE DONE headers=${parsed.diagnostics.raceHeaders} records=${parsed.records.length}`);
-    jraParsedRecords=parsed.records;
+    jraParsedFiles=await jraPdfParseFiles(files,jraResultExtractPdfPages,jraResultParseExtractedPages,log);
+
+    // 全ファイルのレコードをレースキーで重複排除(複数ファイルに同一レースが含まれる場合は後勝ち)。
+    const byKey=new Map();
+    for(const f of jraParsedFiles){ for(const r of f.records) byKey.set(jraPdfRaceKey(r),r); }
+    jraParsedRecords=[...byKey.values()];
+
     const key=r=>`${r.race_date}__${r.track}__${Number(r.race_number)}`;
     jraExistingMap=new Map((typeof races!=="undefined"?races:[]).map(r=>[key(r),r]));
     const created=jraParsedRecords.filter(r=>!jraExistingMap.has(key(r))).length;
     const existing=jraParsedRecords.length-created;
-    const logHtml=logs.map(x=>`<li>${escapeHtml(x)}</li>`).join("");
-    jraImportPreview.innerHTML=`<p>解析結果：<strong>${jraParsedRecords.length}レース</strong>（未登録 ${created}、既存 ${existing}）</p>
-    ${jraResultRenderDiagnostics(parsed.diagnostics,extracted)}
+    const totalRows=jraParsedFiles.reduce((n,f)=>n+f.records.length,0);
+    const dupNote=totalRows!==jraParsedRecords.length?`(複数ファイルにまたがる重複 ${totalRows-jraParsedRecords.length} レースを除外)`:"";
+    const failed=jraParsedFiles.filter(f=>!f.ok);
+
+    jraImportPreview.innerHTML=`
+    <p>解析結果：<strong>${files.length}ファイル / ${jraParsedRecords.length}レース</strong>（未登録 ${created}、既存 ${existing}）${dupNote}</p>
+    ${failed.length?`<p class="error-text">解析に失敗したファイル ${failed.length}件: ${failed.map(f=>escapeHtml(f.fileName)).join(", ")}</p>`:""}
+    ${jraParsedFiles.map((f)=>`
+      <details${jraParsedFiles.length===1?" open":""}>
+        <summary>${escapeHtml(f.fileName)} — ${f.ok?`${f.records.length}レース`:`<span class="error-text">解析失敗</span>`}</summary>
+        ${f.ok&&f.diagnostics?jraResultRenderDiagnostics(f.diagnostics,f.extracted):`<p class="error-text">${escapeHtml(f.error||"")}</p>`}
+      </details>`).join("")}
     <details><summary>実行ログ (${logs.length})</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>
     <div class="import-preview-list">${jraParsedRecords.map(r=>{
       const old=jraExistingMap.get(key(r));
@@ -1147,6 +1160,8 @@ document.getElementById("jra-result-parse-btn")?.addEventListener("click",async(
       const payouts=Object.entries(r.payouts||{}).filter(([k])=>k!=="refunds").reduce((n,[,v])=>n+(Array.isArray(v)?v.length:0),0);
       return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name||"")} <span>着順: ${escapeHtml(finish)} / 払戻: ${payouts}項目 / race_results: ${(r.race_results||[]).length}頭分 / ${old?"既存レースへ結果登録":"レース新規登録＋結果登録"}</span></div>`;
     }).join("")}</div>`;
+    // 診断パネルの生テキストは innerHTML へ埋め込み済み。大きな extracted オブジェクトは解放する。
+    for(const f of jraParsedFiles) f.extracted=null;
     jraImportSubmit.disabled=jraParsedRecords.length===0;
   }catch(e){
     console.error("[JRA PDF] import failed",e);
@@ -1155,16 +1170,35 @@ document.getElementById("jra-result-parse-btn")?.addEventListener("click",async(
 });
 
 jraImportSubmit?.addEventListener("click",async()=>{
-  if(!jraParsedRecords.length)return;
-  if(!confirm(`${jraParsedRecords.length}レースの結果・払戻を登録します。未登録レースは新規作成されます。実行しますか？`))return;
-  jraImportSubmit.disabled=true;jraImportMessage.hidden=false;jraImportMessage.textContent="登録中です…";
-  try{
-    // mode:"overwrite" — 結果PDFに着順/払戻があるレースは、既存データを丸ごと置き換える
-    // (CSV等で一部式別だけ入っていたレースも、PDFの完全な払戻で上書きされる)。
-    const res=await authedFetch("/api/races/results-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({races:jraParsedRecords,mode:"overwrite"})});
-    const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||"一括登録に失敗しました");
-    const c=(data.results||[]).filter(x=>x.status==="created").length,u=(data.results||[]).filter(x=>x.status==="updated").length,s=(data.results||[]).filter(x=>x.status==="skipped").length;
-    alert(`JRAレース結果を登録しました。\n新規登録：${c}レース\n既存更新：${u}レース${s?`\nスキップ：${s}レース`:""}`);
-    jraImportModal.hidden=true;await loadRaces();
-  }catch(e){console.error("[JRA PDF] registration failed",e);alert(e.message||String(e));jraImportSubmit.disabled=false;}
+  const targets=jraParsedFiles.filter(f=>f.ok&&f.records.length);
+  if(!targets.length)return;
+  const totalRaces=targets.reduce((n,f)=>n+f.records.length,0);
+  if(!confirm(`${targets.length}ファイル / のべ${totalRaces}レースの結果・払戻を登録します。未登録レースは新規作成されます。ファイル単位で順番に実行します。実行しますか？`))return;
+  jraImportSubmit.disabled=true;jraImportMessage.hidden=false;
+
+  let created=0,updated=0,skipped=0;
+  const failures=[];
+  for(let i=0;i<targets.length;i++){
+    const f=targets[i];
+    jraImportMessage.textContent=`登録中… (${i+1}/${targets.length}) ${f.fileName}`;
+    try{
+      // mode:"overwrite" — 結果PDFに着順/払戻があるレースは、既存データを丸ごと置き換える
+      // (CSV等で一部式別だけ入っていたレースも、PDFの完全な払戻で上書きされる)。
+      const res=await authedFetch("/api/races/results-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({races:f.records,mode:"overwrite"})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(data.error||"登録に失敗しました");
+      created+=(data.results||[]).filter(x=>x.status==="created").length;
+      updated+=(data.results||[]).filter(x=>x.status==="updated").length;
+      skipped+=(data.results||[]).filter(x=>x.status==="skipped").length;
+    }catch(e){
+      console.error("[JRA PDF] registration failed",f.fileName,e);
+      failures.push(`${f.fileName}: ${e.message||String(e)}`);
+    }
+  }
+
+  let msg=`JRAレース結果を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース${skipped?`\nスキップ：${skipped}レース`:""}`;
+  if(failures.length)msg+=`\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
+  alert(msg);
+  await loadRaces();
+  if(!failures.length){jraImportModal.hidden=true;}else{jraImportSubmit.disabled=false;}
 });

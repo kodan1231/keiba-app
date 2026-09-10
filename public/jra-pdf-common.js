@@ -139,3 +139,41 @@ function jraPdfParseWeather(text) {
   if (!m) return { weather: null, track_condition: null };
   return { weather: m[1] || null, track_condition: m[3] || null };
 }
+
+// ---------- 複数PDFファイルの一括解析(2026-09-10。結果PDF・出走馬一覧PDF共通) ----------
+// files: FileList または配列。extractFn: (file, log) => Promise<{pages, ...}>。
+// parseFn: (pages) => { records, diagnostics }。
+// 各ファイルを順番に解析し [{ fileName, ok, records, diagnostics, error }] を返す。
+// 1ファイルの解析失敗は他ファイルに波及させない(その1件だけ ok:false にする)。
+// 登録(サーバー送信)はファイル単位で順次行う(1リクエスト=1ファイル分≒12レースに
+// 抑え、D1の100バインド上限・batchサイズ・サブリクエスト上限を回避する。呼び出し側で実装)。
+async function jraPdfParseFiles(files, extractFn, parseFn, log = () => {}) {
+  const list = Array.from(files || []);
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const file = list[i];
+    log(`FILE ${i + 1}/${list.length}: ${file.name} (${file.size} bytes)`);
+    try {
+      const extracted = await extractFn(file, log);
+      const parsed = parseFn(extracted.pages);
+      out.push({
+        fileName: file.name,
+        ok: true,
+        records: Array.isArray(parsed.records) ? parsed.records : [],
+        diagnostics: parsed.diagnostics || null,
+        extracted,
+        error: null,
+      });
+    } catch (e) {
+      log(`FILE ${file.name} 解析失敗: ${e && e.message ? e.message : String(e)}`);
+      out.push({ fileName: file.name, ok: false, records: [], diagnostics: null, extracted: null, error: e && e.message ? e.message : String(e) });
+    }
+  }
+  return out;
+}
+
+// 解析済みレコードのレースキー(race_date__track__race_number)。複数ファイルに
+// 同一レースが含まれる場合の重複件数表示・突き合わせに使う。
+function jraPdfRaceKey(r) {
+  return `${r.race_date}__${String(r.track || "").trim()}__${Number(r.race_number)}`;
+}

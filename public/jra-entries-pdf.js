@@ -409,6 +409,10 @@ const jraEntriesImportFile = document.getElementById("jra-entries-pdf-file");
 const jraEntriesImportPreview = document.getElementById("jra-entries-import-preview");
 const jraEntriesImportSubmit = document.getElementById("jra-entries-import-submit-btn");
 const jraEntriesImportMessage = document.getElementById("jra-entries-import-message");
+// jraEntriesParsedFiles: [{ fileName, ok, records, diagnostics, extracted, error }](複数ファイル対応。2026-09-10)
+// jraEntriesParsedRecords: 全ファイルのレコードをレースキーで重複排除したフラット配列(プレビュー用)。
+//   登録はファイル単位で行うため jraEntriesParsedFiles を使う。
+let jraEntriesParsedFiles = [];
 let jraEntriesParsedRecords = [];
 
 document.getElementById("jra-entries-import-btn")?.addEventListener("click", () => {
@@ -416,6 +420,7 @@ document.getElementById("jra-entries-import-btn")?.addEventListener("click", () 
   jraEntriesImportPreview.innerHTML = "";
   jraEntriesImportMessage.hidden = true;
   jraEntriesImportSubmit.disabled = true;
+  jraEntriesParsedFiles = [];
   jraEntriesParsedRecords = [];
   jraEntriesImportModal.hidden = false;
 });
@@ -432,37 +437,47 @@ jraEntriesImportFile?.addEventListener("change", () => {
   jraEntriesImportPreview.innerHTML = "";
   jraEntriesImportMessage.hidden = true;
   jraEntriesImportSubmit.disabled = true;
+  jraEntriesParsedFiles = [];
   jraEntriesParsedRecords = [];
 });
 
 document.getElementById("jra-entries-parse-btn")?.addEventListener("click", async () => {
-  const file = jraEntriesImportFile.files?.[0];
-  if (!file) { alert("PDFファイルを選択してください"); return; }
+  const files = jraEntriesImportFile.files;
+  if (!files || !files.length) { alert("PDFファイルを選択してください"); return; }
   jraEntriesImportSubmit.disabled = true;
-  jraEntriesImportPreview.innerHTML = `<p>解析中です…<br>解析エンジン: ${JRA_ENTRIES_PARSER_VERSION}</p>`;
+  jraEntriesImportPreview.innerHTML = `<p>解析中です…(${files.length}ファイル)<br>解析エンジン: ${JRA_ENTRIES_PARSER_VERSION}</p>`;
   const logs = [];
   const log = (message) => {
     logs.push(`[${new Date().toLocaleTimeString()}] ${message}`);
     console.log("[JRA Entries PDF]", message);
   };
   try {
-    log(`START file=${file.name} size=${file.size}`);
-    const extracted = await jraEntriesExtractPdfPages(file, log);
-    log(`EXTRACT DONE pages=${extracted.pdfPages}`);
-    const parsed = jraEntriesParseExtractedPages(extracted.pages);
-    log(`PARSE DONE headers=${parsed.diagnostics.raceHeaders} records=${parsed.records.length}`);
-    jraEntriesParsedRecords = parsed.records;
+    jraEntriesParsedFiles = await jraPdfParseFiles(files, jraEntriesExtractPdfPages, jraEntriesParseExtractedPages, log);
+
+    // 全ファイルのレコードをレースキーで重複排除(複数ファイルに同一レースが含まれる場合は後勝ち)。
+    const byKey = new Map();
+    for (const f of jraEntriesParsedFiles) { for (const r of f.records) byKey.set(jraPdfRaceKey(r), r); }
+    jraEntriesParsedRecords = [...byKey.values()];
 
     const totalHorses = jraEntriesParsedRecords.reduce((s, r) => s + r.entries.length, 0);
     const confirmedCount = jraEntriesParsedRecords.reduce((s, r) => s + r.entries.filter((e) => e.horse_number !== null).length, 0);
-    const logHtml = logs.map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+    const totalRows = jraEntriesParsedFiles.reduce((n, f) => n + f.records.length, 0);
+    const dupNote = totalRows !== jraEntriesParsedRecords.length ? `(複数ファイルにまたがる重複 ${totalRows - jraEntriesParsedRecords.length} レースを除外)` : "";
+    const failed = jraEntriesParsedFiles.filter((f) => !f.ok);
 
-    jraEntriesImportPreview.innerHTML = `<p>解析結果：<strong>${jraEntriesParsedRecords.length}レース</strong>（出走馬 計${totalHorses}頭、うち枠番・馬番確定済み ${confirmedCount}頭）</p>
-    ${jraEntriesRenderDiagnostics(parsed.diagnostics)}
+    jraEntriesImportPreview.innerHTML = `
+    <p>解析結果：<strong>${files.length}ファイル / ${jraEntriesParsedRecords.length}レース</strong>（出走馬 計${totalHorses}頭、うち枠番・馬番確定済み ${confirmedCount}頭）${dupNote}</p>
+    ${failed.length ? `<p class="error-text">解析に失敗したファイル ${failed.length}件: ${failed.map((f) => escapeHtml(f.fileName)).join(", ")}</p>` : ""}
+    ${jraEntriesParsedFiles.map((f) => `
+      <details${jraEntriesParsedFiles.length === 1 ? " open" : ""}>
+        <summary>${escapeHtml(f.fileName)} — ${f.ok ? `${f.records.length}レース` : `<span class="error-text">解析失敗</span>`}</summary>
+        ${f.ok && f.diagnostics ? jraEntriesRenderDiagnostics(f.diagnostics) : `<p class="error-text">${escapeHtml(f.error || "")}</p>`}
+      </details>`).join("")}
     <details><summary>実行ログ (${logs.length})</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>
     <div class="import-preview-list">${jraEntriesParsedRecords.map((r) => {
       return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name || "")} <span>出走馬 ${r.entries.length}頭 / 枠番・馬番${r.entries.some((e) => e.horse_number !== null) ? "あり" : "なし"}</span></div>`;
     }).join("")}</div>`;
+    for (const f of jraEntriesParsedFiles) f.extracted = null;
     jraEntriesImportSubmit.disabled = jraEntriesParsedRecords.length === 0;
   } catch (e) {
     console.error("[JRA Entries PDF] import failed", e);
@@ -471,37 +486,47 @@ document.getElementById("jra-entries-parse-btn")?.addEventListener("click", asyn
 });
 
 jraEntriesImportSubmit?.addEventListener("click", async () => {
-  if (!jraEntriesParsedRecords.length) return;
-  if (!confirm(`${jraEntriesParsedRecords.length}レースの出走馬情報を登録します。既存レースは馬名をキーにマージされます。実行しますか？`)) return;
+  const targets = jraEntriesParsedFiles.filter((f) => f.ok && f.records.length);
+  if (!targets.length) return;
+  const totalRaces = targets.reduce((n, f) => n + f.records.length, 0);
+  if (!confirm(`${targets.length}ファイル / のべ${totalRaces}レースの出走馬情報を登録します。既存レースは馬名をキーにマージされます。ファイル単位で順番に実行します。実行しますか？`)) return;
   jraEntriesImportSubmit.disabled = true;
   jraEntriesImportMessage.hidden = false;
-  jraEntriesImportMessage.textContent = "登録中です…";
-  try {
-    const res = await authedFetch("/api/races/entries-import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ races: jraEntriesParsedRecords }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "一括登録に失敗しました");
 
-    const created = (data.results || []).filter((x) => x.status === "created").length;
-    const updated = (data.results || []).filter((x) => x.status === "updated").length;
-    const allConflicts = (data.results || []).flatMap((x) => (x.conflicts || []).map((c) => ({ key: x.key, ...c })));
-
-    let message = `出走馬一覧を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース`;
-    if (allConflicts.length) {
-      const lines = allConflicts.map((c) =>
-        `  ${c.key} / ${c.horse_name}: 既存${c.field === "waku_number" ? "枠番" : "馬番"}=${c.existing} → 取込値=${c.incoming}(競合のため更新していません)`
-      );
-      message += `\n\n⚠️ ${allConflicts.length}件の枠番・馬番の競合がありました(自動更新していません。手動確認してください)：\n${lines.join("\n")}`;
+  let created = 0, updated = 0;
+  const allConflicts = [];
+  const failures = [];
+  for (let i = 0; i < targets.length; i++) {
+    const f = targets[i];
+    jraEntriesImportMessage.textContent = `登録中… (${i + 1}/${targets.length}) ${f.fileName}`;
+    try {
+      const res = await authedFetch("/api/races/entries-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ races: f.records }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "登録に失敗しました");
+      created += (data.results || []).filter((x) => x.status === "created").length;
+      updated += (data.results || []).filter((x) => x.status === "updated").length;
+      for (const x of data.results || []) {
+        for (const c of x.conflicts || []) allConflicts.push({ key: x.key, ...c });
+      }
+    } catch (e) {
+      console.error("[JRA Entries PDF] registration failed", f.fileName, e);
+      failures.push(`${f.fileName}: ${e.message || String(e)}`);
     }
-    alert(message);
-    jraEntriesImportModal.hidden = true;
-    await loadRaces();
-  } catch (e) {
-    console.error("[JRA Entries PDF] registration failed", e);
-    alert(e.message || String(e));
-    jraEntriesImportSubmit.disabled = false;
   }
+
+  let message = `出走馬一覧を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース`;
+  if (allConflicts.length) {
+    const lines = allConflicts.map((c) =>
+      `  ${c.key} / ${c.horse_name}: 既存${c.field === "waku_number" ? "枠番" : "馬番"}=${c.existing} → 取込値=${c.incoming}(競合のため更新していません)`
+    );
+    message += `\n\n⚠️ ${allConflicts.length}件の枠番・馬番の競合がありました(自動更新していません。手動確認してください)：\n${lines.join("\n")}`;
+  }
+  if (failures.length) message += `\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
+  alert(message);
+  await loadRaces();
+  if (!failures.length) { jraEntriesImportModal.hidden = true; } else { jraEntriesImportSubmit.disabled = false; }
 });

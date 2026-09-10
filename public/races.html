@@ -136,9 +136,9 @@
 <div id="jra-entries-import-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h2>出走馬一覧PDFを一括登録</h2>
-    <p class="picker-hint">JRAの「出走馬一覧」PDFを選択してください。枠番・馬番が未確定の状態(木曜等)でも、確定後(金曜等)でも同じ機能で取り込めます。既存レースには馬名をキーにマージされ、着順・払戻情報には影響しません。既に確定済みの枠番・馬番と異なる値が来た場合は自動上書きせず警告のみ表示します。</p>
-    <label>PDFファイル
-      <input type="file" id="jra-entries-pdf-file" accept="application/pdf,.pdf" />
+    <p class="picker-hint">JRAの「出走馬一覧」PDFを選択してください(複数ファイルまとめて選択できます)。枠番・馬番が未確定の状態(木曜等)でも、確定後(金曜等)でも同じ機能で取り込めます。既存レースには馬名をキーにマージされ、着順・払戻情報には影響しません。既に確定済みの枠番・馬番と異なる値が来た場合は自動上書きせず警告のみ表示します。</p>
+    <label>PDFファイル(複数可)
+      <input type="file" id="jra-entries-pdf-file" accept="application/pdf,.pdf" multiple />
     </label>
     <button type="button" id="jra-entries-parse-btn" class="ghost-btn">PDFを解析する</button>
     <div id="jra-entries-import-preview"></div>
@@ -154,9 +154,9 @@
 <div id="jra-result-import-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h2>JRAレース結果PDFを一括登録</h2>
-    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは、PDFに着順・払戻があれば既存データをそれで上書きします(PDFで取れなかった項目は残ります)。全着順・タイム・馬体重等の詳細記録(race_results)もあわせて登録されます。</p>
-    <label>PDFファイル
-      <input type="file" id="jra-result-pdf-file" accept="application/pdf,.pdf" />
+    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください(複数ファイルまとめて選択できます。過去の結果PDFの取り込み直しにも使えます)。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは、PDFに着順・払戻があれば既存データをそれで上書きします(PDFで取れなかった項目は残ります)。全着順・タイム・馬体重等の詳細記録(race_results)もあわせて登録されます。登録はファイル単位で順番に実行します。</p>
+    <label>PDFファイル(複数可)
+      <input type="file" id="jra-result-pdf-file" accept="application/pdf,.pdf" multiple />
     </label>
     <button type="button" id="jra-result-parse-btn" class="ghost-btn">PDFを解析する</button>
     <div id="jra-result-import-preview"></div>

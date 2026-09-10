@@ -19,7 +19,8 @@
   本番DBへ適用・`schema_migrations` 記録済み。`migration.sql` の `@STEP` は空)。
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
   その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
-  データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)を追加。
+  データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)・
+  結果PDF/出走馬一覧PDFの複数ファイルインポート(2026-09-10)を追加。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -31,6 +32,7 @@
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了 | JRA結果PDF / 出走馬一覧PDF インポートの複数ファイル選択対応(`multiple`・`jraPdfParseFiles()`・ファイル単位の順次POST)は `node --check` のみ。**実ブラウザで**: 複数PDF選択→解析でファイルごとの折りたたみ診断が出ること、重複レースの除外表示、登録が「(3/10) ファイル名」進捗で1ファイルずつ実行され最後にサマリが出ること、1ファイル解析失敗時に他が継続すること、単一ファイル時に従来どおり動くこと、を確認する | `docs/design/results-import.md`「複数ファイルの一括選択」 |
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
@@ -134,6 +136,18 @@
 > `functions/api/data-search/race-stats.js`。変更: `public/shell.js`(NAV_ITEMS)
 > `public/style.css`(`.ds-*`)。`docs/design/data-search.md` 新規・索引3ファイル更新済み。
 > `node --check` 済み・実機確認は未実施。
+>
+> 完了済み(2026-09-10): **JRAレース結果PDF / 出走馬一覧PDF インポートを複数ファイル
+> 選択対応に**。過去の結果PDFを詳細記録(`race_results`)込みで取り込み直す用途。
+> `races.html` の両ファイル入力を `multiple` に。共通ヘルパー `jraPdfParseFiles()` /
+> `jraPdfRaceKey()`(`public/jra-pdf-common.js`)で全ファイルを順に解析(1件失敗しても
+> 継続)、プレビューはファイルごとの折りたたみ診断+レースキーで重複排除したレース一覧。
+> **登録はファイル単位で順次 POST**(1リクエスト≒12レースに抑え、D1バインド上限・
+> batchサイズ・サブリクエスト上限を回避。サーバー側 `results-import.js` /
+> `entries-import.js` は無変更)。進捗表示・失敗ファイルのサマリあり。変更:
+> `public/jra-pdf-common.js` `public/jra-result-pdf.js` `public/jra-entries-pdf.js`
+> `public/races.html`。`docs/design/results-import.md` /
+> `docs/design/entries-import.md` 更新済み。`node --check` 済み・実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 
