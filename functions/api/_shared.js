@@ -18,5 +18,6 @@ export * from "./_lib/http.js";
 export * from "./_lib/auth.js";
 export * from "./_lib/entries-merge.js";
 export * from "./_lib/jockey-alias.js";
+export * from "./_lib/horse-alias.js";
 export * from "./_lib/ticket-payout.js";
 export * from "./_lib/race-results.js";

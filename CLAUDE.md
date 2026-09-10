@@ -24,7 +24,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 馬券購入画面(UI/組み合わせ生成) | `public/buy.js`, `public/combos.js`, `public/bettypes.js`, `public/index.html` |
 | 馬券かご(カート) | `public/cart.js`, `public/buy-purchase-modal.js` |
 | 購入履歴画面 | `public/app.js`, `public/history.html` |
-| 予想登録画面(予想印・馬メモ) | `public/prediction.js`, `public/prediction.html` |
+| 予想登録画面(予想印・馬メモ・過去成績) | `public/prediction.js`, `public/prediction.html`, `functions/api/races/[id]/horse-history.js` |
 | 購入馬券グループ表示の共通部品(履歴・予想の両画面) | `public/ticket-view.js`(`groupTicketsByGroupId` `ticketMoneyText` `ticketGroupStatus` `selectionCellHtml` 等。history/prediction のみ読込) |
 | 集計画面 | `public/stats.js`, `public/stats.html` |
 | データ検索画面(レース成績集計) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js` |
@@ -38,6 +38,8 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
+| 馬名エイリアス(管理API・登録馬一覧) | `functions/api/admin/horse-aliases/*`, `functions/api/admin/horses/index.js` |
+| 馬名エイリアス(正規化本体) | `functions/api/_lib/horse-alias.js` |
 | 出走馬entriesマージ・バックフィル・枠番自動計算 | `functions/api/_lib/entries-merge.js` |
 | race_results 詳細記録 | `functions/api/_lib/race-results.js` |
 | 管理画面 | `public/admin.js`, `public/admin.html`, `functions/api/admin/*` |
@@ -55,6 +57,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/auth.js` | `hashPassword` `verifyPassword` `isAdminUsername` `requireAdmin` `createSessionToken` `verifySessionToken` |
 | `_lib/entries-merge.js` | `mergeEntriesByHorseName` `backfillHorseNamesForRace` `linkUnregisteredImportsToRace` `computeWakuNumberFromHorseNumber`(非export・内部) |
 | `_lib/jockey-alias.js` | `jockeyAliasKeyOf` `loadJockeyAliasMap` `applyJockeyAliasMap` `applyJockeyAliasesToEntries` `normalizeExistingJockeyNames` |
+| `_lib/horse-alias.js` | `horseAliasKeyOf`(NFKC+空白除去) `loadHorseAliasMap` `applyHorseAliasMap` `applyHorseAliasesToEntries` `normalizeExistingHorseNames` |
 | `_lib/race-results.js` | `upsertRaceResults` `upsertRaceResultsBulk` |
 | `_lib/ticket-payout.js` | `recomputeTicketPayoutsForRace` `recomputeTicketPayoutsForRaces` `findStoredRateServer`(非export・内部) |
 
@@ -74,6 +77,8 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   (2026-09-08にこの上限超過で `GET /api/ticket-imports` が落ちる障害があった)。
 - **馬の同一性は `horse_number` ではなく `horse_name`(馬名)をキーに判定する**。
   比較前に必ず空白正規化(全角スペース等を半角1つへ畳み込み・trim)を通す。
+  レース横断で突き合わせる場合(予想画面の過去成績等)は `horseAliasKeyOf`
+  (NFKC+全空白除去)+ `horse_aliases` を通す(`docs/design/horse-aliases.md`)。
 - `prediction_marks` は `horse_number NOT NULL` かつ `UNIQUE(race_id, horse_number, user_id)`。
   馬番未確定の馬には予想印を付けられない(馬メモは馬名キーなので常に可)。
 - `races` / `race_results` は全ユーザー共有(user_idなし)。`tickets` 等はユーザーごとに分離。

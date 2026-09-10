@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, readJsonBody, jsonError } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 export async function onRequestGet(context) {
@@ -7,12 +7,24 @@ export async function onRequestGet(context) {
     `SELECT * FROM races ORDER BY race_date DESC, track ASC, race_number ASC`
   ).all();
 
-  const items = results.map((row) => ({
-    ...row,
-    entries: JSON.parse(row.entries),
-    finish_order: row.finish_order ? JSON.parse(row.finish_order) : null,
-    payouts: row.payouts ? JSON.parse(row.payouts) : null,
-  }));
+  // entries[].jockey / entries[].horse_name は保存済みの表記ゆれをそのまま持つことが
+  // あるため、読み取り時にもエイリアス(jockey_aliases / horse_aliases)で正規化して返す。
+  // (races/index.js の GET は全画面が使う共通の入口。ここで揃えておくと予想画面の
+  //  過去成績突き合わせ・集計などが一律に恩恵を受ける)。
+  const jockeyMap = await loadJockeyAliasMap(env.DB);
+  const horseMap = await loadHorseAliasMap(env.DB);
+
+  const items = results.map((row) => {
+    let entries = JSON.parse(row.entries);
+    entries = applyJockeyAliasesToEntries(jockeyMap, entries);
+    entries = applyHorseAliasesToEntries(horseMap, entries);
+    return {
+      ...row,
+      entries,
+      finish_order: row.finish_order ? JSON.parse(row.finish_order) : null,
+      payouts: row.payouts ? JSON.parse(row.payouts) : null,
+    };
+  });
 
   return Response.json(items);
 }
@@ -39,7 +51,11 @@ export async function onRequestPost(context) {
   // 「戸崎圭 → 戸崎圭太」を登録しておけば、以後この経路で登録されるデータは
   // 統一された表記で保存される(docs/design/jockey-aliases.md「騎手名エイリアス管理」参照)。
   const aliasMap = await loadJockeyAliasMap(env.DB);
-  const normalizedEntries = applyJockeyAliasesToEntries(aliasMap, entries);
+  const horseAliasMap = await loadHorseAliasMap(env.DB);
+  const normalizedEntries = applyHorseAliasesToEntries(
+    horseAliasMap,
+    applyJockeyAliasesToEntries(aliasMap, entries)
+  );
 
   try {
     // 新規登録時も、出走馬表と同時に着順・払戻が入力されているケースがあるため

@@ -36,3 +36,14 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。
+
+-- @STEP: horse_aliases
+-- 馬名エイリアス(表記ゆれ→正しい馬名)。jockey_aliases と同じ構図。
+-- 詳細は docs/design/horse-aliases.md 参照。
+CREATE TABLE IF NOT EXISTS horse_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,   -- 突き合わせキー: NFKC正規化 + 全空白除去
+  alias_display TEXT NOT NULL,      -- 表記ゆれ側の元の見た目(管理画面での参考表示用)
+  canonical_name TEXT NOT NULL,     -- 正しい馬名
+  created_at TEXT DEFAULT (datetime('now'))
+);

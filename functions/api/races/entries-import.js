@@ -4,6 +4,8 @@ import {
   recomputeTicketPayoutsForRace,
   loadJockeyAliasMap,
   applyJockeyAliasMap,
+  loadHorseAliasMap,
+  applyHorseAliasMap,
   readJsonBody,
   jsonError,
 } from "../_shared.js";
@@ -44,6 +46,7 @@ export async function onRequestPost(context) {
   }
 
   const aliasMap = await loadJockeyAliasMap(db);
+  const horseAliasMap = await loadHorseAliasMap(db);
 
   const results = [];
   const items = [];
@@ -62,7 +65,7 @@ export async function onRequestPost(context) {
     const incomingEntries = item.entries
       .filter((e) => normalizeHorseName(e?.horse_name)) // 念のための防御(空馬名は登録しない)
       .map((e) => ({
-        horse_name: e.horse_name,
+        horse_name: applyHorseAliasMap(horseAliasMap, e.horse_name),
         waku_number: e.waku_number ?? null,
         horse_number: e.horse_number ?? null,
         jockey: e.jockey ? applyJockeyAliasMap(aliasMap, e.jockey) : null,

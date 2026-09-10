@@ -7,6 +7,8 @@ import {
   upsertRaceResultsBulk,
   loadJockeyAliasMap,
   applyJockeyAliasMap,
+  loadHorseAliasMap,
+  applyHorseAliasMap,
   readJsonBody,
   jsonError,
 } from "../_shared.js";
@@ -39,6 +41,7 @@ export async function onRequestPost(context) {
   if (!races.length) return jsonError("インポート対象のレースがありません", 400);
 
   const aliasMap = await loadJockeyAliasMap(db);
+  const horseAliasMap = await loadHorseAliasMap(db);
 
   const results = [];
   const items = [];
@@ -51,7 +54,7 @@ export async function onRequestPost(context) {
     const raceNumber = Number(item.race_number);
 
     const incomingEntries = (Array.isArray(item.entries) ? item.entries : []).map((e) => ({
-      horse_name: e.horse_name,
+      horse_name: applyHorseAliasMap(horseAliasMap, e.horse_name),
       waku_number: e.waku_number ?? null,
       horse_number: e.horse_number ?? null,
       jockey: e.jockey ? applyJockeyAliasMap(aliasMap, e.jockey) : null,
@@ -60,9 +63,12 @@ export async function onRequestPost(context) {
     }));
     const finishOrder = Array.isArray(item.finish_order) && item.finish_order.length ? item.finish_order : null;
     const payouts = item.payouts && typeof item.payouts === "object" ? item.payouts : {};
-    const raceResultsInput = (Array.isArray(item.race_results) ? item.race_results : []).map((r) => (
-      r.jockey ? { ...r, jockey: applyJockeyAliasMap(aliasMap, r.jockey) } : r
-    ));
+    const raceResultsInput = (Array.isArray(item.race_results) ? item.race_results : []).map((r) => {
+      const next = { ...r };
+      if (r.horse_name) next.horse_name = applyHorseAliasMap(horseAliasMap, r.horse_name);
+      if (r.jockey) next.jockey = applyJockeyAliasMap(aliasMap, r.jockey);
+      return next;
+    });
 
     items.push({
       raceDate: item.race_date,

@@ -1209,6 +1209,28 @@ body.history-selection-mode .group-detail-actions {
 #ds-results .stats-heading { margin-top: 26px; }
 #ds-results .stats-heading:first-child { margin-top: 0; }
 
+/* ---------- 管理画面: 馬名エイリアスの登録馬一覧(50音行 + 検索) ---------- */
+.horse-index { margin: 10px 0 4px; }
+.horse-index-rows { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.horse-row-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 10px; border: 1px solid var(--rule-strong, rgba(0,0,0,.2));
+  border-radius: 8px; background: var(--paper-raised, #fff); cursor: pointer;
+  font-size: .95rem; font-weight: 700;
+}
+.horse-row-btn:hover { background: rgba(0, 0, 0, .04); }
+.horse-row-btn.active { background: var(--ink, #222); color: #fff; border-color: var(--ink, #222); }
+.horse-row-count { font-size: .75rem; font-weight: 500; opacity: .7; }
+.horse-index-search-label { display: flex; flex-direction: column; gap: 4px; max-width: 280px; font-size: 12px; color: var(--ink-soft, #777); }
+.horse-index-search-label input { padding: 8px; }
+.horse-row-mismatch { background: rgba(200, 120, 0, .12); }
+.horse-variant-chip {
+  display: inline-block; margin: 1px 2px; padding: 2px 7px;
+  border: 1px solid rgba(0, 0, 0, .2); border-radius: 999px;
+  background: var(--paper-raised, #fff); cursor: pointer; font-size: .82rem;
+}
+.horse-variant-chip:hover { background: rgba(0, 0, 0, .06); }
+
 /* ---------- レース管理: 日付→競馬場→R の3階層アコーディオン ---------- */
 .date-group { border: 1px solid var(--rule-strong); background: var(--paper-raised); }
 .date-group + .date-group { margin-top: 14px; }

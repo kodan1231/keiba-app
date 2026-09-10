@@ -69,6 +69,55 @@
           <p id="jockey-alias-normalize-message" class="submit-message" hidden></p>
         </div>
       </section>
+
+      <!-- 馬名エイリアス管理(2026-09-11追加)。
+           同じ馬がJRAレース結果PDF(race_results)と出走馬一覧PDF/手動入力(races.entries)で
+           表記ゆれ(半角/全角カナ・空白有無・異体字等)を起こし、予想登録画面の
+           「過去成績(出走履歴)」で紐付かない問題への対応。詳細はdocs/design/horse-aliases.md参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">馬名エイリアス管理</h2>
+        <p class="ticket-sub">
+          同じ馬がJRAレース結果PDF(結果)と出走馬一覧PDF・手動入力(出走表)で表記ゆれ
+          (半角/全角カナ・空白の有無・異体字等)を起こし、予想登録画面の「過去成績」で
+          紐付かない場合の対応です。「表記ゆれ側」に誤った/揺れた表記、「正しい馬名」に統一したい
+          表記を登録すると、以後の取込・編集で自動的に統一されます。
+          半角/全角・空白の違いだけなら登録不要で吸収されます。
+        </p>
+
+        <div class="horse-index">
+          <div class="horse-index-rows" id="horse-index-rows"></div>
+          <label class="horse-index-search-label">馬名で検索(部分一致)
+            <input type="search" id="horse-index-search" placeholder="例: ルークス" />
+          </label>
+          <p id="horse-index-status" class="ticket-sub">50音の行を選ぶか、馬名で検索してください。</p>
+          <div class="table-wrap"><table class="stats-table" id="horse-index-table"></table></div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
+          <form id="horse-alias-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+            <label style="flex:1;min-width:160px">表記ゆれ側(例: ﾃｲｴﾑﾊﾟﾛｯﾄ)
+              <input type="text" id="horse-alias-display" placeholder="表記ゆれ側の馬名" required />
+            </label>
+            <label style="flex:1;min-width:160px">正しい馬名(例: テイエムパロット)
+              <input type="text" id="horse-alias-canonical" placeholder="正しい馬名" required />
+            </label>
+            <button type="submit" class="stamp-btn">エイリアスを追加</button>
+          </form>
+          <p id="horse-alias-form-message" class="submit-message" hidden></p>
+          <div class="table-wrap"><table class="stats-table" id="horse-aliases-table"></table></div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
+          <p class="ticket-sub">
+            上に登録済みのエイリアスと一致する馬名を、既に保存されている出走馬表・レース結果・
+            馬メモ・購入履歴・CSV取込履歴からまとめて探して書き換えます(未登録の表記ゆれは
+            変更されません)。馬メモが両方の表記にある場合は改行で連結して残します。
+            何度実行しても安全です。
+          </p>
+          <button type="button" id="horse-alias-normalize-btn" class="ghost-btn">既存データの馬名を一括補正する</button>
+          <p id="horse-alias-normalize-message" class="submit-message" hidden></p>
+        </div>
+      </section>
     </div>
   </main>
 </div>

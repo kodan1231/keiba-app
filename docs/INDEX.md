@@ -22,6 +22,9 @@
 | 認証・ユーザー管理 | functions/api/auth/*, functions/api/_lib/auth.js, public/auth.js |
 | 騎手名エイリアス(管理画面API) | functions/api/admin/jockey-aliases/* |
 | 騎手名エイリアス(正規化ロジック本体) | functions/api/_lib/jockey-alias.js |
+| 馬名エイリアス(管理画面API・登録馬一覧) | functions/api/admin/horse-aliases/*, functions/api/admin/horses/index.js |
+| 馬名エイリアス(正規化ロジック本体) | functions/api/_lib/horse-alias.js |
+| 予想画面の過去成績(出走履歴) | functions/api/races/[id]/horse-history.js, public/prediction.js |
 | DBスキーマ変更 | schema.sql, migration.sql (archive/migrationsは不要) |
 | 管理画面 | public/admin.js, public/admin.html, functions/api/admin/* |
 | 出走馬entriesマージ・バックフィル | functions/api/_lib/entries-merge.js |
@@ -52,6 +55,7 @@ DESIGN.md(索引)は各ファイルへのポインタのみ。経緯説明(「�
 | results-import.md | 解析ロジックの要点 / 全角文字正規化の方針 / サーバー側の反映 / 既知の制約・未解決の課題 / 関連ファイル |
 | race-results.md | 目的・想定用途 / スキーマ / 更新ルール / 取消・除外・中止の扱い / races.entriesとの役割分担 / 画面での参照 |
 | jockey-aliases.md | 対応方針の切り分け / スキーマ / 正規化を適用する2つの経路 / 管理画面でのエイリアス管理 / 今回のスコープに含めないもの |
+| horse-aliases.md | 突き合わせキー(NFKC+空白除去) / スキーマ / 正規化を適用する経路 / horse_notes衝突扱い / 管理画面「登録馬一覧」(50音行+検索) / スコープ外 |
 | auth-multiuser.md | 認証・複数ユーザー対応(管理者判定 / セッション / 所有者user_id / 共有データraces) |
 | data-flow.md | データフロー(通常購入 / CSV取込 / PDF取込 → 各テーブル) |
 | csv-import.md | 着順・払戻レートの反映 / 確定扱いの統一 / 「馬／組番」列の解析 |

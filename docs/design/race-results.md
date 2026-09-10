@@ -117,25 +117,24 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 
 - `prediction.html`で各馬の行を開くと、馬メモの下に「過去成績(出走履歴)」表を表示する
 - 取得は `GET /api/races/:id/horse-history`(`functions/api/races/[id]/horse-history.js`)。
-  `race_results`を`races`とJOINして引き、**表示中のレース自身(`race_id`)を除外**し、
-  `race_date`降順で全件返す
-- **馬名の突き合わせは「空白を全部除去した文字列」で行う**。`race_results.horse_name`は
-  取込時に空白正規化されておらず(parserの生値)、`races.entries[].horse_name`
-  (出走馬一覧PDF由来・`mergeEntriesByHorseName`で正規化済み)と全角/半角スペースの
-  入り方が食い違い、単純一致だと取りこぼす。SQL側は
-  `replace(replace(horse_name, '　', ''), ' ', '')` で列の空白を落として `IN` 比較。
-  JRAの馬名は全国で一意なので空白を落としても別馬と衝突しない
-- レスポンスのキーはクライアント(`prediction.js` の `normalizeHorseName()`=空白を半角1つに
-  畳む)が引ける形にする。`?debug=1` を付けると突き合わせ結果の内訳を返す(切り分け用)
+  **表示中のレース以外の `race_results` を `races` と JOIN して全件取得し、メモリで馬名を
+  突き合わせる**(SQLite で NFKC ができないため。1クエリ・サブリクエスト増なし)。
+  `race_date` 降順
+- **馬名の突き合わせは `horseAliasKeyOf`(NFKC正規化 + 全空白除去)+ `horse_aliases`
+  エイリアスで正規化したキーで行う**(`docs/design/horse-aliases.md` 参照)。
+  `race_results.horse_name`(parser の生値)と `races.entries[].horse_name` の表記が
+  半角/全角カナ・空白・異体字で食い違っても紐付く。レスポンスのキーはクライアント
+  (`prediction.js` の `normalizeHorseName()`=空白を半角1つに畳む)が引ける形にする
+- `?debug=1` を付けると突き合わせ結果の内訳(出走各馬の突き合わせキー・`race_results`
+  全体件数・先頭3文字での類似馬名サンプルと突き合わせ成否・マッチ件数)を返す(切り分け用)
 - 各行の頭数(`field_size`)は相関サブクエリで数えるが、**`status IN ('finished','stopped')`
   に限定して「実際に発走した頭数」を出す**。取消(`scratched`)・除外(`excluded`)は
   `race_results`に行が残るものの発走していないので数えない(単純な`COUNT(*)`だと
   取消・除外がいたレースで頭数が1〜数頭多く出てしまう)。中止(`stopped`)は発走済みなので
   数に含める
-- バインド数は「出走頭数 × 2 + 1」で自然にバウンドされ、D1の1クエリ100パラメータ上限に
-  収まる(過去レースIDの集合をINで渡す方式は使い込むと上限に抵触しうるため採らない)
 - 全ユーザー共有データのため`requireAdmin`せず、ログインのみで閲覧可(`GET .../results`と同じ)
-- `race_results.horse_name`は取込時に空白正規化されていないため、レスポンスの
-  グルーピングキーはサーバー側で正規化した馬名にする。クライアントの`normalizeHorseName()`と
-  同じ畳み込み(全角スペース等 → 半角1つ・trim)
+- クライアント(`prediction.js`)は `loadHorseHistory()` で予想印・馬メモの読み込みとは
+  **切り離して**取得し、取得・JSONパースの失敗は握りつぶす(購入馬券欄 `loadRaceTickets()`
+  と同じ考え方。応答が非JSONだと `await res.json()` が throw して馬メモ描画まで巻き添えに
+  なる不具合があったため)
 

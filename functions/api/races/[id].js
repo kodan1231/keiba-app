@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
 
 // PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
 export async function onRequestPut(context) {
@@ -32,7 +32,11 @@ export async function onRequestPut(context) {
     // 含む)された騎手名を、保存前にjockey_aliasesテーブルで正規化する。
     // docs/design/jockey-aliases.md「騎手名エイリアス管理」参照。
     const aliasMap = await loadJockeyAliasMap(env.DB);
-    const normalizedEntries = applyJockeyAliasesToEntries(aliasMap, data.entries);
+    const horseAliasMap = await loadHorseAliasMap(env.DB);
+    const normalizedEntries = applyHorseAliasesToEntries(
+      horseAliasMap,
+      applyJockeyAliasesToEntries(aliasMap, data.entries)
+    );
     fields.push("entries = ?");
     values.push(JSON.stringify(normalizedEntries));
   }

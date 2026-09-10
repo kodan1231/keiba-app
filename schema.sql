@@ -307,3 +307,19 @@ CREATE TABLE IF NOT EXISTS jockey_aliases (
   canonical_name TEXT NOT NULL,     -- 正しい表記(見習い記号は含めない。適用時に元の記号を復元する)
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- ============================================================
+-- 9. 馬名エイリアス
+-- ============================================================
+
+-- 同一馬がJRAレース結果PDF(race_results)と出走馬一覧PDF/手動入力(races.entries)で
+-- 異なる表記(半角/全角カナ・互換文字・空白有無・異体字等)で保存され、予想登録画面の
+-- 「過去成績(出走履歴)」で馬名の突き合わせが成立しない問題への対応。jockey_aliases と
+-- 同じ構図。管理画面(admin.html)から編集する。詳細はdocs/design/horse-aliases.md参照。
+CREATE TABLE IF NOT EXISTS horse_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,   -- 突き合わせキー: NFKC正規化 + 全空白除去
+  alias_display TEXT NOT NULL,      -- 表記ゆれ側の元の見た目(管理画面での参考表示用)
+  canonical_name TEXT NOT NULL,     -- 正しい馬名
+  created_at TEXT DEFAULT (datetime('now'))
+);

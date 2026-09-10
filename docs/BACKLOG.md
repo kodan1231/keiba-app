@@ -15,12 +15,15 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未適用のマイグレーションは無い**(2026-09-10確認。`users_password_reset_pending` は
-  本番DBへ適用・`schema_migrations` 記録済み。`migration.sql` の `@STEP` は空)。
+- **⚠️ 未適用のマイグレーションあり: `horse_aliases`**(2026-09-11 追加。馬名エイリアス機能)。
+  本番DBへ `migration.sql` の `-- @STEP: horse_aliases` ブロックを適用し
+  `schema_migrations` に `horse_aliases` を INSERT すること(手順は README)。
+  `users_password_reset_pending` までは適用・記録済み。
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
   その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
   データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)・
-  結果PDF/出走馬一覧PDFの複数ファイルインポート(2026-09-10)を追加。
+  結果PDF/出走馬一覧PDFの複数ファイルインポート(2026-09-10)・
+  馬名エイリアス `horse_aliases` + 登録馬一覧(2026-09-11)を追加。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -56,6 +59,25 @@
 > `docs/design/screens.md`「履歴の一括削除(選択モード)」)/ **旧クラスタC コース別収支**
 > (集計画面の「競馬場別」タブを「コース別」= 競馬場×芝/ダ/障×距離 に置換)。
 > 詳細は BACKLOG_HISTORY 期間9。
+>
+> 完了済み(2026-09-11): **馬名エイリアス(`horse_aliases`)機能を新設**(騎手名エイリアスの
+> 馬名版)。同じ馬が `race_results` と `races.entries` で表記ゆれ(半角/全角カナ・空白・異体字)
+> を起こし予想画面の過去成績が紐付かない問題への対応。突き合わせキーは `horseAliasKeyOf`
+> (NFKC + 全空白除去)+ 明示エイリアス。**半角/全角・空白のズレはエイリアス登録なしで
+> 自動吸収**。新規: `functions/api/_lib/horse-alias.js` / `functions/api/admin/horse-aliases/*` /
+> `functions/api/admin/horses/index.js`(登録馬一覧。50音行 + 検索)。変更: `races/index.js`
+> (GET で読み取り時も正規化・POST)/ `races/[id].js`(PUT)/ `entries-import.js` /
+> `results-import.js` / `horse-notes/index.js` / `races/[id]/horse-history.js`(突き合わせを
+> エイリアスキーへ・`race_results` 全件スキャン方式へ変更)/ `public/admin.{html,js}` /
+> `public/style.css` / `schema.sql` / `migration.sql`(`@STEP: horse_aliases`)。
+> `docs/design/horse-aliases.md` 新規・索引3ファイル・`data-model.md`・`screens.md`・
+> `race-results.md`・`CLAUDE.md` 更新。`node --check` 済み + `wrangler pages dev` +
+> ローカルD1 で「NFKC自動突き合わせ / エイリアス登録 / 一括補正 / 登録馬一覧」を実機確認。
+> **本番DBへ `horse_aliases` マイグレーション適用が必要**(上の 🔰 参照)。
+>
+> 完了済み(2026-09-11): **過去成績の巻き添え不具合修正**。`horse-history` の取得を
+> `selectRace()` の `Promise.all` から外し独立関数 `loadHorseHistory()` へ。応答が非JSONだと
+> `await res.json()` が throw して `applyHorseNotes` まで止まり馬メモが消えていた。
 >
 > 完了済み(2026-09-10): **予想登録画面に「過去成績(出走履歴)」表示を追加**。馬の行を
 > 開くと馬メモの下に、その馬の `race_results` 由来の過去出走(表示中レースを除く・馬名

@@ -312,6 +312,222 @@ function setupJockeyAliasNormalizeButton() {
   });
 }
 
+// ---------- 馬名エイリアス管理(2026-09-11追加) ----------
+
+async function loadHorseAliases() {
+  const table = document.getElementById("horse-aliases-table");
+  if (!table) return;
+  const res = await authedFetch("/api/admin/horse-aliases");
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  const data = await res.json();
+  const items = data.items || [];
+  if (!items.length) {
+    table.innerHTML = "<tr><td>登録済みのエイリアスはありません</td></tr>";
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr><th>表記ゆれ側</th><th>正しい馬名</th><th>登録日時</th><th></th></tr></thead>
+    <tbody>
+      ${items.map((a) => `
+        <tr data-id="${a.id}">
+          <td>${escapeHtml(a.alias_display)}</td>
+          <td>${escapeHtml(a.canonical_name)}</td>
+          <td>${formatDateTime(a.created_at)}</td>
+          <td><button type="button" class="icon-btn delete horse-alias-delete-btn" title="削除">×</button></td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+  table.querySelectorAll(".horse-alias-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row?.dataset.id;
+      if (!id) return;
+      if (!confirm("このエイリアスを削除しますか？")) return;
+      const res2 = await authedFetch(`/api/admin/horse-aliases/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res2.ok) {
+        const data2 = await res2.json().catch(() => ({}));
+        alert(data2.error || "削除に失敗しました。");
+        return;
+      }
+      await loadHorseAliases();
+    });
+  });
+}
+
+function prefillHorseAlias(display) {
+  const displayInput = document.getElementById("horse-alias-display");
+  const canonicalInput = document.getElementById("horse-alias-canonical");
+  if (!displayInput) return;
+  displayInput.value = display;
+  displayInput.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (canonicalInput) canonicalInput.focus();
+}
+
+function renderHorseIndexTable(horses) {
+  const table = document.getElementById("horse-index-table");
+  if (!table) return;
+  if (!horses.length) {
+    table.innerHTML = "<tr><td>該当する馬はいません</td></tr>";
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr><th>馬名</th><th>出走表</th><th>結果</th><th>メモ</th><th>表記ゆれ</th><th></th></tr></thead>
+    <tbody>
+      ${horses.map((h) => {
+        const variantChips = h.mismatch
+          ? h.variants.map((v) => `<button type="button" class="horse-variant-chip" data-variant="${escapeAttr(v)}">${escapeHtml(v)}</button>`).join(" ")
+          : "";
+        return `
+        <tr${h.mismatch ? ' class="horse-row-mismatch"' : ""}>
+          <td>${escapeHtml(h.name)}</td>
+          <td>${h.entryRaceCount ? `${h.entryRaceCount}R` : "—"}</td>
+          <td>${h.resultRaceCount ? `${h.resultRaceCount}R` : "—"}</td>
+          <td>${h.hasNote ? "あり" : "—"}</td>
+          <td>${variantChips || "—"}</td>
+          <td><button type="button" class="ghost-btn horse-alias-prefill-btn" data-name="${escapeAttr(h.name)}">エイリアス登録</button></td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  `;
+  table.querySelectorAll(".horse-alias-prefill-btn").forEach((btn) => {
+    btn.addEventListener("click", () => prefillHorseAlias(btn.dataset.name || ""));
+  });
+  table.querySelectorAll(".horse-variant-chip").forEach((btn) => {
+    btn.addEventListener("click", () => prefillHorseAlias(btn.dataset.variant || ""));
+  });
+}
+
+async function fetchHorseIndex(params) {
+  const status = document.getElementById("horse-index-status");
+  const res = await authedFetch(`/api/admin/horses${params}`);
+  if (!res.ok) { if (status) status.textContent = "読み込みに失敗しました。"; return null; }
+  return res.json();
+}
+
+async function setupHorseIndex() {
+  const rowsEl = document.getElementById("horse-index-rows");
+  const searchEl = document.getElementById("horse-index-search");
+  const status = document.getElementById("horse-index-status");
+  if (!rowsEl) return;
+
+  const initial = await fetchHorseIndex("");
+  if (!initial) return;
+  const order = initial.rowOrder || [];
+  const counts = initial.rowCounts || {};
+  let activeRow = "";
+
+  rowsEl.innerHTML = order
+    .map((label) => `<button type="button" class="horse-row-btn" data-row="${escapeAttr(label)}">${escapeHtml(label)}<span class="horse-row-count">${counts[label] || 0}</span></button>`)
+    .join("");
+
+  function setActive(label) {
+    activeRow = label;
+    rowsEl.querySelectorAll(".horse-row-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.row === label);
+    });
+  }
+
+  rowsEl.querySelectorAll(".horse-row-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (searchEl) searchEl.value = "";
+      setActive(btn.dataset.row);
+      if (status) status.textContent = "読み込み中…";
+      const data = await fetchHorseIndex(`?row=${encodeURIComponent(btn.dataset.row)}`);
+      if (!data) return;
+      renderHorseIndexTable(data.horses || []);
+      if (status) status.textContent = `「${btn.dataset.row}」行: ${(data.horses || []).length}件`;
+    });
+  });
+
+  if (searchEl) {
+    let timer;
+    searchEl.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const q = searchEl.value.trim();
+        if (!q) {
+          renderHorseIndexTable([]);
+          if (status) status.textContent = "50音の行を選ぶか、馬名で検索してください。";
+          return;
+        }
+        setActive("");
+        if (status) status.textContent = "検索中…";
+        const data = await fetchHorseIndex(`?q=${encodeURIComponent(q)}`);
+        if (!data) return;
+        renderHorseIndexTable(data.horses || []);
+        if (status) status.textContent = `検索「${q}」: ${(data.horses || []).length}件`;
+      }, 300);
+    });
+  }
+}
+
+function setupHorseAliasForm() {
+  const form = document.getElementById("horse-alias-form");
+  const messageEl = document.getElementById("horse-alias-form-message");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const displayInput = document.getElementById("horse-alias-display");
+    const canonicalInput = document.getElementById("horse-alias-canonical");
+    const alias_display = displayInput.value.trim();
+    const canonical_name = canonicalInput.value.trim();
+    if (!alias_display || !canonical_name) return;
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    messageEl.hidden = true;
+
+    const res = await authedFetch("/api/admin/horse-aliases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias_display, canonical_name }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `「${alias_display}」→「${canonical_name}」を登録しました。反映するには下の「一括補正」も実行してください。`;
+      displayInput.value = "";
+      canonicalInput.value = "";
+      await loadHorseAliases();
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "登録に失敗しました。";
+    }
+    submitBtn.disabled = false;
+  });
+}
+
+function setupHorseAliasNormalizeButton() {
+  const btn = document.getElementById("horse-alias-normalize-btn");
+  const messageEl = document.getElementById("horse-alias-normalize-message");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    if (!confirm("登録済みのエイリアスと一致する馬名を、既存の出走馬表・レース結果・馬メモ・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？")) return;
+
+    btn.disabled = true;
+    messageEl.hidden = true;
+
+    const res = await authedFetch("/api/admin/horse-aliases/normalize-existing", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      const u = data.updated || {};
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `一括補正が完了しました(レース ${u.races || 0}件 / レース結果 ${u.race_results || 0}件 / 馬メモ ${u.horse_notes || 0}件 / 購入履歴 ${u.tickets || 0}件 / CSV取込 ${u.imported_ticket_items || 0}件を更新)。`;
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "一括補正に失敗しました。";
+    }
+    btn.disabled = false;
+  });
+}
+
 async function onReady() {
   const denied = document.getElementById("admin-denied-notice");
   const content = document.getElementById("admin-content");
@@ -324,7 +540,15 @@ async function onReady() {
   if (content) content.hidden = false;
   setupJockeyAliasForm();
   setupJockeyAliasNormalizeButton();
-  await Promise.all([loadUnregisteredRaces(), loadUsers(), loadJockeyAliases()]);
+  setupHorseAliasForm();
+  setupHorseAliasNormalizeButton();
+  await Promise.all([
+    loadUnregisteredRaces(),
+    loadUsers(),
+    loadJockeyAliases(),
+    loadHorseAliases(),
+    setupHorseIndex(),
+  ]);
 }
 
 setupAuth(onReady);
