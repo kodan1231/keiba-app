@@ -150,6 +150,16 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .ghost-btn:hover { background: rgba(28,27,24,0.06); }
 
+/* 無効化されたボタンは操作不可であることが見た目でも分かるようにする
+   (処理中の一括登録ボタン等。以前は :disabled のスタイルが無く、押せるように見えていた) */
+button:disabled,
+button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.stamp-btn:disabled:hover { transform: none; box-shadow: none; }
+.ghost-btn:disabled:hover { background: transparent; }
+
 /* ---------- マストヘッド ---------- */
 .masthead {
   display: flex;

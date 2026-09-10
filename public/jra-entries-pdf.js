@@ -417,9 +417,11 @@ let jraEntriesParsedRecords = [];
 
 document.getElementById("jra-entries-import-btn")?.addEventListener("click", () => {
   jraEntriesImportFile.value = "";
+  jraEntriesImportFile.disabled = false;
   jraEntriesImportPreview.innerHTML = "";
   jraEntriesImportMessage.hidden = true;
   jraEntriesImportSubmit.disabled = true;
+  jraEntriesParseBtn.disabled = false;
   jraEntriesParsedFiles = [];
   jraEntriesParsedRecords = [];
   jraEntriesImportModal.hidden = false;
@@ -441,9 +443,13 @@ jraEntriesImportFile?.addEventListener("change", () => {
   jraEntriesParsedRecords = [];
 });
 
-document.getElementById("jra-entries-parse-btn")?.addEventListener("click", async () => {
+const jraEntriesParseBtn = document.getElementById("jra-entries-parse-btn");
+jraEntriesParseBtn?.addEventListener("click", async () => {
   const files = jraEntriesImportFile.files;
   if (!files || !files.length) { alert("PDFファイルを選択してください"); return; }
+  // 解析中は解析ボタン・登録ボタン・ファイル選択をすべて無効化する(二重実行・解析途中での登録を防ぐ)。
+  jraEntriesParseBtn.disabled = true;
+  jraEntriesImportFile.disabled = true;
   jraEntriesImportSubmit.disabled = true;
   jraEntriesImportPreview.innerHTML = `<p>解析中です…(${files.length}ファイル)<br>解析エンジン: ${JRA_ENTRIES_PARSER_VERSION}</p>`;
   const logs = [];
@@ -482,6 +488,9 @@ document.getElementById("jra-entries-parse-btn")?.addEventListener("click", asyn
   } catch (e) {
     console.error("[JRA Entries PDF] import failed", e);
     jraEntriesImportPreview.innerHTML = `<p class="error-text">解析中にエラーが発生しました: ${escapeHtml(e.message || String(e))}</p><details open><summary>実行ログ</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>`;
+  } finally {
+    jraEntriesParseBtn.disabled = false;
+    jraEntriesImportFile.disabled = false;
   }
 });
 
@@ -491,6 +500,8 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
   const totalRaces = targets.reduce((n, f) => n + f.records.length, 0);
   if (!confirm(`${targets.length}ファイル / のべ${totalRaces}レースの出走馬情報を登録します。既存レースは馬名をキーにマージされます。ファイル単位で順番に実行します。実行しますか？`)) return;
   jraEntriesImportSubmit.disabled = true;
+  jraEntriesParseBtn.disabled = true;
+  jraEntriesImportFile.disabled = true;
   jraEntriesImportMessage.hidden = false;
 
   let created = 0, updated = 0;
@@ -528,5 +539,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
   if (failures.length) message += `\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
   alert(message);
   await loadRaces();
+  jraEntriesParseBtn.disabled = false;
+  jraEntriesImportFile.disabled = false;
   if (!failures.length) { jraEntriesImportModal.hidden = true; } else { jraEntriesImportSubmit.disabled = false; }
 });

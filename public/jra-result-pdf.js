@@ -1100,7 +1100,9 @@ const jraImportMessage=document.getElementById("jra-result-import-message");
 let jraParsedFiles=[];let jraParsedRecords=[];let jraExistingMap=new Map();
 
 document.getElementById("jra-result-import-btn")?.addEventListener("click",()=>{
-  jraImportFile.value="";jraImportPreview.innerHTML="";jraImportMessage.hidden=true;jraImportSubmit.disabled=true;jraParsedFiles=[];jraParsedRecords=[];jraImportModal.hidden=false;
+  jraImportFile.value="";jraImportFile.disabled=false;jraImportPreview.innerHTML="";jraImportMessage.hidden=true;
+  jraImportSubmit.disabled=true;jraResultParseBtn.disabled=false;
+  jraParsedFiles=[];jraParsedRecords=[];jraImportModal.hidden=false;
 });
 document.getElementById("jra-result-import-cancel-btn")?.addEventListener("click",closeJraResultImportModal);
 jraImportModal?.addEventListener("click",e=>{if(e.target===jraImportModal)closeJraResultImportModal();});
@@ -1119,9 +1121,13 @@ jraImportFile?.addEventListener("change",()=>{
   jraParsedRecords=[];
 });
 
-document.getElementById("jra-result-parse-btn")?.addEventListener("click",async()=>{
+const jraResultParseBtn=document.getElementById("jra-result-parse-btn");
+jraResultParseBtn?.addEventListener("click",async()=>{
   const files=jraImportFile.files;
   if(!files||!files.length){alert("PDFファイルを選択してください");return;}
+  // 解析中は解析ボタン・登録ボタン・ファイル選択をすべて無効化する(二重実行・解析途中での登録を防ぐ)。
+  jraResultParseBtn.disabled=true;
+  jraImportFile.disabled=true;
   jraImportSubmit.disabled=true;
   jraImportPreview.innerHTML=`<p>解析中です…(${files.length}ファイル)<br>解析エンジン: ${JRA_RESULT_PDF_PARSER_VERSION}</p>`;
   const logs=[];
@@ -1166,6 +1172,9 @@ document.getElementById("jra-result-parse-btn")?.addEventListener("click",async(
   }catch(e){
     console.error("[JRA PDF] import failed",e);
     jraImportPreview.innerHTML=`<p class="error-text">解析中にエラーが発生しました: ${escapeHtml(e.message||String(e))}</p><details open><summary>実行ログ</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>`;
+  }finally{
+    jraResultParseBtn.disabled=false;
+    jraImportFile.disabled=false;
   }
 });
 
@@ -1174,7 +1183,7 @@ jraImportSubmit?.addEventListener("click",async()=>{
   if(!targets.length)return;
   const totalRaces=targets.reduce((n,f)=>n+f.records.length,0);
   if(!confirm(`${targets.length}ファイル / のべ${totalRaces}レースの結果・払戻を登録します。未登録レースは新規作成されます。ファイル単位で順番に実行します。実行しますか？`))return;
-  jraImportSubmit.disabled=true;jraImportMessage.hidden=false;
+  jraImportSubmit.disabled=true;jraResultParseBtn.disabled=true;jraImportFile.disabled=true;jraImportMessage.hidden=false;
 
   let created=0,updated=0,skipped=0;
   const failures=[];
@@ -1200,5 +1209,7 @@ jraImportSubmit?.addEventListener("click",async()=>{
   if(failures.length)msg+=`\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
   alert(msg);
   await loadRaces();
+  jraResultParseBtn.disabled=false;
+  jraImportFile.disabled=false;
   if(!failures.length){jraImportModal.hidden=true;}else{jraImportSubmit.disabled=false;}
 });
