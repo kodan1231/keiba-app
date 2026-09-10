@@ -52,6 +52,17 @@
 > (集計画面の「競馬場別」タブを「コース別」= 競馬場×芝/ダ/障×距離 に置換)。
 > 詳細は BACKLOG_HISTORY 期間9。
 >
+> 完了済み(2026-09-10): **予想登録画面に「過去成績(出走履歴)」表示を追加**。馬の行を
+> 開くと馬メモの下に、その馬の `race_results` 由来の過去出走(表示中レースを除く・馬名
+> 突き合わせ・`race_date` 降順で全件)を表で出す。新規 `GET /api/races/:id/horse-history`
+> (`functions/api/races/[id]/horse-history.js`。JOIN + 相関サブクエリでクエリ1本、
+> バインドは出走頭数バウンド)。列=日付/場R/コース/着順(N着/M頭)/人気/騎手/斤量/
+> 馬体重(増減)/タイム/着差、横スクロール。あわせて **馬行の開閉「＋/−」記号を廃止**
+> (行クリックでの開閉は維持)。変更: `public/prediction.js` / `public/style.css`
+> (`.horse-history*`)。`docs/design/screens.md`「予想登録画面」・
+> `docs/design/race-results.md`「予想登録画面での過去成績参照」更新済み。
+> `node --check` 済み・実機確認は未実施。
+>
 > 完了済み(2026-09-10): **管理者によるパスワードリセット機能**。管理画面の登録ユーザー
 > 一覧に「パスワードリセット」ボタン(自分の行を除く)。管理者が入力した新パスワードで
 > `password_hash` を上書きし `users.password_reset_pending=1`。対象ユーザーには全画面

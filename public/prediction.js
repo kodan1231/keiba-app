@@ -2,6 +2,10 @@ let races = [];
 let selectedRace = null;
 let prediction = { marks: [] };
 let horseNotes = {};
+// 出走各馬の過去成績(race_results 由来)。キーは空白正規化した馬名。
+// selectRace() で GET /api/races/:id/horse-history からまとめて取得し、
+// renderHorses() より後の applyHorseHistory() で各行の展開パネルへ流し込む。
+let horseHistory = {};
 // 「このレースの購入馬券」欄の開閉状態(group_idごと)。app.jsの.group-card開閉パターンと
 // 同じ考え方で、開閉した状態を再描画(selectRace()のたびに呼ばれるrenderPurchasedTickets)
 // をまたいで保持する。
@@ -191,9 +195,10 @@ async function selectRace() {
 
   const buyBtn = document.getElementById("buy-race-btn");
 
-  const [predRes, noteRes] = await Promise.all([
+  const [predRes, noteRes, histRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
     authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
+    authedFetch(`/api/races/${selectedRace.id}/horse-history`),
   ]);
 
   // 予想印はDBのprediction_marksを唯一の正とする。
@@ -209,8 +214,10 @@ async function selectRace() {
   }
 
   horseNotes = noteRes.ok ? await noteRes.json() : {};
+  horseHistory = histRes.ok ? await histRes.json() : {};
   applyPrediction();
   applyHorseNotes();
+  applyHorseHistory();
   // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
   // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
   // 確定済みであることがひと目でわかるようにする。
@@ -378,7 +385,6 @@ function renderHorses() {
           </span>
           <span class="note-toggle-tail">
             ${note.memo ? `<span class="memo-mark" title="この馬のメモがあります">▼</span>` : ""}
-            <span class="note-chevron">＋</span>
           </span>
         </div>
         <div class="horse-note-editor" hidden>
@@ -387,19 +393,21 @@ function renderHorses() {
               >${escapeHtml(note.memo || "")}</textarea>
           </label>
           <span class="horse-note-status" hidden></span>
+          <div class="horse-history" hidden></div>
         </div>
       </article>
     `;
   }).join("");
 
-  // 馬名行のクリックでメモだけ展開。印セレクトのクリックでは展開を切り替えない。
+  // 馬名行のクリックで展開パネル(馬メモ + 過去成績)を開閉する。
+  // 印セレクトのクリックでは展開を切り替えない。開閉トグルの「＋/−」記号は
+  // 表示しない(2026-09-10。行ホバーの背景変化とメモ「▼」マークで開閉可能なことを示す)。
   horsesEl.querySelectorAll(".horse-note-toggle").forEach(btn => {
     btn.addEventListener("click", (event) => {
       if (event.target.closest(".prediction-mark-inline")) return;
       const card = btn.closest(".horse-note-card");
       const editor = card.querySelector(".horse-note-editor");
       editor.hidden = !editor.hidden;
-      btn.querySelector(".note-chevron").textContent = editor.hidden ? "＋" : "−";
     });
   });
 
@@ -512,6 +520,65 @@ function applyHorseNotes() {
       mark.remove();
     }
   });
+}
+
+// 過去成績（出走履歴）を各馬の展開パネル（馬メモの下）へ流し込む。horseHistory の
+// 取得は renderHorses() より後に完了するため、applyHorseNotes() と同じくこのタイミングで
+// 描画する。0走の馬はセクションごと非表示のまま（従来どおりメモのみ）。
+function applyHorseHistory() {
+  horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
+    const box = card.querySelector(".horse-history");
+    if (!box) return;
+    const name = normalizeHorseName(card.dataset.horseName);
+    const rows = horseHistory[name] || [];
+    if (!rows.length) { box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    box.innerHTML = renderHorseHistory(rows);
+  });
+}
+
+// 着順セル。取消・除外・中止は着順が付かないため状態ラベルを出す。
+function historyPlaceText(row) {
+  const label = { scratched: "取消", excluded: "除外", stopped: "中止" }[row.status];
+  if (label) return label;
+  if (row.finish_position === null || row.finish_position === undefined) return "—";
+  return row.field_size ? `${row.finish_position}着 / ${row.field_size}頭` : `${row.finish_position}着`;
+}
+
+function renderHorseHistory(rows) {
+  const tbody = rows.map(r => {
+    const course = formatCourseText(r.course_type, r.distance) || "—";
+    const bw = (r.body_weight !== null && r.body_weight !== undefined)
+      ? `${r.body_weight}${r.body_weight_change ? `（${r.body_weight_change}）` : ""}`
+      : "—";
+    const kinryo = (r.weight_carried !== null && r.weight_carried !== undefined && !Number.isNaN(Number(r.weight_carried)))
+      ? Number(r.weight_carried).toFixed(1)
+      : "—";
+    const pop = (r.win_popularity !== null && r.win_popularity !== undefined) ? `${r.win_popularity}人` : "—";
+    return `
+      <tr title="${escapeAttr(r.race_name || "")}">
+        <td>${escapeHtml(formatDateMdW(r.race_date))}</td>
+        <td>${escapeHtml(`${r.track || ""}${r.race_number ? `${r.race_number}R` : ""}`)}</td>
+        <td>${escapeHtml(course)}</td>
+        <td class="hh-place">${escapeHtml(historyPlaceText(r))}</td>
+        <td>${escapeHtml(pop)}</td>
+        <td>${escapeHtml(r.jockey || "—")}</td>
+        <td>${escapeHtml(kinryo)}</td>
+        <td>${escapeHtml(bw)}</td>
+        <td>${escapeHtml(r.time_text || "—")}</td>
+        <td>${escapeHtml(r.margin || "—")}</td>
+      </tr>`;
+  }).join("");
+  return `
+    <div class="horse-history-head">過去成績（${rows.length}走）</div>
+    <div class="horse-history-scroll">
+      <table class="horse-history-table">
+        <thead>
+          <tr><th>日付</th><th>場</th><th>コース</th><th>着順</th><th>人気</th><th>騎手</th><th>斤量</th><th>馬体重</th><th>タイム</th><th>着差</th></tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>`;
 }
 
 function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+/g, " ").trim(); }
