@@ -15,10 +15,9 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **⚠️ 未適用のマイグレーションあり: `horse_aliases`**(2026-09-11 追加。馬名エイリアス機能)。
-  本番DBへ `migration.sql` の `-- @STEP: horse_aliases` ブロックを適用し
-  `schema_migrations` に `horse_aliases` を INSERT すること(手順は README)。
-  `users_password_reset_pending` までは適用・記録済み。
+- **未適用のマイグレーションは無い**(2026-09-11確認)。`horse_aliases`(馬名エイリアス。
+  2026-09-11 追加)は本番DB `keiba-yosou-db` へ適用・`schema_migrations` 記録済み。
+  `migration.sql` の `@STEP` 追記分は無し。
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
   その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
   データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)・
