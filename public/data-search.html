@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>データ検索 - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body data-page="data-search">
+
+<div id="login-screen" class="screen" hidden></div>
+
+<div id="app-screen" class="screen" hidden>
+
+  <header class="masthead"></header>
+
+  <main class="stats-main">
+
+    <nav class="stats-tabs">
+      <button type="button" class="stats-tab active" data-tab="race-stats">レース成績</button>
+    </nav>
+
+    <section class="stats-section stats-panel" data-panel="race-stats">
+
+      <div class="ds-filters">
+        <label class="ds-filter">
+          <span class="ds-filter-label">競馬場</span>
+          <select id="ds-track"><option value="">すべて</option></select>
+        </label>
+        <label class="ds-filter">
+          <span class="ds-filter-label">コース</span>
+          <select id="ds-surface">
+            <option value="">すべて(芝・ダート)</option>
+            <option value="芝">芝</option>
+            <option value="ダート">ダート</option>
+          </select>
+        </label>
+        <label class="ds-filter">
+          <span class="ds-filter-label">距離</span>
+          <select id="ds-distance"><option value="">すべて</option></select>
+        </label>
+      </div>
+
+      <p class="ds-status" id="ds-status" hidden></p>
+
+      <div id="ds-results" hidden>
+
+        <h2 class="stats-heading">単勝・馬連の傾向</h2>
+        <p class="stats-note" id="ds-payout-note"></p>
+        <div class="overall-grid" id="ds-payout-grid"></div>
+
+        <h2 class="stats-heading">高勝率騎手 トップ5</h2>
+        <p class="stats-note" id="ds-jockey-note"></p>
+        <div class="table-wrap"><table class="stats-table" id="ds-jockey-win-table"></table></div>
+
+        <h2 class="stats-heading">高複勝率騎手 トップ5</h2>
+        <p class="stats-note">複勝率は出走頭数によらず一律「3着以内率」で計算しています。</p>
+        <div class="table-wrap"><table class="stats-table" id="ds-jockey-show-table"></table></div>
+
+        <h2 class="stats-heading">馬番別成績</h2>
+        <p class="stats-note">大きい馬番は多頭数のレースにしか出走しないため、出走数の母数が小さくなります。</p>
+        <div class="table-wrap"><table class="stats-table" id="ds-horse-number-table"></table></div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
+
+<script src="utils.js"></script>
+<script src="shell.js"></script>
+<script src="auth.js"></script>
+<script src="cart.js"></script>
+<script src="data-search.js"></script>
+</body>
+</html>

@@ -1186,6 +1186,19 @@ body.history-selection-mode .group-detail-actions {
 }
 .stats-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 11px; }
 
+/* ---------- データ検索ページ ---------- */
+.ds-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+.ds-filter { min-width: 150px; }
+.ds-filter-label { font-size: 12px; color: var(--ink-soft); }
+.ds-status { font-family: var(--font-body); color: var(--ink-soft); padding: 16px 0; }
+#ds-results .stats-heading { margin-top: 26px; }
+#ds-results .stats-heading:first-child { margin-top: 0; }
+
 /* ---------- レース管理: 日付→競馬場→R の3階層アコーディオン ---------- */
 .date-group { border: 1px solid var(--rule-strong); background: var(--paper-raised); }
 .date-group + .date-group { margin-top: 14px; }

@@ -17,7 +17,9 @@
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
 - **未適用のマイグレーションは無い**(2026-09-10確認。`users_password_reset_pending` は
   本番DBへ適用・`schema_migrations` 記録済み。`migration.sql` の `@STEP` は空)。
-- **直近の状況(2026-09-07〜08)**: トークン効率化リファクタリング完了(BACKLOG_HISTORY 期間9)。
+- **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
+  その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
+  データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)を追加。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -29,6 +31,7 @@
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` のみ。**実DBで**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、`payouts` のみ/`race_results` のみのレースで母数が別々に出ること、を確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
 
@@ -119,6 +122,18 @@
 > `public/style.css`(`.prediction-race-meta` `.race-cond-badge`)。
 > `docs/design/screens.md`「予想登録画面」・`docs/design/data-model.md`
 > 「レース条件の詳細カラム」(N-4 の一部進捗)更新済み。実機確認は未実施。
+>
+> 完了済み(2026-09-10): **データ検索画面「レース成績」タブを新設**(ROADMAP クラスタM
+> 「騎手名ベースの集計」)。NAV に「データ検索」(全ログインユーザー)。競馬場・コース種別
+> (芝/ダート)・距離(完全一致・データ内のみ)で絞り、①平均単勝金額・単勝300/500/1000円
+> 以下率(`races.payouts.tan`)②平均馬連金額(`payouts.umaren`)③高勝率騎手トップ5
+> ④高複勝率騎手トップ5(一律3着以内率。足切り `max(5,⌈対象レース数×5%⌉)` 上限50。
+> 見習い記号除去で名寄せ)⑤馬番別成績(着別度数+勝率/連対率/複勝率)を表示。
+> サーバーはサブリクエスト2本(`races` 全件 / `race_results` を `races` と JOIN)。
+> 新規: `public/data-search.html` `public/data-search.js`
+> `functions/api/data-search/race-stats.js`。変更: `public/shell.js`(NAV_ITEMS)
+> `public/style.css`(`.ds-*`)。`docs/design/data-search.md` 新規・索引3ファイル更新済み。
+> `node --check` 済み・実機確認は未実施。
 
 ### B. 中期(feasible なら / 仕様を検討して)
 
@@ -130,7 +145,9 @@
 ### C. そのうち
 
 - 降着・失格の `race_results.status` 対応方針の検討
-- ROADMAP クラスタM(race_results ベースの集計画面)— A 段の早め分が片付いてから
+- ROADMAP クラスタM 残タスク: `races(track, course_type, distance)` 複合インデックス
+  (「データ検索」が重くなったら)/ 馬名・騎手個別検索タブの要否検討。主要2機能
+  (馬名ベース=予想画面の過去成績 / 騎手名ベース=データ検索画面)は実装済み
 
 ### 後回し
 

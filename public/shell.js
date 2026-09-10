@@ -25,6 +25,7 @@
     { page: "buy", href: "index.html", label: "馬券購入" },
     { page: "history", href: "history.html", label: "馬券履歴" },
     { page: "stats", href: "stats.html", label: "集計" },
+    { page: "data-search", href: "data-search.html", label: "データ検索" },
     { page: "races", href: "races.html", label: "レース管理", adminOnly: true },
     { page: "admin", href: "admin.html", label: "管理", adminOnly: true },
   ];

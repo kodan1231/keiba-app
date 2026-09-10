@@ -13,6 +13,7 @@
 | 購入履歴画面 | public/app.js, public/history.html |
 | 予想登録画面(予想印・馬メモ) | public/prediction.js, public/prediction.html |
 | 集計画面 | public/stats.js, public/stats.html |
+| データ検索画面(レース成績集計) | public/data-search.js, public/data-search.html, functions/api/data-search/race-stats.js |
 | レース管理画面(手動編集) | public/races.js, public/races.html |
 | 出走馬一覧PDFインポート | public/jra-entries-pdf.js, functions/api/races/entries-import.js |
 | JRAレース結果PDFインポート | public/jra-result-pdf.js, functions/api/races/results-import.js |
@@ -55,6 +56,7 @@ DESIGN.md(索引)は各ファイルへのポインタのみ。経緯説明(「�
 | data-flow.md | データフロー(通常購入 / CSV取込 / PDF取込 → 各テーブル) |
 | csv-import.md | 着順・払戻レートの反映 / 確定扱いの統一 / 「馬／組番」列の解析 |
 | screens.md | トップページ / モーダル共通挙動 / 購入履歴画面 / レース管理画面 / 集計画面 / 購入画面 / 馬券かご機能 / 予想登録画面 / 日時タイムゾーン / レスポンシブ対応 |
+| data-search.md | データ検索画面(レース成績集計)/ フィルタ(競馬場・コース種別・距離)/ 平均単勝・馬連金額 / 単勝○円以下率 / 高勝率・高複勝率騎手トップ5 / 馬番別成績 / API仕様 |
 | race-edit-lock.md | レース登録・編集 / ロック仕様 |
 | payout-refund.md | 払戻確定時のticket反映(全ユーザー対応) / 払戻確定バッジ・的中率集計の判定 / 返還(refund)処理 |
 | stats-rules.md | 集計ルール(収支・回収率・的中率の考え方) |
