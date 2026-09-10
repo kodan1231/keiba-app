@@ -384,8 +384,10 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
   出典は `race_results`(JRAレース結果PDF取込済みの馬単位の確定結果)。表示中のレース自身を
   除き、馬名(空白正規化)で横断一致した過去出走を **`race_date` 降順で全件** 出す。
   `race_results` に一致行が無い馬は従来どおりメモのみ(セクション自体を出さない)。
-  取得は `GET /api/races/:id/horse-history`(全ユーザー共有データのためログインのみで可)で、
-  `selectRace()` が予想印・馬メモと並行して1回だけ呼ぶ。列は「日付・場R・コース
+  取得は `GET /api/races/:id/horse-history`(全ユーザー共有データのためログインのみで可)。
+  `selectRace()` が予想印・馬メモの読み込みとは**切り離して**呼び(`loadHorseHistory()`)、
+  取得・JSONパースの失敗は握りつぶす(購入馬券欄 `loadRaceTickets()` と同じ考え方。
+  この画面の馬メモ表示に巻き添え不具合を出さないため)。列は「日付・場R・コース
   (`formatCourseText`)・着順(`3着 / 16頭`。取消/除外/中止は状態ラベル)・人気・騎手・
   斤量・馬体重(増減)・タイム・着差」で、列が多いため表は横スクロールで見せる
   (`.horse-history-scroll`)。各行の `title` に過去レース名を出す

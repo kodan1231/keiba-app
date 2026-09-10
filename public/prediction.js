@@ -195,10 +195,9 @@ async function selectRace() {
 
   const buyBtn = document.getElementById("buy-race-btn");
 
-  const [predRes, noteRes, histRes] = await Promise.all([
+  const [predRes, noteRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
     authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
-    authedFetch(`/api/races/${selectedRace.id}/horse-history`),
   ]);
 
   // 予想印はDBのprediction_marksを唯一の正とする。
@@ -214,10 +213,16 @@ async function selectRace() {
   }
 
   horseNotes = noteRes.ok ? await noteRes.json() : {};
-  horseHistory = histRes.ok ? await histRes.json() : {};
   applyPrediction();
   applyHorseNotes();
+
+  // 過去成績は完全に独立して読み込む。取得・パースで何が起きても、予想印・馬メモ・
+  // 購入導線には影響させない(下の loadRaceTickets と同じ考え方。2026-09-10:
+  // 当初は上の Promise.all に含めていたが、エンドポイント応答が非JSONだと
+  // await res.json() が throw して applyHorseNotes まで巻き添えで止まる不具合があった)。
+  horseHistory = {};
   applyHorseHistory();
+  loadHorseHistory().catch(() => {});
   // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
   // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
   // 確定済みであることがひと目でわかるようにする。
@@ -520,6 +525,22 @@ function applyHorseNotes() {
       mark.remove();
     }
   });
+}
+
+// 過去成績(race_results 由来)を取得する。予想印・馬メモの読み込みからは切り離し、
+// 失敗しても握りつぶす(呼び出し側で .catch)。応答が非JSON/エラーでも throw させない。
+async function loadHorseHistory() {
+  const rid = selectedRace && selectedRace.id;
+  if (!rid) return;
+  const res = await authedFetch(`/api/races/${rid}/horse-history`);
+  if (!res.ok) return;
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== "object") return;
+  // 取得中に別レースへ切り替わっていたら破棄する。
+  if (selectedRace && selectedRace.id === rid) {
+    horseHistory = data;
+    applyHorseHistory();
+  }
 }
 
 // 過去成績（出走履歴）を各馬の展開パネル（馬メモの下）へ流し込む。horseHistory の
