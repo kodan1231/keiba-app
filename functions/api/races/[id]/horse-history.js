@@ -66,8 +66,7 @@ export async function onRequestGet(context) {
       ORDER BY r.race_date DESC, r.race_number DESC`
   ).bind(raceId, ...strippedKeys).all();
 
-  // ?debug=1: 突き合わせが空になる原因の切り分け用。空白除去キーごとに
-  // 「race_results にその馬名の行が(このレース以外に)何件あるか」を返す。
+  // ?debug=1: 過去成績が空になる原因の切り分け用。
   const url = new URL(context.request.url);
   if (url.searchParams.get("debug") === "1") {
     const { results: dbg } = await env.DB.prepare(
@@ -78,11 +77,29 @@ export async function onRequestGet(context) {
         GROUP BY k`
     ).bind(raceId, ...strippedKeys).all();
     const counts = Object.fromEntries((dbg || []).map((r) => [r.k, r.n]));
+    const totalRR = await env.DB.prepare("SELECT COUNT(*) AS n FROM race_results").first();
+    const namedRR = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> ''"
+    ).first();
+    // 突き合わせキーの先頭2文字での前方一致(空白違い以外のズレ=異体字等の検出用)
+    const likeHits = {};
+    for (const k of strippedKeys) {
+      const head = k.slice(0, 2);
+      if (!head) continue;
+      const row = await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM race_results WHERE horse_name LIKE ?"
+      ).bind(`%${head}%`).first();
+      likeHits[k] = row?.n ?? 0;
+    }
     return Response.json({
       _debug: {
         raceId,
+        entryHorseNames: entries.map((e) => e?.horse_name ?? null),
         strippedKeys,
-        raceResultsMatchCounts: counts,
+        raceResultsTotalRows: totalRR?.n ?? 0,
+        raceResultsRowsWithName: namedRR?.n ?? 0,
+        exactMatchCounts: counts,
+        looseLikeCountsByHead2: likeHits,
         joinedRows: (results || []).length,
       },
     });

@@ -533,9 +533,12 @@ async function loadHorseHistory() {
   const rid = selectedRace && selectedRace.id;
   if (!rid) return;
   const res = await authedFetch(`/api/races/${rid}/horse-history`);
-  if (!res.ok) return;
-  const data = await res.json().catch(() => null);
+  // 切り分け用: 応答状況をコンソールに残す(過去成績が出ないときの原因追跡)。
+  if (!res.ok) { console.warn("[horse-history] HTTP", res.status, res.statusText); return; }
+  const data = await res.json().catch((e) => { console.warn("[horse-history] JSON parse失敗", e); return null; });
   if (!data || typeof data !== "object") return;
+  const horseCount = Object.keys(data).length;
+  console.info("[horse-history] 取得OK 対象馬数", horseCount);
   // 取得中に別レースへ切り替わっていたら破棄する。
   if (selectedRace && selectedRace.id === rid) {
     horseHistory = data;
