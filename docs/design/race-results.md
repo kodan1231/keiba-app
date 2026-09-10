@@ -117,9 +117,16 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 
 - `prediction.html`で各馬の行を開くと、馬メモの下に「過去成績(出走履歴)」表を表示する
 - 取得は `GET /api/races/:id/horse-history`(`functions/api/races/[id]/horse-history.js`)。
-  対象レースの`entries[].horse_name`(元の値と空白正規化値の両方)をキーに
   `race_results`を`races`とJOINして引き、**表示中のレース自身(`race_id`)を除外**し、
   `race_date`降順で全件返す
+- **馬名の突き合わせは「空白を全部除去した文字列」で行う**。`race_results.horse_name`は
+  取込時に空白正規化されておらず(parserの生値)、`races.entries[].horse_name`
+  (出走馬一覧PDF由来・`mergeEntriesByHorseName`で正規化済み)と全角/半角スペースの
+  入り方が食い違い、単純一致だと取りこぼす。SQL側は
+  `replace(replace(horse_name, '　', ''), ' ', '')` で列の空白を落として `IN` 比較。
+  JRAの馬名は全国で一意なので空白を落としても別馬と衝突しない
+- レスポンスのキーはクライアント(`prediction.js` の `normalizeHorseName()`=空白を半角1つに
+  畳む)が引ける形にする。`?debug=1` を付けると突き合わせ結果の内訳を返す(切り分け用)
 - 各行の頭数(`field_size`)は相関サブクエリで数えるが、**`status IN ('finished','stopped')`
   に限定して「実際に発走した頭数」を出す**。取消(`scratched`)・除外(`excluded`)は
   `race_results`に行が残るものの発走していないので数えない(単純な`COUNT(*)`だと

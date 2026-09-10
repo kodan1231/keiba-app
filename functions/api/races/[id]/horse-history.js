@@ -7,12 +7,19 @@ import { parsePositiveIntId, jsonError } from "../../_shared.js";
 // race_results / races はどちらも全ユーザー共有データのため、ログインしていれば
 // 誰でも閲覧できる(races 本体・GET /api/races/:id/results と同じ扱い。requireAdmin しない)。
 //
-// 突き合わせキーは馬名。race_results.horse_name は取込時に空白正規化されていない
-// (parser の生値)ため、entries 側の馬名は「元の値」と「正規化値」の両方を
-// IN 候補に含める。バインド数は「1レースの出走頭数 × 2 + 1」で自然にバウンドされ、
-// D1 の 1クエリ100バインドパラメータ上限に収まる(18頭でも 37)。
+// 突き合わせキーは馬名。ただし race_results.horse_name は取込時に空白正規化されて
+// おらず(parser の生値。全角/半角スペースの入り方がまちまち)、races.entries 側の
+// 馬名(出走馬一覧PDF由来。mergeEntriesByHorseName で正規化済み)と単純一致しないことが
+// ある。そこで「空白を全部除去した文字列」を突き合わせキーにする(JRAの馬名は全国で
+// 一意なので、空白を落としても別馬と衝突しない)。SQL 側は replace() で列の空白を
+// 除去して IN 比較する。バインド数は出走頭数で自然にバウンドされ、D1 の 1クエリ
+// 100バインドパラメータ上限に収まる(18頭 + 1)。
+//
+// レスポンスのキーはクライアント(prediction.js の normalizeHorseName)が引ける
+// 「空白を半角1つに畳んだ馬名」にする。
 
 const normalizeName = (v) => String(v ?? "").replace(/[　\s]+/g, " ").trim();
+const stripSpaces = (v) => String(v ?? "").replace(/[　\s]+/g, "");
 
 export async function onRequestGet(context) {
   const { env, params } = context;
@@ -25,17 +32,18 @@ export async function onRequestGet(context) {
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
-  const nameSet = new Set();
+  // 空白除去キー -> レスポンスのキー(= クライアント突き合わせ用の正規化名)
+  const keyMap = new Map();
   for (const e of entries) {
     const raw = e?.horse_name;
     if (raw === null || raw === undefined || raw === "") continue;
-    nameSet.add(String(raw));
-    nameSet.add(normalizeName(raw));
+    const stripped = stripSpaces(raw);
+    if (stripped && !keyMap.has(stripped)) keyMap.set(stripped, normalizeName(raw));
   }
-  const names = [...nameSet];
-  if (!names.length) return Response.json({});
+  if (!keyMap.size) return Response.json({});
+  const strippedKeys = [...keyMap.keys()];
 
-  const placeholders = names.map(() => "?").join(",");
+  const placeholders = strippedKeys.map(() => "?").join(",");
   // 頭数(field_size)は相関サブクエリで数える。過去レースIDの集合は使い込むと増えるため、
   // race_id を IN で渡す方式にすると 100バインド上限に抵触しうる。JOIN + 相関サブクエリで
   // クエリ1本にまとめることで、バインドを出走馬名の集合(頭数バウンド)だけに抑える。
@@ -53,13 +61,36 @@ export async function onRequestGet(context) {
               WHERE x.race_id = rr.race_id AND x.status IN ('finished','stopped')) AS field_size
        FROM race_results rr
        JOIN races r ON r.id = rr.race_id
-      WHERE rr.race_id <> ? AND rr.horse_name IN (${placeholders})
+      WHERE rr.race_id <> ?
+        AND replace(replace(rr.horse_name, '　', ''), ' ', '') IN (${placeholders})
       ORDER BY r.race_date DESC, r.race_number DESC`
-  ).bind(raceId, ...names).all();
+  ).bind(raceId, ...strippedKeys).all();
+
+  // ?debug=1: 突き合わせが空になる原因の切り分け用。空白除去キーごとに
+  // 「race_results にその馬名の行が(このレース以外に)何件あるか」を返す。
+  const url = new URL(context.request.url);
+  if (url.searchParams.get("debug") === "1") {
+    const { results: dbg } = await env.DB.prepare(
+      `SELECT replace(replace(rr.horse_name, '　', ''), ' ', '') AS k, COUNT(*) AS n
+         FROM race_results rr
+        WHERE rr.race_id <> ?
+          AND replace(replace(rr.horse_name, '　', ''), ' ', '') IN (${placeholders})
+        GROUP BY k`
+    ).bind(raceId, ...strippedKeys).all();
+    const counts = Object.fromEntries((dbg || []).map((r) => [r.k, r.n]));
+    return Response.json({
+      _debug: {
+        raceId,
+        strippedKeys,
+        raceResultsMatchCounts: counts,
+        joinedRows: (results || []).length,
+      },
+    });
+  }
 
   const out = {};
   for (const row of results || []) {
-    const key = normalizeName(row.horse_name);
+    const key = keyMap.get(stripSpaces(row.horse_name));
     if (!key) continue;
     if (!out[key]) out[key] = [];
     out[key].push({
