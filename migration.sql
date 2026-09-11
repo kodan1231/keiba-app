@@ -47,3 +47,15 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
   canonical_name TEXT NOT NULL,     -- 正しい馬名
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- @STEP: race_results_horse_key
+-- GET /api/races/:id/horse-history が race_results を毎回全件スキャンしていたことで
+-- D1の日次行読み取り上限(500万行)を超過する障害が発生(2026-09-11)。
+-- race_results.horse_name の突き合わせキー(horseAliasKeyOf(horse_name))を列として
+-- 保持し、インデックスを張ることで「対象馬だけをSQL側で直接引く」ようにする。
+-- 詳細は docs/design/horse-aliases.md 参照。
+-- 列追加後、既存行への値の埋め込み(バックフィル)は admin画面「既存データの馬名を
+-- 一括補正する」ボタン(normalizeExistingHorseNames)の実行で行う(NFKC正規化は
+-- SQLiteでは出来ないため、アプリ側=JSで計算してUPDATEする必要がある)。
+ALTER TABLE race_results ADD COLUMN horse_key TEXT;
+CREATE INDEX IF NOT EXISTS idx_race_results_horse_key ON race_results(horse_key);

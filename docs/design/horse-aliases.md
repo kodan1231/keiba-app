@@ -43,6 +43,12 @@ CREATE TABLE horse_aliases (
 );
 ```
 
+### `race_results.horse_key`(過去成績検索用の突き合わせキー列。2026-09-11追加)
+
+`race_results` に `horse_key TEXT`(+インデックス)を持たせ、`horseAliasKeyOf(horse_name)`
+(その行に現在格納されている `horse_name` をそのままキー化したもの。エイリアス適用は
+書き込み元が既に行っている前提)を保存しておく。詳細は「読み取り時の正規化」参照。
+
 ### 正規化を適用する経路
 
 **(1) 今後登録されるデータ(登録・取込時に自動正規化)**
@@ -59,6 +65,10 @@ CREATE TABLE horse_aliases (
 以降は `applyHorseAliasMap(map, name)` でメモリ参照のみで正規化する(N+1 回避。
 `jockey_aliases` と同じパターン)。マッチしない表記は変更しない(誤爆防止)。
 
+`race_results` への書き込み(`_lib/race-results.js` の `upsertRaceResults` /
+`upsertRaceResultsBulk`)は、渡された(=呼び出し元で既にエイリアス正規化済みの)
+`horse_name` から `horse_key = horseAliasKeyOf(horse_name)` を計算して同じ行に保存する。
+
 **(1') 読み取り時の正規化**
 
 `GET /api/races`(`functions/api/races/index.js`)は、保存済みの `entries[].horse_name` を
@@ -66,10 +76,24 @@ CREATE TABLE horse_aliases (
 入口でここで揃えておくことで、予想画面の過去成績突き合わせ・集計等が一律に恩恵を受ける
 (バックフィル前でも表示が揃う)。
 
-`GET /api/horse-notes?race_id=` / `GET /api/races/:id/horse-history` も、突き合わせ時に
-`horseAliasKeyOf` + `horse_aliases` を通す。`horse-history` は SQLite で NFKC ができない
-ため、`race_results` を「今のレース以外」全件取得してメモリで突き合わせる
-(1クエリ・サブリクエスト増なし)。
+`GET /api/horse-notes?race_id=` は、突き合わせ時に `horseAliasKeyOf` + `horse_aliases` を通す。
+
+`GET /api/races/:id/horse-history`(2026-09-11に全件スキャンから変更。下記「経緯」参照)は、
+出走各馬の正規化キーと、そのキーを指す `horse_aliases` 側のエイリアスキー(逆引き)を
+合わせた集合で `race_results.horse_key` を `WHERE horse_key IN (...)` と直接絞り込む。
+逆引きを含めるのは、対象の `race_results` 行がまだ旧表記のまま(＝`horse_key` が旧表記の
+キー)でも、一括補正前から一致させるため。バインド数は「出走馬(最大18頭程度)×
+(1 + その馬のエイリアス数)」で自然に100バインド上限内に収まる(CLAUDE.mdの不変条件)。
+馬ごとの表示は直近5走まで(`ROW_NUMBER() OVER (PARTITION BY horse_key ORDER BY
+race_date DESC, race_number DESC)` でSQL側に確定。欠番なし)。
+
+**経緯**: 以前は `race_results` を「今のレース以外」全件取得し、行ごとにJS側で
+`horseAliasKeyOf` を計算してメモリ突き合わせしていた(SQLiteはNFKC正規化ができないため。
+1クエリ・サブリクエスト増なしという設計だった)。しかし `race_results` が育つにつれて
+毎回ほぼ全件スキャン(+ `field_size` 算出の行ごとの相関サブクエリ)になり、開くたびに
+数十万行を読む状態になっていた。これがD1無料枠の日次行読み取り上限(500万行)超過障害
+(2026-09-11)の主因と判明したため、`horse_key` 列+インデックスを追加して
+上記の方式に変更した。
 
 **(2) 既に登録されているデータ(一括補正・手動実行)**
 
@@ -79,13 +103,19 @@ CREATE TABLE horse_aliases (
 対象テーブル・カラム:
 
 - `races.entries`(JSON配列。各要素の `horse_name`)
-- `race_results.horse_name`
+- `race_results.horse_name`(あわせて `horse_key` も同期。下記参照)
 - `horse_notes.horse_name`
 - `tickets.selections`(JSON配列。各要素の `horse_name`)
 - `imported_ticket_items.selections`(JSON配列。各要素の `horse_name`)
 
 各テーブルとも「1回の SELECT で全件取得 → メモリ判定 → 変更行だけ `db.batch()`」方式で
 サブリクエスト数上限を回避する。未登録の表記ゆれは対象外。**何度実行しても安全(冪等)。**
+
+**`race_results.horse_key` の同期はこのボタンが兼ねる**: `horse_aliases` が1件も登録されて
+いない(=リネーム対象が無い)場合でも、`race_results` の `horse_name`/`horse_key` 同期
+ブロックだけは実行される。列追加後の**既存行への初回バックフィル**(`horse_key` が
+`NULL` の行への値埋め)も、このボタンを1回押すことで行われる(NFKC正規化はSQLiteでは
+できないため、JSで計算してUPDATEする必要がある)。
 
 **`horse_notes` の衝突扱い**: `horse_notes` は `UNIQUE(horse_name, user_id)`。
 「表記ゆれ名のメモ」と「正しい名の既存メモ」が同一ユーザーで両方あると衝突するため、
@@ -119,5 +149,3 @@ CREATE TABLE horse_aliases (
 - エイリアスの編集(更新)機能、CSV での一括インポート/エクスポート
 - 異体字の是正を PDF parser 側で行うこと(`jockey_aliases` と同じく、本節は
   parser 側の是正が入った後も補完的に表記ゆれを吸収し続ける位置づけ)
-- `race_results` を使い込んで巨大化したときの `horse-history` 全件スキャンの最適化
-  (race_date 上限等でのバウンド)

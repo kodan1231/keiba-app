@@ -113,21 +113,24 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 - `race_results`にデータが無いレース(結果PDF未取込)ではこのセクション自体が
   非表示になる
 
-### 予想登録画面での過去成績参照(2026-09-10)
+### 予想登録画面での過去成績参照(2026-09-10。クエリ方式は2026-09-11に変更)
 
 - `prediction.html`で各馬の行を開くと、馬メモの下に「過去成績(出走履歴)」表を表示する
 - 取得は `GET /api/races/:id/horse-history`(`functions/api/races/[id]/horse-history.js`)。
-  **表示中のレース以外の `race_results` を `races` と JOIN して全件取得し、メモリで馬名を
-  突き合わせる**(SQLite で NFKC ができないため。1クエリ・サブリクエスト増なし)。
-  `race_date` 降順
+  出走各馬の突き合わせキー(`race_results.horse_key` に対応する値。逆引きエイリアスキーも
+  含む)で `WHERE horse_key IN (...)` と直接絞り込む(全件スキャンではない。
+  詳細・経緯は `docs/design/horse-aliases.md`「`race_results.horse_key`」参照)。
+  **馬ごとに直近5走まで**(`race_date` 降順、欠番なし。`ROW_NUMBER() OVER (PARTITION BY
+  horse_key ...)` でSQL側に確定)
 - **馬名の突き合わせは `horseAliasKeyOf`(NFKC正規化 + 全空白除去)+ `horse_aliases`
   エイリアスで正規化したキーで行う**(`docs/design/horse-aliases.md` 参照)。
   `race_results.horse_name`(parser の生値)と `races.entries[].horse_name` の表記が
   半角/全角カナ・空白・異体字で食い違っても紐付く。レスポンスのキーはクライアント
   (`prediction.js` の `normalizeHorseName()`=空白を半角1つに畳む)が引ける形にする
-- `?debug=1` を付けると突き合わせ結果の内訳(出走各馬の突き合わせキー・`race_results`
-  全体件数・先頭3文字での類似馬名サンプルと突き合わせ成否・マッチ件数)を返す(切り分け用)
-- 各行の頭数(`field_size`)は相関サブクエリで数えるが、**`status IN ('finished','stopped')`
+- `?debug=1` を付けると突き合わせ結果の内訳(出走各馬の突き合わせキー・検索キー集合・
+  `race_results` 全体件数・先頭3文字での類似馬名サンプルと突き合わせ成否)を返す(切り分け用)
+- 各行の頭数(`field_size`)は、該当した過去レース(最大でも出走馬数×5走ぶん)だけを
+  対象にした `GROUP BY race_id` 1本で求める。**`status IN ('finished','stopped')`
   に限定して「実際に発走した頭数」を出す**。取消(`scratched`)・除外(`excluded`)は
   `race_results`に行が残るものの発走していないので数えない(単純な`COUNT(*)`だと
   取消・除外がいたレースで頭数が1〜数頭多く出てしまう)。中止(`stopped`)は発走済みなので

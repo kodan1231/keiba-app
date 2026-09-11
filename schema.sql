@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS race_results (
   body_weight_change TEXT,       -- 増減 例:"+2" "-2" "初出走" "計不"(数値以外もあるためTEXT)
   win_popularity INTEGER,        -- 単勝人気
   incident_note TEXT,            -- 競走中の出来事(該当時に自動転記)。管理者が編集可
+  horse_key TEXT,                -- horseAliasKeyOf(horse_name)。予想画面の過去成績検索用の突き合わせキー(docs/design/horse-aliases.md)
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(race_id, horse_number)
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS race_results (
 
 CREATE INDEX IF NOT EXISTS idx_race_results_race_id ON race_results(race_id);
 CREATE INDEX IF NOT EXISTS idx_race_results_horse_name ON race_results(horse_name);
+CREATE INDEX IF NOT EXISTS idx_race_results_horse_key ON race_results(horse_key);
 
 -- ============================================================
 -- 3. 通常購入

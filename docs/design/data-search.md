@@ -105,9 +105,9 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 - `course_type` は `芝` / `ダート` / 空 のみ受け付ける(それ以外は 400)
 - `distance` は正の整数のみ(不正は 400)
 
-### サーバー処理(サブリクエスト2本で完結)
+### サーバー処理(2026-09-11にクエリ2の方式を変更。経緯は下記)
 
-レース単位のループで1件ずつ問い合わせない。以下の2クエリのみ:
+レース単位のループで1件ずつ問い合わせない。以下の処理のみ:
 
 1. **races 全件(フィルタ条件を掛けずに取得)**:
    `SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races`。
@@ -116,21 +116,27 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
    - `distanceOptions` = 「選択中の競馬場(未選択なら全部)」かつ `course_type ∈ {芝,ダート}`
      (選択中のコース種別があればそれに一致)かつ `distance` 非 NULL の distinct 昇順
    - `track` / `course_type`(`芝`/`ダート`、未指定時は `NULL または 芝/ダート`)/ `distance`
-     の各フィルタをメモリ側で適用してから、①② の払戻集計と ③④⑤ の着順集計を行う
+     の各フィルタを適用し、フィルタ該当レースの `id` 一覧(`matchedRaceIds`)を確定する
+     (クエリ2で使う。①② の払戻集計と ③④⑤ の着順集計もこのフィルタ結果を使う)
    - ③④⑤ は「③④⑤ 共通」のルールで、レースごとに `race_results`(クエリ2の結果を
      `race_id` でグルーピング)か `finish_order`+`entries` を選んで集計する
    - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲。行数が増えて
      重くなったら precompute テーブルか期間フィルタ導入を検討する
-2. **`race_results`(フィルタ該当レースのぶんだけ)**: `race_results` を `races` と JOIN し、
-   `races` 側の `track` / `course_type` / `distance` で WHERE(`race_results` は大きい
-   テーブルのため全件取得はしない)。
-   `SELECT rr.race_id, rr.horse_number, rr.jockey, rr.status, rr.finish_position
-    FROM race_results rr JOIN races r ON r.id = rr.race_id <WHERE ...>`
-   - JOIN 方式にすることで、対象レースが多くても `WHERE race_id IN (...)` のチャンク分割
-     (=サブリクエスト増)が不要になる(`GET /api/races/:id/horse-history` と同じ方針)
-   - `course_type` 未指定時の WHERE は `(r.course_type IS NULL OR r.course_type IN ('芝','ダート'))`
+2. **`race_results`(`matchedRaceIds` のぶんだけ)**:
+   `SELECT race_id, horse_number, jockey, status, finish_position FROM race_results
+    WHERE race_id IN (...)`。`matchedRaceIds` を90件ずつチャンク分割してこのクエリを
+   繰り返す(D1の1クエリ100バインドパラメータ上限。CLAUDE.md参照)。
    - 取得後 `race_id` でグルーピングし、「行数 ≥ `entries` 要素数」のレースだけ
      `race_results` を正のソースとして採用する(それ未満は `finish_order` へフォールバック)
+   - フィルタ(特に競馬場)が効いている場合、対象レースが絞られる分だけ読み取り行数も
+     減る。フィルタ無しの初期表示は全レースが対象になるため、チャンク数本(≒全件相当)
+     になる
+
+**経緯**: 以前は `race_results` を `races` と JOIN し、`races` 側のカラムで WHERE していた。
+JOIN条件が `races` 側のため `race_results` 側の絞り込みが効かず、フィルタの有無や内容に
+かかわらず `race_results` をほぼ全件スキャンしてしまっていた。これがD1無料枠の日次行
+読み取り上限(500万行)超過障害(2026-09-11)の一因と判明したため、`races` 側で先に対象
+レースIDを確定してから `race_results` を `race_id IN (...)` で引く方式に変更した。
 
 ### レスポンス
 

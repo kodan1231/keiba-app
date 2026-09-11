@@ -6,8 +6,8 @@ import { jsonError } from "../_shared.js";
 // データのため requireAdmin しない(GET /api/races/:id/horse-history と同じ扱い)。
 //
 // 仕様の詳細は docs/design/data-search.md。実装方針の要点:
-//   - レース単位のループで1件ずつ問い合わせない。サブリクエストは2本のみ
-//     (1: races 全件 / 2: race_results を races と JOIN してフィルタ該当分だけ)。
+//   - レース単位のループで1件ずつ問い合わせない。races 全件(1本)+ フィルタ該当レースの
+//     race_results(90件ずつチャンク。通常は数本)のみ。
 //   - ① 平均単勝金額・○円以下率 / ② 平均馬連金額 は races.payouts。
 //   - ③④⑤(騎手率・馬番別成績)の着順ソースは「race_results が全頭ぶん揃っていれば
 //     race_results(最も正)、そうでなければ finish_order(上位3着)+ entries」を
@@ -16,6 +16,13 @@ import { jsonError } from "../_shared.js";
 const SURFACES = new Set(["芝", "ダート"]);
 const RIDDEN_STATUSES = new Set(["finished", "stopped"]);
 const JOCKEY_MARK_RE = /^[☆▲△★◇]/;
+
+// D1の「1クエリ100バインドパラメータ」上限に備えたチャンク分割(CLAUDE.md参照)。
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 // 騎手名の名寄せキー: 先頭の見習い減量記号を除去し、空白(全角/半角)を畳み込む
 // (jockey_aliases の alias_key と同じ考え方)。
@@ -123,41 +130,42 @@ export async function onRequestGet(context) {
     "SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races"
   ).all();
 
-  // --- クエリ2: race_results を races と JOIN(races 側の条件で WHERE) ---
-  const where = [];
-  const binds = [];
-  if (track) {
-    where.push("r.track = ?");
-    binds.push(track);
-  }
-  if (surface) {
-    where.push("r.course_type = ?");
-    binds.push(surface);
-  } else {
-    where.push("(r.course_type IS NULL OR r.course_type IN ('芝','ダート'))");
-  }
-  if (distance != null) {
-    where.push("r.distance = ?");
-    binds.push(distance);
-  }
-  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
-  const { results: rrRows } = await env.DB.prepare(
-    `SELECT rr.race_id, rr.horse_number, rr.jockey, rr.status, rr.finish_position
-       FROM race_results rr
-       JOIN races r ON r.id = rr.race_id
-       ${whereSql}`
-  )
-    .bind(...binds)
-    .all();
+  // --- クエリ2: race_results は「フィルタ該当レースのぶんだけ」取得する ---
+  // 以前は races と JOIN して WHERE で絞っていたが、JOIN条件が races 側のカラムのため
+  // race_results 側の絞り込みが効かず、フィルタの有無によらず race_results をほぼ全件
+  // スキャンしてしまい、D1の日次行読み取り上限超過の一因になっていた(2026-09-11)。
+  // races は既にクエリ1で全件メモリにあるので、フィルタ該当レースのIDを先に確定し、
+  // race_results 側は WHERE race_id IN (...) で対象レースぶんだけを引く
+  // (件数が増える場合は90件ずつチャンク分割。CLAUDE.md の不変条件参照)。
+  const surfaceOk = (ct) => (surface ? ct === surface : ct == null || SURFACES.has(ct));
+  const matchedRaceIds = (raceRows || [])
+    .filter((race) => {
+      if (track && race.track !== track) return false;
+      if (!surfaceOk(race.course_type || null)) return false;
+      if (distance != null && race.distance !== distance) return false;
+      return true;
+    })
+    .map((race) => race.id);
 
   const rrByRace = new Map();
-  for (const row of rrRows || []) {
-    let list = rrByRace.get(row.race_id);
-    if (!list) {
-      list = [];
-      rrByRace.set(row.race_id, list);
+  for (const idsChunk of chunk(matchedRaceIds, 90)) {
+    if (!idsChunk.length) continue;
+    const placeholders = idsChunk.map(() => "?").join(",");
+    const { results } = await env.DB.prepare(
+      `SELECT race_id, horse_number, jockey, status, finish_position
+         FROM race_results
+        WHERE race_id IN (${placeholders})`
+    )
+      .bind(...idsChunk)
+      .all();
+    for (const row of results || []) {
+      let list = rrByRace.get(row.race_id);
+      if (!list) {
+        list = [];
+        rrByRace.set(row.race_id, list);
+      }
+      list.push(row);
     }
-    list.push(row);
   }
 
   const trackOptionSet = new Set();
@@ -167,8 +175,6 @@ export async function onRequestGet(context) {
   const jockeyMap = new Map(); // key -> { display, rides, wins, shows }
   const byHorseNumber = new Map(); // number -> { starts, win, second, third }
   let resultRaceCount = 0;
-
-  const surfaceOk = (ct) => (surface ? ct === surface : ct == null || SURFACES.has(ct));
 
   for (const race of raceRows || []) {
     const ct = race.course_type || null;

@@ -10,7 +10,12 @@
 // 新しい自動転記内容で上書きする(管理者が手動で加筆した内容を保護するため)。
 //
 // jockeyフィールドは、呼び出し元(results-import.js)が事前に jockey_aliases で正規化した
-// 値を渡す想定(この関数自体は正規化を行わない)。
+// 値を渡す想定(この関数自体は正規化を行わない)。同様に horse_name も呼び出し元が
+// horse_aliases で正規化した値を渡す想定で、horse_key = horseAliasKeyOf(horse_name) を
+// ここで計算して保存する(GET /api/races/:id/horse-history の突き合わせキー。
+// 詳細は docs/design/horse-aliases.md 参照)。
+
+import { horseAliasKeyOf } from "./horse-alias.js";
 
 export async function upsertRaceResults(db, raceId, records) {
   if (!db || !raceId || !Array.isArray(records) || records.length === 0) return { updated: 0 };
@@ -56,8 +61,8 @@ export async function upsertRaceResults(db, raceId, records) {
       `INSERT INTO race_results
         (race_id, horse_number, waku_number, horse_name, sex_age, weight_carried, jockey,
          status, finish_position, time_text, margin, corner_positions, final_furlong_time,
-         body_weight, body_weight_change, win_popularity, incident_note, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         body_weight, body_weight_change, win_popularity, incident_note, horse_key, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(race_id, horse_number) DO UPDATE SET
          waku_number=excluded.waku_number,
          horse_name=excluded.horse_name,
@@ -74,6 +79,7 @@ export async function upsertRaceResults(db, raceId, records) {
          body_weight_change=excluded.body_weight_change,
          win_popularity=excluded.win_popularity,
          incident_note=excluded.incident_note,
+         horse_key=excluded.horse_key,
          updated_at=excluded.updated_at`
     ).bind(
       raceId,
@@ -93,6 +99,7 @@ export async function upsertRaceResults(db, raceId, records) {
       r.body_weight_change || null,
       r.win_popularity ?? null,
       incidentToSave,
+      horseAliasKeyOf(r.horse_name || ""),
       now,
       now
     ));
@@ -142,8 +149,8 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
             `INSERT INTO race_results
               (race_id, horse_number, waku_number, horse_name, sex_age, weight_carried, jockey,
                status, finish_position, time_text, margin, corner_positions, final_furlong_time,
-               body_weight, body_weight_change, win_popularity, incident_note, created_at, updated_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               body_weight, body_weight_change, win_popularity, incident_note, horse_key, created_at, updated_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT(race_id, horse_number) DO UPDATE SET
                waku_number=excluded.waku_number,
                horse_name=excluded.horse_name,
@@ -160,6 +167,7 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
                body_weight_change=excluded.body_weight_change,
                win_popularity=excluded.win_popularity,
                incident_note=excluded.incident_note,
+               horse_key=excluded.horse_key,
                updated_at=excluded.updated_at`
           )
           .bind(
@@ -180,6 +188,7 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
             r.body_weight_change || null,
             r.win_popularity ?? null,
             incidentToSave,
+            horseAliasKeyOf(r.horse_name || ""),
             now,
             now
           )
