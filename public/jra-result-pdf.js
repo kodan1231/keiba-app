@@ -563,6 +563,19 @@ function detectRaceHeaders(lines, contexts, diagnostics, pushSample) {
   return headerCandidates;
 }
 
+// entries(races.entriesへマージされる出走馬リスト)へ性齢・負担重量を反映する。
+// entries は軽量パーサー(jraResultParseHorseFromResultLine)由来で waku_number/
+// horse_number/horse_name/jockeyしか持たないため、race_results用に別途抽出済みの
+// sex_age/weight_carried(jraResultParseFullResultRow等の戻り値)をここで merge する。
+// 2026-09-11追加: 以前はrace_results側にのみ反映され、entries(=races.entries。
+// 予想登録画面の馬名行に表示される値)には反映されていなかった不具合の修正。
+function jraResultApplySexAgeWeightToEntries(entries, horseNumber, sexAge, weightCarried) {
+  const target = (entries || []).find((e) => e.horse_number === horseNumber);
+  if (!target) return;
+  if (sexAge) target.sex_age = sexAge;
+  if (weightCarried !== null && weightCarried !== undefined) target.weight_carried = weightCarried;
+}
+
 // レース1件分のブロック(ヘッダー行〜次ヘッダー直前)から race / raceDiag を抽出する。
 // 2026-09-08: jraResultParseExtractedPages の per-race ループ本体をロジック不変で関数抽出。
 // include=true のときだけ呼び出し側が records に載せる。
@@ -656,7 +669,11 @@ function parseRaceBlock(block, header, number, diagnostics) {
             // 予想登録・購入画面の頭数・馬番一覧にズレが生じる不具合があった
             // (docs/design/race-results.md「取消・除外・中止の扱い」参照)。
             if (!current.entries.some(e => e.horse_number === scratchRow.horse_number)) {
-              current.entries.push({ waku_number: scratchRow.waku_number ?? null, horse_number: scratchRow.horse_number, horse_name: scratchRow.horse_name, jockey: scratchRow.jockey ?? null });
+              current.entries.push({
+                waku_number: scratchRow.waku_number ?? null, horse_number: scratchRow.horse_number,
+                horse_name: scratchRow.horse_name, jockey: scratchRow.jockey ?? null,
+                sex_age: scratchRow.sex_age || null, weight_carried: scratchRow.weight_carried ?? null,
+              });
             }
             raceDiag.entries = current.entries.length;
             continue;
@@ -670,7 +687,11 @@ function parseRaceBlock(block, header, number, diagnostics) {
             current.race_results.push(stopRow);
             diagnostics.stoppedRowsDetected++;
             if (!current.entries.some(e => e.horse_number === stopRow.horse_number)) {
-              current.entries.push({ waku_number: stopRow.waku_number ?? null, horse_number: stopRow.horse_number, horse_name: stopRow.horse_name, jockey: stopRow.jockey ?? null });
+              current.entries.push({
+                waku_number: stopRow.waku_number ?? null, horse_number: stopRow.horse_number,
+                horse_name: stopRow.horse_name, jockey: stopRow.jockey ?? null,
+                sex_age: stopRow.sex_age || null, weight_carried: stopRow.weight_carried ?? null,
+              });
             }
             raceDiag.entries = current.entries.length;
             continue;
@@ -700,6 +721,7 @@ function parseRaceBlock(block, header, number, diagnostics) {
                 full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
                 delete full._trainer;
                 current.race_results.push(full);
+                jraResultApplySexAgeWeightToEntries(current.entries, full.horse_number, full.sex_age, full.weight_carried);
                 diagnostics.fullResultRowsDetected++;
               } else {
                 diagnostics.fullResultRowsFailed++;
@@ -731,6 +753,7 @@ function parseRaceBlock(block, header, number, diagnostics) {
                 full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
                 delete full._trainer;
                 current.race_results.push(full);
+                jraResultApplySexAgeWeightToEntries(current.entries, full.horse_number, full.sex_age, full.weight_carried);
                 diagnostics.fullResultRowsDetected++;
               } else {
                 diagnostics.fullResultRowsFailed++;

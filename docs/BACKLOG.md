@@ -59,6 +59,17 @@
 > (集計画面の「競馬場別」タブを「コース別」= 競馬場×芝/ダ/障×距離 に置換)。
 > 詳細は BACKLOG_HISTORY 期間9。
 >
+> 完了済み(2026-09-11): **JRAレース結果PDFインポートで性齢・負担重量が `races.entries`
+> に反映されない不具合を修正**。`public/jra-result-pdf.js` は性齢・負担重量を
+> `race_results` 用の行(`jraResultParseFullResultRow`/`ScratchRow`/`StopRow`)からは
+> 抽出していたが、同時に構築する `entries`(予想登録画面の馬名行が参照)には渡していな
+> かった。新規 `jraResultApplySexAgeWeightToEntries()` で entries 側にも反映するよう
+> 修正。**修正前に取り込み済みのレース(出走馬一覧PDFを取り込んでいないもの)はこの
+> 修正だけでは直らず、該当の結果PDFの再取込、または `race_results`→`races.entries` への
+> 一括バックフィルが別途必要**(実施は保留・ユーザー確認待ち)。
+> `docs/design/data-model.md`「races.entriesへの性齢・負担重量の追加」更新済み。
+> `node --check` 済み・パーサー単体の疑似データ確認済み・実PDFでの確認は未実施。
+>
 > 完了済み(2026-09-11): **馬名エイリアス(`horse_aliases`)機能を新設**(騎手名エイリアスの
 > 馬名版)。同じ馬が `race_results` と `races.entries` で表記ゆれ(半角/全角カナ・空白・異体字)
 > を起こし予想画面の過去成績が紐付かない問題への対応。突き合わせキーは `horseAliasKeyOf`

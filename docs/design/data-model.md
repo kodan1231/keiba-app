@@ -152,6 +152,19 @@ JRAの馬番は抽選で決まるが、**枠番自体は抽選対象ではなく
 - `race_results[].sex_age` / `race_results[].weight_carried`: レース結果PDF取込時点の
   確定値(こちらが最終的な正)
 
+**JRAレース結果PDFインポートは `races.entries` 側にも反映する(2026-09-11修正)**。
+`public/jra-result-pdf.js` は完走馬の性齢・負担重量を `race_results` 用の詳細行
+(`jraResultParseFullResultRow`)・取消/除外/中止の専用行(`jraResultParseScratchRow` /
+`jraResultParseStopRow`)からそれぞれ抽出しているが、**以前はそれを `race_results` にしか
+反映しておらず、同時に構築している `entries`(`races.entries` へマージされ、予想登録画面の
+馬名行に表示される配列)には性齢・負担重量を渡していなかった**。そのため、出走馬一覧PDFを
+取り込まずレース結果PDFのみで登録したレースは、`race_results` には性齢・負担重量が
+正しく入っているのに、予想登録画面(`entries` 参照)では馬名・騎手しか出ない不具合が
+あった(2026-09-11発覚)。`jraResultApplySexAgeWeightToEntries()` で `entries` 側にも
+反映するよう修正。**修正前に取り込み済みのレースは、この修正だけでは直らず、該当の
+結果PDFを再取込する(または `race_results` から `races.entries` への一括バックフィルを
+別途実行する)必要がある。**
+
 **単勝オッズは`races.entries`に追加しない**(時々刻々変わる値であり、時価スナップショットを
 保存する意義が薄いと判断したため)。
 
