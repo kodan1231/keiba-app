@@ -64,9 +64,12 @@
 > `race_results` 用の行(`jraResultParseFullResultRow`/`ScratchRow`/`StopRow`)からは
 > 抽出していたが、同時に構築する `entries`(予想登録画面の馬名行が参照)には渡していな
 > かった。新規 `jraResultApplySexAgeWeightToEntries()` で entries 側にも反映するよう
-> 修正。**修正前に取り込み済みのレース(出走馬一覧PDFを取り込んでいないもの)はこの
-> 修正だけでは直らず、該当の結果PDFの再取込、または `race_results`→`races.entries` への
-> 一括バックフィルが別途必要**(実施は保留・ユーザー確認待ち)。
+> 修正。既存データは `race_results`→`races.entries` への一括バックフィルを本番DBへ直接
+> 実行済み(2026-09-11。`wrangler d1 execute --remote`。horse_number未確定・重複馬番は
+> 対象外・空欄のみ埋める・既存値は上書きしない)。**全1197レース中917レースを更新、
+> 出走馬15,862頭中15,383頭(97%)に性齢・負担重量が入った状態に**。適用前後で
+> レース数・出走馬数・JSON妥当性が一致することを確認済み。残り約480頭は
+> `race_results` 自体にその馬の行が無い(結果PDF未取込)ケース。
 > `docs/design/data-model.md`「races.entriesへの性齢・負担重量の追加」更新済み。
 > `node --check` 済み・パーサー単体の疑似データ確認済み・実PDFでの確認は未実施。
 >
