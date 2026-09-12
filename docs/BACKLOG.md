@@ -28,7 +28,10 @@
   全件スキャン解消+`race-stats`のrace_results事前計算キャッシュ化。ユーザー数増加を
   見据えた対応)・**購入馬券グループのIPAT風コンパクト表示**(2026-09-12。JRA公式IPATに
   見た目を寄せ、box/フォーメーション/ながし等の全組み合わせ展開をやめ入力した形で
-  見せる)を追加。
+  見せる)・**`GET /api/ticket-imports`のD1読み取り上限逼迫の修正**(2026-09-12。
+  `imported_ticket_items`を全ユーザー分全件SELECTしていたのが原因で日次上限の75%を
+  1エンドポイントだけで消費していた障害。`group_id IN (...)`絞り込みに変更。
+  下記「⚠️ 調査中の不具合」参照)を追加。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -44,6 +47,7 @@
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
+| 🔵 実機検証未完了 | `GET /api/ticket-imports`のD1読み取り上限逼迫の修正(2026-09-12。`wrangler d1 insights`で判明: `imported_ticket_items`を全ユーザー分全件SELECTする設計〈テーブルが小さい前提〉が、テーブルが5,600行超まで育ったことで破綻し、このGET1エンドポイントだけで1日137回・768,707行〈日次上限500万行の約15%〉を消費していた。自分の`imported_ticket_groups.id`集合で`WHERE group_id IN (...)`〈90件チャンク・既存の`idx_imported_items_group`使用〉に絞り込む方式へ変更)は`node --check`のみ。**実ブラウザで**: 購入履歴画面のCSV取込グループ一覧が従来通り表示されること(自分の取込分の内容が欠けていないこと)、集計画面「コース別収支」への影響が無いことを確認する。修正後の読み取り量が実際に減っているかは`wrangler d1 insights`で後日確認するとよい | `functions/api/ticket-imports/index.js` |
 | 🔵 実機検証未完了 | 購入馬券グループのIPAT風コンパクト表示(2026-09-12。JRA公式IPAT「照会結果詳細」に見た目を寄せ、box/フォーメーション/ながし等で生成された全組み合わせを展開せず「入力した形」〈馬番一覧・着順ごとの馬番・軸馬/相手〉を数行で見せる新設。`ticket-view.js`の`describeGroupSelections()`/`groupCompactSummaryHtml()`。method文字列不問でCSV取込グループにも適用)は`node --check`とNode上でのbox(60点)/フォーメーション/2頭軸ながし/単勝まとめ買いパターンの出力確認のみ。**実ブラウザで**: 購入履歴画面・予想登録画面の両方で、通常購入・box・フォーメーション・ながし(1頭軸/2頭軸)・CSV取込の各グループを展開し、コンパクト表示の内容が実際の買い目と一致すること、「内訳を見る」トグルで1点ごとの明細(当落・個別金額編集・削除)が問題なく開閉・動作すること、を確認する。着順なし券種の複雑なフォーメーション(各着順が完全に別集合)は「馬番:全馬番の一覧」に丸められる既知の制約があるため、該当パターンがあれば見え方を確認する | `docs/design/screens.md`「購入馬券グループの表示(IPAT風コンパクト表示)」 |
 | 🔵 実機検証未完了 | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。マイグレーション適用・`horse_key`バックフィル(`race_results` 14768件)は2026-09-12に本番完了済み。`node --check`と設計上のシミュレーションのみで、**実ブラウザでの数値確認が未実施**: 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
 
