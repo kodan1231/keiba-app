@@ -83,6 +83,31 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   馬番未確定の馬には予想印を付けられない(馬メモは馬名キーなので常に可)。
 - `races` / `race_results` は全ユーザー共有(user_idなし)。`tickets` 等はユーザーごとに分離。
   またがる処理では「管理者に見えているデータ」と「更新すべき対象データ」が一致するとは限らない。
+- **D1は無料枠(Workers Free)を維持する。有料プランへの切り替えは選択肢に入れない。**
+  日次上限は `rows_read 500万/日` `rows_written 10万/日`(毎日UTC 0時=日本時間朝9時にリセット)。
+  **どちらか一方でも超えると、読み取りを含むD1への全クエリが失敗する**(公式FAQ: "When your
+  account hits the daily read and/or write limits, you will not be able to run queries
+  against D1.")。「書き込みが90%」のような偏った警告でも、実際に全画面が真っ白になる
+  (2026-09-12に実際に発生。原因は`races_cache`の保存失敗時に例外を投げていたため
+  「保存できない→次アクセスでまた全件再計算→また保存失敗」のループに陥り、
+  本来1回で済むはずの`races`全件読み取りを繰り返し発生させ、rows_read上限を先に
+  使い切ったこと。詳細は`docs/BACKLOG.md`「D1無料枠の日次上限に関する注意」参照)。
+  そのため **読み取り高速化のためのキャッシュ書き込み(`*_cache`系テーブルへの保存)は
+  必ずbest-effort(try/catchで握りつぶし、失敗しても呼び出し元には読み取り結果を返す)**
+  にする。保存の失敗が読み取り自体の失敗に波及してはならない。
+- **大きな一括処理(複数ファイルのCSV/PDFインポート、管理画面の「一括補正」
+  `normalizeExistingHorseNames`/`normalizeExistingJockeyNames`等)は、対象行数分の
+  rows_written/rows_readを一度に消費する**(例: `race_results`全件へのNFKC一括補正で
+  約4.2万行書き込み、18ファイル分のCSV結果一括インポートで約2.4万行書き込み、
+  これらが同日に重なり10万行の大半を消費した実績あり)。**同じUTC日に複数の大きな
+  一括処理を重ねない**。直前に日次上限の警告メールが来ている場合や、大きな一括処理を
+  行う前に不安がある場合は、事前に `wrangler d1 insights <db名> --time-period 1d
+  --sort-by writes` `--sort-by reads` で当日の消費状況を確認してから実行する。
+- `migration.sql` の `@STEP` を手動で `wrangler d1 execute` 適用する前に、
+  `SELECT name FROM schema_migrations WHERE name='...'` で未適用であることを確認する。
+  (適用済みのステップを誤って再実行すると、`CREATE INDEX IF NOT EXISTS` のような
+  本来無害なはずの文でも対象テーブルの全行数分のrows_written/readを消費することが
+  観測されている。)
 
 ## 進め方
 

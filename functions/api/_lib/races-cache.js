@@ -84,7 +84,18 @@ export async function recomputeRacesCache(db) {
         .bind(i, JSON.stringify(chunk), now)
     );
   });
-  await db.batch(stmts);
+  try {
+    await db.batch(stmts);
+  } catch (e) {
+    // 2026-09-12: ここでの保存失敗(D1日次rows_written上限到達等)を無視せず例外を
+    // 投げていたため、「保存できない→次回また再計算→また保存に失敗」というループに
+    // 陥り、GET /api/races 依存の全画面が読み取り専用の操作even含めて動かなくなる
+    // (キャッシュが原因で読み取り上限=rows_read 500万/日まで食いつぶす)障害の一因に
+    // なった。キャッシュは読み取りを速くするための最適化であり、保存の失敗が
+    // 読み取り自体の失敗になってはならないため、ここでは握りつぶして rows をそのまま返す
+    // (次回のアクセスでまた保存を試みる。DBの一時的な問題であれば自然に回復する)。
+    console.error("races_cache: failed to persist (ignored)", e);
+  }
 
   return rows;
 }

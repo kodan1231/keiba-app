@@ -10,20 +10,25 @@
 - **実機確認はユーザー側**。Claude は `node --check` と静的レビュー・シミュレーションのみ。
   着手・完了報告時に検証状況を明示する。
 
-## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-08)
+## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-12)
 
+- **🔴 本番DBが2026-09-12中、D1無料枠の日次rows_read上限(500万行/日)を使い切って
+  全画面で情報が見れない状態になっている**。原因・詳細・恒久対策は下記
+  「D1無料枠の日次上限に関する注意(2026-09-12発生)」参照。**UTC 0時(日本時間
+  朝9時)に自動でリセットされるのを待つ以外の対処法は無い**(無料枠を維持する方針の
+  ため有料プランへの切り替えは選択肢に入れない)。コード側の再発防止(`races_cache`の
+  保存失敗をbest-effort化)は実装済み・要デプロイ確認。リセット後、実ブラウザで
+  各画面が正常に表示されることを確認すること。
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
 - **未適用のマイグレーションあり(2026-09-12)**: `migration.sql` の
   `@STEP: prediction_notes_key_race`(`prediction_notes.is_key_race`列追加。勝負レース
-  フラグ)、および `@STEP: races_cache_chunked`(`races_cache`を1行固定→チャンク
-  分割へ作り直し。下記「D1 2MB行サイズ上限超過障害」参照)が本番DB `keiba-yosou-db`
-  へ未適用。適用後はボタン操作等不要。
-  `race_results_horse_key`・`race_stats_cache`・`races_cache`(旧・1行固定版)は
-  適用済み・`schema_migrations` 記録済み(`horse_key` の既存行バックフィルも完了。
-  `race_results` 14768件更新)。実ブラウザでの数値確認は未実施
-  (下記「🔵 実機検証未完了」参照)。
+  フラグ)が本番DB `keiba-yosou-db` へ未適用。適用後はボタン操作等不要。
+  `race_results_horse_key`・`race_stats_cache`・`races_cache`(チャンク分割版。
+  `@STEP: races_cache_chunked`)は適用済み・`schema_migrations` 記録済み(`horse_key`
+  の既存行バックフィルも完了。`race_results` 14768件更新)。実ブラウザでの数値確認は
+  未実施(下記「🔵 実機検証未完了」参照)。
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
   その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
   データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)・
@@ -65,11 +70,85 @@
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
-| 🔵 実機検証未完了(要マイグレーション適用) | `races_cache`のチャンク分割化(2026-09-12。先回り導入した`races_cache`〈1行固定〉が、同日中の結果CSV18ファイル一括インポートで`races`累積JSONがD1の1行2,000,000バイト上限を超えUPDATE失敗→`GET /api/races`依存の馬券購入画面・データ検索画面・レース管理画面が500になる障害を起こしたため、複数行〈チャンク〉に分割し件数でなくバイト数〈UTF-8実測〉で区切る方式に変更。`_lib/races-cache.js`の`getAllRacesRaw()`/`recomputeRacesCache()`。`races`へのINSERT/UPDATE/DELETEで`races_cache`全行DELETE→次回読み取り時に自動再計算)は`node --check`のみ。**本番適用手順**: `migration.sql`の`@STEP: races_cache_chunked`を`wrangler d1 execute --remote`で適用(旧`races_cache`テーブルをDROPして作り直すため、`@STEP: races_cache`適用済みの本番DBでも安全に上書きされる。`races`自体には触れない)。**実ブラウザで**: 馬券購入画面のレース一覧・購入履歴画面・データ検索画面・CSV取込一覧が従来通り表示されること、レースの新規登録/編集/PDFインポート直後に一覧へ即座に反映されること、大量のレースをまとめてインポートしても500にならないことを確認する | `docs/design/data-model.md`「races全件取得の事前計算キャッシュ(races_cache)」チャンク分割 |
+| 🔵 実機検証未完了(マイグレーション適用済み) | `races_cache`のチャンク分割化+保存失敗のbest-effort化(2026-09-12。先回り導入した`races_cache`〈1行固定〉が、同日中の結果CSV18ファイル一括インポートで`races`累積JSONがD1の1行2,000,000バイト上限を超えUPDATE失敗→`GET /api/races`依存の馬券購入画面・データ検索画面・レース管理画面が500になる障害を起こしたため、複数行〈チャンク〉に分割し件数でなくバイト数〈UTF-8実測〉で区切る方式に変更。さらにチャンク化直後、`recomputeRacesCache()`の保存〈`db.batch`〉に例外処理が無かったため、D1のrows_written上限に迫った際に保存失敗→次回また再計算→また保存失敗のループに陥り、`races`全件読み直しを繰り返してrows_read上限〈500万行/日〉まで使い切り全画面で読み取り不能になる二次障害が発生。保存処理をtry/catchで囲み、保存に失敗しても読み取れた`rows`は返すよう修正。`_lib/races-cache.js`の`getAllRacesRaw()`/`recomputeRacesCache()`。`migration.sql`の`@STEP: races_cache_chunked`は本番`keiba-yosou-db`へ適用済み)は`node --check`のみ。D1日次上限リセット後、**実ブラウザで**: 馬券購入画面のレース一覧・購入履歴画面・データ検索画面・CSV取込一覧が従来通り表示されること、レースの新規登録/編集/PDFインポート直後に一覧へ即座に反映されること、大量のレースをまとめてインポートしても500にならないことを確認する | `docs/design/data-model.md`「races全件取得の事前計算キャッシュ(races_cache)」チャンク分割・保存失敗時のbest-effort化 |
 | 🔵 実機検証未完了(要マイグレーション適用) | 勝負レースフラグ(2026-09-12。予想登録画面のヘッダーにレース名の直後「☆/★ 勝負レース」トグルボタンを新設。`prediction_notes.is_key_race`〈レース×ユーザー単位の個人設定〉+`PUT /api/predictions/key-race`。ONのレースは馬券購入画面のレース選択グリッドのレース名の後ろに★を表示〈`GET /api/predictions`のrace_id省略時一覧取得モード+`myKeyRaceIds`〉)は`node --check`のみ。**本番適用手順**: `migration.sql`の`@STEP: prediction_notes_key_race`を`wrangler d1 execute --remote`で適用。**実ブラウザで**: トグルON/OFFが即座に反映されること、レース切り替え後も状態が正しく再取得されること、馬券購入画面のレース一覧に★が正しく表示されること(自分がONにしたレースのみ)、予想印・予想メモの保存でこのフラグが意図せず変化しないことを確認する | `docs/design/screens.md`「予想登録画面」 |
 | 🔵 実機検証未完了 | `GET /api/ticket-imports`のD1読み取り上限逼迫の修正(2026-09-12。`wrangler d1 insights`で判明: `imported_ticket_items`を全ユーザー分全件SELECTする設計〈テーブルが小さい前提〉が、テーブルが5,600行超まで育ったことで破綻し、このGET1エンドポイントだけで1日137回・768,707行〈日次上限500万行の約15%〉を消費していた。自分の`imported_ticket_groups.id`集合で`WHERE group_id IN (...)`〈90件チャンク・既存の`idx_imported_items_group`使用〉に絞り込む方式へ変更)は`node --check`のみ。**実ブラウザで**: 購入履歴画面のCSV取込グループ一覧が従来通り表示されること(自分の取込分の内容が欠けていないこと)、集計画面「コース別収支」への影響が無いことを確認する。修正後の読み取り量が実際に減っているかは`wrangler d1 insights`で後日確認するとよい | `functions/api/ticket-imports/index.js` |
 | 🔵 実機検証未完了 | 購入馬券グループのIPAT風コンパクト表示(2026-09-12。JRA公式IPAT「照会結果詳細」に見た目を寄せ、box/フォーメーション/ながし等で生成された全組み合わせを展開せず「入力した形」〈馬番一覧・着順ごとの馬番・軸馬/相手〉を数行で見せる新設。`ticket-view.js`の`describeGroupSelections()`/`groupCompactSummaryHtml()`。method文字列不問でCSV取込グループにも適用)は`node --check`とNode上でのbox(60点)/フォーメーション/2頭軸ながし/単勝まとめ買いパターンの出力確認のみ。**実ブラウザで**: 購入履歴画面・予想登録画面の両方で、通常購入・box・フォーメーション・ながし(1頭軸/2頭軸)・CSV取込の各グループを展開し、コンパクト表示の内容が実際の買い目と一致すること、「内訳を見る」トグルで1点ごとの明細(当落・個別金額編集・削除)が問題なく開閉・動作すること、を確認する。着順なし券種の複雑なフォーメーション(各着順が完全に別集合)は「馬番:全馬番の一覧」に丸められる既知の制約があるため、該当パターンがあれば見え方を確認する | `docs/design/screens.md`「購入馬券グループの表示(IPAT風コンパクト表示)」 |
 | 🔵 実機検証未完了 | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。マイグレーション適用・`horse_key`バックフィル(`race_results` 14768件)は2026-09-12に本番完了済み。`node --check`と設計上のシミュレーションのみで、**実ブラウザでの数値確認が未実施**: 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
+
+## D1無料枠の日次上限に関する注意(2026-09-12発生)
+
+**方針: D1は無料枠(Workers Free)を維持する。有料プランへの切り替えはユーザーの絶対条件により選択肢に入れない。**
+以下は2026-09-12に実際に日次上限へ到達した際の記録と、再発防止のために今後
+常に意識すべき注意点。恒久的なルールは`CLAUDE.md`「絶対に破ってはいけない不変条件」にも
+記載済み。
+
+**事実(公式ドキュメント・実機テストで確認済み)**
+
+- D1無料枠の日次上限は **rows_read 500万行/日・rows_written 10万行/日**。リセットは毎日
+  UTC 0時(日本時間 朝9時)。([D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/))
+- **どちらか一方でも上限に達すると、読み取りを含むD1への全クエリがエラーになる**
+  (公式FAQより引用: "When your account hits the daily read and/or write limits, you will
+  not be able to run queries against D1." [D1 FAQ](https://developers.cloudflare.com/d1/reference/faq/))。
+  「書き込みが80%」という警告メールが来ていても、実際に先に尽きるのは読み取り上限の
+  こともある(今回がそう)。「rows_writtenが80%」の警告だけを見て「書き込みを控えれば
+  大丈夫」と判断しないこと。
+- 本番で実際に確認したエラー: `wrangler d1 execute --remote` で読み取り専用に近いクエリを
+  投げても以下のように即座に拒否される状態になった。
+  ```
+  Your account has exceeded D1's free tier daily row read limit.
+  Upgrade to a paid plan or wait until tomorrow (midnight UTC) to continue. [code: 7500]
+  ```
+  **この状態になったら、待つ以外の対処法は無い**(無料枠維持のため有料プランへの
+  切り替えは行わない)。UTC 0時のリセットを待つ。
+
+**2026-09-12に何が起きたか(`wrangler d1 insights <db> --time-period 1d --sort-by writes/reads` で判明した内訳)**
+
+| 内容 | 消費量 | 性質 |
+|---|---|---|
+| `race_results`の馬名・馬キー一括正規化(管理画面「一括補正」`normalizeExistingHorseNames`) | rows_written 約41,895行(13,965回実行) | 一時的な一括メンテナンス作業 |
+| 結果CSV18ファイルの一括インポート(`race_results`のUPSERT) | rows_written 約23,786行(3,398回実行) | 今回のユーザー操作 |
+| `idx_race_results_horse_key`インデックスの再作成が2回記録(本来`IF NOT EXISTS`で2回目は無害のはずが、テーブル全行数分を消費) | rows_written 約14,769行×2回 | migration.sqlの`@STEP`を手動適用する際の運用ミスの疑い(未確定) |
+| **`races_cache`の保存失敗ループ**(下記参照) | rows_read 数十万〜(`SELECT * FROM races`が213回・519,984行等) | **コードのバグ**(このセッションで修正済み) |
+| 通常操作(馬券購入・レース登録・予想印/メモ等) | 数千行程度 | 通常運用 |
+
+**`races_cache`の保存失敗ループ(直接の引き金・修正済み)**
+
+同日に`races_cache`(`races`全件取得の事前計算キャッシュ)をチャンク分割方式へ
+書き直した際、`recomputeRacesCache()`のキャッシュ保存(`db.batch`)に例外処理が
+無かった。rows_written上限に迫っていたタイミングで保存が失敗するたびに例外を
+投げてしまい、「保存できない→次のアクセスでまた`races`全件を再計算のため読み直す
+→また保存に失敗」というループに陥った。本来1回読めば済むはずの`races`全件SELECT
+(2,000行超)を画面を見るたびに繰り返し発生させてしまい、rows_read上限(500万行/日)を
+先に使い切って、読み取りを含む全てのD1クエリが失敗する状態(全画面で情報が見れない
+状態)を招いた。**対策**: `_lib/races-cache.js`の`recomputeRacesCache()`の保存処理を
+try/catchで囲み、保存に失敗しても`races`から読み取れた結果はそのまま返すよう変更
+(キャッシュへの保存はあくまでbest-effort。保存の失敗が読み取り自体の失敗に
+波及してはならない)。詳細は`docs/design/data-model.md`「races全件取得の事前計算
+キャッシュ」参照。
+
+**今後、同じことを起こさないための注意点(要チェックリスト化)**
+
+1. **`*_cache`系テーブル(`races_cache`・`race_stats_cache`)への保存は必ずbest-effort
+   (try/catch)にする**。読み取り経路の中で行うDB書き込みは、失敗しても読み取り自体を
+   失敗させてはいけない。新しいキャッシュを追加する際は必ずこの形にする。
+2. **大きな一括処理(複数ファイルCSV/PDFインポート、管理画面の「一括補正」系ボタン)を
+   同じUTC日に複数回・重ねて実行しない**。今回は「一括補正」+「18ファイルインポート」+
+   「インデックス再作成の重複」が同日に重なったことで上限に到達した。単体では
+   問題にならない規模でも、合算で上限を超えうる。
+3. **大きな一括処理の前に、可能であれば`wrangler d1 insights <db名> --time-period 1d
+   --sort-by writes --sort-type sum --limit 20`(および`--sort-by reads`)で当日の
+   消費状況を確認する**。特に直前に上限警告メールが来ている場合は必須。
+4. **`migration.sql`の`@STEP`を手動で`wrangler d1 execute`適用する前に、
+   `SELECT name FROM schema_migrations WHERE name='...'`で未適用であることを必ず確認する**。
+   適用済みのステップを誤って再実行すると、`CREATE INDEX IF NOT EXISTS`のような
+   本来無害なはずの文でも対象テーブルの全行数分を消費することが今回観測された
+   (原因未確定だが、二重適用を避けることでリスク自体を無くせる)。
+5. 上記1〜4を守っていても、ユーザー数・データ量が増えるほど日次上限に近づくのは
+   構造的な問題(無料枠を維持する前提である以上、上限そのものは動かせない)。
+   将来的にはRead1本あたりのコストを継続的に下げる(不要な全件SELECT箇所を都度
+   見直す。`CLAUDE.md`「絶対に破ってはいけない不変条件」参照)以外に恒久解決は無い
+   ことを認識しておく。
 
 ## 優先順位(2026-09-08。ユーザー方針を反映)
 
