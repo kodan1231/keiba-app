@@ -155,11 +155,15 @@ CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
 -- ============================================================
 
 -- 予想メモ: レース単位の自由記述メモ。ユーザーごとに複数持てる(1レース1ユーザーにつき1件)。
+-- is_key_race: 「勝負レース」フラグ(2026-09-12追加)。ユーザーごとの個人設定で、
+-- 他ユーザーには見えない。ONのレースは馬券購入画面のレース一覧でレース名の後ろに
+-- 「★」が表示される。詳細は docs/design/screens.md「予想登録画面」参照。
 CREATE TABLE IF NOT EXISTS prediction_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL,
   user_id INTEGER,
   memo TEXT,
+  is_key_race INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(race_id, user_id),

@@ -125,3 +125,10 @@ AFTER DELETE ON races
 BEGIN
   UPDATE races_cache SET payload = NULL WHERE id = 1;
 END;
+
+-- @STEP: prediction_notes_key_race
+-- 「勝負レース」フラグ。ユーザーごとの個人設定(他ユーザーには見えない)。ONのレースは
+-- 馬券購入画面のレース一覧でレース名の後ろに「★」が表示される。予想印・予想メモと同じ
+-- prediction_notes(race_id, user_id単位)に列追加する。詳細は docs/design/screens.md
+-- 「予想登録画面」参照。
+ALTER TABLE prediction_notes ADD COLUMN is_key_race INTEGER NOT NULL DEFAULT 0;

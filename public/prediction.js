@@ -226,11 +226,16 @@ async function selectRace() {
     prediction = await predRes.json();
   } else {
     prediction = {
+      race_id: selectedRace.id,
+      is_key_race: false,
       marks: (selectedRace.entries || [])
         .filter(e => MARKS.includes(e.mark))
         .map(e => ({ horse_number: Number(e.horse_number), mark: e.mark }))
     };
   }
+  // 勝負レースフラグは selectRace() 冒頭の renderRaceHeader() 初回描画時点では
+  // まだ取得できていないため、取得完了後にヘッダーを再描画して反映する。
+  renderRaceHeader();
 
   horseNotes = noteRes.ok ? await noteRes.json() : {};
   applyPrediction();
@@ -321,13 +326,18 @@ function renderRaceHeader() {
   //  1行目: 日付・競馬場名・レース番号(いずれもセレクト。ページ遷移なしで別レースへ
   //         切り替え。日付・競馬場変更時は現在のR番号をできるだけ維持=switchToRaceKeeping)
   //         + 「このレースの馬券を購入」ボタン(右寄せ)
-  //  2行目: レース名・コース情報(芝/ダート+距離)・頭数・条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
+  //  2行目: レース名・勝負レーストグル・コース情報(芝/ダート+距離)・頭数・
+  //         条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
   // 牝馬限定は class_flags の生テキストに「牝」を含むか、ハンデ戦は weight_type
   // (または class_flags)に「ハンデ」を含むかで判定する(docs/design/data-model.md
   // 「レース条件の詳細カラム」参照。構造化されていない生テキストのため部分一致で見る)。
   const classFlags = String(selectedRace.class_flags || "");
   const isFillyOnly = classFlags.includes("牝");
   const isHandicap = String(selectedRace.weight_type || "").includes("ハンデ") || classFlags.includes("ハンデ");
+  // 勝負レースフラグ(prediction.is_key_race)は selectRace() が /api/predictions を
+  // 取得し終えるまでは前のレースの値が残っているため、初回描画時は常にOFF扱いにする
+  // (取得完了後に renderRaceHeader() を再度呼び直して正しい状態に更新する)。
+  const isKeyRace = Boolean(prediction.race_id === selectedRace.id && prediction.is_key_race);
   raceHeader.innerHTML = `
     <div class="prediction-race-title">
       <select id="prediction-date-select" class="prediction-select" aria-label="開催日を選択">
@@ -343,6 +353,7 @@ function renderRaceHeader() {
     </div>
     <div class="prediction-race-meta">
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
+      <button type="button" id="key-race-toggle-btn" class="race-cond-badge key-race-toggle ${isKeyRace ? "active" : ""}" aria-pressed="${isKeyRace}" title="勝負レース(ONにすると馬券購入画面のレース一覧にも★が表示されます)">${isKeyRace ? "★ 勝負レース" : "☆ 勝負レース"}</button>
       ${formatCourseText(selectedRace.course_type, selectedRace.distance) ? `<span class="race-course">${escapeHtml(formatCourseText(selectedRace.course_type, selectedRace.distance))}</span>` : ""}
       <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
@@ -360,6 +371,26 @@ function renderRaceHeader() {
   document.getElementById("prediction-racenum-select").addEventListener("change", (e) => {
     switchToRace(Number(e.target.value));
   });
+  document.getElementById("key-race-toggle-btn").addEventListener("click", toggleKeyRace);
+}
+
+// 勝負レースフラグのON/OFF切り替え(2026-09-12追加)。予想印・予想メモの保存とは
+// 独立した専用エンドポイント(PUT /api/predictions/key-race)を使う。
+async function toggleKeyRace() {
+  const race = selectedRace;
+  const nextValue = !(prediction.race_id === race.id && prediction.is_key_race);
+  const res = await authedFetch("/api/predictions/key-race", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ race_id: race.id, is_key_race: nextValue }),
+  });
+  if (!res.ok) {
+    alert("勝負レースの切り替えに失敗しました。");
+    return;
+  }
+  prediction.race_id = race.id;
+  prediction.is_key_race = nextValue;
+  if (selectedRace === race) renderRaceHeader();
 }
 
 function renderHorses() {

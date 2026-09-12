@@ -11,7 +11,7 @@
 | CSV購入グループ | `imported_ticket_groups` | CSVの1行=1購入グループ。ユーザーごとに分離 |
 | CSV個別買い目 | `imported_ticket_items` | 組み合わせを個別買い目へ分解したもの。`user_id`は持たず、`imported_ticket_groups`とのJOINで所有者を判定する |
 | 予想印 | `prediction_marks` | **1頭につき1つまで**(ドロップダウン選択式)。印の種類: ◎○▲△☆消。ユーザーごとに分離(`UNIQUE(race_id, horse_number, user_id)`)。**`horse_number`はNOT NULL制約があるため、枠番・馬番が未確定の馬には印を付けられない** |
-| 予想メモ | `prediction_notes` | レース単位の自由記述メモ(`prediction.html`)。ユーザーごとに分離(`UNIQUE(race_id, user_id)`) |
+| 予想メモ・勝負レースフラグ | `prediction_notes` | レース単位の自由記述メモ(`prediction.html`)+「勝負レース」フラグ(`is_key_race`。2026-09-12追加。ONのレースは馬券購入画面のレース一覧に★表示)。ユーザーごとに分離(`UNIQUE(race_id, user_id)`)。詳細は`docs/design/screens.md`「予想登録画面」 |
 | 馬メモ | `horse_notes` | 馬名をキーに継続管理。馬名はtrim/空白正規化+`horse_aliases`で保存。ユーザーごとに分離(`UNIQUE(horse_name, user_id)`)。**馬名がキーのため、枠番・馬番の有無に関係なく常に利用できる** |
 | 馬名エイリアス | `horse_aliases` | 表記ゆれ側の馬名 → 正しい馬名 の対応表。全ユーザー共有。`race_results` と `races.entries` の馬名表記が食い違い、予想画面の過去成績が紐付かない問題への対応。詳細は `docs/design/horse-aliases.md` |
 | 騎手名エイリアス | `jockey_aliases` | 表記ゆれ側の騎手名 → 正しい表記。全ユーザー共有。詳細は `docs/design/jockey-aliases.md` |

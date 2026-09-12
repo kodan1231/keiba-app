@@ -31,6 +31,12 @@ let purchasedRaceIds = new Set();
 // 他ユーザーのメモは対象に含まれない。
 let myMemoHorseNames = new Set();
 
+// 自分(ログインユーザー)が「勝負レース」に設定済みのレースID(races.id)の集合
+// (2026-09-12追加)。予想登録画面の勝負レーストグルはユーザーごとの個人設定
+// (prediction_notes.is_key_race)なので、他ユーザーの設定は含まれない。
+// GET /api/predictions (race_id省略) はログインユーザー自身の設定のみを返す。
+let myKeyRaceIds = new Set();
+
 function normalizeHorseNameForMemoCheck(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
 }
@@ -140,11 +146,29 @@ function raceHasMemoHorse(race) {
   return (race.entries || []).some((e) => myMemoHorseNames.has(normalizeHorseNameForMemoCheck(e.horse_name)));
 }
 
+// 自分が「勝負レース」に設定済みのレースID一覧を取得する(2026-09-12追加)。
+// レースごとに個別APIを呼ぶN+1を避けるため、ページ読み込み時に1回だけ取得する
+// (loadMyMemoHorseNames() と同じ考え方)。
+async function loadMyKeyRaceIds() {
+  const ids = new Set();
+  try {
+    const res = await authedFetch("/api/predictions");
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      (data.race_ids || []).forEach((id) => ids.add(Number(id)));
+    }
+  } catch (_) {
+    // 取得に失敗しても★が出ないだけで、一覧表示自体は継続する。
+  }
+  myKeyRaceIds = ids;
+}
+
 async function loadRaces() {
   const [racesRes] = await Promise.all([
     authedFetch("/api/races"),
     loadPurchasedRaceIds(),
     loadMyMemoHorseNames(),
+    loadMyKeyRaceIds(),
   ]);
   if (!racesRes.ok) return;
   races = await racesRes.json();
@@ -213,7 +237,7 @@ function renderGrid() {
               <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
                 data-id="${r.id}" type="button">
                 <b>${i+1}R</b>
-                <span>${escapeHtml(r.race_name || "")}</span>
+                <span>${escapeHtml(r.race_name || "")}${myKeyRaceIds.has(Number(r.id)) ? ' <span class="key-race-star" title="勝負レース">★</span>' : ""}</span>
                 <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}</small>
               </button>`;
           }).join("")}

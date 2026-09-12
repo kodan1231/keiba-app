@@ -29,6 +29,17 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const userId = context.data.userId;
   const url = new URL(request.url);
+
+  // race_id を指定しないリクエストは、馬券購入画面のレース一覧(buy.js)が
+  // 「勝負レースにしているか」をまとめて判定するための一覧取得モード
+  // (horse-notes.js の race_id 省略時と同じ考え方)。
+  if (!url.searchParams.has("race_id")) {
+    const { results } = await env.DB.prepare(
+      "SELECT race_id FROM prediction_notes WHERE user_id = ? AND is_key_race = 1"
+    ).bind(userId).all();
+    return Response.json({ race_ids: (results || []).map((r) => r.race_id) });
+  }
+
   const { id: raceId, error } = parsePositiveIntId(url.searchParams.get("race_id"), "race_id");
   if (error) return error;
 
@@ -42,7 +53,7 @@ export async function onRequestGet(context) {
 
   const [note, marksResult] = await Promise.all([
     env.DB.prepare(
-      "SELECT memo, created_at, updated_at FROM prediction_notes WHERE race_id = ? AND user_id = ?"
+      "SELECT memo, is_key_race, created_at, updated_at FROM prediction_notes WHERE race_id = ? AND user_id = ?"
     ).bind(raceId, userId).first(),
     env.DB.prepare(
       "SELECT horse_number, mark, created_at, updated_at FROM prediction_marks WHERE race_id = ? AND user_id = ? ORDER BY horse_number"
@@ -52,6 +63,7 @@ export async function onRequestGet(context) {
   return Response.json({
     race_id: raceId,
     memo: note?.memo || "",
+    is_key_race: Boolean(note?.is_key_race),
     marks: marksResult.results || [],
     updated_at: note?.updated_at || null,
   });

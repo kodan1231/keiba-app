@@ -307,6 +307,12 @@ ROADMAP.md側からは削除した。
   購入済み表示(`purchasedRaceIds`)と同じ考え方)。判定用のデータは、レースごとに個別APIを
   叩くN+1を避けるため、ページ読み込み時に`GET /api/horse-notes`(race_id省略)を1回だけ
   呼び出して取得する(下記API仕様参照)
+- **勝負レースマーク「★」(2026-09-12追加)**: 予想登録画面で自分が「勝負レース」に
+  設定済みのレースは、レース名の直後に「★」を表示する(`myKeyRaceIds`)。判定は
+  ログインユーザー自身の設定のみを対象とする(`prediction_notes.is_key_race`。
+  ユーザーごとの個人設定で、他ユーザーの設定・races側の共有データではない)。
+  判定用のデータは、メモありマークと同じくページ読み込み時に`GET /api/predictions`
+  (race_id省略)を1回だけ呼び出して取得する(下記API仕様参照)
 - **各レース行(`.race-column-row`)の表示レイアウトはPC・モバイル共通で2行構成にする**:
   「1行目: R番号+レース名」「2行目: コース情報・頭数・メモマーク」という表示になる
   (`grid-template-columns:44px minmax(0,1fr)`。列幅はPC/モバイルで共通)。レース名は
@@ -328,6 +334,28 @@ ROADMAP.md側からは削除した。
   「メモの有無」判定にのみ使うため、本文を返す必要が無い)
 - 対象はログインユーザー自身の`horse_notes`のみ(`WHERE user_id = ?`)
 - 既存の`race_id`指定時の挙動(予想登録画面`prediction.html`での利用)には影響しない
+
+##### API仕様: `GET /api/predictions`(race_id省略時の一覧取得モード)
+
+`functions/api/predictions/index.js`の`GET`ハンドラは、クエリパラメータに`race_id`が
+**含まれない**場合、従来の「指定レースの予想印・予想メモ・勝負レースフラグ取得」モードとは
+別の「自分が勝負レースに設定済みのレースID一覧取得」モードとして動作する(`GET
+/api/horse-notes`のrace_id省略時と同じ考え方)。
+
+- リクエスト: `GET /api/predictions`(`race_id`パラメータなし)
+- レスポンス: `{ "race_ids": [1, 5, 12, ...] }`
+- 対象はログインユーザー自身の`prediction_notes`のうち`is_key_race = 1`のもののみ
+- 既存の`race_id`指定時の挙動(予想登録画面`prediction.html`での利用)には影響しない
+
+##### API仕様: `PUT /api/predictions/key-race`
+
+勝負レースフラグのON/OFF切り替え専用エンドポイント。予想印・予想メモの保存
+(`POST /api/predictions`。marks/memoを毎回まとめて上書きする設計)とは独立させている。
+
+- リクエスト: `PUT /api/predictions/key-race` `{ "race_id": 123, "is_key_race": true }`
+- `prediction_notes(race_id, user_id)`へUPSERT(`is_key_race`・`updated_at`のみ更新。
+  既存のmemo/予想印には影響しない)
+- レスポンス: `{ "ok": true, "race_id": 123, "is_key_race": true }`
 
 開催日・レース選択画面(競馬場×R番号のグリッド)では、ログインユーザー自身がそのレースの
 馬券を1点以上購入済みのものは、行の背景色(win(緑)系の薄いアクセント、
@@ -352,12 +380,22 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
     右寄せの「このレースの馬券を購入」ボタン。3セレクトはいずれもページ遷移を伴わず
     他レースへ切り替えられる。日付セレクトの選択肢は `GET /api/races` が返す全レースの
     開催日(重複排除・昇順、表示は `formatDateMdW` の「M/D（曜）」)。
-  - **2行目(`.prediction-race-meta`)**: レース名・コース情報・頭数・条件バッジ。
-    コース情報はレース名の直後に `formatCourseText(course_type, distance)`(`utils.js`。
-    例:「芝1600m」)で表示する(2026-09-12追加。値が無ければ非表示)。**牝馬限定なら
-    「牝」**(`class_flags` の生テキストに「牝」を含む)、**ハンデ戦なら「H」**
-    (`weight_type` または `class_flags` に「ハンデ」を含む)を小バッジで表示する
-    (`docs/design/data-model.md`「レース条件の詳細カラム」参照。生テキストの部分一致で判定)。
+  - **2行目(`.prediction-race-meta`)**: レース名・勝負レーストグル・コース情報・頭数・
+    条件バッジ。コース情報はレース名の直後に `formatCourseText(course_type,
+    distance)`(`utils.js`。例:「芝1600m」)で表示する(2026-09-12追加。値が無ければ
+    非表示)。**牝馬限定なら「牝」**(`class_flags` の生テキストに「牝」を含む)、
+    **ハンデ戦なら「H」**(`weight_type` または `class_flags` に「ハンデ」を含む)を
+    小バッジで表示する(`docs/design/data-model.md`「レース条件の詳細カラム」参照。
+    生テキストの部分一致で判定)。
+  - **勝負レーストグル(2026-09-12追加)**: レース名の直後に「☆ 勝負レース」
+    (OFF)/「★ 勝負レース」(ON。`.key-race-toggle.active`)のバッジ風トグルボタンを
+    表示する。クリックで `PUT /api/predictions/key-race` を呼び即時反映する
+    (`toggleKeyRace()`)。ユーザーごとの個人設定(`prediction_notes.is_key_race`。
+    予想印・予想メモと同じテーブル・粒度)で、他ユーザーには見えない。ONにすると
+    馬券購入画面のレース選択グリッドのレース名の後ろにも「★」が表示される
+    (`myKeyRaceIds`。下記「馬券購入画面」参照)。予想印・予想メモの保存
+    (`POST /api/predictions`)とは独立した専用エンドポイントのため、印を変更しても
+    このフラグは変化せず、このフラグを切り替えても印・メモは変化しない
 - **日付セレクトまたは競馬場セレクトを変更したときは、現在のレース番号(R)をできるだけ
   維持する**(`switchToRaceKeeping()`)。優先順は「日付+競馬場+R一致 → 日付+競馬場一致の
   先頭R → その日付の先頭レース」(以前は競馬場変更時に常にその開催の先頭レースへ

@@ -1448,6 +1448,20 @@ body.history-selection-mode .group-detail-actions {
   color: var(--ink);
 }
 
+/* 勝負レーストグル(2026-09-12追加)。.race-cond-badge をボタンにも流用するための
+   リセット+ON/OFFの見た目。 */
+.key-race-toggle {
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.key-race-toggle.active {
+  background: var(--hanko);
+  color: #fff;
+  border-color: var(--hanko);
+}
+
 .prediction-race-title .stamp-btn {
   margin-left: auto;
   white-space: nowrap;
@@ -2444,6 +2458,14 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   margin-left: 4px;
   color: var(--hanko);
   font-size: 10px;
+}
+
+/* 勝負レース(自分の予想登録画面での個人設定)の「★」マーク。2026-09-12追加。 */
+.key-race-star {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--hanko);
+  font-size: 11px;
 }
 
 /* PCで最低3競馬場が見切れずに収まるよう、購入画面のカラム最小幅を縮小する
