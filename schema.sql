@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
 
 -- GET /api/data-search/race-stats が毎回 race_results を読み直すのを避けるための
 -- 事前計算キャッシュ(1行固定)。race_results を race_id でグルーピングしたものだけを
--- JSONで持つ(races 側は元々軽いテーブルなので毎回ライブ取得のままでよい)。
+-- JSONで持つ(races 側は 11. races_cache を参照)。
 -- 詳細・経緯は docs/design/data-search.md 参照。
 CREATE TABLE IF NOT EXISTS race_stats_cache (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -361,4 +361,45 @@ CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_upd
 AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
 BEGIN
   UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
+-- ============================================================
+-- 11. races 全件取得用キャッシュ(races_cache)
+-- ============================================================
+
+-- GET /api/races(全画面共通の入口)・データ検索画面・購入履歴画面のCSV取込一覧
+-- (コース種別・距離の付与)など、races を無条件に全件SELECTする箇所が毎回読み直すのを
+-- 避けるための事前計算キャッシュ(1行固定)。races の全カラムをJSON配列で持つ。
+-- races は「元々軽いテーブル」という前提で許容されてきたが、開催が積み重なるほど
+-- 育ち続けるテーブルであり、2026-09-12に imported_ticket_items で実際に発生した
+-- 障害(全ユーザー・全件SELECTをテーブルが育つ前提の無い設計のまま放置し、D1日次行
+-- 読み取り上限の75%を1エンドポイントだけで消費した)と同じ構造のリスクがあったため、
+-- 先回りで導入した。詳細・経緯は docs/design/data-model.md 参照。
+CREATE TABLE IF NOT EXISTS races_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload TEXT,        -- JSON配列: races の全行(SELECT * FROM races と同じ形)
+                        -- NULL = 要再計算(下記トリガーでNULL化される)
+  updated_at TEXT
+);
+INSERT OR IGNORE INTO races_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
+
+-- races への書き込みで自動的に payload を NULL 化する(無効化)。全カラムを
+-- キャッシュしているため、race_stats_cache と異なり列を限定せず全ての
+-- INSERT/UPDATE/DELETE で無効化する。
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_ins
+AFTER INSERT ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_upd
+AFTER UPDATE ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_del
+AFTER DELETE ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
 END;

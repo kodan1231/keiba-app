@@ -90,3 +90,38 @@ END;
 -- SQLiteでは出来ないため、アプリ側=JSで計算してUPDATEする必要がある)。
 ALTER TABLE race_results ADD COLUMN horse_key TEXT;
 CREATE INDEX IF NOT EXISTS idx_race_results_horse_key ON race_results(horse_key);
+
+-- @STEP: races_cache
+-- GET /api/races(全画面共通の入口)・データ検索画面・購入履歴画面のCSV取込一覧
+-- (コース種別・距離の付与)など、races を無条件に全件SELECTする箇所が複数あった。
+-- races は「元々軽いテーブル」という前提で許容されてきたが、開催が積み重なるほど
+-- 育ち続けるテーブルであり、2026-09-12に imported_ticket_items で実際に発生した
+-- 障害(全ユーザー・全件SELECTをテーブルが育つ前提の無い設計のまま放置し、D1日次行
+-- 読み取り上限の75%を1エンドポイントだけで消費した)と同じ構造のリスクがあったため、
+-- 先回りで導入した。races の全カラムをJSON配列で1行に持つ事前計算キャッシュ。
+-- races への INSERT/UPDATE/DELETE があるとトリガーが payload を NULL に戻し、
+-- 次回読み取り時に自動再計算される。詳細・経緯は docs/design/data-model.md 参照。
+CREATE TABLE IF NOT EXISTS races_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload TEXT,
+  updated_at TEXT
+);
+INSERT OR IGNORE INTO races_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
+
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_ins
+AFTER INSERT ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_upd
+AFTER UPDATE ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_del
+AFTER DELETE ON races
+BEGIN
+  UPDATE races_cache SET payload = NULL WHERE id = 1;
+END;

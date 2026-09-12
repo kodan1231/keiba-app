@@ -1,11 +1,12 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
+// races は「全画面共通の入口」として非常に頻繁に呼ばれるため、races_cache
+// (_lib/races-cache.js。2026-09-12追加)から読む。races への書き込みがあれば
+// DBトリガーで自動的に無効化・次回読み取り時に自動再計算される。
 export async function onRequestGet(context) {
   const { env } = context;
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM races ORDER BY race_date DESC, track ASC, race_number ASC`
-  ).all();
+  const results = await getAllRacesRaw(env.DB);
 
   // entries[].jockey / entries[].horse_name は保存済みの表記ゆれをそのまま持つことが
   // あるため、読み取り時にもエイリアス(jockey_aliases / horse_aliases)で正規化して返す。

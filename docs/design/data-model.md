@@ -18,6 +18,30 @@
 | ユーザーアカウント | `users` | ログイン画面から自己登録できる(招待コード等の制限なし)。ログイン成功時刻を`last_login_at`に記録する |
 | レース | `races` | 出走馬表(予定)・着順(上位3着)・払戻・レース条件を保持。全ユーザー共有 |
 | レース結果詳細 | `race_results` | 馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
+| racesの事前計算キャッシュ | `races_cache` | `races`全件を1行のJSON配列として保持(1行固定)。詳細は下記「races全件取得の事前計算キャッシュ(races_cache)」参照 |
+
+### races全件取得の事前計算キャッシュ(races_cache。2026-09-12〜)
+
+`GET /api/races`(全画面共通の入口)・データ検索画面「レース成績」タブ・購入履歴画面の
+CSV取込一覧(コース種別・距離の付与)など、`races`を無条件に全件SELECTする箇所が
+複数あった。`races`は「元々軽いテーブル」という前提で許容されてきたが、開催が
+積み重なるほど育ち続けるテーブルであり、2026-09-12に`imported_ticket_items`で
+実際に発生した障害(全ユーザー・全件SELECTをテーブルが育つ前提の無い設計のまま
+放置し、D1日次行読み取り上限の75%を1エンドポイントだけで消費した。ユーザー数
+2〜4人時点で発生。ユーザー数増加を見据え先回りで対応)と同じ構造のリスクが
+あったため、`race_stats_cache`(下記「データ検索画面のレース成績集計」参照)と
+同じ発想で導入した。
+
+- `races_cache`(id=1固定)に`races`の全カラムをJSON配列で保持する
+  (`_lib/races-cache.js`の`getAllRacesRaw()`/`recomputeRacesCache()`)。
+- 無効化はDBトリガー(`schema.sql`/`migration.sql`の`@STEP: races_cache`)で行う。
+  `races`への INSERT/UPDATE/DELETE があれば自動的に payload が NULL に戻り、
+  次回読み取り時に自動再計算される。`race_stats_cache`と異なり、`races`は
+  全カラムをキャッシュしているため列を限定せず全ての更新で無効化する。
+- 呼び出し側(`races/index.js`・`data-search/race-stats.js`・`ticket-imports/index.js`)
+  は必要な列だけをメモリ上で取り出して使う。返る行の形は元の`SELECT * FROM races`と
+  同じ(entries/finish_order/payoutsはJSON文字列のまま。各呼び出し側の既存の
+  `JSON.parse`はそのまま使える)。
 
 ### レース情報のコース種別・距離
 

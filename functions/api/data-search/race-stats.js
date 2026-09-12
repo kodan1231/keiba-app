@@ -1,4 +1,4 @@
-import { jsonError, getRaceResultsGroupedByRaceId } from "../_shared.js";
+import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw } from "../_shared.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
 // レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
@@ -121,9 +121,9 @@ export async function onRequestGet(context) {
   }
 
   // --- クエリ1: races 全件(track/course_type/distance フィルタはメモリ側で適用) ---
-  const { results: raceRows } = await env.DB.prepare(
-    "SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races"
-  ).all();
+  // races_cache(_lib/races-cache.js。2026-09-12追加)から読む。以前は毎回全件
+  // SELECTしており、races が育つにつれてD1読み取り上限逼迫リスクがあった。
+  const raceRows = await getAllRacesRaw(env.DB);
 
   // --- race_results は race_stats_cache(事前計算キャッシュ)から読む ---
   // 以前は races と JOIN して WHERE で絞っていたが、JOIN条件が races 側のカラムのため

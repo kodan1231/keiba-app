@@ -1,3 +1,5 @@
+import { getAllRacesRaw } from "../_shared.js";
+
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
   try { return new TextDecoder("shift_jis").decode(bytes); } catch { return new TextDecoder("utf-8").decode(bytes); }
@@ -370,11 +372,11 @@ export async function onRequestGet(context){
     // 「1クエリ100バインドパラメータ」上限を超えて GET 全体が失敗する
     // (2026-09-08。実際にこの障害が発生した)。races は件数が少ないので
     // 全件を1回SELECTしてメモリ上で引き当てる(全 items を1回SELECTするのと同じ方式)。
+    // races は races_cache(_lib/races-cache.js。2026-09-12追加)から読む。以前は
+    // 毎回全件SELECTしており、races が育つにつれてimported_ticket_itemsと同種の
+    // D1読み取り上限逼迫リスクがあった。
     const raceCourseById=new Map();
-    {
-      const rows=(await db.prepare(`SELECT id, course_type, distance FROM races`).all()).results||[];
-      for(const r of rows) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
-    }
+    for(const r of await getAllRacesRaw(db)) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
     const itemsByGroup=new Map();
     for(const idsChunk of chunk([...groupIds],90)){
       if(!idsChunk.length) continue;
