@@ -1158,6 +1158,7 @@ body.history-selection-mode .group-detail-actions {
 .group-detail { border-top: 1px dashed var(--rule); padding: 10px 18px 14px; background: var(--paper); }
 
 .group-detail-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.group-detail-rows[hidden] { display: none; }
 
 .group-detail-row {
   display: flex;
