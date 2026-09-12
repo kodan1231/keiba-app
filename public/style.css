@@ -1380,6 +1380,13 @@ body.history-selection-mode .group-detail-actions {
   font-size: 14px;
 }
 
+.race-course {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .prediction-entry-count {
   color: var(--ink-soft);
   font-family: var(--font-mono);

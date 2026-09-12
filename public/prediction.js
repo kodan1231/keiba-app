@@ -301,7 +301,7 @@ function renderRaceHeader() {
   //  1行目: 日付・競馬場名・レース番号(いずれもセレクト。ページ遷移なしで別レースへ
   //         切り替え。日付・競馬場変更時は現在のR番号をできるだけ維持=switchToRaceKeeping)
   //         + 「このレースの馬券を購入」ボタン(右寄せ)
-  //  2行目: レース名・頭数・条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
+  //  2行目: レース名・コース情報(芝/ダート+距離)・頭数・条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
   // 牝馬限定は class_flags の生テキストに「牝」を含むか、ハンデ戦は weight_type
   // (または class_flags)に「ハンデ」を含むかで判定する(docs/design/data-model.md
   // 「レース条件の詳細カラム」参照。構造化されていない生テキストのため部分一致で見る)。
@@ -323,6 +323,7 @@ function renderRaceHeader() {
     </div>
     <div class="prediction-race-meta">
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
+      ${formatCourseText(selectedRace.course_type, selectedRace.distance) ? `<span class="race-course">${escapeHtml(formatCourseText(selectedRace.course_type, selectedRace.distance))}</span>` : ""}
       <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
       ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}

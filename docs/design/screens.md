@@ -352,7 +352,9 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
     右寄せの「このレースの馬券を購入」ボタン。3セレクトはいずれもページ遷移を伴わず
     他レースへ切り替えられる。日付セレクトの選択肢は `GET /api/races` が返す全レースの
     開催日(重複排除・昇順、表示は `formatDateMdW` の「M/D（曜）」)。
-  - **2行目(`.prediction-race-meta`)**: レース名・頭数・条件バッジ。**牝馬限定なら
+  - **2行目(`.prediction-race-meta`)**: レース名・コース情報・頭数・条件バッジ。
+    コース情報はレース名の直後に `formatCourseText(course_type, distance)`(`utils.js`。
+    例:「芝1600m」)で表示する(2026-09-12追加。値が無ければ非表示)。**牝馬限定なら
     「牝」**(`class_flags` の生テキストに「牝」を含む)、**ハンデ戦なら「H」**
     (`weight_type` または `class_flags` に「ハンデ」を含む)を小バッジで表示する
     (`docs/design/data-model.md`「レース条件の詳細カラム」参照。生テキストの部分一致で判定)。
@@ -496,7 +498,7 @@ CSVインポート分(`imported_ticket_groups`経由の`imported_ticket_items`)�
 - **予想登録画面(`prediction.html`)のヘッダー1行目**: `430px`以下では、
   「日付・競馬場名・レース番号・購入ボタン」が iPhone SE3(幅375px)でも1行に
   収まるよう、`.prediction-race-title` の `gap`・各セレクトと `.stamp-btn` の
-  フォント/余白/`min-width` を詰める。2行目(レース名・頭数・条件バッジ)は
+  フォント/余白/`min-width` を詰める。2行目(レース名・コース情報・頭数・条件バッジ)は
   `.prediction-race-meta` として別行。
 - **購入履歴画面(`history.html`)のCSVインポートボタン**: `700px`以下では非表示にする
   (PCからの利用のみを想定。機能・APIは維持)
