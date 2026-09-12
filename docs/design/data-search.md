@@ -105,38 +105,46 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 - `course_type` は `芝` / `ダート` / 空 のみ受け付ける(それ以外は 400)
 - `distance` は正の整数のみ(不正は 400)
 
-### サーバー処理(2026-09-11にクエリ2の方式を変更。経緯は下記)
+### サーバー処理(2026-09-12にrace_results側を事前計算キャッシュへ変更。経緯は下記)
 
 レース単位のループで1件ずつ問い合わせない。以下の処理のみ:
 
-1. **races 全件(フィルタ条件を掛けずに取得)**:
+1. **races 全件(フィルタ条件を掛けずに取得。毎回ライブ)**:
    `SELECT id, track, course_type, distance, payouts, entries, finish_order FROM races`。
    メモリ上で
    - `trackOptions` = distinct `track`
    - `distanceOptions` = 「選択中の競馬場(未選択なら全部)」かつ `course_type ∈ {芝,ダート}`
      (選択中のコース種別があればそれに一致)かつ `distance` 非 NULL の distinct 昇順
    - `track` / `course_type`(`芝`/`ダート`、未指定時は `NULL または 芝/ダート`)/ `distance`
-     の各フィルタを適用し、フィルタ該当レースの `id` 一覧(`matchedRaceIds`)を確定する
-     (クエリ2で使う。①② の払戻集計と ③④⑤ の着順集計もこのフィルタ結果を使う)
-   - ③④⑤ は「③④⑤ 共通」のルールで、レースごとに `race_results`(クエリ2の結果を
-     `race_id` でグルーピング)か `finish_order`+`entries` を選んで集計する
-   - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲。行数が増えて
-     重くなったら precompute テーブルか期間フィルタ導入を検討する
-2. **`race_results`(`matchedRaceIds` のぶんだけ)**:
-   `SELECT race_id, horse_number, jockey, status, finish_position FROM race_results
-    WHERE race_id IN (...)`。`matchedRaceIds` を90件ずつチャンク分割してこのクエリを
-   繰り返す(D1の1クエリ100バインドパラメータ上限。CLAUDE.md参照)。
-   - 取得後 `race_id` でグルーピングし、「行数 ≥ `entries` 要素数」のレースだけ
-     `race_results` を正のソースとして採用する(それ未満は `finish_order` へフォールバック)
-   - フィルタ(特に競馬場)が効いている場合、対象レースが絞られる分だけ読み取り行数も
-     減る。フィルタ無しの初期表示は全レースが対象になるため、チャンク数本(≒全件相当)
-     になる
+     の各フィルタを適用してから、①② の払戻集計と ③④⑤ の着順集計を行う
+   - ③④⑤ は「③④⑤ 共通」のルールで、レースごとに `race_results`(下記キャッシュを
+     `race_id` でグルーピングしたもの)か `finish_order`+`entries` を選んで集計する
+   - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲
+2. **`race_results`(`race_stats_cache` テーブルの事前計算キャッシュから読む)**:
+   `_lib/race-stats-cache.js` の `getRaceResultsGroupedByRaceId(db)` が
+   `SELECT payload FROM race_stats_cache WHERE id = 1`(1行read)を返す。`payload` は
+   `{ race_id: [{horse_number,jockey,status,finish_position}, ...], ... }` というJSONで、
+   `race_results` 全件を `race_id` でグルーピングしたもの。
+   - **無効化はDBトリガー**(`schema.sql`/`migration.sql` の `race_stats_cache` テーブル
+     定義参照)で自動的に行う。`race_results` への INSERT/DELETE、および集計に使う列
+     (`horse_number`/`jockey`/`status`/`finish_position`)の UPDATE があると、トリガーが
+     `payload` を `NULL` に戻す(`incident_note` のみの編集では発火しない)
+   - 読み取り側は `payload` が `NULL`(未計算 or 無効化された)なら、その場で
+     `race_results` を全件スキャンして再計算し、1行にUPSERTしてから使う
+     (`recomputeRaceStatsCache`)。次回以降は保存済みの1行を読むだけで済む
+   - 「行数 ≥ `entries` 要素数」のレースだけ `race_results` を正のソースとして採用する
+     (それ未満は `finish_order` へフォールバック)。この判定・フィルタ適用は今まで通り
+     読み取り側(メモリ)で行う
 
-**経緯**: 以前は `race_results` を `races` と JOIN し、`races` 側のカラムで WHERE していた。
-JOIN条件が `races` 側のため `race_results` 側の絞り込みが効かず、フィルタの有無や内容に
-かかわらず `race_results` をほぼ全件スキャンしてしまっていた。これがD1無料枠の日次行
-読み取り上限(500万行)超過障害(2026-09-11)の一因と判明したため、`races` 側で先に対象
-レースIDを確定してから `race_results` を `race_id IN (...)` で引く方式に変更した。
+**経緯**: 以前は `race_results` を `races` と JOIN し、`races` 側のカラムで WHERE していた
+(JOIN条件が `races` 側のため `race_results` 側の絞り込みが効かず、フィルタの有無や内容に
+かかわらず `race_results` をほぼ全件スキャンしてしまっていた。D1無料枠の日次行読み取り
+上限〈500万行〉超過障害〈2026-09-11〉の一因)。その後 `race_id IN (...)` チャンク分割
+方式(フィルタ該当レースのぶんだけ取得)に変更したが、フィルタ無しの初期表示では
+結局ほぼ全件読むことになる点は変わらなかった。`race_results` はユーザー数が増えるほど
+「複数ユーザーが同じ検索条件を見る」頻度も上がる**全ユーザー共有データ**であるため、
+2026-09-12に「`race_results` を `race_id` でグルーピングしたものを事前計算し、
+書き込みがあるまで全ユーザーで使い回すキャッシュ」方式へ変更した。
 
 ### レスポンス
 

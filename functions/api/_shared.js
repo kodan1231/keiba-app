@@ -21,3 +21,4 @@ export * from "./_lib/jockey-alias.js";
 export * from "./_lib/horse-alias.js";
 export * from "./_lib/ticket-payout.js";
 export * from "./_lib/race-results.js";
+export * from "./_lib/race-stats-cache.js";

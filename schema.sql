@@ -325,3 +325,40 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
   canonical_name TEXT NOT NULL,     -- 正しい馬名
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- ============================================================
+-- 10. データ検索画面「レース成績」タブ用キャッシュ(race_stats_cache)
+-- ============================================================
+
+-- GET /api/data-search/race-stats が毎回 race_results を読み直すのを避けるための
+-- 事前計算キャッシュ(1行固定)。race_results を race_id でグルーピングしたものだけを
+-- JSONで持つ(races 側は元々軽いテーブルなので毎回ライブ取得のままでよい)。
+-- 詳細・経緯は docs/design/data-search.md 参照。
+CREATE TABLE IF NOT EXISTS race_stats_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload TEXT,        -- JSON: { race_id: [{horse_number,jockey,status,finish_position}, ...], ... }
+                        -- NULL = 要再計算(下記トリガーでNULL化される)
+  updated_at TEXT
+);
+INSERT OR IGNORE INTO race_stats_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
+
+-- race_results への書き込みで自動的に payload を NULL 化する(無効化)。
+-- incident_note のみの編集(GET /api/races/:id/results のPUT)では発火しない
+-- (集計に使う列だけを対象にしているため)。
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_ins
+AFTER INSERT ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_del
+AFTER DELETE ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_upd
+AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;

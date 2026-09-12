@@ -48,6 +48,37 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- @STEP: race_stats_cache
+-- GET /api/data-search/race-stats 用の事前計算キャッシュ(1行固定)。
+-- race_results を race_id でグルーピングしたものだけをJSONで持つ。
+-- race_results への書き込み(INSERT/DELETE、集計に使う列のUPDATE)があると
+-- トリガーが payload を NULL に戻し、次回読み取り時に自動再計算される。
+-- 詳細・経緯は docs/design/data-search.md 参照。
+CREATE TABLE IF NOT EXISTS race_stats_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload TEXT,
+  updated_at TEXT
+);
+INSERT OR IGNORE INTO race_stats_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
+
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_ins
+AFTER INSERT ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_del
+AFTER DELETE ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_upd
+AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
+BEGIN
+  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+END;
+
 -- @STEP: race_results_horse_key
 -- GET /api/races/:id/horse-history が race_results を毎回全件スキャンしていたことで
 -- D1の日次行読み取り上限(500万行)を超過する障害が発生(2026-09-11)。

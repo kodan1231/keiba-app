@@ -15,18 +15,22 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未適用のマイグレーションあり(2026-09-11)**: `migration.sql` の
-  `@STEP: race_results_horse_key`(`race_results.horse_key` 列+インデックス追加)が
-  本番DB `keiba-yosou-db` へ未適用。適用後、admin画面「既存データの馬名を一括補正する」
-  ボタンを1回実行して既存行への `horse_key` バックフィルを行う必要がある(下記
-  「🔵 実機検証未完了」参照)。
+- **未適用のマイグレーションあり(2026-09-11〜12)**: `migration.sql` の以下2ステップが
+  本番DB `keiba-yosou-db` へ未適用。
+  - `@STEP: race_results_horse_key`(`race_results.horse_key` 列+インデックス追加)。
+    適用後、admin画面「既存データの馬名を一括補正する」ボタンを1回実行して既存行への
+    `horse_key` バックフィルを行う必要がある
+  - `@STEP: race_stats_cache`(`race_stats_cache` テーブル+`race_results`書き込み時の
+    自動無効化トリガー追加)。適用後はボタン操作等不要(初回アクセス時に自動計算される)
+  - (下記「🔵 実機検証未完了」参照)
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
   その後 予想画面の過去成績表示(2026-09-10)・管理者パスワードリセット(2026-09-10)・
   データ検索画面「レース成績」タブ(2026-09-10。ROADMAP クラスタM の騎手名ベース集計)・
   結果PDF/出走馬一覧PDFの複数ファイルインポート(2026-09-10)・
   馬名エイリアス `horse_aliases` + 登録馬一覧(2026-09-11)・
-  **D1日次行読み取り上限超過障害への対応**(2026-09-11。`horse-history`/`race-stats` の
-  全件スキャン解消)を追加。
+  **D1日次行読み取り上限超過障害への対応**(2026-09-11〜12。`horse-history`/`race-stats` の
+  全件スキャン解消+`race-stats`のrace_results事前計算キャッシュ化。ユーザー数増加を
+  見据えた対応)を追加。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -42,7 +46,7 @@
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
-| 🔵 実機検証未完了(要マイグレーション適用) | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得に変更。`node --check`と設計上のシミュレーションのみ。**本番適用手順**: (1) `migration.sql`の`@STEP: race_results_horse_key`を`wrangler d1 execute --remote`で適用 (2) admin画面「既存データの馬名を一括補正する」ボタンを1回実行し既存行の`horse_key`をバックフィル (3) 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すことを確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
+| 🔵 実機検証未完了(要マイグレーション適用) | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。`node --check`と設計上のシミュレーションのみ。**本番適用手順**: (1) `migration.sql`の`@STEP: race_results_horse_key`と`@STEP: race_stats_cache`を`wrangler d1 execute --remote`で適用(順序はどちらが先でも良い) (2) admin画面「既存データの馬名を一括補正する」ボタンを1回実行し既存行の`horse_key`をバックフィル(`race_stats_cache`側はボタン操作不要。初回アクセス時に自動計算される) (3) 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
 
 ## 優先順位(2026-09-08。ユーザー方針を反映)
 
