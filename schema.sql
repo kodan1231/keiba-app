@@ -373,37 +373,43 @@ END;
 
 -- GET /api/races(全画面共通の入口)・データ検索画面・購入履歴画面のCSV取込一覧
 -- (コース種別・距離の付与)など、races を無条件に全件SELECTする箇所が毎回読み直すのを
--- 避けるための事前計算キャッシュ(1行固定)。races の全カラムをJSON配列で持つ。
+-- 避けるための事前計算キャッシュ。races の全カラムをJSON配列で持つ。
 -- races は「元々軽いテーブル」という前提で許容されてきたが、開催が積み重なるほど
 -- 育ち続けるテーブルであり、2026-09-12に imported_ticket_items で実際に発生した
 -- 障害(全ユーザー・全件SELECTをテーブルが育つ前提の無い設計のまま放置し、D1日次行
 -- 読み取り上限の75%を1エンドポイントだけで消費した)と同じ構造のリスクがあったため、
--- 先回りで導入した。詳細・経緯は docs/design/data-model.md 参照。
+-- 先回りで導入した。
+--
+-- 導入当初(2026-09-12)は1行固定でraces全件を1つのJSONにまとめていたが、同日中に
+-- 結果CSV18ファイルの一括インポートで累積JSONがD1の「1行(1カラム値)あたり
+-- 2,000,000バイト」の上限を超えてUPDATEが失敗し、GET /api/races に依存する
+-- 馬券購入画面・データ検索画面・レース管理画面が軒並み500になる障害が発生したため、
+-- 複数行(チャンク)に分割して保持する方式に変更した。races は今後も無制限に育ち
+-- 続けるため、1行固定では件数を絞っても遅かれ早かれ再発する。詳細・経緯は
+-- docs/design/data-model.md 参照。
 CREATE TABLE IF NOT EXISTS races_cache (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  payload TEXT,        -- JSON配列: races の全行(SELECT * FROM races と同じ形)
-                        -- NULL = 要再計算(下記トリガーでNULL化される)
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,         -- JSON配列: races の一部の行(chunk_index順に連結するとSELECT * FROM racesと同じ形)
   updated_at TEXT
 );
-INSERT OR IGNORE INTO races_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
-
--- races への書き込みで自動的に payload を NULL 化する(無効化)。全カラムを
+-- 無効化: races_cache の全行を削除する(空 = 要再計算)。_lib/races-cache.js の
+-- getAllRacesRaw() が行を読んで再計算・チャンク分割・保存し直す。races は全カラムを
 -- キャッシュしているため、race_stats_cache と異なり列を限定せず全ての
 -- INSERT/UPDATE/DELETE で無効化する。
 CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_ins
 AFTER INSERT ON races
 BEGIN
-  UPDATE races_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM races_cache;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_upd
 AFTER UPDATE ON races
 BEGIN
-  UPDATE races_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM races_cache;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_del
 AFTER DELETE ON races
 BEGIN
-  UPDATE races_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM races_cache;
 END;

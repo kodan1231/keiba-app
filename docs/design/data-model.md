@@ -18,7 +18,7 @@
 | ユーザーアカウント | `users` | ログイン画面から自己登録できる(招待コード等の制限なし)。ログイン成功時刻を`last_login_at`に記録する |
 | レース | `races` | 出走馬表(予定)・着順(上位3着)・払戻・レース条件を保持。全ユーザー共有 |
 | レース結果詳細 | `race_results` | 馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
-| racesの事前計算キャッシュ | `races_cache` | `races`全件を1行のJSON配列として保持(1行固定)。詳細は下記「races全件取得の事前計算キャッシュ(races_cache)」参照 |
+| racesの事前計算キャッシュ | `races_cache` | `races`全件をJSON配列としてチャンク分割して保持。詳細は下記「races全件取得の事前計算キャッシュ(races_cache)」参照 |
 
 ### races全件取得の事前計算キャッシュ(races_cache。2026-09-12〜)
 
@@ -32,16 +32,42 @@ CSV取込一覧(コース種別・距離の付与)など、`races`を無条件�
 あったため、`race_stats_cache`(下記「データ検索画面のレース成績集計」参照)と
 同じ発想で導入した。
 
-- `races_cache`(id=1固定)に`races`の全カラムをJSON配列で保持する
+- `races_cache`に`races`の全カラムをJSON配列で保持する
   (`_lib/races-cache.js`の`getAllRacesRaw()`/`recomputeRacesCache()`)。
-- 無効化はDBトリガー(`schema.sql`/`migration.sql`の`@STEP: races_cache`)で行う。
-  `races`への INSERT/UPDATE/DELETE があれば自動的に payload が NULL に戻り、
+- 無効化はDBトリガー(`schema.sql`/`migration.sql`の`@STEP: races_cache_chunked`)で行う。
+  `races`への INSERT/UPDATE/DELETE があれば自動的に`races_cache`の全行が削除され、
   次回読み取り時に自動再計算される。`race_stats_cache`と異なり、`races`は
   全カラムをキャッシュしているため列を限定せず全ての更新で無効化する。
 - 呼び出し側(`races/index.js`・`data-search/race-stats.js`・`ticket-imports/index.js`)
   は必要な列だけをメモリ上で取り出して使う。返る行の形は元の`SELECT * FROM races`と
   同じ(entries/finish_order/payoutsはJSON文字列のまま。各呼び出し側の既存の
   `JSON.parse`はそのまま使える)。
+
+**チャンク分割(2026-09-12。障害対応)**: 導入当初は`races_cache`を1行固定にして
+`races`全件を1つのJSONにまとめていたが、同日中に結果CSV18ファイルの一括インポートで
+`races.entries`/`finish_order`/`payouts`が多数のレース分まとめて埋まり、累積JSONが
+D1の「1行(1カラム値)あたり2,000,000バイト」の上限を超えて`UPDATE races_cache`が
+失敗、`GET /api/races`に依存する馬券購入画面・データ検索画面・レース管理画面が
+軒並み500になる障害が発生した。`races`は今後も無制限に育ち続けるテーブルであり、
+1行固定のままではインポート件数を絞っても遅かれ早かれ同じ場所で再発するため、
+`races_cache`を複数行(チャンク)に分割して保持する方式に変更した。
+
+- `recomputeRacesCache()`は`races`全件を読んだ後、行ごとのJSONバイト数を積算し、
+  `CHUNK_MAX_BYTES`(1,500,000バイト。2MB上限に対する安全マージン)を超える手前で
+  新しいチャンクに切り替える。件数ベースではなくバイト数ベースで区切っているのは、
+  1レースあたりのJSONサイズが`entries`/`finish_order`/`payouts`の内容量によって
+  大きくばらつくため(結果未確定のレースは小さく、結果確定済み・出走頭数が多い
+  レースは大きい)。
+- `races_cache`の行は`chunk_index`をキーに複数行持つ(`id=1`固定ではない)。
+  `getAllRacesRaw()`は全チャンクを`chunk_index`順に読んで`payload`(JSON配列)を
+  連結し、元の`SELECT * FROM races`と同じ配列に戻す。
+- 無効化(トリガー)は`races_cache`の全行をDELETEするだけにした(チャンク数が
+  可変なため、特定行のUPDATEでは無効化しきれない)。次回`getAllRacesRaw()`が
+  空を見て全チャンクを再計算・再保存する。
+- バイト数の計算は`TextEncoder`でUTF-8バイト長を測る(`String.length`は
+  UTF-16コード単位数であり、日本語(馬名・騎手名・レース名等)を含むJSONでは
+  実際のバイト数を大きく過小評価するため、それで見積もると同じ2MB上限に
+  再び到達しうる)。
 
 ### レース情報のコース種別・距離
 

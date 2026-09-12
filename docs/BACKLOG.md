@@ -17,9 +17,11 @@
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
 - **未適用のマイグレーションあり(2026-09-12)**: `migration.sql` の
   `@STEP: prediction_notes_key_race`(`prediction_notes.is_key_race`列追加。勝負レース
-  フラグ)が本番DB `keiba-yosou-db` へ未適用。適用後はボタン操作等不要。
-  `race_results_horse_key`・`race_stats_cache`・`races_cache` は適用済み・
-  `schema_migrations` 記録済み(`horse_key` の既存行バックフィルも完了。
+  フラグ)、および `@STEP: races_cache_chunked`(`races_cache`を1行固定→チャンク
+  分割へ作り直し。下記「D1 2MB行サイズ上限超過障害」参照)が本番DB `keiba-yosou-db`
+  へ未適用。適用後はボタン操作等不要。
+  `race_results_horse_key`・`race_stats_cache`・`races_cache`(旧・1行固定版)は
+  適用済み・`schema_migrations` 記録済み(`horse_key` の既存行バックフィルも完了。
   `race_results` 14768件更新)。実ブラウザでの数値確認は未実施
   (下記「🔵 実機検証未完了」参照)。
 - **直近の状況**: トークン効率化リファクタリング完了(2026-09-07〜08。BACKLOG_HISTORY 期間9)。
@@ -38,6 +40,13 @@
   全件SELECTが`GET /api/races`〈全画面共通の入口〉・データ検索画面・CSV取込一覧の
   複数箇所にあり、ユーザー数増加時に同じ障害が再発するリスクがあったため、
   `race_stats_cache`と同じ発想の事前計算キャッシュを先回りで導入。本番適用済み)・
+  **D1 2MB行サイズ上限超過障害への対応**(2026-09-12。上記`races_cache`導入直後、
+  結果CSV18ファイルの一括インポートで`races`全件を1行のJSONにまとめた累積サイズが
+  D1の「1行〈1カラム値〉あたり2,000,000バイト」の上限を超え、`GET /api/races`に
+  依存する馬券購入画面・データ検索画面・レース管理画面が軒並み500になる障害が
+  発生。`races_cache`を複数行〈チャンク〉に分割して保持する方式に変更し、
+  件数ではなくバイト数〈UTF-8実測〉で区切ることで根本対応。要マイグレーション適用
+  〈`@STEP: races_cache_chunked`〉)・
   **勝負レースフラグ**(2026-09-12。予想登録画面にレース×ユーザー単位の個人設定
   トグルを新設。ONのレースは馬券購入画面のレース一覧にも★表示。`prediction_notes.
   is_key_race`+専用API `PUT /api/predictions/key-race`。要マイグレーション適用)を追加。
@@ -56,7 +65,7 @@
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |
 | 🔵 実機検証未完了 | 枠番自動計算の不具合修正(2026-09-08。7頭以下で枠番が後ろへずれる問題。`computeWakuNumberFromHorseNumber()` / `defaultWakuNumber()` に `horseCount<=8` の早期リターン + `mergeEntriesByHorseName()` に「馬番1〜N連番の8頭以下」限定の既存値補正)は`node --check`と頭数3〜18でのアルゴリズム出力確認のみ。**7頭以下のレースを実際にPDFインポートまたは再インポートし、枠番が馬番と一致すること**を確認する必要がある | `docs/design/data-model.md`「枠番は馬番から自動計算して保存する」 |
-| 🔵 実機検証未完了 | `races_cache`の先回り導入(2026-09-12。`races`を無条件に全件SELECTする箇所〈`GET /api/races`本体・`GET /api/data-search/race-stats`・`GET /api/ticket-imports`のコース情報付与〉が複数あり、`imported_ticket_items`と同じ「テーブルが育つ前提の無い全件SELECT」構造だったため、`race_stats_cache`と同じ発想で先回りキャッシュ化した。`_lib/races-cache.js`の`getAllRacesRaw()`。`races`へのINSERT/UPDATE/DELETEでDBトリガーが自動無効化。本番マイグレーション適用済み)は`node --check`のみ。**実ブラウザで**: 馬券購入画面のレース一覧・購入履歴画面・データ検索画面・CSV取込一覧が従来通り表示されること、レースの新規登録/編集/PDFインポート直後に一覧へ即座に反映されること(トリガーによる自動無効化の確認)を確認する | `docs/design/data-model.md`「races全件取得の事前計算キャッシュ(races_cache)」 |
+| 🔵 実機検証未完了(要マイグレーション適用) | `races_cache`のチャンク分割化(2026-09-12。先回り導入した`races_cache`〈1行固定〉が、同日中の結果CSV18ファイル一括インポートで`races`累積JSONがD1の1行2,000,000バイト上限を超えUPDATE失敗→`GET /api/races`依存の馬券購入画面・データ検索画面・レース管理画面が500になる障害を起こしたため、複数行〈チャンク〉に分割し件数でなくバイト数〈UTF-8実測〉で区切る方式に変更。`_lib/races-cache.js`の`getAllRacesRaw()`/`recomputeRacesCache()`。`races`へのINSERT/UPDATE/DELETEで`races_cache`全行DELETE→次回読み取り時に自動再計算)は`node --check`のみ。**本番適用手順**: `migration.sql`の`@STEP: races_cache_chunked`を`wrangler d1 execute --remote`で適用(旧`races_cache`テーブルをDROPして作り直すため、`@STEP: races_cache`適用済みの本番DBでも安全に上書きされる。`races`自体には触れない)。**実ブラウザで**: 馬券購入画面のレース一覧・購入履歴画面・データ検索画面・CSV取込一覧が従来通り表示されること、レースの新規登録/編集/PDFインポート直後に一覧へ即座に反映されること、大量のレースをまとめてインポートしても500にならないことを確認する | `docs/design/data-model.md`「races全件取得の事前計算キャッシュ(races_cache)」チャンク分割 |
 | 🔵 実機検証未完了(要マイグレーション適用) | 勝負レースフラグ(2026-09-12。予想登録画面のヘッダーにレース名の直後「☆/★ 勝負レース」トグルボタンを新設。`prediction_notes.is_key_race`〈レース×ユーザー単位の個人設定〉+`PUT /api/predictions/key-race`。ONのレースは馬券購入画面のレース選択グリッドのレース名の後ろに★を表示〈`GET /api/predictions`のrace_id省略時一覧取得モード+`myKeyRaceIds`〉)は`node --check`のみ。**本番適用手順**: `migration.sql`の`@STEP: prediction_notes_key_race`を`wrangler d1 execute --remote`で適用。**実ブラウザで**: トグルON/OFFが即座に反映されること、レース切り替え後も状態が正しく再取得されること、馬券購入画面のレース一覧に★が正しく表示されること(自分がONにしたレースのみ)、予想印・予想メモの保存でこのフラグが意図せず変化しないことを確認する | `docs/design/screens.md`「予想登録画面」 |
 | 🔵 実機検証未完了 | `GET /api/ticket-imports`のD1読み取り上限逼迫の修正(2026-09-12。`wrangler d1 insights`で判明: `imported_ticket_items`を全ユーザー分全件SELECTする設計〈テーブルが小さい前提〉が、テーブルが5,600行超まで育ったことで破綻し、このGET1エンドポイントだけで1日137回・768,707行〈日次上限500万行の約15%〉を消費していた。自分の`imported_ticket_groups.id`集合で`WHERE group_id IN (...)`〈90件チャンク・既存の`idx_imported_items_group`使用〉に絞り込む方式へ変更)は`node --check`のみ。**実ブラウザで**: 購入履歴画面のCSV取込グループ一覧が従来通り表示されること(自分の取込分の内容が欠けていないこと)、集計画面「コース別収支」への影響が無いことを確認する。修正後の読み取り量が実際に減っているかは`wrangler d1 insights`で後日確認するとよい | `functions/api/ticket-imports/index.js` |
 | 🔵 実機検証未完了 | 購入馬券グループのIPAT風コンパクト表示(2026-09-12。JRA公式IPAT「照会結果詳細」に見た目を寄せ、box/フォーメーション/ながし等で生成された全組み合わせを展開せず「入力した形」〈馬番一覧・着順ごとの馬番・軸馬/相手〉を数行で見せる新設。`ticket-view.js`の`describeGroupSelections()`/`groupCompactSummaryHtml()`。method文字列不問でCSV取込グループにも適用)は`node --check`とNode上でのbox(60点)/フォーメーション/2頭軸ながし/単勝まとめ買いパターンの出力確認のみ。**実ブラウザで**: 購入履歴画面・予想登録画面の両方で、通常購入・box・フォーメーション・ながし(1頭軸/2頭軸)・CSV取込の各グループを展開し、コンパクト表示の内容が実際の買い目と一致すること、「内訳を見る」トグルで1点ごとの明細(当落・個別金額編集・削除)が問題なく開閉・動作すること、を確認する。着順なし券種の複雑なフォーメーション(各着順が完全に別集合)は「馬番:全馬番の一覧」に丸められる既知の制約があるため、該当パターンがあれば見え方を確認する | `docs/design/screens.md`「購入馬券グループの表示(IPAT風コンパクト表示)」 |

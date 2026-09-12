@@ -126,6 +126,41 @@ BEGIN
   UPDATE races_cache SET payload = NULL WHERE id = 1;
 END;
 
+-- @STEP: races_cache_chunked
+-- races_cache(@STEP: races_cache で導入)は当初1行固定でraces全件を1つのJSONに
+-- まとめていたが、2026-09-12に結果CSV18ファイルの一括インポートで累積JSONが
+-- D1の「1行(1カラム値)あたり2,000,000バイト」の上限を超えてUPDATEが失敗し、
+-- GET /api/races に依存する馬券購入画面・データ検索画面・レース管理画面が軒並み
+-- 500になる障害が発生した。races は今後も無制限に育ち続けるため、1行固定では
+-- 件数を絞っても遅かれ早かれ再発する。そのため races_cache を複数行(チャンク)に
+-- 分割して保持できるスキーマに作り直す(単なるキャッシュでracesから再計算可能な
+-- ため、DROP TABLEしてよい。races自体は一切触らない)。詳細は
+-- docs/design/data-model.md 参照。
+DROP TABLE IF EXISTS races_cache;
+CREATE TABLE races_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+DROP TRIGGER IF EXISTS trg_races_cache_invalidate_ins;
+DROP TRIGGER IF EXISTS trg_races_cache_invalidate_upd;
+DROP TRIGGER IF EXISTS trg_races_cache_invalidate_del;
+CREATE TRIGGER trg_races_cache_invalidate_ins
+AFTER INSERT ON races
+BEGIN
+  DELETE FROM races_cache;
+END;
+CREATE TRIGGER trg_races_cache_invalidate_upd
+AFTER UPDATE ON races
+BEGIN
+  DELETE FROM races_cache;
+END;
+CREATE TRIGGER trg_races_cache_invalidate_del
+AFTER DELETE ON races
+BEGIN
+  DELETE FROM races_cache;
+END;
+
 -- @STEP: prediction_notes_key_race
 -- 「勝負レース」フラグ。ユーザーごとの個人設定(他ユーザーには見えない)。ONのレースは
 -- 馬券購入画面のレース一覧でレース名の後ろに「★」が表示される。予想印・予想メモと同じ
