@@ -17,6 +17,8 @@ const clean=v=>String(v??"").replace(/^\uFEFF/,'').trim();
 const normalizeHeader=v=>clean(v).replace(/\s+/g,'').replace(/[（）()]/g,'');
 const findColumn=(headers,candidates)=>{const hs=headers.map(normalizeHeader);for(const c of candidates){const i=hs.indexOf(normalizeHeader(c));if(i>=0)return i;}return -1;};
 const toInt=v=>{const n=Number(String(v??'').replace(/[,\s円]/g,''));return Number.isFinite(n)?Math.trunc(n):0;};
+// D1の「1クエリ100バインドパラメータ」上限に備えたチャンク分割(CLAUDE.md参照)。
+function chunk(arr,size){const out=[];for(let i=0;i<arr.length;i+=size)out.push(arr.slice(i,i+size));return out;}
 // BOX/ながし等の購入金額列は「単価／合計」の複合表記になることがある(例: "200／3600")。
 // この場合は合計(末尾の値)を購入金額として採用する。
 const parseAmount=v=>{const s=clean(v); if(!s) return 0; if(s.includes('／')||s.includes('/')){const parts=s.split(/[／\/]/).map(toInt); return parts[parts.length-1]||0;} return toInt(s);};
@@ -355,10 +357,13 @@ export async function onRequestGet(context){
     const userId=context.data.userId;
     const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     // グループ毎にimported_ticket_itemsを個別クエリすると、取込件数が増えるほど
-    // Cloudflare Workersのサブリクエスト数上限に抵触しうる。全アイテムを1回のクエリで
-    // まとめて取得し、メモリ上でグループごとに振り分ける方式にする。
+    // Cloudflare Workersのサブリクエスト数上限に抵触しうる。かといって全ユーザー分の
+    // imported_ticket_itemsを毎回全件SELECTする方式は、このテーブルが育つにつれて
+    // D1の日次行読み取り上限を圧迫する(2026-09-12。このGETが1日で137回呼ばれ
+    // 768,707行読み取りに達し上限の75%を占めていた)。
     // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
-    //  作り、それに含まれるitemsだけを対象にする)
+    //  作り、`WHERE group_id IN (...)` で自分の分だけを取得する。1クエリ100バインド
+    //  上限に備え90件ずつチャンク分割する)
     const groupIds=new Set(groups.map(g=>g.id));
     // 集計画面「コース別収支」用に、各グループのレースのコース種別・距離を引く。
     // race_id を IN (...) で渡すと、取込グループが参照するレース数が D1 の
@@ -370,9 +375,13 @@ export async function onRequestGet(context){
       const rows=(await db.prepare(`SELECT id, course_type, distance FROM races`).all()).results||[];
       for(const r of rows) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
     }
-    const allItems=(await db.prepare(`SELECT * FROM imported_ticket_items ORDER BY group_id, id`).all()).results||[];
     const itemsByGroup=new Map();
-    for(const item of allItems){ if(!groupIds.has(item.group_id)) continue; const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
+    for(const idsChunk of chunk([...groupIds],90)){
+      if(!idsChunk.length) continue;
+      const placeholders=idsChunk.map(()=>'?').join(',');
+      const rows=(await db.prepare(`SELECT * FROM imported_ticket_items WHERE group_id IN (${placeholders}) ORDER BY group_id, id`).bind(...idsChunk).all()).results||[];
+      for(const item of rows){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
+    }
     const represented=new Set();
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
