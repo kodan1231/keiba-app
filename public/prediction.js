@@ -10,6 +10,9 @@ let horseHistory = {};
 // 同じ考え方で、開閉した状態を再描画(selectRace()のたびに呼ばれるrenderPurchasedTickets)
 // をまたいで保持する。
 let expandedTicketGroups = new Set();
+// IPAT風コンパクト表示の下にある「内訳(1点ごとの明細)」の開閉状態(group_idごと)。
+// 2026-09-12追加。デフォルトは閉じた状態(app.jsのexpandedBreakdownsと同じ考え方)。
+let expandedTicketBreakdowns = new Set();
 const emptyState = document.getElementById("prediction-empty");
 const panel = document.getElementById("prediction-panel");
 const raceHeader = document.getElementById("prediction-race-header");
@@ -95,6 +98,8 @@ function renderPurchasedTickets(items) {
         // 開閉状態はgroup_idをキーに保持する(通常購入=UUID、CSV取込=import-<id>等、
         // いずれも文字列のため型の不一致は起きない)。デフォルトは閉じた状態。
         const isExpanded = expandedTicketGroups.has(groupId);
+        const compactSummary = groupCompactSummaryHtml(first.bet_type, group);
+        const isBreakdownExpanded = expandedTicketBreakdowns.has(groupId);
         return `
           <div class="group-card">
             <div class="group-card-head" data-group-id="${escapeAttr(String(groupId))}">
@@ -106,7 +111,9 @@ function renderPurchasedTickets(items) {
               <span class="group-money">${ticketMoneyText(group)}</span>
             </div>
             <div class="group-detail" ${isExpanded ? "" : "hidden"}>
-              <div class="group-detail-rows">
+              ${compactSummary}
+              ${compactSummary ? `<button type="button" class="breakdown-toggle-btn" data-group-id="${escapeAttr(String(groupId))}">${isBreakdownExpanded ? "内訳を隠す ▾" : "内訳を見る ▸"}</button>` : ""}
+              <div class="group-detail-rows" ${compactSummary && !isBreakdownExpanded ? "hidden" : ""}>
                 ${group
                   .map(
                    (t) => `
@@ -141,6 +148,19 @@ function renderPurchasedTickets(items) {
 
   ticketsEl.querySelectorAll(".group-card-head[data-group-id]").forEach((head) => {
     head.addEventListener("click", () => toggleTicketGroup(head));
+  });
+
+  ticketsEl.querySelectorAll(".breakdown-toggle-btn[data-group-id]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const groupId = btn.dataset.groupId;
+      const rows = btn.closest(".group-detail").querySelector(".group-detail-rows");
+      const nowHidden = !rows.hidden;
+      rows.hidden = nowHidden;
+      if (nowHidden) expandedTicketBreakdowns.delete(groupId);
+      else expandedTicketBreakdowns.add(groupId);
+      btn.textContent = rows.hidden ? "内訳を見る ▸" : "内訳を隠す ▾";
+    });
   });
 
   // 通常購入分の購入金額は、この画面からその場で変更できる。

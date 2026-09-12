@@ -1174,6 +1174,39 @@ body.history-selection-mode .group-detail-actions {
 
 .group-detail-actions { display: flex; justify-content: flex-end; }
 
+/* IPAT風コンパクト表示(2026-09-12追加。docs/design/screens.md参照)。box/ながし/
+   フォーメーション等で生成された全組み合わせを展開する前に、入力した形(馬番一覧・
+   着順ごとの馬番・軸馬/相手)を数行で見せる。 */
+.group-compact-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.group-compact-line { display: flex; gap: 8px; }
+
+.group-compact-label { color: var(--ink-soft); min-width: 32px; }
+
+.group-compact-value { font-weight: 700; }
+
+.group-compact-amount { color: var(--ink-soft); font-weight: 400; }
+
+.breakdown-toggle-btn {
+  display: block;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.breakdown-toggle-btn:hover { color: var(--ink); }
+
 /* ---------- 集計ページ: タブ ---------- */
 .stats-tabs {
   display: flex;

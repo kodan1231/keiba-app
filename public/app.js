@@ -2,6 +2,9 @@ const raceList = document.getElementById("race-list");
 const emptyState = document.getElementById("empty-state");
 const summaryBar = document.getElementById("summary-bar");
 let expandedGroups = new Set();
+// IPAT風コンパクト表示の下にある「内訳(1点ごとの明細)」の開閉状態(group_idごと)。
+// 2026-09-12追加。デフォルトは閉じた状態(普段は隠す方針。docs/design/screens.md参照)。
+let expandedBreakdowns = new Set();
 let expandedRaces = new Set();
 let races = [];
 let allItems = [];
@@ -315,11 +318,16 @@ function renderGroupRow(group) {
   `;
   wrap.appendChild(head);
 
+  const compactSummary = groupCompactSummaryHtml(first.bet_type, group);
+  const isBreakdownExpanded = expandedBreakdowns.has(groupKey);
+
   const detail = document.createElement("div");
   detail.className = "group-detail";
   detail.hidden = !isExpanded;
   detail.innerHTML = `
-    <div class="group-detail-rows">
+    ${compactSummary}
+    ${compactSummary ? `<button type="button" class="breakdown-toggle-btn">${isBreakdownExpanded ? "内訳を隠す ▾" : "内訳を見る ▸"}</button>` : ""}
+    <div class="group-detail-rows" ${compactSummary && !isBreakdownExpanded ? "hidden" : ""}>
       ${group
         .map(
           (t) => `
@@ -343,6 +351,18 @@ function renderGroupRow(group) {
     </div>`}
   `;
   wrap.appendChild(detail);
+
+  const breakdownToggleBtn = detail.querySelector(".breakdown-toggle-btn");
+  if (breakdownToggleBtn) {
+    breakdownToggleBtn.addEventListener("click", () => {
+      const rows = detail.querySelector(".group-detail-rows");
+      const nowHidden = !rows.hidden;
+      rows.hidden = nowHidden;
+      if (nowHidden) expandedBreakdowns.delete(groupKey);
+      else expandedBreakdowns.add(groupKey);
+      breakdownToggleBtn.textContent = rows.hidden ? "内訳を見る ▸" : "内訳を隠す ▾";
+    });
+  }
 
   head.addEventListener("click", (e) => {
     if (selectionMode) {
