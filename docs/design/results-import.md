@@ -245,6 +245,16 @@ jra-result-importer.user.js`をブラウザで直接開くだけでインスト�
 (`keiba-yosou-app.pages.dev`)を直接埋め込んである。デプロイ先を変更した場合はこのファイル内の
 該当箇所を書き換える必要がある。
 
+**JRA公式サイトのPC/スマホ用ドメインの違い(2026-09-13判明)**: JRA公式サイトはPC用が
+`www.jra.go.jp`、スマホ用が`sp.jra.jp`と**別ドメイン**になっている(パス構造`/JRADB/
+accessS.html`自体は共通)。ユーザースクリプトの`@match`は当初PC用ドメインしか指定して
+おらず、iPhone(`sp.jra.jp`)で実機確認した際にボタンが一切表示されない不具合があった。
+`@match`に両ドメインを追加して対応している。CSSファイル名の`_r`接尾辞(`frame_r.css`
+`header_r.js`等。おそらく「responsive」)から、PC/スマホで同一のHTML構造を共有した
+レスポンシブデザインと推測され、`public/jra-result-html.js`の解析ロジックはドメインに
+依らず共通のまま使えると見ている(ただし実機での構造確認はスマホ側のみ実施、PC側の
+`www.jra.go.jp`表示は未確認)。
+
 **iOS Safari(Userscripts拡張)向けの実装上の配慮**: PC(Tampermonkey)とiOS Safariの
 「Userscripts」拡張(quoid/userscripts)の両方で動くよう、以下の制約に合わせている。
 - **`GM_registerMenuCommand`は使わない**(Userscripts拡張が非対応のため)。トークン設定は

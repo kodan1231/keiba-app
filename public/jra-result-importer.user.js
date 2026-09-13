@@ -4,6 +4,7 @@
 // @version      1.0.0
 // @description  JRAレース結果ページを開いたら、ボタン1つで馬券帳へ結果を送信する(印刷してPDF保存してアプリへアップロードする手間を省く)。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
+// @match        https://sp.jra.jp/JRADB/accessS.html*
 // @require      https://keiba-yosou-app.pages.dev/jra-result-html.js
 // @connect      keiba-yosou-app.pages.dev
 // @grant        GM_xmlhttpRequest
