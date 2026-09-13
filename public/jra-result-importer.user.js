@@ -10,6 +10,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM.setValue
 // @grant        GM.getValue
+// @grant        GM.setClipboard
 // ==/UserScript==
 
 // 使い方:
@@ -47,57 +48,78 @@
     if (next !== null) await GM.setValue(TOKEN_KEY, next.trim());
   }
 
+  function makeButton(label, title, bg) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+    if (title) btn.title = title;
+    Object.assign(btn.style, {
+      padding: "10px 14px",
+      fontSize: "15px",
+      fontWeight: "bold",
+      background: bg,
+      color: "#fff",
+      border: "none",
+      borderRadius: "8px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+      cursor: "pointer",
+    });
+    return btn;
+  }
+
+  // 調査用: このページのHTML構造がPC版とスマホ版で異なるか、ボタンが単に見えていない
+  // だけなのかを切り分けるためのボタン。テーブル要素だけを抽出してコピーする(ナビ等の
+  // 不要なHTMLを含めずサイズを抑えるため)。動作確認が完了したら削除してよい。
+  async function onClickDebug() {
+    const tables = Array.from(document.querySelectorAll("table"));
+    const html = tables.length
+      ? tables.map((t) => t.outerHTML).join("\n\n")
+      : `(tableタグが見つかりませんでした。document.body.className=${document.body.className}）`;
+    try {
+      await GM.setClipboard(html);
+      alert(`table要素${tables.length}個ぶんのHTMLをクリップボードにコピーしました。貼り付けて送ってください。`);
+    } catch (e) {
+      prompt("コピーに失敗したため、下のテキストを手動で全選択してコピーしてください。", html);
+    }
+  }
+
   function injectButtons() {
-    if (document.getElementById("keiba-app-import-btn")) return;
-    // レース結果一覧ページ以外(開催選択・レース選択画面等)では何もしない。
-    if (!document.querySelectorAll(".race_result_unit").length) return;
+    if (document.getElementById("keiba-app-import-wrap")) return;
 
     const wrap = document.createElement("div");
     wrap.id = "keiba-app-import-wrap";
     Object.assign(wrap.style, {
       position: "fixed",
-      right: "16px",
-      bottom: "16px",
+      left: "8px",
+      right: "8px",
+      bottom: "max(8px, env(safe-area-inset-bottom))",
       zIndex: 2147483647,
       display: "flex",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
       gap: "8px",
+      pointerEvents: "none",
     });
 
-    const sendBtn = document.createElement("button");
-    sendBtn.id = "keiba-app-import-btn";
-    sendBtn.type = "button";
-    sendBtn.textContent = "馬券帳へ送信";
-    Object.assign(sendBtn.style, {
-      padding: "12px 20px",
-      fontSize: "16px",
-      fontWeight: "bold",
-      background: "#1a7f37",
-      color: "#fff",
-      border: "none",
-      borderRadius: "8px",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      cursor: "pointer",
-    });
-    sendBtn.addEventListener("click", onClickImport);
+    const debugBtn = makeButton("🔍HTML取得", "調査用: ページのtable要素を丸ごとコピーする", "#555");
+    debugBtn.style.pointerEvents = "auto";
+    debugBtn.addEventListener("click", onClickDebug);
+    wrap.appendChild(debugBtn);
 
-    const settingsBtn = document.createElement("button");
-    settingsBtn.type = "button";
-    settingsBtn.textContent = "⚙";
-    settingsBtn.title = "APIトークンを設定";
-    Object.assign(settingsBtn.style, {
-      padding: "12px 14px",
-      fontSize: "16px",
-      background: "#333",
-      color: "#fff",
-      border: "none",
-      borderRadius: "8px",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      cursor: "pointer",
-    });
-    settingsBtn.addEventListener("click", setToken);
+    // レース結果一覧ページ(.race_result_unitがある)でのみ、送信・設定ボタンを追加する。
+    if (document.querySelectorAll(".race_result_unit").length) {
+      const settingsBtn = makeButton("⚙", "APIトークンを設定", "#333");
+      settingsBtn.style.pointerEvents = "auto";
+      settingsBtn.addEventListener("click", setToken);
+      wrap.appendChild(settingsBtn);
 
-    wrap.appendChild(settingsBtn);
-    wrap.appendChild(sendBtn);
+      const sendBtn = makeButton("馬券帳へ送信", null, "#1a7f37");
+      sendBtn.id = "keiba-app-import-btn";
+      sendBtn.style.pointerEvents = "auto";
+      sendBtn.addEventListener("click", onClickImport);
+      wrap.appendChild(sendBtn);
+    }
+
     document.body.appendChild(wrap);
   }
 
