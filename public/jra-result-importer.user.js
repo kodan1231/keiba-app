@@ -67,31 +67,24 @@
     return btn;
   }
 
-  // 調査用: ページのHTML構造を確認するためのボタン。1レース目のtable要素と、その直前に
-  // 並んでいるであろう見出しブロック(発走時刻・レース名・コース情報等。tableの兄弟要素を
-  // 前方へ遡って集める)をまとめて取得する。全レース分を集めると巨大になり貼り付け時に
-  // 途中で切れてしまうため、構造確認に必要な1レース分だけに絞っている。
-  // 動作確認が完了したら削除してよい。
-  function collectPrecedingSiblingsHtml(el) {
-    const parts = [];
-    let sib = el.previousElementSibling;
-    let guard = 0;
-    while (sib && sib.tagName !== "TABLE" && guard < 30) {
-      parts.unshift(sib.outerHTML);
-      sib = sib.previousElementSibling;
-      guard++;
-    }
-    return parts.join("\n");
-  }
+  // 調査用: ページのHTML構造を確認するためのボタン。DOM階層を推測して辿るのではなく、
+  // 「最初の<table>タグより前のHTML全体」を文字列としてそのまま切り出す(ナビ等でも
+  // tableより前にある限りそのまま含まれる。長すぎる場合はtableに近い=末尾側を優先して
+  // 残す)。最初のtable要素自体も付けて返す。動作確認が完了したら削除してよい。
+  const DEBUG_HEADER_MAX_LEN = 15000;
 
   async function onClickDebug() {
+    const bodyHtml = document.body.innerHTML;
+    const tableIdx = bodyHtml.indexOf("<table");
+    let headerHtml = tableIdx >= 0 ? bodyHtml.slice(0, tableIdx) : bodyHtml;
+    if (headerHtml.length > DEBUG_HEADER_MAX_LEN) {
+      headerHtml = `…(先頭省略)…\n${headerHtml.slice(-DEBUG_HEADER_MAX_LEN)}`;
+    }
     const firstTable = document.querySelector("table");
-    const html = firstTable
-      ? `${collectPrecedingSiblingsHtml(firstTable)}\n\n${firstTable.outerHTML}`
-      : `(tableタグが見つかりませんでした。document.body.className=${document.body.className}）`;
+    const html = `${headerHtml}\n\n${firstTable ? firstTable.outerHTML : "(tableタグが見つかりませんでした)"}`;
     try {
       await GM.setClipboard(html);
-      alert("1レース目の見出し+tableのHTMLをクリップボードにコピーしました。貼り付けて送ってください。");
+      alert("見出し部分+1レース目のtableのHTMLをクリップボードにコピーしました。貼り付けて送ってください。");
     } catch (e) {
       prompt("コピーに失敗したため、下のテキストを手動で全選択してコピーしてください。", html);
     }
