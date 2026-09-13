@@ -60,6 +60,18 @@
   **勝負レースフラグ**(2026-09-12。予想登録画面にレース×ユーザー単位の個人設定
   トグルを新設。ONのレースは馬券購入画面のレース一覧にも★表示。`prediction_notes.
   is_key_race`+専用API `PUT /api/predictions/key-race`。要マイグレーション適用)を追加。
+  **買い目画面・履歴画面のページ遷移レイテンシ改善**(2026-09-13。ページ遷移後に
+  データが表示されるまでの体感速度低下の相談を受けて調査。`races_cache`等の
+  D1上限対策は有効だが、`races`が育つほど`GET /api/races`のレスポンス自体
+  〈JSON直列化・エイリアス適用ループ・転送量〉が重くなる問題は未対策だったため、
+  `GET /api/races?since=`〈直近1ヶ月+未来レース全部に絞る。範囲指定時は`races_cache`
+  を経由せず`idx_races_date`で直接SELECT〉と`GET /api/races/:id`〈単一レース取得。
+  新設〉を追加し、買い目画面(`buy.js`)・履歴画面(`app.js`)の初期表示をこれに
+  切り替えた。深リンク(`?race=`)・古い購入履歴の金額再計算は範囲外時に
+  `/api/races/:id`で個別取得するフォールバックを実装した。レース管理画面
+  (`races.js`)・予想登録画面(`prediction.js`。日付/競馬場/R切替ナビに全件の
+  `races`が必要なため対象外と判明)・データ検索画面・CSV取込一覧の内部呼び出しは
+  無変更)を実施。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -71,6 +83,7 @@
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了 | 買い目画面・履歴画面のページ遷移レイテンシ改善(2026-09-13。`GET /api/races?since=`〈直近1ヶ月+未来レース全部。範囲指定時は`races_cache`を経由せず`idx_races_date`で直接SELECT〉・`GET /api/races/:id`〈単一レース取得。新設〉を追加し、買い目画面(`buy.js`)・履歴画面(`app.js`)の初期表示をこれに切り替え、深リンク・古い購入履歴の金額再計算は範囲外時に`/api/races/:id`で個別取得するフォールバックを実装)は`node --check`のみ。**実ブラウザで**: 買い目画面・履歴画面が従来通り表示されること(直近1ヶ月より前の購入履歴・レースが欠けないこと)、買い目画面へ古いレースの`?race=`深リンクで遷移した際に購入モーダルが正しく開くこと、履歴画面で1ヶ月より前の購入履歴の金額を編集した際に払戻金額が正しく再計算されること、実際にページ遷移が速くなったと感じられるかを確認する | `docs/design/data-model.md`「GET /api/races の範囲限定・単一レース取得API」 |
 | 🔵 実機検証未完了 | JRA結果PDF / 出走馬一覧PDF インポートの複数ファイル選択対応(`multiple`・`jraPdfParseFiles()`・ファイル単位の順次POST)は `node --check` のみ。**実ブラウザで**: 複数PDF選択→解析でファイルごとの折りたたみ診断が出ること、重複レースの除外表示、登録が「(3/10) ファイル名」進捗で1ファイルずつ実行され最後にサマリが出ること、1ファイル解析失敗時に他が継続すること、単一ファイル時に従来どおり動くこと、を確認する | `docs/design/results-import.md`「複数ファイルの一括選択」 |
 | 🔵 実機検証未完了 | データ検索画面「レース成績」タブ(新規。`data-search.html`/`.js`・`GET /api/data-search/race-stats`・NAV「データ検索」)は `node --check` とローカルDBでの馬番別集計シミュレーションのみ。**実DB(本番)で**: 競馬場・コース種別・距離の各フィルタ、距離セレクトが競馬場/コース種別選択で絞られること、平均単勝/馬連金額・○円以下率・騎手トップ5(足切り `max(5,⌈対象レース数×5%⌉)`)・馬番別成績の数値が妥当か、③④⑤の着順ソース使い分け(`race_results` 全頭ぶんあり→それ / 不足→`finish_order`+`entries`)が効いているかを確認する | `docs/design/data-search.md` |
 | 🔵 実機検証未完了 | JRAレース結果PDFパーサの関数分割(2026-09-08。`jraResultParseExtractedPages` 527行 → `detectRaceHeaders()` + `parseRaceBlock()` に抽出)は`node --check`と原本との行集合突き合わせのみ。**実PDF(できれば複数レース入り)を1件インポートし、分割前と比較**: レース数・レース名・コース/距離・1〜3着・払戻レート(全式別)・`race_results`詳細・取消/除外/中止行・`incident_note`・診断パネルの各カウンタ(`raceHeaders`/`resultRows`/`payoutItems`等)が一致すること。診断パネルのバージョンに`-split`が付いていれば新コード | `docs/design/results-import.md`「解析ロジックの要点」 |

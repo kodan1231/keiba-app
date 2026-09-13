@@ -163,9 +163,13 @@ async function loadMyKeyRaceIds() {
   myKeyRaceIds = ids;
 }
 
+// 2026-09-13: GET /api/races は ?since= (直近1ヶ月+未来レース全部) に絞って呼ぶ
+// (docs/design/data-model.md「GET /api/races の範囲限定」参照)。買い目画面は
+// この範囲だけで足りる想定のため、初期表示の高速化を優先する。
 async function loadRaces() {
+  const since = monthsAgoDateKey(1);
   const [racesRes] = await Promise.all([
-    authedFetch("/api/races"),
+    authedFetch(`/api/races?since=${since}`),
     loadPurchasedRaceIds(),
     loadMyMemoHorseNames(),
     loadMyKeyRaceIds(),
@@ -177,7 +181,12 @@ async function loadRaces() {
 
   const id = Number(new URLSearchParams(location.search).get("race"));
   if (id) {
-    const race = races.find(x => Number(x.id) === id);
+    let race = races.find(x => Number(x.id) === id);
+    // ?since= の範囲外(古い)レースへの深リンクは、その1件だけ個別取得する。
+    if (!race) {
+      const res = await authedFetch(`/api/races/${id}`);
+      if (res.ok) race = await res.json();
+    }
     if (race) await openPurchase(race);
     else document.body.classList.remove("deep-link-purchase"); // レース不明なら通常表示に戻す
   }

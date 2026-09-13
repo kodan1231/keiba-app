@@ -84,6 +84,44 @@ D1無料枠の日次上限そのものの詳細・注意点は`CLAUDE.md`「絶�
 不変条件」、当日の消費内訳の実例は`docs/BACKLOG.md`「D1無料枠の日次上限に関する
 注意」参照。
 
+### GET /api/races の範囲限定(?since)・単一レース取得API(2026-09-13〜)
+
+`races_cache`導入(上記)はD1の日次rows_read上限対策として有効だが、`races`が
+育つほど「`GET /api/races`のレスポンス自体(JSON直列化・エイリアス適用ループ・
+クライアント側JSON.parse・転送量)」が重くなる問題は解決しない。ページ遷移後に
+データが表示されるまでの体感速度(レイテンシ)を改善するため、**「元々全件を見る
+必要がない画面」に限り、返す範囲を絞れるようにした**。
+
+- `GET /api/races?since=YYYY-MM-DD`: 指定時は`races_cache`を経由せず、
+  `SELECT * FROM races WHERE race_date >= ? ORDER BY race_date DESC, track ASC,
+  race_number ASC`を直接実行する(`idx_races_date`使用)。「直近1ヶ月+当日以降の
+  未来レース全部」のように自然にバウンドされる範囲での直接SELECTは、
+  `CLAUDE.md`「絶対に破ってはいけない不変条件」の「件数が自然にバウンドされるなら
+  可」に該当するため、事前計算キャッシュを経由する必要はない。
+  `since`未指定時は従来通り`getAllRacesRaw()`(`races_cache`経由・全件)を返す
+  (`races.js`・`races-entries-modal.js`・データ検索画面「レース成績」タブ・
+  購入履歴画面CSV取込一覧は`since`を付けずに呼ぶため無変更で動く)。
+- `GET /api/races/:id`(新設): 指定IDのレース1件だけを返す(`SELECT * FROM races
+  WHERE id = ?`。id指定のためD1負荷は常に軽い)。存在しなければ404。
+  範囲限定した一覧に無い(古い/未来過ぎる)レース1件だけが必要な場面
+  (下記の深リンク・個別編集)で使う。
+
+**呼び出し側の使い分け**:
+- 馬券購入画面(`buy.js`)・購入履歴画面(`app.js`)の初期表示は
+  `?since=<今日から1ヶ月前>`を付けて呼ぶ(直近1ヶ月+未来レース全部だけで足りる
+  想定)。`?race=`深リンク(買い目画面)・金額の再計算(履歴画面、レースの
+  `payouts`を使う)で対象レースが範囲外だった場合のみ、`GET /api/races/:id`で
+  その1件だけ個別取得する。
+- 予想登録画面(`prediction.js`)・レース管理画面(`races.js`・
+  `races-entries-modal.js`)は対象外とし、`since`を付けずに全件取得を維持する。
+  予想登録画面は`?race=`で指定された1レースだけでなく、ヘッダーの日付/競馬場/
+  レース番号セレクト(`racesOnSameDate()`/`switchToRaceKeeping()`/`dates`一覧)で
+  ページ遷移なしに任意の日付・レースへ切り替えるナビゲーションに全件の`races`を
+  使っているため、範囲を絞るとこの切替機能が壊れる。レース管理画面も管理者が
+  任意の過去月へカレンダーで移動して編集する用途のため同様に対象外。
+  データ検索画面「レース成績」タブ・CSV取込一覧の内部呼び出し
+  (`getAllRacesRaw()`直接呼び出し)も対象外。
+
 ### レース情報のコース種別・距離
 
 `races`テーブルは`course_type`(TEXT)・`distance`(INTEGER)を持つ。

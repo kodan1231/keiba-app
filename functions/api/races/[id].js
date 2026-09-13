@@ -1,5 +1,31 @@
 import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
 
+// GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
+// 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
+// 予想登録画面のように元々1レースしか使わない画面向け。id指定のSELECTなのでD1負荷は
+// 常に軽い。詳細は docs/design/data-model.md「GET /api/races の範囲限定」参照。
+export async function onRequestGet(context) {
+  const { env, params } = context;
+  const { id, error } = parsePositiveIntId(params.id);
+  if (error) return error;
+
+  const row = await env.DB.prepare("SELECT * FROM races WHERE id = ?").bind(id).first();
+  if (!row) return jsonError("レースが見つかりません", 404);
+
+  const jockeyMap = await loadJockeyAliasMap(env.DB);
+  const horseMap = await loadHorseAliasMap(env.DB);
+  let entries = JSON.parse(row.entries);
+  entries = applyJockeyAliasesToEntries(jockeyMap, entries);
+  entries = applyHorseAliasesToEntries(horseMap, entries);
+
+  return Response.json({
+    ...row,
+    entries,
+    finish_order: row.finish_order ? JSON.parse(row.finish_order) : null,
+    payouts: row.payouts ? JSON.parse(row.payouts) : null,
+  });
+}
+
 // PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
 export async function onRequestPut(context) {
   const deny = requireAdmin(context);

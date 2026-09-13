@@ -119,10 +119,15 @@ function applyHistoryFilter() {
   if (selectionMode) syncBulkSelectionUi();
 }
 
+// 2026-09-13: GET /api/races は ?since= (直近1ヶ月+未来レース全部) に絞って呼ぶ
+// (docs/design/data-model.md「GET /api/races の範囲限定」参照)。この画面での races は
+// 金額編集時の払戻再計算(下記 races.find 部分)にしか使わないため、対象が範囲外
+// (古い購入履歴)の場合は GET /api/races/:id でその場で個別取得する。
 async function loadTickets() {
+  const since = monthsAgoDateKey(1);
   const [ticketsRes, racesRes, importedRes] = await Promise.all([
     authedFetch("/api/tickets"),
-    authedFetch("/api/races"),
+    authedFetch(`/api/races?since=${since}`),
     authedFetch("/api/ticket-imports"),
   ]);
   if (!ticketsRes.ok) return;
@@ -404,7 +409,13 @@ function renderGroupRow(group) {
 
       // 払戻率が既に入力されているレースなら、新しい購入額で払戻金額も再計算する。
       // 払戻率データがまだない場合は、既存の払戻金額をそのまま維持する。
-      const race = races.find((r) => r.id === ticket.race_id);
+      // races は ?since= で範囲を絞っているため、古い購入履歴では見つからないことが
+      // あり、その場合は GET /api/races/:id でその1件だけ個別取得する。
+      let race = races.find((r) => r.id === ticket.race_id);
+      if (!race) {
+        const raceRes = await authedFetch(`/api/races/${ticket.race_id}`);
+        if (raceRes.ok) race = await raceRes.json();
+      }
       let newPayout = ticket.payout ?? null;
       if (race && race.payouts && race.payouts[ticket.bet_type]) {
         newPayout = computeTicketPayout({ ...ticket, amount: newAmount }, race);

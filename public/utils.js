@@ -175,6 +175,21 @@ function todayDateKey(date = new Date()) {
 }
 
 /**
+ * 「今日からNヶ月前」の日付をYYYY-MM-DD形式で返す共通関数(2026-09-13追加)。
+ * GET /api/races?since= に渡す下限値の算出用(買い目画面・履歴画面の初期表示を
+ * 「直近Nヶ月+未来レース全部」に絞るため。docs/design/data-model.md
+ * 「GET /api/races の範囲限定」参照)。
+ *
+ * @param {number} months - 何ヶ月前か
+ * @param {Date} [date] - 基準にするDateオブジェクト(省略時は現在時刻)
+ * @returns {string} 例: "2026-08-13"
+ */
+function monthsAgoDateKey(months, date = new Date()) {
+  const d = new Date(date.getFullYear(), date.getMonth() - months, date.getDate());
+  return todayDateKey(d);
+}
+
+/**
  * モーダル/ダイアログ共通: ESCキー押下時に「キャンセル」ボタンと同じ扱いで
  * (保存せず)閉じるようにする(docs/BACKLOG.md クラスタK対応・2026-08-12)。
  *
