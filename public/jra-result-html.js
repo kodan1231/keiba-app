@@ -224,18 +224,277 @@ function jraResultHtmlParseRaceUnit(unitEl) {
   };
 }
 
-// root配下の.race_result_unitをすべて解析する(未確定のレースは自然に除外される)。
-function jraResultHtmlParsePage(root) {
-  const units = Array.from((root || document).querySelectorAll(".race_result_unit"));
-  const records = [];
-  const errors = [];
-  units.forEach((unit) => {
-    try {
-      const record = jraResultHtmlParseRaceUnit(unit);
-      if (record) records.push(record);
-    } catch (e) {
-      errors.push({ id: unit.id, message: String(e?.message || e) });
+// ============================================================
+// スマホ版(sp.jra.jp)向けパーサー(2026-09-13追加)。
+// PC版(www.jra.go.jp)とはHTML構造が全く異なる(列の意味を表すクラス名を持つ
+// 素直な<table>ではなく、着順以外の情報がumaTd列1つに<span>で詰め込まれた
+// 4列構成)ため、専用の解析ロジックを別に用意している。レースの見出し情報
+// (発走時刻・レース名・コース等)は<div id="kekkaRaceInfo_NR">に、着順表・
+// 払戻表はその後に続く独立した<table>群(順に「レース結果」「タイム」「払戻金」)に
+// 分かれている。詳細はdocs/design/results-import.md参照。
+// ============================================================
+
+const JRA_RESULT_HTML_MOBILE_BET_TYPE_BY_LABEL = {
+  単勝: "tan",
+  複勝: "fuku",
+  枠連: "wakuren",
+  馬連: "umaren",
+  馬単: "umatan",
+  ワイド: "wide",
+  "3連複": "sanrenpuku",
+  "3連単": "sanrentan",
+};
+
+// 例: "コース 1800m ダート・右発走9:45"(<br>はDOM上ではテキストに変換されないため
+// 区切り文字が無く隣接テキストと連結されることがある) → distance/course_type/course_direction
+function jraResultHtmlMobileParseCourse(text) {
+  const distanceMatch = text.match(/(\d[\d,]*)\s*m\b/i);
+  const typeMatch = text.match(/(芝|ダート|障害)/);
+  const dirMatch = text.match(/[・･](左|右)/);
+  return {
+    distance: distanceMatch ? Number(distanceMatch[1].replace(/,/g, "")) : null,
+    course_type: typeMatch ? typeMatch[1] : null,
+    course_direction: dirMatch ? dirMatch[1] : null,
+  };
+}
+
+// 例: "…発走9:45…" → "09:45"(PC版の「10時35分」と異なりコロン区切り表記)
+function jraResultHtmlMobileParsePostTime(text) {
+  const m = text.match(/発走(\d{1,2}):(\d{2})/);
+  return m ? `${String(m[1]).padStart(2, "0")}:${m[2]}` : null;
+}
+
+// 例: "天候:曇ダート:不良"(区切り文字が無いため既知の値の閉集合でマッチさせる)
+function jraResultHtmlMobileParseWeather(text) {
+  const weatherMatch = text.match(/天候[:：](晴|曇|雨|小雨|雪|小雪|暴風雨|大雨)/);
+  const condMatch = text.match(/(?:芝|ダート|障害)[:：](良|稍重|重|不良)/);
+  return {
+    weather: weatherMatch ? weatherMatch[1] : null,
+    track_condition: condMatch ? condMatch[1] : null,
+  };
+}
+
+// weight_type(馬齢/定量/別定/ハンデ)と、その手前のブラケット表記(例:"[指定]")をclass_flagsとして返す。
+function jraResultHtmlMobileParseConditions(text) {
+  const weightMatch = text.match(/(馬齢|定量|別定|ハンデ)/);
+  const flagsMatch = text.match(/^\s*([^\d]*?)\s*(?:馬齢|定量|別定|ハンデ)/);
+  return {
+    weight_type: weightMatch ? weightMatch[1] : null,
+    class_flags: flagsMatch && flagsMatch[1].trim() ? flagsMatch[1].trim() : null,
+  };
+}
+
+// 1頭分の<tr>(td.tyakuTd/wakuTd/ubanTd/umaTd)を解析する。
+function jraResultHtmlMobileParseRow(tr) {
+  const placeText = jraResultHtmlText(tr.querySelector("td.tyakuTd"));
+  const ubanMatch = jraResultHtmlText(tr.querySelector("td.ubanTd")).match(/\d+/);
+  const horseNumber = ubanMatch ? Number(ubanMatch[0]) : NaN;
+  if (!Number.isInteger(horseNumber)) return null;
+
+  const wakuClass = tr.querySelector("td.wakuTd")?.className || "";
+  const wakuMatch = wakuClass.match(/waku(\d+)/);
+  const wakuNumber = wakuMatch ? Number(wakuMatch[1]) : null;
+
+  const umaTd = tr.querySelector("td.umaTd");
+  const horseName = umaTd ? jraResultHtmlText(umaTd.querySelector(".bamei")) || null : null;
+  const ninkiText = umaTd ? jraResultHtmlText(umaTd.querySelector(".ninki")) : "";
+  const winPopMatch = ninkiText.match(/(\d+)番人気/);
+
+  // umaTd直下は [馬名a, span.ninki, br, span(性齢/馬体重), br, span(騎手/調教師), br, span(タイム)] の並び。
+  // .ninki以外のspanを順番に取得する(除外行等はタイムのspanが無く2個になる)。
+  const spans = umaTd ? Array.from(umaTd.querySelectorAll(":scope > span:not(.ninki)")) : [];
+  const ageWeightText = spans[0] ? jraResultHtmlText(spans[0]) : "";
+  const jockeyTrainerSpan = spans[1] || null;
+  const timeText = spans[2] ? jraResultHtmlText(spans[2]) : "";
+
+  const sexAgeMatch = ageWeightText.match(/(牡|牝|せん|セ|騸)\d+/);
+  const bodyWeightMatch = ageWeightText.match(/(\d+)kg\s*[（(]([^)）]*)[)）]/);
+
+  const jockeyAnchors = jockeyTrainerSpan ? Array.from(jockeyTrainerSpan.querySelectorAll("a")) : [];
+  const jockeyLink = jockeyAnchors[0] || null;
+  let jockeyMark = "";
+  if (jockeyLink && jockeyLink.previousSibling && jockeyLink.previousSibling.nodeType === Node.TEXT_NODE) {
+    jockeyMark = jockeyLink.previousSibling.textContent.trim();
+  }
+  const jockey = jockeyLink ? `${jockeyMark}${jraResultHtmlText(jockeyLink)}` : null;
+  const weightCarriedMatch = jockeyTrainerSpan
+    ? jraResultHtmlText(jockeyTrainerSpan).match(/\((\d+(?:\.\d+)?)\)/)
+    : null;
+
+  const status = JRA_RESULT_HTML_STATUS_BY_PLACE_TEXT[placeText] || "finished";
+  const finishPosition = status === "finished" && /^\d+$/.test(placeText) ? Number(placeText) : null;
+
+  // 例: "1:54.5(２)/39.8" → time="1:54.5" margin="２" furlong=39.8。1着は括弧無しで "1:54.2/39.6"。
+  const timeMatch = timeText
+    .replace(/ /g, " ")
+    .match(/^([\d:.]+)\s*(?:[（(]([^)）]*)[)）])?\s*\/\s*([\d.]+)/);
+
+  return {
+    finishPosition,
+    entry: {
+      horse_number: horseNumber,
+      waku_number: wakuNumber,
+      horse_name: horseName,
+      jockey,
+      sex_age: sexAgeMatch ? sexAgeMatch[0] : null,
+      weight_carried: weightCarriedMatch ? Number(weightCarriedMatch[1]) : null,
+    },
+    raceResult: {
+      horse_number: horseNumber,
+      horse_name: horseName,
+      sex_age: sexAgeMatch ? sexAgeMatch[0] : null,
+      weight_carried: weightCarriedMatch ? Number(weightCarriedMatch[1]) : null,
+      jockey,
+      status,
+      finish_position: finishPosition,
+      time_text: timeMatch ? timeMatch[1] : null,
+      margin: timeMatch && timeMatch[2] ? timeMatch[2] : null,
+      corner_positions: null, // スマホ版のレース結果表にはコーナー通過順位が無い
+      final_furlong_time: timeMatch ? Number(timeMatch[3]) : null,
+      body_weight: bodyWeightMatch ? Number(bodyWeightMatch[1]) : null,
+      body_weight_change: bodyWeightMatch ? bodyWeightMatch[2] || null : null,
+      win_popularity: winPopMatch ? Number(winPopMatch[1]) : null,
+    },
+  };
+}
+
+// 払戻金テーブル(th.scope=rowで式別、複勝/ワイドは3行にまたがりth省略)を解析する。
+function jraResultHtmlMobileParsePayouts(payoutTable) {
+  const payouts = {};
+  if (!payoutTable) return payouts;
+  let currentType = null;
+  payoutTable.querySelectorAll("tbody > tr").forEach((tr) => {
+    const th = tr.querySelector("th");
+    if (th) currentType = JRA_RESULT_HTML_MOBILE_BET_TYPE_BY_LABEL[jraResultHtmlText(th)] || null;
+    if (!currentType) return;
+    const comboText = jraResultHtmlText(tr.querySelector(".horseNum"));
+    const yenText = jraResultHtmlText(tr.querySelector(".dividend"));
+    let combo = comboText.split("-").map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 18);
+    if (currentType === "tan" || currentType === "fuku") combo = combo.slice(0, 1);
+    const rate = Number(yenText.replace(/[,円]/g, ""));
+    if (!combo.length || !Number.isFinite(rate)) return;
+    if (!payouts[currentType]) payouts[currentType] = [];
+    payouts[currentType].push({ combo, rate });
+  });
+  return payouts;
+}
+
+// キャプション文字列が完全一致する<table>を探す。
+function jraResultHtmlFindTableByCaption(tables, captionText) {
+  return tables.find((t) => jraResultHtmlText(t.querySelector("caption")) === captionText);
+}
+
+// 1レース分(<div id="kekkaRaceInfo_NR">と、それに対応する結果/タイム/払戻の3テーブル)を解析する。
+function jraResultHtmlMobileParseRaceUnit(headerDiv, allTables, dateTrack) {
+  const idMatch = (headerDiv.id || "").match(/kekkaRaceInfo_(\d+)R/);
+  if (!idMatch) return null;
+  const raceNumber = Number(idMatch[1]);
+  if (!dateTrack.race_date || !dateTrack.track) return null;
+
+  const race_name = jraResultHtmlText(headerDiv.querySelector(".titleRaceNameNormal")) || null;
+  const jokenText = jraResultHtmlText(headerDiv.querySelector(".kekkaRaceJoken"));
+  const { weight_type, class_flags } = jraResultHtmlMobileParseConditions(jokenText);
+  const { distance, course_type, course_direction } = jraResultHtmlMobileParseCourse(jokenText);
+  const { weather, track_condition } = jraResultHtmlMobileParseWeather(jokenText);
+  const post_time = jraResultHtmlMobileParsePostTime(jokenText);
+
+  const resultTable = jraResultHtmlFindTableByCaption(allTables, `レース結果 ${raceNumber}レース`);
+  if (!resultTable) return null;
+  const resultIdx = allTables.indexOf(resultTable);
+  // レースごとに「レース結果」「タイム」「払戻金」の3テーブルが連続して並ぶ固定構成。
+  const payoutTable = allTables[resultIdx + 2];
+  const isPayoutTable = payoutTable && jraResultHtmlText(payoutTable.querySelector("caption")) === "払戻金";
+
+  const entries = [];
+  const race_results = [];
+  const finishOrderSparse = [];
+
+  resultTable.querySelectorAll("tbody > tr").forEach((tr) => {
+    if (!tr.querySelector("td.tyakuTd")) return; // ヘッダー行(th)をスキップ
+    const parsed = jraResultHtmlMobileParseRow(tr);
+    if (!parsed) return;
+    entries.push(parsed.entry);
+    race_results.push(parsed.raceResult);
+    if (Number.isInteger(parsed.finishPosition)) {
+      finishOrderSparse[parsed.finishPosition - 1] = parsed.entry.horse_number;
     }
   });
-  return { records, diagnostics: { unitsFound: units.length, recordsParsed: records.length, errors } };
+
+  if (!race_results.length) return null;
+
+  const finish_order = finishOrderSparse.filter((v) => v !== undefined).slice(0, 3);
+  const payouts = isPayoutTable ? jraResultHtmlMobileParsePayouts(payoutTable) : {};
+
+  return {
+    race_date: dateTrack.race_date,
+    track: dateTrack.track,
+    race_number: raceNumber,
+    race_name,
+    course_type,
+    distance,
+    weight_type,
+    class_flags,
+    course_direction,
+    weather,
+    track_condition,
+    post_time,
+    entries,
+    finish_order,
+    payouts,
+    race_results,
+  };
+}
+
+// root配下のスマホ版レース結果ページを解析する。
+function jraResultHtmlParseMobilePage(root) {
+  const scope = root || document;
+  const allTables = Array.from(scope.querySelectorAll("table"));
+  const records = [];
+  const errors = [];
+  let dateTrack = { race_date: null, track: null };
+  const nodes = Array.from(scope.querySelectorAll("h2.subTitle, div[id^='kekkaRaceInfo_']"));
+
+  nodes.forEach((node) => {
+    if (node.tagName === "H2") {
+      dateTrack = jraResultHtmlParseDateTrack(jraResultHtmlText(node));
+      return;
+    }
+    try {
+      const record = jraResultHtmlMobileParseRaceUnit(node, allTables, dateTrack);
+      if (record) records.push(record);
+    } catch (e) {
+      errors.push({ id: node.id, message: String(e?.message || e) });
+    }
+  });
+
+  const unitsFound = nodes.filter((n) => n.tagName !== "H2").length;
+  return { records, diagnostics: { unitsFound, recordsParsed: records.length, errors } };
+}
+
+// root配下のJRAレース結果ページを解析する(未確定のレースは自然に除外される)。
+// PC版(.race_result_unit)・スマホ版(div[id^="kekkaRaceInfo_"])のどちらの構造かを
+// 自動判別して振り分ける。
+function jraResultHtmlParsePage(root) {
+  const scope = root || document;
+
+  if (scope.querySelectorAll(".race_result_unit").length) {
+    const units = Array.from(scope.querySelectorAll(".race_result_unit"));
+    const records = [];
+    const errors = [];
+    units.forEach((unit) => {
+      try {
+        const record = jraResultHtmlParseRaceUnit(unit);
+        if (record) records.push(record);
+      } catch (e) {
+        errors.push({ id: unit.id, message: String(e?.message || e) });
+      }
+    });
+    return { records, diagnostics: { unitsFound: units.length, recordsParsed: records.length, errors } };
+  }
+
+  if (scope.querySelectorAll("div[id^='kekkaRaceInfo_']").length) {
+    return jraResultHtmlParseMobilePage(scope);
+  }
+
+  return { records: [], diagnostics: { unitsFound: 0, recordsParsed: 0, errors: [] } };
 }

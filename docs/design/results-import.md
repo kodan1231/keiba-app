@@ -249,11 +249,33 @@ jra-result-importer.user.js`をブラウザで直接開くだけでインスト�
 `www.jra.go.jp`、スマホ用が`sp.jra.jp`と**別ドメイン**になっている(パス構造`/JRADB/
 accessS.html`自体は共通)。ユーザースクリプトの`@match`は当初PC用ドメインしか指定して
 おらず、iPhone(`sp.jra.jp`)で実機確認した際にボタンが一切表示されない不具合があった。
-`@match`に両ドメインを追加して対応している。CSSファイル名の`_r`接尾辞(`frame_r.css`
-`header_r.js`等。おそらく「responsive」)から、PC/スマホで同一のHTML構造を共有した
-レスポンシブデザインと推測され、`public/jra-result-html.js`の解析ロジックはドメインに
-依らず共通のまま使えると見ている(ただし実機での構造確認はスマホ側のみ実施、PC側の
-`www.jra.go.jp`表示は未確認)。
+`@match`に両ドメインを追加して対応している。
+
+**PC版・スマホ版はHTML構造が全く別物(2026-09-13判明・訂正)**: 上記のCSSファイル名の
+`_r`接尾辞から「レスポンシブデザインでPC/スマホがHTML構造を共有している」と当初推測して
+いたが誤りだった。実機(iPhone Safari)でスマホ版のHTMLを確認した結果、PC版
+(`.race_result_unit`/`td.place`/`td.num`等、列の意味を表すクラス名を持つ素直な
+`<table>`)とは全く異なる構造であることが判明した。スマホ版は以下の構成:
+- レースの見出し情報(発走時刻・レース名・コース・天候等)は`<div id="kekkaRaceInfo_1R">`
+  のような連番divに入っている(`.titleRaceNameNormal`にレース名、`.kekkaRaceJoken`に
+  「[指定]&nbsp;馬齢<br>コース&nbsp;1800m&nbsp;ダート・右&nbsp;発走9:45<br>天候:曇&nbsp;
+  ダート:不良<br>本賞金…」という1つの`<span>`にまとめて入っている)。`<br>`はDOM上テキストに
+  変換されず区切り文字が残らないため(「不良」の直後に区切りなく「本賞金」が続く等)、
+  発走時刻・天候・馬場状態は既知の値の閉集合(晴/曇/雨等、良/稍重/重/不良等)でマッチさせて
+  誤結合を避けている。また時刻表記も「発走9:45」のようにコロン区切りで、PC版の
+  「10時35分」形式とは異なる
+- 着順表・払戻表は上記divの後に続く独立した3つの`<table>`(順に「レース結果」
+  「タイム」「払戻金」とキャプションが付く)。着順表は`td.tyakuTd`(着順)/`td.wakuTd`
+  (枠。クラス名`waku7`等に枠番が入る)/`td.ubanTd`(馬番)/`td.umaTd`(馬名・単勝人気・
+  性齢・馬体重・騎手・調教師・タイム・着差・推定上りを`<span>`4つにまとめて格納)の4列
+- コーナー通過順位はスマホ版の着順表には存在しないため、この経路由来のレコードは常に
+  `corner_positions: null`になる
+
+このため`public/jra-result-html.js`にPC版(`jraResultHtmlParseRaceUnit`)とは別に
+スマホ版専用のパーサー(`jraResultHtmlParseMobilePage`他、`jraResultHtmlMobile`接頭辞の
+一連の関数)を追加した。`jraResultHtmlParsePage()`が`.race_result_unit`の有無で
+自動的にどちらの構造かを判別して振り分けるため、ユーザースクリプト側からの呼び出し方は
+変わらない。PC側(`www.jra.go.jp`)での実機確認は未実施。
 
 **iOS Safari(Userscripts拡張)向けの実装上の配慮**: PC(Tampermonkey)とiOS Safariの
 「Userscripts」拡張(quoid/userscripts)の両方で動くよう、以下の制約に合わせている。

@@ -113,8 +113,12 @@
     debugBtn.addEventListener("click", onClickDebug);
     wrap.appendChild(debugBtn);
 
-    // レース結果一覧ページ(.race_result_unitがある)でのみ、送信・設定ボタンを追加する。
-    if (document.querySelectorAll(".race_result_unit").length) {
+    // レース結果一覧ページ(PC版=.race_result_unit、スマホ版=div[id^="kekkaRaceInfo_"]が
+    // ある)でのみ、送信・設定ボタンを追加する。
+    const isResultPage =
+      document.querySelectorAll(".race_result_unit").length ||
+      document.querySelectorAll("div[id^='kekkaRaceInfo_']").length;
+    if (isResultPage) {
       const settingsBtn = makeButton("⚙", "APIトークンを設定", "#333");
       settingsBtn.style.pointerEvents = "auto";
       settingsBtn.addEventListener("click", setToken);
