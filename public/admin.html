@@ -33,6 +33,23 @@
         <div class="table-wrap"><table class="stats-table" id="users-table"></table></div>
       </section>
 
+      <!-- APIトークン(2026-09-13追加)。JRAレース結果ページ上で動くユーザースクリプトが、
+           セッションCookieの代わりにこのトークンで認証する。詳細は
+           docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">APIトークン</h2>
+        <p class="ticket-sub">
+          JRAレース結果ページ上で動くユーザースクリプト(<code>jra-result-importer.user.js</code>。
+          <a href="/jra-result-importer.user.js" target="_blank">このURLを開くとインストールできます</a>)が、
+          このアプリへ結果を送信する際に使う個人用トークンです。発行すると直後の1回だけ画面に表示されます
+          (再表示はできないため、ユーザースクリプト側の設定にすぐ貼り付けてください)。発行し直すと古いトークンは無効になります。
+        </p>
+        <p id="api-token-status" class="ticket-sub">読み込み中…</p>
+        <p id="api-token-value" class="ticket-sub" hidden></p>
+        <button type="button" id="api-token-issue-btn" class="ghost-btn">トークンを発行する</button>
+        <button type="button" id="api-token-revoke-btn" class="ghost-btn" hidden>無効化する</button>
+      </section>
+
       <!-- 騎手名エイリアス管理(2026-08-16追加)。
            同一騎手がPDFインポート・手動入力・netkeibaテキスト貼り付け等の経路で
            異なる表記(異体字・空白有無・文字欠落等)で登録され、集計画面の騎手別収支が

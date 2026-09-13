@@ -131,14 +131,14 @@ export async function onRequestPost(context) {
     const stmts = toInsert.map((it) =>
       db.prepare(
         `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance,
-          weight_type, class_flags, course_direction, weather, track_condition,
+          weight_type, class_flags, course_direction, weather, track_condition, post_time,
           entries, finish_order, payouts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         it.raceDate, it.track, it.raceNumber, it.item.race_name || null, it.item.course_type || null,
         it.item.distance ? Number(it.item.distance) : null,
         it.item.weight_type || null, it.item.class_flags || null, it.item.course_direction || null,
-        it.item.weather || null, it.item.track_condition || null,
+        it.item.weather || null, it.item.track_condition || null, it.item.post_time || null,
         JSON.stringify(it.entries),
         it.finishOrder ? JSON.stringify(it.finishOrder) : null,
         Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null
@@ -199,6 +199,7 @@ export async function onRequestPost(context) {
       if (!it.existing.course_direction && it.item.course_direction) { fields.push("course_direction = ?"); values.push(it.item.course_direction); }
       if (it.item.weather) { fields.push("weather = ?"); values.push(it.item.weather); }
       if (it.item.track_condition) { fields.push("track_condition = ?"); values.push(it.item.track_condition); }
+      if (it.item.post_time) { fields.push("post_time = ?"); values.push(it.item.post_time); }
 
       it.id = it.existing.id;
       it.finishOrPayoutTouched = finishOrPayoutTouched;

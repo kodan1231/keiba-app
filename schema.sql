@@ -30,12 +30,18 @@ CREATE TABLE IF NOT EXISTS users (
                        -- 新規登録時は登録日時を初期値としてセットする。管理画面の
                        -- 登録ユーザー一覧で表示する。詳細はdocs/DESIGN.md「認証・
                        -- 複数ユーザー対応」参照。
-  password_reset_pending INTEGER NOT NULL DEFAULT 0
+  password_reset_pending INTEGER NOT NULL DEFAULT 0,
                        -- 2026-09-10追加: 管理者がこのユーザーのパスワードをリセットすると1になる。
                        -- 本人が自分でパスワードを変更すると0へ戻る。1の間は全画面共通の
                        -- バナーで本人にパスワード変更を促す(強制ではない)。詳細は
                        -- docs/design/auth-multiuser.md「管理者によるパスワードリセット」参照。
+  api_token_hash TEXT,       -- 2026-09-13追加: 個人用アクセストークン(SHA-256ハッシュのみ保存)。
+                             -- JRAレース結果ページ上のユーザースクリプトがCookieの代わりに使う。
+                             -- 詳細はdocs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
+  api_token_created_at TEXT  -- 発行日時(管理画面での表示用)。無効化するとNULLに戻す。
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_token_hash ON users(api_token_hash);
 
 -- 初期管理者アカウント: username=admin, password=password
 -- (パスワードハッシュは pbkdf2$100000$<salt>$<hash> 形式)
@@ -76,6 +82,9 @@ CREATE TABLE IF NOT EXISTS races (
                                    -- 値が入る(2026-08-30〜。同ドキュメント参照)
   finish_order TEXT,              -- JSON配列 [horse_number, ...] 着順順(1着から)。未確定はNULL
   payouts TEXT,                   -- JSON { 馬券式: [{combo:[馬番...], rate:100円あたり払戻}, ...] }
+  post_time TEXT,                 -- 発走時刻 "HH:MM"(2026-09-13追加。JRAレース結果ページ由来。
+                                   -- 出走馬一覧PDF・結果PDFには無いため従来は保持していなかった。
+                                   -- 詳細はdocs/design/results-import.md参照)
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(race_date, track, race_number)
 );

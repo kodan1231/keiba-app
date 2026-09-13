@@ -25,7 +25,7 @@
 | `docs/design/data-model.md` | データ構造(全テーブル)・コース種別/距離・レース条件詳細カラム・`races.entries`の枠番/馬番・**枠番の自動計算**・性齢/負担重量 |
 | `docs/design/import-flow.md` | 出走馬一覧PDF/結果PDFインポートの運用フロー・想定フロー(木金土日)・タイミングごとの確定情報・**`entries`共通マージルール**・サブリクエスト数対策 |
 | `docs/design/entries-import.md` | 出走馬一覧PDFインポート・実装構成・マージロジック・予想情報の保護・既知の制約 |
-| `docs/design/results-import.md` | JRAレース結果PDFインポート・解析ロジック・**全角文字正規化の方針**・サーバー側の反映・既知の制約・関連ファイル |
+| `docs/design/results-import.md` | JRAレース結果PDFインポート・解析ロジック・**全角文字正規化の方針**・サーバー側の反映・**ユーザースクリプトによるHTML取込み**・既知の制約・関連ファイル |
 | `docs/design/race-results.md` | `race_results`テーブル・目的/用途・スキーマ・更新ルール・取消/除外/中止の扱い・`races.entries`との役割分担 |
 | `docs/design/jockey-aliases.md` | 騎手名エイリアス(`jockey_aliases`)・対応方針の切り分け・スキーマ・正規化を適用する2経路・管理画面 |
 | `docs/design/horse-aliases.md` | 馬名エイリアス(`horse_aliases`)・突き合わせキー(NFKC+空白除去)・正規化を適用する経路・`horse_notes`衝突扱い・管理画面「登録馬一覧」(50音行+検索) |

@@ -201,6 +201,66 @@ function openResetPasswordModal(userId, username) {
   if (newInput) newInput.focus();
 }
 
+// ---------- APIトークン(2026-09-13追加) ----------
+// docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
+
+async function loadApiTokenStatus() {
+  const statusEl = document.getElementById("api-token-status");
+  const issueBtn = document.getElementById("api-token-issue-btn");
+  const revokeBtn = document.getElementById("api-token-revoke-btn");
+  if (!statusEl) return;
+
+  const res = await authedFetch("/api/admin/api-token");
+  if (!res.ok) { statusEl.textContent = "読み込みに失敗しました"; return; }
+  const data = await res.json();
+
+  statusEl.textContent = data.hasToken
+    ? `発行済み(${formatDateTime(data.createdAt)})`
+    : "未発行";
+  if (revokeBtn) revokeBtn.hidden = !data.hasToken;
+  if (issueBtn) issueBtn.textContent = data.hasToken ? "トークンを再発行する" : "トークンを発行する";
+}
+
+function setupApiTokenButtons() {
+  const issueBtn = document.getElementById("api-token-issue-btn");
+  const revokeBtn = document.getElementById("api-token-revoke-btn");
+  const valueEl = document.getElementById("api-token-value");
+  if (!issueBtn) return;
+
+  issueBtn.addEventListener("click", async () => {
+    if (!confirm("トークンを発行しますか？既存のトークンがあれば無効になり、ユーザースクリプト側の設定も更新が必要になります。")) return;
+    issueBtn.disabled = true;
+    const res = await authedFetch("/api/admin/api-token", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    issueBtn.disabled = false;
+    if (!res.ok) {
+      alert(data.error || "発行に失敗しました。");
+      return;
+    }
+    if (valueEl) {
+      valueEl.hidden = false;
+      valueEl.innerHTML = `新しいトークン(この画面を離れると二度と表示されません): <code>${escapeHtml(data.token)}</code>`;
+    }
+    await loadApiTokenStatus();
+  });
+
+  if (revokeBtn) {
+    revokeBtn.addEventListener("click", async () => {
+      if (!confirm("トークンを無効化しますか？ユーザースクリプトからの送信ができなくなります。")) return;
+      revokeBtn.disabled = true;
+      const res = await authedFetch("/api/admin/api-token", { method: "DELETE" });
+      revokeBtn.disabled = false;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "無効化に失敗しました。");
+        return;
+      }
+      if (valueEl) { valueEl.hidden = true; valueEl.innerHTML = ""; }
+      await loadApiTokenStatus();
+    });
+  }
+}
+
 // ---------- 騎手名エイリアス管理(2026-08-16追加) ----------
 
 async function loadJockeyAliases() {
@@ -542,12 +602,14 @@ async function onReady() {
   setupJockeyAliasNormalizeButton();
   setupHorseAliasForm();
   setupHorseAliasNormalizeButton();
+  setupApiTokenButtons();
   await Promise.all([
     loadUnregisteredRaces(),
     loadUsers(),
     loadJockeyAliases(),
     loadHorseAliases(),
     setupHorseIndex(),
+    loadApiTokenStatus(),
   ]);
 }
 

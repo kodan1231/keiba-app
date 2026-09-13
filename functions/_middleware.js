@@ -21,7 +21,7 @@
 // Cloudflare Pagesの標準挙動(「/」には index.html を返す)がそのまま働き、
 // 追加のリダイレクト処理は一切不要になった。詳細はdocs/DESIGN.md
 // 「トップページ(/)の表示について」参照。
-import { verifySessionToken, isAdminUsername } from "./api/_shared.js";
+import { verifySessionToken, isAdminUsername, verifyApiToken } from "./api/_shared.js";
 
 export async function onRequest(context) {
   const { request, env, next } = context;
@@ -43,7 +43,20 @@ export async function onRequest(context) {
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
-    const session = await verifySessionToken(request.headers.get("Cookie"), env.APP_PASSWORD);
+    let session = await verifySessionToken(request.headers.get("Cookie"), env.APP_PASSWORD);
+
+    // セッションCookieが無い場合、Authorization: Bearer <個人用アクセストークン>を
+    // 代替の認証手段として受け付ける(JRAレース結果ページ上のユーザースクリプトなど、
+    // このアプリと同一オリジンでない呼び出し元向け。docs/design/results-import.md
+    // 「ユーザースクリプトによるHTML取込み」参照)。
+    if (!session) {
+      const authHeader = request.headers.get("Authorization") || "";
+      if (authHeader.startsWith("Bearer ")) {
+        const tokenUser = await verifyApiToken(env.DB, authHeader.slice(7).trim());
+        if (tokenUser) session = { userId: tokenUser.id, username: tokenUser.username };
+      }
+    }
+
     if (!session) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,

@@ -38,6 +38,20 @@
     本人が `POST /api/auth/change-password` で自分のパスワードを変更すると `0` に戻り、
     バナーは消える。管理画面のユーザー一覧にも「パスワードリセット済み(本人の変更待ち)」
     と表示される
+- **個人用アクセストークン(2026-09-13追加)**: JRAレース結果ページ上で動くユーザースクリプト
+  (`docs/design/results-import.md`「ユーザースクリプトによるHTML取込み」参照)は、このアプリと
+  同一オリジンではないためセッションCookieを使えない。代わりに管理画面「APIトークン」で
+  発行したトークンを`Authorization: Bearer <token>`ヘッダーで送ってもらい、
+  `functions/_middleware.js`がセッションCookieの代替として検証する
+  (`functions/api/_lib/auth.js`の`verifyApiToken()`)。
+  - トークンは発行者本人(管理者)の`users`レコードに`api_token_hash`(SHA-256ハッシュ)として
+    紐付ける。平文は`POST /api/admin/api-token`のレスポンスでしか返さず、発行し直すと
+    (`POST`を再実行すると)古いトークンは無効になる。パスワードと異なり高エントロピーな
+    乱数のため、低速ハッシュ(PBKDF2)ではなくSHA-256の単純ハッシュで十分としている
+  - トークンで認証されたリクエストの`context.data.isAdmin`は、そのトークンを発行した
+    ユーザーの`username`から通常通り`isAdminUsername()`で判定する(トークン自体に
+    管理者権限を持たせているわけではない)
+  - `DELETE /api/admin/api-token`で無効化できる(`api_token_hash`をNULLに戻す)
   - セッションは `env.APP_PASSWORD` 署名のステートレストークンで DB に保存していないため、
     パスワードリセットしても対象ユーザーの既存ログインセッションは失効しない
     (本人のパスワード変更と同じ挙動)

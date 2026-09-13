@@ -65,6 +65,31 @@ export async function verifyPassword(password, stored) {
   return diff === 0;
 }
 
+// ---- 個人用アクセストークン(2026-09-13追加) ----
+// JRAレース結果ページ上で動くユーザースクリプト(docs/design/results-import.md
+// 「ユーザースクリプトによるHTML取込み」参照)は、このアプリと同一オリジンではないため
+// セッションCookieを使えない。代わりに管理画面で発行する個人用トークンを
+// `Authorization: Bearer <token>` ヘッダーで送ってもらい、functions/_middleware.js で
+// セッションCookieの代替として検証する。トークン自体はDBにハッシュ(SHA-256)でのみ
+// 保存し、平文は発行直後のレスポンス1回きりしか返さない(パスワードと同じ考え方)。
+export function generateApiToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return `kbt_${bufToBase64url(bytes.buffer)}`;
+}
+
+export async function hashApiToken(token) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// トークンからユーザー(id・username)を引く。一致しなければnull。
+export async function verifyApiToken(db, token) {
+  if (!token) return null;
+  const hash = await hashApiToken(token);
+  const row = await db.prepare("SELECT id, username FROM users WHERE api_token_hash = ?").bind(hash).first();
+  return row || null;
+}
+
 // ---- 管理者判定 ----
 // 管理者かどうかはDBのフラグではなく、Cloudflare Pagesの環境変数
 // ADMIN_USERNAMES(カンマ区切りのユーザー名リスト)で判定する。

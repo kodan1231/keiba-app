@@ -167,3 +167,18 @@ END;
 -- prediction_notes(race_id, user_id単位)に列追加する。詳細は docs/design/screens.md
 -- 「予想登録画面」参照。
 ALTER TABLE prediction_notes ADD COLUMN is_key_race INTEGER NOT NULL DEFAULT 0;
+
+-- @STEP: races_post_time
+-- 発走時刻。JRAレース結果ページ(HTML)由来で、出走馬一覧PDF・結果PDFには含まれないため
+-- 従来は保持していなかった(docs/design/data-model.md「今回のスコープに含めないもの」に
+-- 明記されていたが2026-09-13に撤回)。馬券購入画面のレース選択グリッドに表示する。
+-- 詳細は docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
+ALTER TABLE races ADD COLUMN post_time TEXT;
+
+-- @STEP: users_api_token
+-- 個人用アクセストークン(JRAレース結果ページ上のユーザースクリプトがCookieの代わりに
+-- 使う認証手段)。DBにはSHA-256ハッシュのみ保存する。詳細は
+-- docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
+ALTER TABLE users ADD COLUMN api_token_hash TEXT;
+ALTER TABLE users ADD COLUMN api_token_created_at TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_token_hash ON users(api_token_hash);

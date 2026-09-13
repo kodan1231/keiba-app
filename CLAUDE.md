@@ -31,6 +31,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
 | 出走馬一覧PDFインポート | `public/jra-entries-pdf.js`, `functions/api/races/entries-import.js` |
 | JRAレース結果PDFインポート | `public/jra-result-pdf.js`, `functions/api/races/results-import.js` |
+| JRAレース結果ユーザースクリプト取込み(HTML) | `public/jra-result-importer.user.js`(公開URLから直接インストール), `public/jra-result-html.js`, `functions/api/races/results-import.js`(共用), `functions/api/admin/api-token.js` |
 | PDF解析の共通処理 | `public/jra-pdf-common.js` |
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |
@@ -54,7 +55,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | ファイル | 主な関数 |
 |---|---|
 | `_lib/http.js` | `jsonError(msg,status,extra?)` `readJsonBody(request)`→`{data}`\|`{error}` `parsePositiveIntId(raw,label?)`→`{id}`\|`{error}`。ハンドラは `const {data,error}=await readJsonBody(request); if(error) return error;` の形で使う |
-| `_lib/auth.js` | `hashPassword` `verifyPassword` `isAdminUsername` `requireAdmin` `createSessionToken` `verifySessionToken` |
+| `_lib/auth.js` | `hashPassword` `verifyPassword` `isAdminUsername` `requireAdmin` `createSessionToken` `verifySessionToken` `generateApiToken` `hashApiToken` `verifyApiToken`(個人用アクセストークン。2026-09-13追加) |
 | `_lib/entries-merge.js` | `mergeEntriesByHorseName` `backfillHorseNamesForRace` `linkUnregisteredImportsToRace` `computeWakuNumberFromHorseNumber`(非export・内部) |
 | `_lib/jockey-alias.js` | `jockeyAliasKeyOf` `loadJockeyAliasMap` `applyJockeyAliasMap` `applyJockeyAliasesToEntries` `normalizeExistingJockeyNames` |
 | `_lib/horse-alias.js` | `horseAliasKeyOf`(NFKC+空白除去) `loadHorseAliasMap` `applyHorseAliasMap` `applyHorseAliasesToEntries` `normalizeExistingHorseNames` |

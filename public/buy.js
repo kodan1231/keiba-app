@@ -231,6 +231,7 @@ function renderGrid() {
             const courseText = formatCourseText(r.course_type, r.distance);
             const hasMemo = raceHasMemoHorse(r);
             const infoParts = [];
+            if (r.post_time) infoParts.push(escapeHtml(r.post_time));
             if (courseText) infoParts.push(escapeHtml(courseText));
             infoParts.push(r.entries.length ? `${r.entries.length}頭` : "出走馬未登録");
             return `
