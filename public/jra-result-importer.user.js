@@ -67,24 +67,37 @@
     return btn;
   }
 
-  // 調査用: ページのHTML構造を確認するためのボタン。DOM階層を推測して辿るのではなく、
-  // 「最初の<table>タグより前のHTML全体」を文字列としてそのまま切り出す(ナビ等でも
-  // tableより前にある限りそのまま含まれる。長すぎる場合はtableに近い=末尾側を優先して
-  // 残す)。最初のtable要素自体も付けて返す。動作確認が完了したら削除してよい。
-  const DEBUG_HEADER_MAX_LEN = 15000;
+  // 調査用: ページのHTML構造を確認するためのボタン。スマホ版の見出しブロック
+  // (div[id^="kekkaRaceInfo_"])が全レース分見つかればそれを、無ければPC版の
+  // .race_result_unitの見出し部分(発走時刻・レース名等がある.date_line/.race_title)を、
+  // それも無ければ最初のtableより前のHTML全体を取得する。動作確認が完了したら削除してよい。
+  const DEBUG_MAX_LEN = 20000;
 
   async function onClickDebug() {
-    const bodyHtml = document.body.innerHTML;
-    const tableIdx = bodyHtml.indexOf("<table");
-    let headerHtml = tableIdx >= 0 ? bodyHtml.slice(0, tableIdx) : bodyHtml;
-    if (headerHtml.length > DEBUG_HEADER_MAX_LEN) {
-      headerHtml = `…(先頭省略)…\n${headerHtml.slice(-DEBUG_HEADER_MAX_LEN)}`;
+    let html;
+    const kekkaInfos = Array.from(document.querySelectorAll('div[id^="kekkaRaceInfo_"]'));
+    const raceUnits = Array.from(document.querySelectorAll(".race_result_unit"));
+    if (kekkaInfos.length) {
+      html = kekkaInfos.map((d) => d.outerHTML).join("\n\n");
+    } else if (raceUnits.length) {
+      html = raceUnits
+        .map((u) => {
+          const dateLine = u.querySelector(".date_line");
+          const raceTitle = u.querySelector(".race_title");
+          return `<!-- ${u.id} -->\n${dateLine ? dateLine.outerHTML : ""}\n${raceTitle ? raceTitle.outerHTML : ""}`;
+        })
+        .join("\n\n");
+    } else {
+      const bodyHtml = document.body.innerHTML;
+      const tableIdx = bodyHtml.indexOf("<table");
+      html = tableIdx >= 0 ? bodyHtml.slice(0, tableIdx) : bodyHtml;
     }
-    const firstTable = document.querySelector("table");
-    const html = `${headerHtml}\n\n${firstTable ? firstTable.outerHTML : "(tableタグが見つかりませんでした)"}`;
+    if (html.length > DEBUG_MAX_LEN) {
+      html = `…(先頭省略)…\n${html.slice(-DEBUG_MAX_LEN)}`;
+    }
     try {
       await GM.setClipboard(html);
-      alert("見出し部分+1レース目のtableのHTMLをクリップボードにコピーしました。貼り付けて送ってください。");
+      alert("見出しブロックのHTMLをクリップボードにコピーしました。貼り付けて送ってください。");
     } catch (e) {
       prompt("コピーに失敗したため、下のテキストを手動で全選択してコピーしてください。", html);
     }
