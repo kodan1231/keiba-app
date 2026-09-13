@@ -274,10 +274,13 @@ function jraResultHtmlMobileParseWeather(text) {
   };
 }
 
-// weight_type(馬齢/定量/別定/ハンデ)と、その手前のブラケット表記(例:"[指定]")をclass_flagsとして返す。
+// weight_type(馬齢/定量/別定/ハンデ)と、その手前のテキスト(例:"[指定]"、重賞・特別戦では
+// "2歳 新馬 (混合)[指定]"のように年齢条件も含む)をclass_flagsとして返す。
 function jraResultHtmlMobileParseConditions(text) {
   const weightMatch = text.match(/(馬齢|定量|別定|ハンデ)/);
-  const flagsMatch = text.match(/^\s*([^\d]*?)\s*(?:馬齢|定量|別定|ハンデ)/);
+  // [^\d]*? だと「2歳」「3歳以上」等の年齢条件(数字を含む)が手前にある重賞・特別戦で
+  // 一切マッチしなくなる(2026-09-13判明の不具合)ため、数字を除外しない . に変更した。
+  const flagsMatch = text.match(/^\s*(.*?)\s*(?:馬齢|定量|別定|ハンデ)/);
   return {
     weight_type: weightMatch ? weightMatch[1] : null,
     class_flags: flagsMatch && flagsMatch[1].trim() ? flagsMatch[1].trim() : null,
@@ -391,7 +394,9 @@ function jraResultHtmlMobileParseRaceUnit(headerDiv, allTables, dateTrack) {
   const raceNumber = Number(idMatch[1]);
   if (!dateTrack.race_date || !dateTrack.track) return null;
 
-  const race_name = jraResultHtmlText(headerDiv.querySelector(".titleRaceNameNormal")) || null;
+  // 条件戦(未勝利・1勝クラス等)は.titleRaceNameNormal、重賞・特別戦(メイクデビュー〇〇・
+  // 〇〇特別・〇〇ステークス等の固有名がある場合)は.titleRaceNameと、クラス名が異なる。
+  const race_name = jraResultHtmlText(headerDiv.querySelector(".titleRaceNameNormal, .titleRaceName")) || null;
   const jokenText = jraResultHtmlText(headerDiv.querySelector(".kekkaRaceJoken"));
   const { weight_type, class_flags } = jraResultHtmlMobileParseConditions(jokenText);
   const { distance, course_type, course_direction } = jraResultHtmlMobileParseCourse(jokenText);
