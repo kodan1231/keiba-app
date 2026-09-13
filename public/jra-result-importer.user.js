@@ -67,17 +67,31 @@
     return btn;
   }
 
-  // 調査用: このページのHTML構造がPC版とスマホ版で異なるか、ボタンが単に見えていない
-  // だけなのかを切り分けるためのボタン。テーブル要素だけを抽出してコピーする(ナビ等の
-  // 不要なHTMLを含めずサイズを抑えるため)。動作確認が完了したら削除してよい。
+  // 調査用: ページのHTML構造を確認するためのボタン。1レース目のtable要素と、その直前に
+  // 並んでいるであろう見出しブロック(発走時刻・レース名・コース情報等。tableの兄弟要素を
+  // 前方へ遡って集める)をまとめて取得する。全レース分を集めると巨大になり貼り付け時に
+  // 途中で切れてしまうため、構造確認に必要な1レース分だけに絞っている。
+  // 動作確認が完了したら削除してよい。
+  function collectPrecedingSiblingsHtml(el) {
+    const parts = [];
+    let sib = el.previousElementSibling;
+    let guard = 0;
+    while (sib && sib.tagName !== "TABLE" && guard < 30) {
+      parts.unshift(sib.outerHTML);
+      sib = sib.previousElementSibling;
+      guard++;
+    }
+    return parts.join("\n");
+  }
+
   async function onClickDebug() {
-    const tables = Array.from(document.querySelectorAll("table"));
-    const html = tables.length
-      ? tables.map((t) => t.outerHTML).join("\n\n")
+    const firstTable = document.querySelector("table");
+    const html = firstTable
+      ? `${collectPrecedingSiblingsHtml(firstTable)}\n\n${firstTable.outerHTML}`
       : `(tableタグが見つかりませんでした。document.body.className=${document.body.className}）`;
     try {
       await GM.setClipboard(html);
-      alert(`table要素${tables.length}個ぶんのHTMLをクリップボードにコピーしました。貼り付けて送ってください。`);
+      alert("1レース目の見出し+tableのHTMLをクリップボードにコピーしました。貼り付けて送ってください。");
     } catch (e) {
       prompt("コピーに失敗したため、下のテキストを手動で全選択してコピーしてください。", html);
     }
