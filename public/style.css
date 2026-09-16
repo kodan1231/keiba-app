@@ -1195,18 +1195,86 @@ body.history-selection-mode .group-detail-actions {
 
 .group-compact-amount { color: var(--ink-soft); font-weight: 400; }
 
-.breakdown-toggle-btn {
-  display: block;
-  background: none;
-  border: none;
+/* ---------- 購入方式グループのダイアログ(馬券風デザイン。2026-09-16追加) ---------- */
+/* docs/design/screens.md「購入方式グループのダイアログ(馬券風デザイン)」参照。
+   レース単位のアコーディオンを開いた後、式別の行(.group-card-head)をタップすると
+   インライン展開の代わりにこのダイアログを開く(印字済みの馬券をイメージした専用デザイン)。 */
+.ticket-dialog-overlay { align-items: center; }
+
+.ticket-dialog {
+  position: relative;
+  max-width: 380px;
   padding: 0;
-  margin-bottom: 10px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  cursor: pointer;
-  text-decoration: underline;
+  background: transparent;
+  border: none;
+  overflow: visible;
 }
-.breakdown-toggle-btn:hover { color: var(--ink); }
+
+.ticket-dialog .ticket-dialog-close {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  border-radius: 50%;
+}
+
+.ticket-amount-toggle-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 11px;
+  padding: 4px 10px;
+  background: #fff;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  cursor: pointer;
+}
+.ticket-amount-toggle-btn:hover { background: rgba(28,27,24,0.06); }
+
+.ticket-face {
+  background: #fdfaf0;
+  border: 1px solid var(--rule-strong);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.28);
+  padding: 26px 20px 18px;
+  font-family: "DotGothic16", var(--font-mono), monospace;
+  color: var(--ink);
+}
+
+.ticket-face-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ticket-face-race { font-size: 13px; letter-spacing: 1px; color: var(--ink-soft); }
+.ticket-face-race-name {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.ticket-perforation { height: 0; margin: 14px -20px; border-top: 2px dashed var(--rule); }
+
+.ticket-bet-row { justify-content: center; gap: 14px; margin-bottom: 8px; }
+.ticket-bet-type { font-size: 26px; letter-spacing: 6px; }
+.ticket-method { font-size: 12.5px; color: var(--ink-soft); align-self: center; }
+
+.ticket-selections { margin: 8px 0; text-align: center; }
+.ticket-selections .group-compact-summary { font-family: inherit; font-size: 17px; align-items: center; }
+.ticket-selection-single .sel-line { justify-content: center; font-size: 19px; }
+
+.ticket-amount-row { font-size: 14px; margin-top: 6px; color: var(--ink-soft); }
+.ticket-amount { font-size: 28px; font-weight: 700; color: var(--ink); }
+.ticket-payout-row { font-size: 14px; margin-top: 4px; color: var(--win); }
+.ticket-status-row { justify-content: center; margin-top: 12px; }
+.ticket-status-row .status-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid var(--rule-strong);
+  font-family: var(--font-body);
+  letter-spacing: 2px;
+}
+.ticket-status-row .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+.ticket-edit-rows { margin-top: 16px; }
+.ticket-edit-rows[hidden] { display: none; }
+
+.ticket-dialog .group-detail-actions { margin-top: 10px; }
 
 /* ---------- 集計ページ: タブ ---------- */
 .stats-tabs {

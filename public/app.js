@@ -1,10 +1,6 @@
 const raceList = document.getElementById("race-list");
 const emptyState = document.getElementById("empty-state");
 const summaryBar = document.getElementById("summary-bar");
-let expandedGroups = new Set();
-// IPAT風コンパクト表示の下にある「内訳(1点ごとの明細)」の開閉状態(group_idごと)。
-// 2026-09-12追加。デフォルトは閉じた状態(普段は隠す方針。docs/design/screens.md参照)。
-let expandedBreakdowns = new Set();
 let expandedRaces = new Set();
 let races = [];
 let allItems = [];
@@ -302,10 +298,6 @@ function renderGroupRow(group) {
   const wrap = document.createElement("div");
   wrap.className = "group-card";
 
-  const groupKey = first.group_id;
-  // 選択モード中はグループ明細を開かない(見出しタップ = 選択トグルに割り当てるため)。
-  const isExpanded = selectionMode ? false : expandedGroups.has(groupKey);
-
   // 一括削除の対象は通常購入のみ。CSV取込・レガシー取込グループにはチェックボックスを出さない。
   const groupTicketIds = first.imported ? [] : group.map((t) => Number(t.id)).filter((n) => Number.isInteger(n));
   const showGroupCheck = selectionMode && groupTicketIds.length > 0;
@@ -314,7 +306,7 @@ function renderGroupRow(group) {
   head.className = "group-card-head" + (showGroupCheck ? " bulk-selectable" : "");
   head.innerHTML = `
     ${showGroupCheck ? `<span class="bulk-check-wrap"><input type="checkbox" class="bulk-check bulk-check-group" data-ids="${groupTicketIds.join(",")}" tabindex="-1" /></span>` : ""}
-    ${selectionMode ? "" : `<span class="expand-arrow">${isExpanded ? "▾" : "▸"}</span>`}
+    ${selectionMode ? "" : `<span class="expand-arrow">▸</span>`}
     <span class="bet-badge">${betTypeLabel(first.bet_type)}</span>
     <span class="method-badge">${methodLabel(first.method)}</span>
     <span class="point-count">${group.length}点</span>
@@ -323,16 +315,107 @@ function renderGroupRow(group) {
   `;
   wrap.appendChild(head);
 
-  const compactSummary = groupCompactSummaryHtml(first.bet_type, group);
-  const isBreakdownExpanded = expandedBreakdowns.has(groupKey);
+  head.addEventListener("click", () => {
+    if (selectionMode) {
+      // 選択モード中は購入方式グループの見出しタップ = そのグループを選択 ⇔ 解除。
+      if (groupTicketIds.length === 0) return;
+      const allSelected = groupTicketIds.every((id) => selectedTicketIds.has(id));
+      for (const id of groupTicketIds) {
+        if (allSelected) selectedTicketIds.delete(id);
+        else selectedTicketIds.add(id);
+      }
+      syncBulkSelectionUi();
+      return;
+    }
+    // 2026-09-16: インライン展開の代わりに馬券風デザインのダイアログを開く
+    // (docs/design/screens.md「購入方式グループのダイアログ(馬券風デザイン)」参照)。
+    openTicketDialog(group);
+  });
 
-  const detail = document.createElement("div");
-  detail.className = "group-detail";
-  detail.hidden = !isExpanded;
-  detail.innerHTML = `
-    ${compactSummary}
-    ${compactSummary ? `<button type="button" class="breakdown-toggle-btn">${isBreakdownExpanded ? "内訳を隠す ▾" : "内訳を見る ▸"}</button>` : ""}
-    <div class="group-detail-rows" ${compactSummary && !isBreakdownExpanded ? "hidden" : ""}>
+  return wrap;
+}
+
+// ---------- 購入方式グループのダイアログ(馬券風デザイン。2026-09-16〜) ----------
+//
+// レース単位のアコーディオンを開いた後、式別の行(.group-card-head)をタップした時の
+// 挙動を、従来の「インライン展開」から「本物の馬券(印字済みの購入済み馬券)を模した
+// 専用デザインのダイアログ表示」に変更した。ダイアログ右上の「金額変更」ボタンは、
+// 券面の下に従来と同じ明細行(買い目ごとの金額入力・CSV取込は払戻入力・削除ボタン)を
+// 開閉表示する(旧「内訳を見る/隠す」ボタンの置き換え。挙動・APIは変更していない)。
+// 詳細は docs/design/screens.md 参照。
+const ticketDialogOverlay = document.createElement("div");
+ticketDialogOverlay.id = "ticket-dialog-overlay";
+ticketDialogOverlay.className = "modal-overlay ticket-dialog-overlay";
+ticketDialogOverlay.hidden = true;
+ticketDialogOverlay.innerHTML = `<div class="modal ticket-dialog" id="ticket-dialog"></div>`;
+document.getElementById("app-screen")?.appendChild(ticketDialogOverlay);
+const ticketDialogEl = ticketDialogOverlay.querySelector("#ticket-dialog");
+
+function closeTicketDialog() {
+  ticketDialogOverlay.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+ticketDialogOverlay.addEventListener("click", (e) => {
+  if (e.target === ticketDialogOverlay) closeTicketDialog();
+});
+if (typeof registerEscToClose === "function") registerEscToClose(ticketDialogOverlay, closeTicketDialog);
+
+function openTicketDialog(group, opts) {
+  renderTicketDialogContent(group, !!(opts && opts.amountPanelOpen));
+  ticketDialogOverlay.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+// 編集・削除の保存後にダイアログの中身だけを最新データで再描画する。
+// 対象グループがまだ残っていればダイアログを開いたまま最新化し、1件も残っていなければ閉じる。
+function refreshTicketDialog(groupId, amountPanelOpen) {
+  const items = allItems.filter((t) => t.group_id === groupId);
+  if (items.length === 0) {
+    closeTicketDialog();
+    return;
+  }
+  openTicketDialog(items, { amountPanelOpen });
+}
+
+function renderTicketDialogContent(group, amountPanelOpen) {
+  const first = group[0];
+  const groupId = first.group_id;
+  const status = ticketGroupStatus(group);
+  const totalAmount = sumTicketAmount(group);
+  const totalPayout = sumSettledPayout(group);
+  const hasSettled = group.some((t) => t.payout !== null && t.payout !== undefined);
+  const allSettled = group.every((t) => t.payout !== null && t.payout !== undefined);
+  const compactSummary = groupCompactSummaryHtml(first.bet_type, group);
+  const selectionHtml = compactSummary
+    || `<div class="ticket-selection-single"><div class="sel-line">${selectionCellHtml(first.bet_type, first.selections)}</div></div>`;
+
+  ticketDialogEl.innerHTML = `
+    <button type="button" class="dialog-close ticket-dialog-close" id="ticket-dialog-close-btn" aria-label="閉じる">×</button>
+    <button type="button" class="ticket-amount-toggle-btn" id="ticket-amount-toggle-btn">金額変更</button>
+    <div class="ticket-face">
+      <div class="ticket-face-row ticket-face-race">
+        <span>${formatDate(first.race_date)}</span>
+        <span>${escapeHtml(first.track || "")}</span>
+        <span>${first.race_number}R</span>
+      </div>
+      ${first.race_name ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
+      <div class="ticket-perforation"></div>
+      <div class="ticket-face-row ticket-bet-row">
+        <span class="ticket-bet-type">${betTypeLabel(first.bet_type)}</span>
+        <span class="ticket-method">${methodLabel(first.method)}</span>
+      </div>
+      <div class="ticket-selections">${selectionHtml}</div>
+      <div class="ticket-perforation"></div>
+      <div class="ticket-face-row ticket-amount-row">
+        <span class="ticket-point-count">${group.length}点</span>
+        <span class="ticket-amount">${formatYen(totalAmount)}</span>
+      </div>
+      ${hasSettled ? `<div class="ticket-face-row ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span>${formatYen(totalPayout)}</span></div>` : ""}
+      <div class="ticket-face-row ticket-status-row">
+        <span class="status-badge ${status === "確定済み" ? "settled" : ""}">${status}</span>
+      </div>
+    </div>
+    <div class="group-detail-rows ticket-edit-rows" ${amountPanelOpen ? "" : "hidden"}>
       ${group
         .map(
           (t) => `
@@ -355,53 +438,27 @@ function renderGroupRow(group) {
       <a href="races.html?edit=${encodeURIComponent(first.race_id)}" class="ghost-btn">払戻を編集(レース管理へ)</a>
     </div>`}
   `;
-  wrap.appendChild(detail);
 
-  const breakdownToggleBtn = detail.querySelector(".breakdown-toggle-btn");
-  if (breakdownToggleBtn) {
-    breakdownToggleBtn.addEventListener("click", () => {
-      const rows = detail.querySelector(".group-detail-rows");
-      const nowHidden = !rows.hidden;
-      rows.hidden = nowHidden;
-      if (nowHidden) expandedBreakdowns.delete(groupKey);
-      else expandedBreakdowns.add(groupKey);
-      breakdownToggleBtn.textContent = rows.hidden ? "内訳を見る ▸" : "内訳を隠す ▾";
-    });
-  }
+  ticketDialogEl.querySelector("#ticket-dialog-close-btn").addEventListener("click", closeTicketDialog);
 
-  head.addEventListener("click", (e) => {
-    if (selectionMode) {
-      // 選択モード中は購入方式グループの見出しタップ = そのグループを選択 ⇔ 解除。
-      e.stopPropagation();
-      if (groupTicketIds.length === 0) return;
-      const allSelected = groupTicketIds.every((id) => selectedTicketIds.has(id));
-      for (const id of groupTicketIds) {
-        if (allSelected) selectedTicketIds.delete(id);
-        else selectedTicketIds.add(id);
-      }
-      syncBulkSelectionUi();
-      return;
-    }
-    const nowHidden = !detail.hidden;
-    detail.hidden = nowHidden;
-    if (nowHidden) expandedGroups.delete(groupKey);
-    else expandedGroups.add(groupKey);
-    head.querySelector(".expand-arrow").textContent = detail.hidden ? "▸" : "▾";
+  const amountToggleBtn = ticketDialogEl.querySelector("#ticket-amount-toggle-btn");
+  const editRows = ticketDialogEl.querySelector(".ticket-edit-rows");
+  amountToggleBtn.addEventListener("click", () => {
+    editRows.hidden = !editRows.hidden;
   });
 
-  detail.querySelectorAll(".import-edit-input").forEach((input) => {
-    input.addEventListener("click", (e) => e.stopPropagation());
+  ticketDialogEl.querySelectorAll(".import-edit-input").forEach((input) => {
     input.addEventListener("change", async () => {
       const row = input.closest(".group-detail-row"); const id = row?.dataset.id; if (!id || String(id).startsWith("legacy-import-")) return;
       const amount = row.querySelector(".amount-edit-input")?.value; const payoutInput = row.querySelector(".payout-edit-input");
       const payout = payoutInput && payoutInput.value !== "" ? Number(payoutInput.value) : null;
       await authedFetch(`/api/ticket-imports/${encodeURIComponent(id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount:Number(amount),payout})});
-      loadTickets();
+      await loadTickets();
+      refreshTicketDialog(groupId, true);
     });
   });
 
-  detail.querySelectorAll(".amount-edit-input:not(.import-edit-input)").forEach((input) => {
-    input.addEventListener("click", (e) => e.stopPropagation());
+  ticketDialogEl.querySelectorAll(".amount-edit-input:not(.import-edit-input)").forEach((input) => {
     input.addEventListener("change", async () => {
       const id = input.closest(".group-detail-row").dataset.id;
       const ticket = group.find((t) => String(t.id) === String(id));
@@ -426,13 +483,13 @@ function renderGroupRow(group) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: newAmount, payout: newPayout }),
       });
-      loadTickets();
+      await loadTickets();
+      refreshTicketDialog(groupId, true);
     });
   });
 
-  detail.querySelectorAll(".detail-delete-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
+  ticketDialogEl.querySelectorAll(".detail-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
       if (!confirm("この購入を削除しますか？")) return;
 
       try {
@@ -449,14 +506,13 @@ function renderGroupRow(group) {
           return;
         }
 
-        loadTickets();
+        await loadTickets();
+        refreshTicketDialog(groupId, true);
       } catch (e) {
         alert("削除に失敗しました: " + (e.message || e));
       }
     });
   });
-
-  return wrap;
 }
 
 const csvImportBtn = document.getElementById("csv-import-btn");
