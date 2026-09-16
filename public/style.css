@@ -1198,31 +1198,31 @@ body.history-selection-mode .group-detail-actions {
 /* ---------- 購入方式グループのダイアログ(馬券風デザイン。2026-09-16追加) ---------- */
 /* docs/design/screens.md「購入方式グループのダイアログ(馬券風デザイン)」参照。
    レース単位のアコーディオンを開いた後、式別の行(.group-card-head)をタップすると
-   インライン展開の代わりにこのダイアログを開く(印字済みの馬券をイメージした専用デザイン)。 */
+   インライン展開の代わりにこのダイアログを開く(実際の馬券発売機で印字される馬券を
+   イメージした専用デザイン。JRA英語表記(WIN/QUINELLA等)・式別を縦書きにした帯・
+   3列レイアウトで構成する)。 */
 .ticket-dialog-overlay { align-items: center; }
 
 .ticket-dialog {
   position: relative;
-  max-width: 380px;
+  max-width: 420px;
   padding: 0;
   background: transparent;
   border: none;
   overflow: visible;
 }
 
-.ticket-dialog .ticket-dialog-close {
-  position: absolute;
-  top: -16px;
-  left: -16px;
-  border-radius: 50%;
+.ticket-dialog-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
 }
+.ticket-dialog-toolbar .dialog-close { width: 32px; height: 32px; font-size: 18px; border-radius: 50%; }
 
 .ticket-amount-toggle-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   background: #fff;
   border: 1px solid var(--rule-strong);
   color: var(--ink);
@@ -1230,51 +1230,194 @@ body.history-selection-mode .group-detail-actions {
 }
 .ticket-amount-toggle-btn:hover { background: rgba(28,27,24,0.06); }
 
+/* 最初に参考にした馬券画像ジェネレーターの縦横比(750:520)に固定する。
+   買い目の点数が多くても券面自体は広げず、収まらない分はticket-selection-area
+   側の内部スクロールに任せる(2026-09-16)。 */
 .ticket-face {
-  background: #fdfaf0;
-  border: 1px solid var(--rule-strong);
+  position: relative;
+  aspect-ratio: 750 / 520;
+  display: flex;
+  flex-direction: column;
+  background: #eef5ea;
+  background-image: repeating-linear-gradient(90deg, rgba(47,122,61,0.07) 0px, rgba(47,122,61,0.07) 1px, transparent 1px, transparent 6px);
+  border: 2px solid #1c1b18;
   box-shadow: 0 8px 22px rgba(0,0,0,0.28);
-  padding: 26px 20px 18px;
-  font-family: "DotGothic16", var(--font-mono), monospace;
-  color: var(--ink);
+  padding: 10px 12px 12px;
+  color: #1c1b18;
+  overflow: hidden;
 }
 
-.ticket-face-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.ticket-face-race { font-size: 13px; letter-spacing: 1px; color: var(--ink-soft); }
-.ticket-face-race-name {
-  margin-top: 2px;
+.ticket-face-topbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+}
+
+.ticket-face-body { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 10px; }
+
+/* 左列: 開催年(+回・日)・場名・曜日・R番号・レース名・月日(一番下)。
+   実物の馬券の「左上に年/回/日、左下に月日」というレイアウトに合わせ、
+   月日(.ticket-face-date)だけ margin-top:auto で列の一番下へ押し出す。 */
+.ticket-info-col { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.ticket-year-line { font-size: 10.5px; color: var(--ink-soft); }
+.ticket-track-line { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.ticket-track-line .ticket-weekday { font-size: 13px; font-weight: 400; margin-left: 1px; }
+.ticket-race-line { display: flex; align-items: center; gap: 4px; }
+.ticket-race-num-badge {
+  display: inline-block;
+  background: #1c1b18;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+.ticket-race-num-suffix { font-size: 12px; }
+.ticket-face-race-name { font-size: 10.5px; color: var(--ink-soft); line-height: 1.3; overflow-wrap: anywhere; margin-top: 2px; }
+.ticket-face-date { font-size: 11px; color: var(--ink-soft); margin-top: auto; padding-top: 4px; }
+
+/* 中央列: 式別を縦書きにした帯(英字ラベルの黒帯で上下を挟む) */
+.ticket-strip {
+  flex: 0 0 60px;
+  display: flex;
+  flex-direction: column;
+  border: 2px solid #1c1b18;
+  background: #fff;
+}
+.ticket-strip-label {
+  background: #1c1b18;
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.35;
+  text-align: center;
+  padding: 3px 1px;
+}
+.ticket-strip-method {
+  text-align: center;
+  font-size: 10px;
+  color: var(--ink-soft);
+  padding-top: 4px;
+}
+.ticket-strip-kanji {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.ticket-vchar { font-size: 21px; line-height: 1.15; }
+
+/* 右列: 方式ボックス・買い目(番号ボックス)・組合せ数/各組・合計 */
+.ticket-lines-col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; }
+
+/* 方式ボックス(ボックス・ながし・フォーメーション等。1点のみの通常買いでは出さない) */
+.ticket-method-box {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 2px solid #1c1b18;
+  padding: 3px 9px;
+  font-weight: 700;
+  font-size: 14px;
+  background: #fff;
+}
+.ticket-method-en { font-size: 10px; font-weight: 400; }
+
+/* 買い目(馬番の四角囲み) */
+.ticket-selection-area { font-family: var(--font-mono); flex: 1; min-height: 0; overflow-y: auto; }
+.ticket-num-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 2px;
+  border: 2px solid #1c1b18;
+  background: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  margin: 1px;
+}
+.ticket-sep-arrow, .ticket-sep-dash { margin: 0 3px; font-weight: 700; }
+
+.ticket-selection-line { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; font-size: 15px; }
+.ticket-horse-name {
+  margin-left: 6px;
+  font-family: var(--font-body);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 複数点のうち点数が少ない場合、実物同様に1組み合わせ=1行で列挙する表示
+   (docs/design/screens.md参照。TICKET_LIST_ROWS_MAX 以下のときだけ使う)。 */
+.ticket-line-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.ticket-line-row .ticket-selection-line { font-size: 13px; }
+.ticket-line-amount { font-size: 13px; white-space: nowrap; }
+
+/* 実物の馬券の金額欄は桁数が固定で、空いている上位桁を星で埋めて印字される
+   (ticketStarPad()参照)。星は本文よりわずかに小さくして数字を主役にする。 */
+.ticket-star { font-size: 0.85em; letter-spacing: 1px; }
+
+.ticket-num-row { display: flex; flex-wrap: wrap; }
+.ticket-box-row { display: flex; flex-wrap: wrap; }
+.ticket-formation-row { display: flex; align-items: flex-start; flex-wrap: wrap; }
+.ticket-formation-col { display: flex; flex-wrap: wrap; max-width: 60px; }
+
+.ticket-axis-group { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.ticket-axis-label { font-size: 10.5px; color: var(--ink-soft); flex: 0 0 28px; }
+
+.ticket-single-amount {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ticket-combo-table { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.ticket-combo-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--ink-soft);
-  text-align: center;
 }
 
-.ticket-perforation { height: 0; margin: 14px -20px; border-top: 2px dashed var(--rule); }
-
-.ticket-bet-row { justify-content: center; gap: 14px; margin-bottom: 8px; }
-.ticket-bet-type { font-size: 26px; letter-spacing: 6px; }
-.ticket-method { font-size: 12.5px; color: var(--ink-soft); align-self: center; }
-
-.ticket-selections { margin: 8px 0; text-align: center; }
-.ticket-selections .group-compact-summary { font-family: inherit; font-size: 17px; align-items: center; }
-.ticket-selection-single .sel-line { justify-content: center; font-size: 19px; }
-
-.ticket-amount-row { font-size: 14px; margin-top: 6px; color: var(--ink-soft); }
-.ticket-amount { font-size: 28px; font-weight: 700; color: var(--ink); }
-.ticket-payout-row { font-size: 14px; margin-top: 4px; color: var(--win); }
-.ticket-status-row { justify-content: center; margin-top: 12px; }
-.ticket-status-row .status-badge {
-  font-size: 11px;
-  padding: 3px 10px;
-  border: 1px solid var(--rule-strong);
-  font-family: var(--font-body);
-  letter-spacing: 2px;
+.ticket-totals { border-top: 1px dashed rgba(28,27,24,0.5); margin-top: 8px; padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.ticket-total-row, .ticket-payout-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
 }
-.ticket-status-row .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ticket-total-row { font-size: 16px; font-weight: 700; }
+.ticket-payout-row { font-size: 13px; color: var(--win); }
 
 .ticket-edit-rows { margin-top: 16px; }
 .ticket-edit-rows[hidden] { display: none; }
 
 .ticket-dialog .group-detail-actions { margin-top: 10px; }
+
+@media (max-width: 420px) {
+  .ticket-info-col { flex-basis: 30%; }
+  .ticket-track-line { font-size: 14px; }
+  .ticket-strip { flex-basis: 52px; }
+  .ticket-strip-kanji { font-size: 18px; }
+  .ticket-num-box { min-width: 17px; height: 17px; font-size: 11px; }
+}
 
 /* ---------- 集計ページ: タブ ---------- */
 .stats-tabs {

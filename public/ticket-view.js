@@ -105,11 +105,11 @@ function describeGroupSelections(betType, group) {
   ) || new Set();
 
   if (common.size > 0 && common.size < n) {
-    const axisText = sortNums([...common]).join("－");
-    const partnerText = sortNums([...allNumbers].filter((x) => !common.has(x))).join(",");
+    const axisNums = sortNums([...common]);
+    const partnerNums = sortNums([...allNumbers].filter((x) => !common.has(x)));
     return [
-      { label: "軸馬", value: axisText },
-      { label: "相手", value: partnerText },
+      { label: "軸馬", value: axisNums.join("－"), values: axisNums },
+      { label: "相手", value: partnerNums.join(","), values: partnerNums },
     ];
   }
 
@@ -126,11 +126,15 @@ function describeGroupSelections(betType, group) {
       (s) => s.size === posSets[0].size && [...s].every((x) => posSets[0].has(x))
     );
     if (!allSamePosition) {
-      return posSets.map((s, i) => ({ label: selectionLabel(betType, i), value: sortNums([...s]).join(",") }));
+      return posSets.map((s, i) => {
+        const nums = sortNums([...s]);
+        return { label: selectionLabel(betType, i), value: nums.join(","), values: nums };
+      });
     }
   }
 
-  return [{ label: "馬番", value: sortNums([...allNumbers]).join(",") }];
+  const allNums = sortNums([...allNumbers]);
+  return [{ label: "馬番", value: allNums.join(","), values: allNums }];
 }
 
 // グループ内の全チケットが同額なら「各◯◯円」用の金額を返す。バラけていれば null

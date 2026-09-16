@@ -343,6 +343,178 @@ function renderGroupRow(group) {
 // 券面の下に従来と同じ明細行(買い目ごとの金額入力・CSV取込は払戻入力・削除ボタン)を
 // 開閉表示する(旧「内訳を見る/隠す」ボタンの置き換え。挙動・APIは変更していない)。
 // 詳細は docs/design/screens.md 参照。
+
+// 券面の縦帯に載せるJRA公式の英語表記(複数行のものは配列の要素ごとに改行)。
+const TICKET_EN_LABELS = {
+  tan: ["WIN"],
+  fuku: ["PLACE", "SHOW"],
+  wakuren: ["BRACKET", "QUINELLA"],
+  umaren: ["QUINELLA"],
+  wide: ["QUINELLA", "PLACE"],
+  umatan: ["EXACTA"],
+  sanrenpuku: ["TRIO"],
+  sanrentan: ["TRIFECTA"],
+};
+
+// 実際の馬券では三連複・三連単は「三」ではなく算用数字「3」で印字されるため、
+// 縦書き部分だけこの表記を使う(式別バッジ等、他の表示は betTypeLabel() のまま)。
+const TICKET_BET_TYPE_TEXT = {
+  sanrenpuku: "3連複",
+  sanrentan: "3連単",
+};
+function ticketBetTypeText(betType) {
+  return TICKET_BET_TYPE_TEXT[betType] || betTypeLabel(betType);
+}
+
+// 購入方式(1点のみなら不要)を券面の方式ボックスに出す際の和文・英文ラベル。
+const TICKET_METHOD_LABELS = {
+  box: { ja: "ボックス", en: "BOX" },
+  nagashi: { ja: "ながし", en: "WHEEL" },
+  axis1: { ja: "軸1頭ながし", en: "WHEEL" },
+  axis2: { ja: "軸2頭ながし", en: "WHEEL" },
+  multi: { ja: "マルチ", en: "WHEEL" },
+  axis2_multi: { ja: "軸2頭マルチ", en: "WHEEL" },
+  formation: { ja: "フォーメーション", en: "" },
+};
+function ticketMethodBoxLabel(method) {
+  return TICKET_METHOD_LABELS[method] || { ja: methodLabel(method), en: "" };
+}
+
+// 縦帯の式別名(「単勝」等)は CSS の writing-mode:vertical-rl だと環境によって
+// 漢字グリフが正しく縦回転されない(潰れて表示される)ことがあるため使わず、
+// 1文字ずつ<span>で区切って縦に積む(どの環境でも通常の横書きレンダリングの
+// まま並ぶだけなので確実)。
+function ticketVerticalTextHtml(text) {
+  return [...String(text)].map((c) => `<span class="ticket-vchar">${escapeHtml(c)}</span>`).join("");
+}
+
+// 場名の横に添える曜日(「阪神(日)」の「日」部分)。utils.js の formatDateMdW と
+// 同じ「日月火水木金土」配列を使うが、日付部分は既にヘッダーで別途表示するため
+// 曜日の1文字だけを返す。
+function ticketWeekdayKanji(dateStr) {
+  const d = new Date(`${String(dateStr ?? "").slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  return "日月火水木金土"[d.getDay()];
+}
+
+// 馬番を実物の馬券のような四角囲み数字で表示する(1点のみの買い目・ボックス等の
+// 複数点買い目のいずれでも使う共通パーツ)。
+function ticketNumBoxHtml(num) {
+  return `<span class="ticket-num-box">${escapeHtml(String(num))}</span>`;
+}
+
+// 1点のみの買い目(通常の単発購入)の券面表示。単勝・複勝は馬番ボックス+馬名、
+// それ以外(馬連・馬単・ワイド・枠連・三連複・三連単の通常1点買い)は馬番ボックスを
+// 着順あり(ordered)なら▶、着順なしなら－でつなぐ(参考にした馬券画像ジェネレーターの
+// 表示に合わせた。複数頭の場合は馬名を出さない)。
+function ticketSingleSelectionHtml(betType, selections) {
+  const list = selections || [];
+  if (list.length === 0) return "";
+  if (list.length === 1) {
+    const s = list[0];
+    return `<div class="ticket-selection-line">${ticketNumBoxHtml(s.horse_number)}<span class="ticket-horse-name">${escapeHtml(s.horse_name || "")}</span></div>`;
+  }
+  const def = BET_TYPES[betType] || { ordered: false };
+  const sepHtml = def.ordered ? `<span class="ticket-sep-arrow">▶</span>` : `<span class="ticket-sep-dash">－</span>`;
+  return `<div class="ticket-selection-line">${list.map((s) => ticketNumBoxHtml(s.horse_number)).join(sepHtml)}</div>`;
+}
+
+// 複数点(ボックス・ながし・フォーメーション等)の買い目の券面表示。
+// ticket-view.js の describeGroupSelections() (軸馬/相手・着順ごとの集合・馬番一覧の
+// いずれかを返す。既存のIPAT風コンパクト表示と同じ判定ロジックを再利用)の結果を、
+// 数字ボックスの並びとして描画し直す。
+function ticketMultiSelectionHtml(betType, group) {
+  const lines = describeGroupSelections(betType, group);
+  if (!lines) return "";
+
+  // 軸馬/相手(1頭軸・2頭軸ながし等)。それぞれ見出しラベル付きの行として並べる。
+  if (lines.length === 2 && lines[0].label === "軸馬") {
+    return lines
+      .map(
+        (l) => `<div class="ticket-axis-group">
+          <span class="ticket-axis-label">(${l.label === "軸馬" ? "軸" : "相手"})</span>
+          <div class="ticket-num-row">${l.values.map(ticketNumBoxHtml).join("")}</div>
+        </div>`
+      )
+      .join("");
+  }
+
+  // 着順ごとに集合が異なる(フォーメーション)。着順あり券種は▶、着順なしは－でつなぐ。
+  if (lines.length > 1) {
+    const def = BET_TYPES[betType] || { ordered: false };
+    const sepHtml = def.ordered ? `<span class="ticket-sep-arrow">▶</span>` : `<span class="ticket-sep-dash">－</span>`;
+    return `<div class="ticket-formation-row">${lines
+      .map((l) => `<span class="ticket-formation-col">${l.values.map(ticketNumBoxHtml).join("")}</span>`)
+      .join(sepHtml)}</div>`;
+  }
+
+  // ボックス・単純な馬番一覧。
+  return `<div class="ticket-box-row">${lines[0].values.map(ticketNumBoxHtml).join("")}</div>`;
+}
+
+// 複数点のうち、この点数以下なら実物の馬券と同じ「1行=1組み合わせ」の列挙形式
+// (下記 ticketMultiListRowHtml)にする。これを超える点数(ボックス等で数十点になる
+// 場合)は列挙すると長大になりすぎるため、従来通り軸/相手・ボックス等の要約表示
+// (ticketMultiSelectionHtml)にフォールバックする。
+const TICKET_LIST_ROWS_MAX = 6;
+
+// 複数点のうち点数が少ない場合の1行表示。実物の馬券は「馬番▶馬番▶馬番 金額」を
+// 買い目の数だけ縦に並べる(軸/相手のような要約はしない)。馬名は出さない
+// (ticketSingleSelectionHtmlを流用。複数頭のときは番号のみになる仕様と一致する)。
+function ticketMultiListRowHtml(betType, ticket) {
+  return `<div class="ticket-line-row">
+    ${ticketSingleSelectionHtml(betType, ticket.selections)}
+    <span class="ticket-line-amount">${ticketDetailAmountHtml(ticket.amount)}</span>
+  </div>`;
+}
+
+// 実物の馬券の金額表記(「¥」ではなく末尾に「円」)。アプリ内の他画面は
+// utils.js の formatYen(¥表記)で統一しているが、券面デザインの部分だけは
+// 本物の見た目を優先してこちらを使う。
+function ticketYenText(n) {
+  return `${Number(n || 0).toLocaleString()}円`;
+}
+
+// 実物の馬券は金額欄の桁数が固定で、空いている上位の桁を星(☆/★)で埋めて
+// 印字される(内訳行は☆、合計欄は★を使う)。手元の実物馬券の写真数枚から
+// 「内訳行は最大6桁・合計欄は最大7桁」を逆算した推定値であり、正確な規則の
+// 保証はない(2026-09-16)。
+function ticketStarPad(amount, maxDigits, star) {
+  const digits = String(Math.trunc(Math.abs(Number(amount) || 0))).length;
+  return star.repeat(Math.max(0, maxDigits - digits));
+}
+function ticketDetailAmountHtml(amount) {
+  return `<span class="ticket-star">${ticketStarPad(amount, 6, "☆")}</span>${ticketYenText(amount)}`;
+}
+function ticketTotalAmountHtml(amount) {
+  return `<span class="ticket-star">${ticketStarPad(amount, 7, "★")}</span>${ticketYenText(amount)}`;
+}
+
+// レース名が「2歳未勝利」「3歳以上1勝クラス」のような馬齢条件クラス名、または
+// 障害レース(先頭が「障害」)の場合は券面にレース名を表示しない(実物の馬券は
+// 重賞・特別戦等の固有名があるときだけレース名欄に印字されるため。CLAUDE.mdの
+// 既存PDF解析(jra-pdf-common.js)ではこの手の条件は race_name とは別に
+// class_flags として抽出しているが、本アプリの race_name には条件戦のクラス名が
+// そのまま入っているケースがあるため、ここでは文字列の先頭パターンで判定する)。
+function ticketShouldShowRaceName(raceName) {
+  const name = String(raceName || "").trim();
+  if (!name) return false;
+  return !/^(障害|\d+歳)/.test(name);
+}
+
+// 券面左上の「年(+開催回+開催日)」行。開催回・開催日(JRAの「3回2日」表記)は
+// 現時点でDBに列が無いため常に年のみになるが、将来 races テーブルに
+// kai(開催回)/nichi(開催日)相当の列が追加された際にそのまま拾えるよう、
+// ticket が kai/nichi を持っていれば「年◯回◯日」を組み立てる形にしておく
+// (2026-09-16。表示の準備のみで、データ追加は別タスク)。
+function ticketRaceYearLine(t) {
+  const d = new Date(`${String(t.race_date ?? "").slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = `${d.getFullYear()}年`;
+  if (t.kai && t.nichi) return `${year}${t.kai}回${t.nichi}日`;
+  return year;
+}
+
 const ticketDialogOverlay = document.createElement("div");
 ticketDialogOverlay.id = "ticket-dialog-overlay";
 ticketDialogOverlay.className = "modal-overlay ticket-dialog-overlay";
@@ -380,39 +552,62 @@ function refreshTicketDialog(groupId, amountPanelOpen) {
 function renderTicketDialogContent(group, amountPanelOpen) {
   const first = group[0];
   const groupId = first.group_id;
-  const status = ticketGroupStatus(group);
   const totalAmount = sumTicketAmount(group);
   const totalPayout = sumSettledPayout(group);
   const hasSettled = group.some((t) => t.payout !== null && t.payout !== undefined);
   const allSettled = group.every((t) => t.payout !== null && t.payout !== undefined);
-  const compactSummary = groupCompactSummaryHtml(first.bet_type, group);
-  const selectionHtml = compactSummary
-    || `<div class="ticket-selection-single"><div class="sel-line">${selectionCellHtml(first.bet_type, first.selections)}</div></div>`;
+
+  const isMulti = group.length > 1;
+  const useListRows = isMulti && group.length <= TICKET_LIST_ROWS_MAX;
+  const enLabelHtml = (TICKET_EN_LABELS[first.bet_type] || []).join("<br>");
+  const methodInfo = isMulti ? ticketMethodBoxLabel(first.method) : null;
+  const uniformAmount = isMulti ? describeGroupUniformAmount(group) : null;
+  const selectionAreaHtml = !isMulti
+    ? ticketSingleSelectionHtml(first.bet_type, first.selections)
+    : useListRows
+      ? group.map((t) => ticketMultiListRowHtml(first.bet_type, t)).join("")
+      : ticketMultiSelectionHtml(first.bet_type, group);
 
   ticketDialogEl.innerHTML = `
-    <button type="button" class="dialog-close ticket-dialog-close" id="ticket-dialog-close-btn" aria-label="閉じる">×</button>
-    <button type="button" class="ticket-amount-toggle-btn" id="ticket-amount-toggle-btn">金額変更</button>
+    <div class="ticket-dialog-toolbar">
+      <button type="button" class="dialog-close" id="ticket-dialog-close-btn" aria-label="閉じる">×</button>
+      <button type="button" class="ticket-amount-toggle-btn" id="ticket-amount-toggle-btn">金額変更</button>
+    </div>
     <div class="ticket-face">
-      <div class="ticket-face-row ticket-face-race">
-        <span>${formatDate(first.race_date)}</span>
-        <span>${escapeHtml(first.track || "")}</span>
-        <span>${first.race_number}R</span>
+      <div class="ticket-face-topbar">
+        <span>馬券帳</span>
       </div>
-      ${first.race_name ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
-      <div class="ticket-perforation"></div>
-      <div class="ticket-face-row ticket-bet-row">
-        <span class="ticket-bet-type">${betTypeLabel(first.bet_type)}</span>
-        <span class="ticket-method">${methodLabel(first.method)}</span>
-      </div>
-      <div class="ticket-selections">${selectionHtml}</div>
-      <div class="ticket-perforation"></div>
-      <div class="ticket-face-row ticket-amount-row">
-        <span class="ticket-point-count">${group.length}点</span>
-        <span class="ticket-amount">${formatYen(totalAmount)}</span>
-      </div>
-      ${hasSettled ? `<div class="ticket-face-row ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span>${formatYen(totalPayout)}</span></div>` : ""}
-      <div class="ticket-face-row ticket-status-row">
-        <span class="status-badge ${status === "確定済み" ? "settled" : ""}">${status}</span>
+      <div class="ticket-face-body">
+        <div class="ticket-info-col">
+          <div class="ticket-year-line">${escapeHtml(ticketRaceYearLine(first))}</div>
+          <div class="ticket-track-line">${escapeHtml(first.track || "")}<span class="ticket-weekday">(${ticketWeekdayKanji(first.race_date)})</span></div>
+          <div class="ticket-race-line">
+            <span class="ticket-race-num-badge">${first.race_number}</span><span class="ticket-race-num-suffix">レース</span>
+          </div>
+          ${ticketShouldShowRaceName(first.race_name) ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
+          <div class="ticket-face-date">${formatDateMd(first.race_date)}</div>
+        </div>
+        <div class="ticket-strip">
+          <div class="ticket-strip-label">${enLabelHtml}</div>
+          <div class="ticket-strip-kanji">${ticketVerticalTextHtml(ticketBetTypeText(first.bet_type))}</div>
+          <div class="ticket-strip-label">${enLabelHtml}</div>
+        </div>
+        <div class="ticket-lines-col">
+          ${methodInfo ? `<div class="ticket-method-box"><span class="ticket-method-ja">${escapeHtml(methodInfo.ja)}</span>${methodInfo.en ? `<span class="ticket-method-en">${escapeHtml(methodInfo.en)}</span>` : ""}</div>` : ""}
+          <div class="ticket-selection-area">${selectionAreaHtml}</div>
+          ${isMulti && !useListRows
+            ? `<div class="ticket-combo-table">
+                <div class="ticket-combo-row"><span>組合せ数</span><span>${group.length}</span></div>
+                ${uniformAmount !== null ? `<div class="ticket-combo-row"><span>各組</span><span>${ticketDetailAmountHtml(uniformAmount)}</span></div>` : ""}
+              </div>`
+            : ""
+          }
+          ${!isMulti ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
+          <div class="ticket-totals">
+            <div class="ticket-total-row"><span>合計</span><span>${ticketTotalAmountHtml(totalAmount)}</span></div>
+            ${hasSettled ? `<div class="ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span>${ticketTotalAmountHtml(totalPayout)}</span></div>` : ""}
+          </div>
+        </div>
       </div>
     </div>
     <div class="group-detail-rows ticket-edit-rows" ${amountPanelOpen ? "" : "hidden"}>
