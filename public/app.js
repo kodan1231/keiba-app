@@ -575,15 +575,17 @@ function renderTicketDialogContent(group, amountPanelOpen) {
       <div class="ticket-face-topbar">
         <span>馬券帳</span>
       </div>
-      <div class="ticket-face-body">
+      <div class="ticket-face-main">
         <div class="ticket-info-col">
-          <div class="ticket-year-line">${escapeHtml(ticketRaceYearLine(first))}</div>
-          <div class="ticket-track-line">${escapeHtml(first.track || "")}</div>
-          <div class="ticket-race-line">
-            <span class="ticket-race-num-badge">${first.race_number}</span><span class="ticket-race-num-suffix">レース</span>
+          <div class="ticket-info-top">
+            <div class="ticket-year-line">${escapeHtml(ticketRaceYearLine(first))}</div>
+            <div class="ticket-track-line">${escapeHtml(first.track || "")}</div>
+            <div class="ticket-race-line">
+              <span class="ticket-race-num-badge">${first.race_number}</span><span class="ticket-race-num-suffix">レース</span>
+            </div>
           </div>
-          ${ticketShouldShowRaceName(first.race_name) ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
           <div class="ticket-info-bottom">
+            ${ticketShouldShowRaceName(first.race_name) ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
             <div class="ticket-jra-line">JRA ${escapeHtml(first.track || "")}</div>
             <div class="ticket-face-date">${formatDateMd(first.race_date)}</div>
           </div>
@@ -593,7 +595,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
           <div class="ticket-strip-kanji">${ticketVerticalTextHtml(ticketBetTypeText(first.bet_type))}</div>
           <div class="ticket-strip-label">${enLabelHtml}</div>
         </div>
-        <div class="ticket-lines-col">
+        <div class="ticket-buy-col">
           ${methodInfo ? `<div class="ticket-method-box"><span class="ticket-method-ja">${escapeHtml(methodInfo.ja)}</span>${methodInfo.en ? `<span class="ticket-method-en">${escapeHtml(methodInfo.en)}</span>` : ""}</div>` : ""}
           <div class="ticket-selection-area">${selectionAreaHtml}</div>
           ${isMulti && !useListRows
@@ -604,6 +606,8 @@ function renderTicketDialogContent(group, amountPanelOpen) {
             : ""
           }
           ${!isMulti ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
+        </div>
+        <div class="ticket-face-footer">
           <div class="ticket-totals">
             <div class="ticket-total-row"><span>合計</span><span class="ticket-total-values">${ticketSheetCountText(totalAmount)}${ticketTotalAmountHtml(totalAmount)}</span></div>
             ${hasSettled ? `<div class="ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span class="ticket-total-values">${ticketSheetCountText(totalPayout)}${ticketTotalAmountHtml(totalPayout)}</span></div>` : ""}

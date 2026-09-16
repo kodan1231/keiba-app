@@ -157,54 +157,60 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
 
 ##### 券面(`.ticket-face`)のレイアウト
 
-3列構成(左: 開催情報 / 中央: 式別の縦帯 / 右: 買い目・金額)。
 **縦横比は`aspect-ratio: 750/520`で固定し、買い目の点数が多くても券面自体は
-広がらない**(右列の買い目エリア`.ticket-selection-area`だけが`flex:1`+
+広がらない**(買い目エリア`.ticket-selection-area`だけが`flex:1`+
 `overflow-y:auto`で内部スクロールする)。背景は薄緑の縦ストライプ
 (`repeating-linear-gradient`)。他社ツール(参考にした「馬券画像ジェネレーター」)の
 「YAD」透かしロゴは模倣しない。QRコード・管理番号相当のバーコード数字列は
 実データを持てず無意味なダミー表示になるため実装しない。
 
-- **左列(`.ticket-info-col`)**: 上から
-  - `.ticket-year-line`: 開催年。実物は年・回・日がほぼ幅いっぱいの大きな文字
-    (`font-size:17px`。場名に次いで大きい)で印字されるため、それに合わせている。
+**`.ticket-face-main`をCSS Gridで2行×3列に組み、実物の「縦帯・買い目の下に
+合計欄が続く」配置を正確に再現している**(2026-09-17。以前はflexで
+「左情報/縦帯/買い目+合計」を横に3分割していたため、合計欄が縦帯の右側
+(買い目列の中)に収まってしまい、実物の「合計欄の左端が縦帯の左端と揃う」
+配置と違っていた)。列は`grid-template-columns: 33% 64px 1fr`(左情報列/
+縦帯/買い目列)、行は`grid-template-rows: 1fr auto`(1行目=左情報・縦帯・買い目、
+2行目=合計欄)。**縦帯(2列目)の中心が券面中央よりやや左に来るよう左情報列を
+33%にしている**(実物は縦帯が中央よりやや左寄りに見えるため)。
+
+- **1行目・左列(`.ticket-info-col`。`grid-column:1; grid-row:1`)**: 実物は
+  「年/回/日・場名・R番号」が列の上側に、「レース名・発売場・月日」が下側に
+  分かれ、間(QRコードがある位置)が空いている。これに合わせて列全体を
+  `display:flex; flex-direction:column; justify-content:space-between;`にし、
+  上下2つのブロック(`.ticket-info-top` / `.ticket-info-bottom`)を離して配置する
+  (2026-09-17。以前は上から順に並べる1本のフローで、レース名の直後に
+  発売場・月日が続いてしまっていた)。
+  - `.ticket-info-top`: 上から`.ticket-year-line`(開催年。`font-size:23px`)・
+    `.ticket-track-line`(場名。列内で最大の`font-size:34px`)・`.ticket-race-line`
+    (R番号の黒バッジ+「レース」)。
     JRA表記の「回・日」(例: 2024年3回2日)は`tickets.kai`/`tickets.nichi`相当の
     列がDBに無いため現時点では常に年のみだが、`ticketRaceYearLine()`は
     `t.kai`・`t.nichi`があれば拾って組み立てる形にしておき、**将来スキーマに
     開催回・開催日の列が追加された場合にそのまま表示されるよう準備だけ
-    済ませてある**(データ追加自体は別タスク)。
-  - `.ticket-track-line`: 場名(例:「東京」)。実物で最も大きい文字
-    (`font-size:26px`)。**曜日は表示しない**(2026-09-16に廃止。実物の馬券には
-    無い要素で、同じ競馬場・同じR番号で日付違いのレースを区別するために
-    独自追加していたが、実物優先の方針により削除した。日付自体は下端の
-    `.ticket-face-date`で区別できる)。
-  - `.ticket-race-line`: R番号の黒バッジ+「レース」。
-  - レース名(`.ticket-face-race-name`): `ticketShouldShowRaceName()`が
-    `true`の場合のみ表示する。**先頭が「障害」、または「◯歳」で始まる馬齢条件の
-    クラス名(例: 「2歳未勝利」「3歳以上1勝クラス」)の場合は表示しない**
-    (実物の馬券は重賞・特別戦等の固有名があるときだけレース名欄に印字されるため。
-    条件が真のときだけ表示し、判定は`race_name`の先頭パターンのみで行う)。
-  - `.ticket-info-bottom`: **「JRA ◯◯」(`.ticket-jra-line`。発売場。`track`を
-    そのまま流用)と月日(`.ticket-face-date`。`formatDateMd()`)をひとまとめにし、
-    `margin-top:auto`で列の下端へ押し出す**(実物は「JRA◯◯」と月日が下端に
-    まとまって配置されているため、2026-09-16にこの2つを1つのラッパーに
-    まとめて一緒に押し出す形へ変更した。以前は月日だけを個別に`margin-top:auto`
-    していたため、JRA行がレース名の直後に来てしまい実物と配置が異なっていた)。
-  - 左列は実物の馬券で場名・年月日が大きく目立つのに合わせ、他の列より文字
-    サイズを大きめに取っている(`.ticket-info-col`の`flex-basis`は40%)。
-- **中央列(`.ticket-strip`)**: 式別の縦帯。上下に黒帯(`.ticket-strip-label`)で
-  JRA公式の英語表記(`TICKET_EN_LABELS`。単勝=WIN、複勝=PLACE/SHOW、
-  枠連=BRACKET QUINELLA、馬連=QUINELLA、ワイド=QUINELLA/PLACE、
-  馬単=EXACTA、三連複=TRIO、三連単=TRIFECTA)を表示し、中央に式別名
-  (`ticketBetTypeText()`。三連複・三連単だけは実物同様「三」ではなく算用数字の
-  「3連複」「3連単」にする)を**1文字ずつ`<span>`で縦に積んで**表示する
+    済ませてある**(データ追加自体は別タスク)。**曜日は表示しない**
+    (2026-09-16に廃止。実物の馬券には無い要素で、同じ競馬場・同じR番号で
+    日付違いのレースを区別するために独自追加していたが、実物優先の方針により
+    削除した。日付自体は下ブロックの月日で区別できる)。
+  - `.ticket-info-bottom`: 上から レース名(`.ticket-face-race-name`。
+    `ticketShouldShowRaceName()`が`true`の場合のみ表示。**先頭が「障害」、または
+    「◯歳」で始まる馬齢条件のクラス名(例: 「2歳未勝利」「3歳以上1勝クラス」)の
+    場合は表示しない**。実物の馬券は重賞・特別戦等の固有名があるときだけ
+    レース名欄に印字されるため、判定は`race_name`の先頭パターンのみで行う)・
+    `.ticket-jra-line`(「JRA ◯◯」。発売場。`track`をそのまま流用)・
+    `.ticket-face-date`(月日のみ。`formatDateMd()`)。
+- **1行目・中央列(`.ticket-strip`。`grid-column:2; grid-row:1`)**: 式別の縦帯。
+  上下に黒帯(`.ticket-strip-label`)でJRA公式の英語表記(`TICKET_EN_LABELS`。
+  単勝=WIN、複勝=PLACE/SHOW、枠連=BRACKET QUINELLA、馬連=QUINELLA、
+  ワイド=QUINELLA/PLACE、馬単=EXACTA、三連複=TRIO、三連単=TRIFECTA)を表示し、
+  中央に式別名(`ticketBetTypeText()`。三連複・三連単だけは実物同様「三」ではなく
+  算用数字の「3連複」「3連単」にする)を**1文字ずつ`<span>`で縦に積んで**表示する
   (`ticketVerticalTextHtml()`)。CSSの`writing-mode:vertical-rl`+
   `text-orientation:upright`は環境によって漢字グリフが正しく回転せず潰れて
   表示されることがあり(Chromiumのヘッドレス環境で確認済み)、確実な1文字ずつの
   積み上げ方式にした。フォントは`--font-display`(明朝体)ではなく`--font-body`
   (ゴシック体)を使う(実物の馬券は明朝体ではなく太いゴシック体で印字されているため。
   2026-09-16に明朝体から変更)。
-- **右列(`.ticket-lines-col`)**: 上から
+- **1行目・右列(`.ticket-buy-col`。`grid-column:3; grid-row:1`)**: 上から
   1. 方式ボックス(`.ticket-method-box`。ボックス=BOX、ながし/軸1頭/軸2頭/マルチ/
      軸2頭マルチ=WHEEL、フォーメーション=英語表記なし。`TICKET_METHOD_LABELS`)。
      **複数点(`group.length > 1`)のときだけ**表示する(1点のみの通常買いには
@@ -236,12 +242,15 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
        このダイアログの番号ボックス描画のために**生の馬番配列(`values`)を
        追加で返すよう拡張した**(既存の`value`はそのまま残しており、
        `groupCompactSummaryHtml()`側の挙動・予想画面への影響はない)。
-  3. 合計(`.ticket-totals`)。「合計」+星埋め済みの枚数・金額
-     (`ticketSheetCountText()`+`ticketTotalAmountHtml()`)。確定分があれば
-     その下に「払戻」または「払戻(一部)」+同形式の払戻枚数・金額(`--win`色)。
-     **未確定/一部確定/確定済みのバッジは表示しない**(履歴に載っている時点で
-     表示上は確定扱いとする、という方針のため。以前の実装案にあった
-     `.status-badge`は削除した)。
+- **2行目・合計欄(`.ticket-face-footer`。`grid-column: 2/4; grid-row: 2`)**:
+  縦帯(2列目)と買い目列(3列目)にまたがって配置することで、**左端が縦帯の
+  左端に揃う**(実物の配置に合わせた。買い目列の中に収めていた旧実装では
+  縦帯の右合わせになっていた)。中身は`.ticket-totals`。「合計」+星埋め済みの
+  枚数・金額(`ticketSheetCountText()`+`ticketTotalAmountHtml()`)。確定分が
+  あればその下に「払戻」または「払戻(一部)」+同形式の払戻枚数・金額(`--win`色)。
+  **未確定/一部確定/確定済みのバッジは表示しない**(履歴に載っている時点で
+  表示上は確定扱いとする、という方針のため。以前の実装案にあった
+  `.status-badge`は削除した)。
 
 ##### 金額の表記(実物の馬券に合わせた独自フォーマット)
 
