@@ -583,8 +583,10 @@ function renderTicketDialogContent(group, amountPanelOpen) {
             <span class="ticket-race-num-badge">${first.race_number}</span><span class="ticket-race-num-suffix">レース</span>
           </div>
           ${ticketShouldShowRaceName(first.race_name) ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
-          <div class="ticket-jra-line">JRA ${escapeHtml(first.track || "")}</div>
-          <div class="ticket-face-date">${formatDateMd(first.race_date)}</div>
+          <div class="ticket-info-bottom">
+            <div class="ticket-jra-line">JRA ${escapeHtml(first.track || "")}</div>
+            <div class="ticket-face-date">${formatDateMd(first.race_date)}</div>
+          </div>
         </div>
         <div class="ticket-strip">
           <div class="ticket-strip-label">${enLabelHtml}</div>
