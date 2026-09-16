@@ -1258,26 +1258,27 @@ body.history-selection-mode .group-detail-actions {
 
 .ticket-face-body { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 10px; }
 
-/* 左列: 開催年(+回・日)・場名・曜日・R番号・レース名・月日(一番下)。
+/* 左列: 開催年(+回・日)・場名・R番号・レース名・発売場・月日(一番下)。
    実物の馬券の「左上に年/回/日、左下に月日」というレイアウトに合わせ、
-   月日(.ticket-face-date)だけ margin-top:auto で列の一番下へ押し出す。 */
-.ticket-info-col { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
-.ticket-year-line { font-size: 10.5px; color: var(--ink-soft); }
-.ticket-track-line { font-size: 16px; font-weight: 700; white-space: nowrap; }
-.ticket-track-line .ticket-weekday { font-size: 13px; font-weight: 400; margin-left: 1px; }
+   月日(.ticket-face-date)だけ margin-top:auto で列の一番下へ押し出す。
+   曜日表示は実物には無い独自追加要素だったため廃止した(2026-09-16)。 */
+.ticket-info-col { flex: 0 0 40%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.ticket-year-line { font-size: 12px; color: var(--ink-soft); }
+.ticket-track-line { font-size: 19px; font-weight: 700; white-space: nowrap; }
 .ticket-race-line { display: flex; align-items: center; gap: 4px; }
 .ticket-race-num-badge {
   display: inline-block;
   background: #1c1b18;
   color: #fff;
   font-weight: 700;
-  font-size: 13px;
-  padding: 1px 7px;
+  font-size: 15px;
+  padding: 1px 8px;
   border-radius: 3px;
 }
-.ticket-race-num-suffix { font-size: 12px; }
-.ticket-face-race-name { font-size: 10.5px; color: var(--ink-soft); line-height: 1.3; overflow-wrap: anywhere; margin-top: 2px; }
-.ticket-face-date { font-size: 11px; color: var(--ink-soft); margin-top: auto; padding-top: 4px; }
+.ticket-race-num-suffix { font-size: 13.5px; }
+.ticket-face-race-name { font-size: 12px; color: var(--ink-soft); line-height: 1.3; overflow-wrap: anywhere; margin-top: 2px; }
+.ticket-jra-line { font-size: 12px; color: var(--ink-soft); }
+.ticket-face-date { font-size: 12.5px; color: var(--ink-soft); margin-top: auto; padding-top: 4px; }
 
 /* 中央列: 式別を縦書きにした帯(英字ラベルの黒帯で上下を挟む) */
 .ticket-strip {
@@ -1310,7 +1311,9 @@ body.history-selection-mode .group-detail-actions {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-display), var(--font-body), sans-serif;
+  /* 実物の馬券は明朝体ではなく太いゴシック体で印字されているため、
+     見出し用の明朝体(--font-display)ではなく本文用ゴシック(--font-body)を使う。 */
+  font-family: var(--font-body), sans-serif;
   font-weight: 700;
   padding: 4px 0;
 }
@@ -1368,7 +1371,7 @@ body.history-selection-mode .group-detail-actions {
 
 /* 実物の馬券の金額欄は桁数が固定で、空いている上位桁を星で埋めて印字される
    (ticketStarPad()参照)。星は本文よりわずかに小さくして数字を主役にする。 */
-.ticket-star { font-size: 0.85em; letter-spacing: 1px; }
+.ticket-star { font-size: 0.85em; letter-spacing: 0px; }
 
 .ticket-num-row { display: flex; flex-wrap: wrap; }
 .ticket-box-row { display: flex; flex-wrap: wrap; }
@@ -1398,13 +1401,20 @@ body.history-selection-mode .group-detail-actions {
 .ticket-totals { border-top: 1px dashed rgba(28,27,24,0.5); margin-top: 8px; padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .ticket-total-row, .ticket-payout-row {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: nowrap;
+  justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   font-family: var(--font-mono);
 }
-.ticket-total-row { font-size: 16px; font-weight: 700; }
-.ticket-payout-row { font-size: 13px; color: var(--win); }
+.ticket-total-row > span:first-child, .ticket-payout-row > span:first-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+.ticket-total-values { display: flex; gap: 5px; white-space: nowrap; flex: 0 0 auto; }
+.ticket-total-row { font-size: 12.5px; font-weight: 700; }
+.ticket-payout-row { font-size: 12px; color: var(--win); }
 
 .ticket-edit-rows { margin-top: 16px; }
 .ticket-edit-rows[hidden] { display: none; }
@@ -1412,8 +1422,8 @@ body.history-selection-mode .group-detail-actions {
 .ticket-dialog .group-detail-actions { margin-top: 10px; }
 
 @media (max-width: 420px) {
-  .ticket-info-col { flex-basis: 30%; }
-  .ticket-track-line { font-size: 14px; }
+  .ticket-info-col { flex-basis: 36%; }
+  .ticket-track-line { font-size: 16px; }
   .ticket-strip { flex-basis: 52px; }
   .ticket-strip-kanji { font-size: 18px; }
   .ticket-num-box { min-width: 17px; height: 17px; font-size: 11px; }

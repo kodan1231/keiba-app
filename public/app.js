@@ -388,15 +388,6 @@ function ticketVerticalTextHtml(text) {
   return [...String(text)].map((c) => `<span class="ticket-vchar">${escapeHtml(c)}</span>`).join("");
 }
 
-// 場名の横に添える曜日(「阪神(日)」の「日」部分)。utils.js の formatDateMdW と
-// 同じ「日月火水木金土」配列を使うが、日付部分は既にヘッダーで別途表示するため
-// 曜日の1文字だけを返す。
-function ticketWeekdayKanji(dateStr) {
-  const d = new Date(`${String(dateStr ?? "").slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return "";
-  return "日月火水木金土"[d.getDay()];
-}
-
 // 馬番を実物の馬券のような四角囲み数字で表示する(1点のみの買い目・ボックス等の
 // 複数点買い目のいずれでも使う共通パーツ)。
 function ticketNumBoxHtml(num) {
@@ -490,6 +481,13 @@ function ticketTotalAmountHtml(amount) {
   return `<span class="ticket-star">${ticketStarPad(amount, 7, "★")}</span>${ticketYenText(amount)}`;
 }
 
+// 実物の馬券は「合計」欄に金額だけでなく購入枚数(10円単位。100円なら10枚)も
+// 星埋め付きで表示される(個別の買い目行には枚数は出ない。合計欄だけの表記)。
+function ticketSheetCountText(amount) {
+  const count = Math.round(Number(amount || 0) / 10);
+  return `<span class="ticket-star">${ticketStarPad(count, 6, "★")}</span>${count.toLocaleString()}枚`;
+}
+
 // レース名が「2歳未勝利」「3歳以上1勝クラス」のような馬齢条件クラス名、または
 // 障害レース(先頭が「障害」)の場合は券面にレース名を表示しない(実物の馬券は
 // 重賞・特別戦等の固有名があるときだけレース名欄に印字されるため。CLAUDE.mdの
@@ -580,11 +578,12 @@ function renderTicketDialogContent(group, amountPanelOpen) {
       <div class="ticket-face-body">
         <div class="ticket-info-col">
           <div class="ticket-year-line">${escapeHtml(ticketRaceYearLine(first))}</div>
-          <div class="ticket-track-line">${escapeHtml(first.track || "")}<span class="ticket-weekday">(${ticketWeekdayKanji(first.race_date)})</span></div>
+          <div class="ticket-track-line">${escapeHtml(first.track || "")}</div>
           <div class="ticket-race-line">
             <span class="ticket-race-num-badge">${first.race_number}</span><span class="ticket-race-num-suffix">レース</span>
           </div>
           ${ticketShouldShowRaceName(first.race_name) ? `<div class="ticket-face-race-name">${escapeHtml(first.race_name)}</div>` : ""}
+          <div class="ticket-jra-line">JRA ${escapeHtml(first.track || "")}</div>
           <div class="ticket-face-date">${formatDateMd(first.race_date)}</div>
         </div>
         <div class="ticket-strip">
@@ -604,8 +603,8 @@ function renderTicketDialogContent(group, amountPanelOpen) {
           }
           ${!isMulti ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
           <div class="ticket-totals">
-            <div class="ticket-total-row"><span>合計</span><span>${ticketTotalAmountHtml(totalAmount)}</span></div>
-            ${hasSettled ? `<div class="ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span>${ticketTotalAmountHtml(totalPayout)}</span></div>` : ""}
+            <div class="ticket-total-row"><span>合計</span><span class="ticket-total-values">${ticketSheetCountText(totalAmount)}${ticketTotalAmountHtml(totalAmount)}</span></div>
+            ${hasSettled ? `<div class="ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span class="ticket-total-values">${ticketSheetCountText(totalPayout)}${ticketTotalAmountHtml(totalPayout)}</span></div>` : ""}
           </div>
         </div>
       </div>
