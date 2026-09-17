@@ -27,12 +27,19 @@
     (元々`payout=0`になっていた)。この場合、実際には返還(全額払戻・収支への影響は±0に
     近いはず)のケースを損失として計上してしまっている可能性があり、実データでの表記確認が
     必要(下記「要確認」参照)
-- CSVインポート時点では馬名・騎手が分からず、購入履歴(`imported_ticket_items.selections`)には
-  馬番のみが入る。レース管理画面で出走馬表(馬名・騎手)を登録・更新すると、同じレース・馬番を
-  参照している`imported_ticket_items`および`tickets`の`selections`へ馬名・騎手を書き戻す
-  (バックフィルする、`functions/api/_lib/entries-merge.js`の`backfillHorseNamesForRace`)。
-  既に値が入っている項目は上書きしない。出走馬一覧PDFインポート(`entries-import.js`)も、
-  `horse_number`が確定した(nullでなくなった)タイミングで同じ関数を呼び出しバックフィルを行う
+- CSVインポート時点では馬名・騎手がCSVに含まれないため、購入履歴
+  (`imported_ticket_items.selections`)にはひとまず馬番のみが入る。**取込先レースが
+  既に出走馬表(`races.entries`)を持っている場合は、全行の取込処理が終わった直後に
+  そのレースぶんだけ`backfillHorseNamesForRace()`を呼び、その場で馬名・騎手を反映する**
+  (2026-09-18追加。`raceCache`に載っているレース(=1回の取込CSVに含まれるレース数。
+  自然にバウンドされる)ごとに1回ずつ呼ぶだけなのでCLAUDE.mdの「レース単位のループで
+  1件ずつDB問い合わせ」禁止パターンには該当しない)。取込先レースがまだ未登録、または
+  出走馬表が空の場合は、従来通りレース管理画面で出走馬表(馬名・騎手)を登録・更新した
+  タイミングで、同じレース・馬番を参照している`imported_ticket_items`および`tickets`の
+  `selections`へ馬名・騎手を書き戻す(バックフィルする、`functions/api/_lib/
+  entries-merge.js`の`backfillHorseNamesForRace`)。既に値が入っている項目は上書きしない。
+  出走馬一覧PDFインポート(`entries-import.js`)も、`horse_number`が確定した
+  (nullでなくなった)タイミングで同じ関数を呼び出しバックフィルを行う
 - 未登録レースは新規作成し、出走馬は空配列のままでもよい
 - CSV原本は `imported_tickets` に残し続ける(正規化後も削除しない)
 - 既存CSVデータも履歴APIで後方互換表示する

@@ -262,9 +262,10 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
      - **1点のみ・単勝/複勝(馬名を出す1頭のみの買い目)**: `ticketSingleSelectionHtml()`
        (馬番の四角囲み`.ticket-num-box`+馬名`.ticket-horse-name`。長い場合は
        `ellipsis`で省略し折り返さない)の直後に**同じ`.ticket-selection-area`内で**
-       金額の別行・左揃え(`.ticket-single-amount { text-align: left; }`)を続けて
-       出す(実物は馬名がある分だけ行を分けて印字されており、金額は馬名の
-       真下・左端に揃う。2026-09-17に右寄せから左揃えへ変更)。**金額行は
+       金額の別行・右揃え(`.ticket-single-amount { text-align: right; }`)を続けて
+       出す(馬名がある分だけ行を分けて印字される点は実物に合わせつつ、
+       金額の揃えは2026-09-17に右寄せ→左揃えへ変更した後、2026-09-18に
+       右揃えへ戻した)。**金額行は
        `.ticket-selection-area`の外の別要素ではなく、同じ要素の中に入れる**
        (2026-09-18。`.ticket-selection-area`は`flex:1`で買い目列
        (`.ticket-buy-col`)の余白を埋めるぶん引き伸ばされるため、外に出して

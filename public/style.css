@@ -1455,10 +1455,10 @@ body.history-selection-mode .group-detail-actions {
 .ticket-axis-label { font-size: 11px; color: var(--ink-soft); }
 .ticket-num-col { display: flex; flex-wrap: wrap; justify-content: center; }
 
-/* 単勝・複勝の金額は選択行(馬番+馬名)の真下・左揃えで表示する
-   (実物の馬券がその配置のため。2026-09-17に右寄せから変更)。 */
+/* 単勝・複勝の金額は選択行(馬番+馬名)の真下・右揃えで表示する
+   (2026-09-18に左揃えから右揃えへ変更)。 */
 .ticket-single-amount {
-  text-align: left;
+  text-align: right;
   font-family: var(--font-mono);
   font-size: 18px;
   font-weight: 700;

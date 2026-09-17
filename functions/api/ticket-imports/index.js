@@ -1,4 +1,4 @@
-import { getAllRacesRaw } from "../_shared.js";
+import { getAllRacesRaw, backfillHorseNamesForRace } from "../_shared.js";
 
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -335,6 +335,20 @@ export async function onRequestPost(context){
       }
       newGroups.push({groupId,race_date:raceDate,track,race_number:raceNumber,bet_type:type,total_amount:totalAmount});
       imported++;
+    }
+    // 取込先レースが既に出走馬表(entries)を持っている場合、CSV取込時点では馬番のみだった
+    // selectionsへその場で馬名・騎手を反映する(2026-09-18追加。以前はレース管理画面で
+    // 出走馬表を保存し直すまで馬名が表示されなかった。docs/design/csv-import.md参照)。
+    // raceCacheのレース数は「1回の取込CSVに含まれるレース数」で自然にバウンドされるため、
+    // レースごとに1回ずつ呼んでもCLAUDE.mdの禁止パターン(全履歴・全レース規模のループ)には
+    // 該当しない。
+    const backfilledRaceIds=new Set();
+    for(const race of raceCache.values()){
+      if(!race||backfilledRaceIds.has(race.id)) continue;
+      backfilledRaceIds.add(race.id);
+      let entries;
+      try{ entries=JSON.parse(race.entries||'[]'); }catch{ continue; }
+      if(Array.isArray(entries)&&entries.length) await backfillHorseNamesForRace(db,race.id,entries);
     }
     // 重複候補の検出は全行の取込完了後に1回のクエリでまとめて行う(個別クエリの積み
     // 重ねを避けるため)。ユーザー自身のグループのみを対象にする。
