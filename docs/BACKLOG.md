@@ -30,17 +30,9 @@
   (`users.api_token_hash`/`api_token_created_at`列追加+ユニークインデックス)が
   本番DB `keiba-yosou-db` へ未適用。JRAレース結果ユーザースクリプト取込み・
   管理画面「APIトークン」を使う前に適用が必要。
-- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-17)**: `migration.sql` の
-  `@STEP: tickets_structure`(`tickets.structure`列追加)が本番DB `keiba-yosou-db`
-  へ未適用。**`ALTER TABLE`自体は軽量だが、`functions/api/tickets/bulk.js`の
-  INSERT文が`structure`列を明示的に指定するようコード変更済みのため、
-  このマイグレーションを適用する前に今回の変更をデプロイすると、
-  `structure`列が存在せず`POST /api/tickets/bulk`(購入確定・カゴの「購入」ボタン)が
-  全件エラーになり新規購入ができなくなる**。デプロイ手順は
-  ①`wrangler d1 execute keiba-yosou-db --command "ALTER TABLE tickets ADD COLUMN structure TEXT;"`
-  (または`schema_migrations`未適用確認の上で`@STEP: tickets_structure`を適用)
-  → ②コードをデプロイ、の順を厳守すること。詳細は
-  `docs/design/data-model.md`「購入方式の入力構造(tickets.structure)」参照。
+- `migration.sql` の `@STEP: tickets_structure`(`tickets.structure`列追加)は
+  本番DB `keiba-yosou-db` へ適用済み・コードもデプロイ済み(2026-09-17。
+  ユーザー確認)。実ブラウザでの表示内容の詳細確認は下記「🔵 実機検証未完了」参照。
   `race_results_horse_key`・`race_stats_cache`・`races_cache`(チャンク分割版。
   `@STEP: races_cache_chunked`)は適用済み・`schema_migrations` 記録済み(`horse_key`
   の既存行バックフィルも完了。`race_results` 14768件更新)。実ブラウザでの数値確認は
@@ -91,7 +83,7 @@
   〈三連複等〉のフォーメーションは保存済みの組み合わせ結果から入力時のゾーン分けを
   復元できない制約があったため、過去データ・CSV取込は現状の推測ロジックのまま
   許容し、今後の画面購入分のみ購入時点の構造情報をそのまま保存して正しく
-  表示できるようにした。要マイグレーション適用。上記🔴参照)を実施。
+  表示できるようにした。マイグレーション適用・デプロイ済み)を実施。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。
@@ -112,6 +104,7 @@
 | 🔵 実機検証未完了(要マイグレーション適用) | 勝負レースフラグ(2026-09-12。予想登録画面のヘッダーにレース名の直後「☆/★ 勝負レース」トグルボタンを新設。`prediction_notes.is_key_race`〈レース×ユーザー単位の個人設定〉+`PUT /api/predictions/key-race`。ONのレースは馬券購入画面のレース選択グリッドのレース名の後ろに★を表示〈`GET /api/predictions`のrace_id省略時一覧取得モード+`myKeyRaceIds`〉)は`node --check`のみ。**本番適用手順**: `migration.sql`の`@STEP: prediction_notes_key_race`を`wrangler d1 execute --remote`で適用。**実ブラウザで**: トグルON/OFFが即座に反映されること、レース切り替え後も状態が正しく再取得されること、馬券購入画面のレース一覧に★が正しく表示されること(自分がONにしたレースのみ)、予想印・予想メモの保存でこのフラグが意図せず変化しないことを確認する | `docs/design/screens.md`「予想登録画面」 |
 | 🔵 実機検証未完了 | `GET /api/ticket-imports`のD1読み取り上限逼迫の修正(2026-09-12。`wrangler d1 insights`で判明: `imported_ticket_items`を全ユーザー分全件SELECTする設計〈テーブルが小さい前提〉が、テーブルが5,600行超まで育ったことで破綻し、このGET1エンドポイントだけで1日137回・768,707行〈日次上限500万行の約15%〉を消費していた。自分の`imported_ticket_groups.id`集合で`WHERE group_id IN (...)`〈90件チャンク・既存の`idx_imported_items_group`使用〉に絞り込む方式へ変更)は`node --check`のみ。**実ブラウザで**: 購入履歴画面のCSV取込グループ一覧が従来通り表示されること(自分の取込分の内容が欠けていないこと)、集計画面「コース別収支」への影響が無いことを確認する。修正後の読み取り量が実際に減っているかは`wrangler d1 insights`で後日確認するとよい | `functions/api/ticket-imports/index.js` |
 | 🔵 実機検証未完了 | 購入馬券グループのIPAT風コンパクト表示(2026-09-12。JRA公式IPAT「照会結果詳細」に見た目を寄せ、box/フォーメーション/ながし等で生成された全組み合わせを展開せず「入力した形」〈馬番一覧・着順ごとの馬番・軸馬/相手〉を数行で見せる新設。`ticket-view.js`の`describeGroupSelections()`/`groupCompactSummaryHtml()`。method文字列不問でCSV取込グループにも適用)は`node --check`とNode上でのbox(60点)/フォーメーション/2頭軸ながし/単勝まとめ買いパターンの出力確認のみ。**実ブラウザで**: 購入履歴画面・予想登録画面の両方で、通常購入・box・フォーメーション・ながし(1頭軸/2頭軸)・CSV取込の各グループを展開し、コンパクト表示の内容が実際の買い目と一致すること、「内訳を見る」トグルで1点ごとの明細(当落・個別金額編集・削除)が問題なく開閉・動作すること、を確認する。着順なし券種の複雑なフォーメーション(各着順が完全に別集合)は「馬番:全馬番の一覧」に丸められる既知の制約があるため、該当パターンがあれば見え方を確認する | `docs/design/screens.md`「購入馬券グループの表示(IPAT風コンパクト表示)」 |
+| 🔵 実機検証未完了(マイグレーション適用・デプロイ済み) | 購入履歴画面の馬券ダイアログ(実物のJRA馬券風デザイン。2026-09-16〜17)+購入方式(box/nagashi/formation)の入力構造を保存する`tickets.structure`列の追加(2026-09-17)。着順なし券種(三連複等)のフォーメーションは保存済みの組み合わせ結果から入力時のゾーン分けを復元できない制約があり、過去データ・CSV取込は従来の推測ロジックのまま許容、今後の画面購入分のみ購入時点の構造情報を保存して正しく表示する設計。`migration.sql`の`@STEP: tickets_structure`は本番`keiba-yosou-db`へ適用・コードデプロイ済み(ユーザー確認)。`node --check`のみで**実ブラウザでの表示内容の詳細確認は未実施**。**実ブラウザで**: 新規にbox/ながし(軸1頭・軸2頭・マルチ・軸2頭マルチ)/フォーメーション(着順あり・着順なしの両方)で購入し、購入履歴画面のダイアログで方式ラベル(軸1頭流し/マルチ/軸2頭ながし/軸2頭マルチ等)と買い目のゾーン分けが正しく表示されること、既存の過去購入データ・CSV取込データの表示が壊れていないこと(従来通りの推測表示のままでよい)、金額変更パネルが問題なく開閉・保存できることを確認する | `docs/design/screens.md`「購入方式グループのダイアログ」・`docs/design/data-model.md`「購入方式の入力構造(tickets.structure)」 |
 | 🔵 実機検証未完了 | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。マイグレーション適用・`horse_key`バックフィル(`race_results` 14768件)は2026-09-12に本番完了済み。`node --check`と設計上のシミュレーションのみで、**実ブラウザでの数値確認が未実施**: 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
 
 | 🔵 実機検証一部完了 | JRAレース結果ユーザースクリプト取込み(2026-09-13。JRA公式サイトの結果ページ上で動くユーザースクリプト`public/jra-result-importer.user.js`(`https://keiba-yosou-app.pages.dev/jra-result-importer.user.js`を開くだけでインストール可能)から、ページのHTML(`public/jra-result-html.js`で解析)を`POST /api/races/results-import`〈PDFインポートと同一エンドポイント〉へ送信できるようにした。認証は管理画面「APIトークン」〈`functions/api/admin/api-token.js`〉で発行する個人用アクセストークン〈`Authorization: Bearer`〉。あわせて発走時刻`races.post_time`を新規保存し、馬券購入画面のレース選択グリッドに表示するようにした。マイグレーション〈`@STEP: races_post_time`・`@STEP: users_api_token`〉は本番`keiba-yosou-db`へ適用済み)は、**iPhone Safari(Userscripts拡張)+スマホ版サイト(sp.jra.jp)で実機確認済み**(2026-09-13。2026-09-12中山12レース分を送信し成功、本番DBの`races`(race_name・post_time・course_type・distance・weight_type・class_flags・weather・track_condition・finish_order)・`race_results`(全頭分)・payouts(全式別)がJRA公式ページの表示と一致することを`wrangler d1 execute`で確認済み)。実機確認の過程で、スマホ版のHTML構造がPC版と全く異なることが判明し専用パーサー(`jraResultHtmlParseMobilePage`)を追加、重賞・特別戦でレース名が空になる不具合(`.titleRaceName`未対応)・class_flagsが年齢条件込みだと空になる不具合(正規表現の数字除外)も発見・修正済み。**未確認のまま残っている点**: ①PC版(`www.jra.go.jp`)側は`jraResultHtmlParseRaceUnit`のコードレビューのみで実機確認していない、②「12時実行なら途中まで・17時実行なら全レース」という部分確定の挙動は未確認(1回で全レース確定済みの状態でしか試していない)、③`races.post_time`が馬券購入画面のレース選択グリッドに実際に表示されることは未確認(DB上の値は確認済み) | `docs/design/results-import.md`「ユーザースクリプトによるHTML取込み」・`docs/design/auth-multiuser.md`「個人用アクセストークン」 |
