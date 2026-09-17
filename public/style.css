@@ -276,6 +276,17 @@ button[disabled] {
   color: var(--ink-soft);
   white-space: nowrap;
 }
+/* 確定状況(未確定/一部確定/確定済み)はレース単位でのみ表示する
+   (同一レースの着順・払戻は式別・買い目を問わず一括で確定するため。
+   2026-09-17に式別行(.group-card-head)から移設)。 */
+.race-total .status-badge {
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--rule-strong);
+  margin-right: 6px;
+}
+.race-total .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 .race-card-head .r-num, .result-head-line .r-num {
   font-family: var(--font-mono);
@@ -882,8 +893,6 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 .method-badge { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--rule); padding: 2px 7px; }
 .point-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
 .group-card-head .group-money { margin-left: auto; font-family: var(--font-mono); font-size: 13px; text-align: right; }
-.group-card-head .status-badge { font-size: 11px; padding: 2px 8px; border: 1px solid var(--rule-strong); }
-.group-card-head .status-badge.settled { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 /* ---------- 購入履歴の一括削除(選択モード) ---------- */
 /* チェックボックスは見た目だけ。実際のトグルは見出し(.bulk-selectable)全体のクリックで行う。 */

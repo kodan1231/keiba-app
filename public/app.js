@@ -228,6 +228,11 @@ function renderRaceCard(race) {
   const totalAmount = sumTicketAmount(race.tickets);
   const totalPayout = sumSettledPayout(race.tickets);
   const profit = totalPayout - totalAmount;
+  // 確定状況(未確定/一部確定/確定済み)はレース単位で判定する。同一レースの
+  // 着順・払戻は式別・買い目を問わず一括で確定するため、式別ごとの行
+  // (.group-card-head)に個別のバッジを出す必要はない(2026-09-17。
+  // 以前は式別行ごとに表示していたが、レース単位の表示に一本化した)。
+  const raceStatus = ticketGroupStatus(race.tickets);
 
   // レース内の通常購入(非CSV取込)の tickets.id 一覧。1件以上あれば選択モードで
   // レース単位のチェックボックスを出す(そのレースの通常購入グループを全選択/解除する)。
@@ -252,6 +257,7 @@ function renderRaceCard(race) {
       ${race.race_name ? `<span class="race-name">${escapeHtml(race.race_name)}</span>` : ""}
     </div>
     <div class="race-total">
+      <span class="status-badge ${raceStatus === "確定済み" ? "settled" : ""}">${raceStatus}</span>
       購入${formatYen(totalAmount)}
       ${settledTickets.length > 0 ? ` / 払戻${formatYen(totalPayout)} / ` : ""}
       ${settledTickets.length > 0 ? `<span class="${profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(profit)}</span>` : ""}
@@ -293,7 +299,6 @@ function renderRaceCard(race) {
 
 function renderGroupRow(group) {
   const first = group[0];
-  const status = ticketGroupStatus(group);
 
   const wrap = document.createElement("div");
   wrap.className = "group-card";
@@ -311,7 +316,6 @@ function renderGroupRow(group) {
     <span class="method-badge">${methodLabel(first.method)}</span>
     <span class="point-count">${group.length}点</span>
     <span class="group-money">${ticketMoneyText(group)}</span>
-    <span class="status-badge ${status === "確定済み" ? "settled" : ""}">${status}</span>
   `;
   wrap.appendChild(head);
 
