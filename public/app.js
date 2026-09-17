@@ -575,7 +575,18 @@ function renderTicketDialogContent(group, amountPanelOpen) {
   const totalAmount = sumTicketAmount(group);
 
   const isMulti = group.length > 1;
-  const useListRows = isMulti && first.method === "normal" && group.length <= TICKET_LIST_ROWS_MAX;
+  // フォーメーションのうち着順なし(unordered)の券種(三連複・馬連・ワイド・枠連)は、
+  // 保存データが馬番順に正規化されており元のゾーン分けの情報が残らないため、
+  // describeGroupSelections() では列分けできず「単純な馬番一覧」に丸まってしまう
+  // (方式ラベルは「フォーメーション」なのに中身がボックスと見分かず誤解を招く)。
+  // この場合はボックス・ながしとは違い、要約よりも実際の組み合わせをそのまま
+  // 列挙する方が正確な情報になるため1行列挙に含める。着順あり(ordered)の
+  // フォーメーション(三連単・馬単)は describeGroupSelections() が着順ごとの
+  // 集合を正しく区別できるため、従来通り要約表示のままにする(2026-09-17)。
+  const betDef = BET_TYPES[first.bet_type] || {};
+  const useListRows = isMulti
+    && (first.method === "normal" || (first.method === "formation" && !betDef.ordered))
+    && group.length <= TICKET_LIST_ROWS_MAX;
   // 単勝・複勝(馬名を表示する1頭のみの買い目)だけ、券面と同じ発想で
   // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。それ以外
   // (馬連・枠連・ワイド・馬単・三連複・三連単の通常1点買い。馬名は出さない)は、
