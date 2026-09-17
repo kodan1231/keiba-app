@@ -1274,6 +1274,7 @@ body.history-selection-mode .group-detail-actions {
    実物の配置と違っていた)。縦帯の中心が券面中央よりやや左に来るよう、
    左列の幅は33%にしている。 */
 .ticket-face-main {
+  position: relative;
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
@@ -1290,26 +1291,17 @@ body.history-selection-mode .group-detail-actions {
 }
 .ticket-face-main > * { min-height: 0; }
 
-/* 左列: 上下2ブロック(年/場名/R番号 と レース名/発売場/月日)に分け、
-   justify-content:space-between で上下に散らし、実物同様に中間を空ける。 */
+/* 左列: 上側ブロック(年/場名/R番号)は通常のフローで配置する。下側ブロック
+   (レース名/発売場/月日)は合計欄の下端に揃えるため.ticket-info-bottomで
+   position:absolute配置にしている(下記コメント参照)。 */
 .ticket-info-col {
   grid-column: 1;
-  /* 合計欄(.ticket-face-footer)は2行目(grid-row:2)に配置されているため、
-     左列もrow1〜2の両方にまたがせないと、下段ブロック(レース名/JRA◯◯/月日)が
-     合計欄より上で止まってしまう。両方にまたがせることで、
-     justify-content:space-betweenにより下段ブロックが合計欄と同じ下端まで
-     届くようにする(2026-09-18)。 */
-  grid-row: 1 / 3;
-  /* grid item は align-items:stretch(既定)で行の高さいっぱいになるはずだが、
-     環境によってはこのflexコンテナの高さがコンテンツ量にしか合わず、
-     下段(.ticket-info-bottom)が下端まで届かないことがあるため height:100%
-     を明示する(2026-09-17)。 */
+  grid-row: 1;
   height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
 }
 .ticket-info-top { display: flex; flex-direction: column; gap: 3px; }
 .ticket-year-line { font-size: 23px; font-weight: 700; white-space: nowrap; }
@@ -1325,7 +1317,23 @@ body.history-selection-mode .group-detail-actions {
   border-radius: 3px;
 }
 .ticket-race-num-suffix { font-size: 16px; }
-.ticket-info-bottom { display: flex; flex-direction: column; gap: 2px; }
+/* 下段ブロック(レース名/JRA◯◯/月日)は合計欄(.ticket-face-footer)の下端と
+   揃える(実物の馬券の配置に合わせた)。以前はgrid-rowを合計欄の行まで
+   またがせてjustify-content:space-betweenで押し下げていたが、その方式だと
+   下段ブロックの分だけ合計欄の行(auto)の必要高さが増え、フレックス行
+   (grid-row:1。買い目列を含む)が圧迫されて縮み、単勝・複勝の馬名や金額の
+   表示が崩れる不具合が出た(2026-09-18)。**グリッドの行サイズ計算に影響を
+   与えないよう、position:absoluteで.ticket-face-main(position:relativeを追加)
+   の下端に直接固定する方式に変更**。左列(33%)の幅に合わせてwidthも33%にする。 */
+.ticket-info-bottom {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 33%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .ticket-face-race-name { font-size: 15px; color: var(--ink-soft); line-height: 1.3; overflow-wrap: anywhere; }
 .ticket-jra-line { font-size: 14px; color: var(--ink-soft); }
 .ticket-face-date { font-size: 15px; color: var(--ink-soft); }
@@ -1442,23 +1450,10 @@ body.history-selection-mode .group-detail-actions {
 /* 軸/相手(ながし)。実物の三連単「軸1頭ながし」が軸列・2着相手列・3着相手列の
    3分割になっているのに合わせ、軸の頭数+相手の列数ぶんを横に均等分割する
    (2026-09-17。以前は軸グループ・相手グループを1列ずつ横並びにしていた)。 */
-.ticket-axis-multi-row { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.ticket-axis-multi-row { display: flex; gap: 4px; }
 .ticket-axis-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
 .ticket-axis-label { font-size: 11px; color: var(--ink-soft); }
 .ticket-num-col { display: flex; flex-wrap: wrap; justify-content: center; }
-
-/* マルチは「軸○頭ながし」表記自体は変えず、組み合わせ表示の左に黒背景の
-   バッジで示す(実物の馬券に合わせた。2026-09-18)。 */
-.ticket-axis-multi-wrap { display: flex; align-items: center; gap: 6px; }
-.ticket-multi-badge {
-  flex: 0 0 auto;
-  background: #1c1b18;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 5px;
-  white-space: nowrap;
-}
 
 /* 単勝・複勝の金額は選択行(馬番+馬名)の真下・左揃えで表示する
    (実物の馬券がその配置のため。2026-09-17に右寄せから変更)。 */
@@ -1477,6 +1472,23 @@ body.history-selection-mode .group-detail-actions {
   font-family: var(--font-mono);
   font-size: 13.5px;
   color: var(--ink-soft);
+}
+
+/* マルチは「軸○頭ながし」表記自体は変えず、組合せ数・各組の行と同じ高さに
+   黒背景のバッジで示す(2026-09-18。以前は買い目の番号ボックスの左に置いて
+   いたため番号の並びが崩れて見えていた。組合せ数・各組の行の隣に移動した)。 */
+.ticket-combo-table-row { display: flex; align-items: stretch; gap: 6px; }
+.ticket-combo-table-row .ticket-combo-table { flex: 1; min-width: 0; }
+.ticket-multi-badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background: #1c1b18;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 5px;
+  white-space: nowrap;
 }
 
 /* 下段: 合計欄。縦帯・買い目列にまたがる形で下端に配置し、左端を縦帯の左端に

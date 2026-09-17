@@ -430,7 +430,7 @@ function ticketSingleSelectionHtml(betType, selections) {
 // ticket-view.js の describeGroupSelections() (軸馬/相手・着順ごとの集合・馬番一覧の
 // いずれかを返す。既存のIPAT風コンパクト表示と同じ判定ロジックを再利用)の結果を、
 // 数字ボックスの並びとして描画し直す。
-function ticketMultiSelectionHtml(betType, group, isMultiWheel) {
+function ticketMultiSelectionHtml(betType, group) {
   const lines = describeGroupSelections(betType, group);
   if (!lines) return "";
 
@@ -458,12 +458,7 @@ function ticketMultiSelectionHtml(betType, group, isMultiWheel) {
         <div class="ticket-num-col">${partnerValues.map(ticketNumBoxHtml).join("")}</div>
       </div>`
     );
-    const rowHtml = `<div class="ticket-axis-multi-row">${axisCols.join("")}${partnerCols.join("")}</div>`;
-    // マルチは「軸○頭ながし」の表記自体は変えず、組み合わせ表示の左に
-    // 黒背景の別バッジで示す(実物の馬券に合わせた。2026-09-18)。
-    return isMultiWheel
-      ? `<div class="ticket-axis-multi-wrap"><span class="ticket-multi-badge">マルチ</span>${rowHtml}</div>`
-      : rowHtml;
+    return `<div class="ticket-axis-multi-row">${axisCols.join("")}${partnerCols.join("")}</div>`;
   }
 
   // 着順ごとに集合が異なる(フォーメーション)。着順あり券種は▶、着順なしは－でつなぐ。
@@ -609,7 +604,12 @@ function renderTicketDialogContent(group, amountPanelOpen) {
     && (first.method === "normal" || (first.method === "formation" && !betDef.ordered && !hasFormationStructure))
     && group.length <= TICKET_LIST_ROWS_MAX;
   // 単勝・複勝(馬名を表示する1頭のみの買い目)だけ、券面と同じ発想で
-  // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。それ以外
+  // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。この2行は
+  // 同じ.ticket-selection-area内に続けて出す(2026-09-18。以前は.ticket-buy-col
+  // 直下の別要素として並べていたが、.ticket-selection-areaがflex:1で
+  // 買い目列の余白を埋めるぶん引き伸ばされるため、金額がその下端まで
+  // 押し下げられ、馬名から離れて表示される不具合があった。同じ要素の中に
+  // 入れることで、通常のフローで隣接して表示されるようにした)。それ以外
   // (馬連・枠連・ワイド・馬単・三連複・三連単の通常1点買い。馬名は出さない)は、
   // 複数点のときと同じ「選択+金額を同じ行」の形式(ticketMultiListRowHtml)にする
   // (実物の馬券がそう印字されているため。2026-09-17)。
@@ -620,10 +620,11 @@ function renderTicketDialogContent(group, amountPanelOpen) {
   const selectionAreaHtml = !isMulti
     ? (isSingleHorse
         ? ticketSingleSelectionHtml(first.bet_type, first.selections)
+          + `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>`
         : ticketMultiListRowHtml(first.bet_type, first))
     : useListRows
       ? group.map((t) => ticketMultiListRowHtml(first.bet_type, t)).join("")
-      : ticketMultiSelectionHtml(first.bet_type, group, !!(methodInfo && methodInfo.multi));
+      : ticketMultiSelectionHtml(first.bet_type, group);
 
   ticketDialogEl.innerHTML = `
     <div class="ticket-dialog-toolbar">
@@ -658,13 +659,15 @@ function renderTicketDialogContent(group, amountPanelOpen) {
           ${methodInfo ? `<div class="ticket-method-box"><span class="ticket-method-ja">${escapeHtml(methodInfo.ja)}</span>${methodInfo.en ? `<span class="ticket-method-en">${escapeHtml(methodInfo.en)}</span>` : ""}</div>` : ""}
           <div class="ticket-selection-area">${selectionAreaHtml}</div>
           ${isMulti && !useListRows
-            ? `<div class="ticket-combo-table">
-                <div class="ticket-combo-row"><span>組合せ数</span><span>${group.length}</span></div>
-                ${uniformAmount !== null ? `<div class="ticket-combo-row"><span>各組</span><span>${ticketDetailAmountHtml(uniformAmount)}</span></div>` : ""}
+            ? `<div class="ticket-combo-table-row">
+                ${methodInfo && methodInfo.multi ? `<span class="ticket-multi-badge">マルチ</span>` : ""}
+                <div class="ticket-combo-table">
+                  <div class="ticket-combo-row"><span>組合せ数</span><span>${group.length}</span></div>
+                  ${uniformAmount !== null ? `<div class="ticket-combo-row"><span>各組</span><span>${ticketDetailAmountHtml(uniformAmount)}</span></div>` : ""}
+                </div>
               </div>`
             : ""
           }
-          ${!isMulti && isSingleHorse ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
         </div>
         <div class="ticket-face-footer">
           <div class="ticket-totals">
