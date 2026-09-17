@@ -1414,13 +1414,17 @@ body.history-selection-mode .group-detail-actions {
    (ticketStarPad()参照)。星は本文よりわずかに小さくして数字を主役にする。 */
 .ticket-star { font-size: 0.85em; letter-spacing: 0px; }
 
-.ticket-num-row { display: flex; flex-wrap: wrap; }
 .ticket-box-row { display: flex; flex-wrap: wrap; }
 .ticket-formation-row { display: flex; align-items: flex-start; flex-wrap: wrap; }
 .ticket-formation-col { display: flex; flex-wrap: wrap; max-width: 68px; }
 
-.ticket-axis-group { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.ticket-axis-label { font-size: 12px; color: var(--ink-soft); flex: 0 0 30px; }
+/* 軸/相手(ながし)。実物の三連単「軸1頭ながし」が軸列・2着相手列・3着相手列の
+   3分割になっているのに合わせ、軸の頭数+相手の列数ぶんを横に均等分割する
+   (2026-09-17。以前は軸グループ・相手グループを1列ずつ横並びにしていた)。 */
+.ticket-axis-multi-row { display: flex; gap: 4px; }
+.ticket-axis-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.ticket-axis-label { font-size: 11px; color: var(--ink-soft); }
+.ticket-num-col { display: flex; flex-wrap: wrap; justify-content: center; }
 
 /* 単勝・複勝の金額は選択行(馬番+馬名)の真下・左揃えで表示する
    (実物の馬券がその配置のため。2026-09-17に右寄せから変更)。 */

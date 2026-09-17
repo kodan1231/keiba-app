@@ -418,16 +418,31 @@ function ticketMultiSelectionHtml(betType, group) {
   const lines = describeGroupSelections(betType, group);
   if (!lines) return "";
 
-  // 軸馬/相手(1頭軸・2頭軸ながし等)。それぞれ見出しラベル付きの行として並べる。
+  // 軸馬/相手(1頭軸・2頭軸ながし等)。軸の頭数+相手の列数(着順あり券種では
+  // 軸が占めていない残りの着順の数だけ相手候補を繰り返す。着順なし券種では
+  // 相手列は常に1つ)を横に均等分割した列として並べる(実物の三連単「軸1頭
+  // ながし」が「軸→相手→相手」の3分割になっているのに合わせた。2026-09-17)。
   if (lines.length === 2 && lines[0].label === "軸馬") {
-    return lines
-      .map(
-        (l) => `<div class="ticket-axis-group">
-          <span class="ticket-axis-label">(${l.label === "軸馬" ? "軸" : "相手"})</span>
-          <div class="ticket-num-row">${l.values.map(ticketNumBoxHtml).join("")}</div>
-        </div>`
-      )
-      .join("");
+    const def = BET_TYPES[betType] || {};
+    const axisValues = lines[0].values;
+    const partnerValues = lines[1].values;
+    const n = def.n || axisValues.length + partnerValues.length;
+    const partnerColCount = def.ordered ? Math.max(1, n - axisValues.length) : 1;
+
+    const axisCols = axisValues.map(
+      (v, i) => `<div class="ticket-axis-col">
+        <span class="ticket-axis-label">${i === 0 ? "(軸)" : " "}</span>
+        <div class="ticket-num-col">${ticketNumBoxHtml(v)}</div>
+      </div>`
+    );
+    const partnerCols = Array.from(
+      { length: partnerColCount },
+      (_, i) => `<div class="ticket-axis-col">
+        <span class="ticket-axis-label">${i === 0 ? "(相手)" : " "}</span>
+        <div class="ticket-num-col">${partnerValues.map(ticketNumBoxHtml).join("")}</div>
+      </div>`
+    );
+    return `<div class="ticket-axis-multi-row">${axisCols.join("")}${partnerCols.join("")}</div>`;
   }
 
   // 着順ごとに集合が異なる(フォーメーション)。着順あり券種は▶、着順なしは－でつなぐ。
