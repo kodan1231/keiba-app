@@ -374,24 +374,24 @@ function ticketBetTypeText(betType) {
 const TICKET_METHOD_LABELS = {
   box: { ja: "ボックス", en: "BOX" },
   nagashi: { ja: "ながし", en: "WHEEL" },
-  axis1: { ja: "軸1頭流し", en: "WHEEL" },
+  axis1: { ja: "軸1頭ながし", en: "WHEEL" },
   axis2: { ja: "軸2頭ながし", en: "WHEEL" },
-  multi: { ja: "マルチ", en: "WHEEL" },
-  axis2_multi: { ja: "軸2頭マルチ", en: "WHEEL" },
   formation: { ja: "フォーメーション", en: "" },
 };
-// method="nagashi"は保存データだけでは「軸1頭流し/マルチ/軸2頭ながし/軸2頭マルチ」の
-// 区別がつかない(軸馬の集合はどのパターンでも同じになるため)。画面購入分は
+// method="nagashi"は保存データだけでは軸の頭数(軸1頭/軸2頭)が判定できない
+// (軸馬の集合はどちらのパターンでも同じになるため)。画面購入分は
 // tickets.structureにその区別に必要な情報(axis/multi)がそのまま入っているため、
 // あればそれを最優先で使う(2026-09-17。docs/design/data-model.md
 // 「購入方式の入力構造(tickets.structure)」参照)。無ければ(過去データ・CSV取込)
 // 従来通りmethod文字列そのものでTICKET_METHOD_LABELSを引く。
+// マルチは実物の馬券同様「軸1頭ながし/軸2頭ながし」の表記自体は変えず、
+// 戻り値のmultiフラグを使って買い目エリア側に別バッジで表示する
+// (2026-09-18。以前は「マルチ」「軸2頭マルチ」という別ラベルに置き換えていたが、
+// 本物の馬券写真で「軸○頭ながし」表記がマルチ時も変わらないことを確認したため)。
 function ticketMethodBoxLabel(method, structure) {
   if (method === "nagashi" && structure && Array.isArray(structure.axis)) {
-    const key = structure.axis.length >= 2
-      ? (structure.multi ? "axis2_multi" : "axis2")
-      : (structure.multi ? "multi" : "axis1");
-    return TICKET_METHOD_LABELS[key];
+    const key = structure.axis.length >= 2 ? "axis2" : "axis1";
+    return { ...TICKET_METHOD_LABELS[key], multi: !!structure.multi };
   }
   return TICKET_METHOD_LABELS[method] || { ja: methodLabel(method), en: "" };
 }
@@ -430,7 +430,7 @@ function ticketSingleSelectionHtml(betType, selections) {
 // ticket-view.js の describeGroupSelections() (軸馬/相手・着順ごとの集合・馬番一覧の
 // いずれかを返す。既存のIPAT風コンパクト表示と同じ判定ロジックを再利用)の結果を、
 // 数字ボックスの並びとして描画し直す。
-function ticketMultiSelectionHtml(betType, group) {
+function ticketMultiSelectionHtml(betType, group, isMultiWheel) {
   const lines = describeGroupSelections(betType, group);
   if (!lines) return "";
 
@@ -458,7 +458,12 @@ function ticketMultiSelectionHtml(betType, group) {
         <div class="ticket-num-col">${partnerValues.map(ticketNumBoxHtml).join("")}</div>
       </div>`
     );
-    return `<div class="ticket-axis-multi-row">${axisCols.join("")}${partnerCols.join("")}</div>`;
+    const rowHtml = `<div class="ticket-axis-multi-row">${axisCols.join("")}${partnerCols.join("")}</div>`;
+    // マルチは「軸○頭ながし」の表記自体は変えず、組み合わせ表示の左に
+    // 黒背景の別バッジで示す(実物の馬券に合わせた。2026-09-18)。
+    return isMultiWheel
+      ? `<div class="ticket-axis-multi-wrap"><span class="ticket-multi-badge">マルチ</span>${rowHtml}</div>`
+      : rowHtml;
   }
 
   // 着順ごとに集合が異なる(フォーメーション)。着順あり券種は▶、着順なしは－でつなぐ。
@@ -618,7 +623,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
         : ticketMultiListRowHtml(first.bet_type, first))
     : useListRows
       ? group.map((t) => ticketMultiListRowHtml(first.bet_type, t)).join("")
-      : ticketMultiSelectionHtml(first.bet_type, group);
+      : ticketMultiSelectionHtml(first.bet_type, group, !!(methodInfo && methodInfo.multi));
 
   ticketDialogEl.innerHTML = `
     <div class="ticket-dialog-toolbar">
