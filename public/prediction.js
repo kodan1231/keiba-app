@@ -213,8 +213,6 @@ async function selectRace() {
   renderRaceHeader();
   renderHorses();
 
-  const buyBtn = document.getElementById("buy-race-btn");
-
   const [predRes, noteRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
     authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
@@ -235,7 +233,13 @@ async function selectRace() {
   }
   // 勝負レースフラグは selectRace() 冒頭の renderRaceHeader() 初回描画時点では
   // まだ取得できていないため、取得完了後にヘッダーを再描画して反映する。
+  // 2026-09-18修正: renderRaceHeader()はraceHeader.innerHTMLを丸ごと再構築し
+  // #buy-race-btn要素を作り直すため、この再描画より前に取得したDOM参照へ
+  // 後からhref/textContentを設定しても、画面上の(作り直された)要素には反映されず
+  // 購入ボタンが常に初期状態(href="#"・初期文言)のまま操作不能になる不具合があった。
+  // 必ずこの再描画の後で最新の要素を取得し直す。
   renderRaceHeader();
+  const buyBtn = document.getElementById("buy-race-btn");
 
   horseNotes = noteRes.ok ? await noteRes.json() : {};
   applyPrediction();
