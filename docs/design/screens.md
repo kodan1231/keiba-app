@@ -218,10 +218,16 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
      **複数点(`group.length > 1`)のときだけ**表示する(1点のみの通常買いには
      方式ボックスは無い)。
   2. 買い目(`.ticket-selection-area`)。表示形式は点数で分岐する:
-     - **1点のみ**: `ticketSingleSelectionHtml()`。単勝・複勝は馬番の四角囲み
-       (`.ticket-num-box`)+馬名(`.ticket-horse-name`。長い場合は`ellipsis`で
-       省略し、折り返さない)。その他の券種は馬番を着順ありなら▶、着順なしは
-       －でつないだ四角囲みのみ(馬名は出さない。実物馬券の表記に合わせた)。
+     - **1点のみ・単勝/複勝(馬名を出す1頭のみの買い目)**: `ticketSingleSelectionHtml()`
+       (馬番の四角囲み`.ticket-num-box`+馬名`.ticket-horse-name`。長い場合は
+       `ellipsis`で省略し折り返さない)を表示し、**その下の別行**に金額
+       (`.ticket-single-amount`)を置く(実物は馬名がある分だけ行を分けて
+       印字されているため)。
+     - **1点のみ・それ以外(馬連・枠連・ワイド・馬単・三連複・三連単の通常
+       1点買い。馬名は出さない)**: `ticketMultiListRowHtml()`を使い、
+       馬番を着順ありなら▶、着順なしは－でつないだ四角囲みと**金額を同じ行**
+       に並べる(複数点のときの1行列挙と同じ形。実物の馬券がそう印字されて
+       いるため。2026-09-17に単勝/複勝と共通の別行表示から分離した)。
      - **複数点かつ`TICKET_LIST_ROWS_MAX`(=6)以下**: 実物の馬券と同じ
        「1組み合わせ=1行」の列挙形式(`ticketMultiListRowHtml()`)。各行は
        `ticketSingleSelectionHtml()`(馬番のみ)+その買い目の金額
@@ -256,7 +262,12 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
 `.ticket-face-main`のgrid行は`grid-template-rows: minmax(0, 1fr) auto;`にしている
 (`1fr`単体ではなく`minmax(0, 1fr)`にすることで、行内の最小コンテンツサイズを
 明示的にゼロにしている。`aspect-ratio`と`flex`・`grid`を組み合わせた場合に
-高さ計算が不安定になるブラウザ差異への対策。2026-09-17)。
+高さ計算が不安定になるブラウザ差異への対策。2026-09-17)。同じ理由で
+1行目のgrid item(`.ticket-info-col`・`.ticket-strip`・`.ticket-buy-col`)には
+`height: 100%`を明示している(grid の`align-items:stretch`だけに頼ると、
+これらの中にある`display:flex`コンテナの高さが環境によって行の高さまで
+伸びず、`.ticket-info-col`内の`justify-content:space-between`が効かずに
+下ブロックが下端に届かない、という不具合が実機で報告されたための対策)。
 
 ##### 金額の表記(実物の馬券に合わせた独自フォーマット)
 

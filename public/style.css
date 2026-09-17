@@ -1283,6 +1283,11 @@ body.history-selection-mode .group-detail-actions {
 .ticket-info-col {
   grid-column: 1;
   grid-row: 1;
+  /* grid item は align-items:stretch(既定)で行の高さいっぱいになるはずだが、
+     環境によってはこのflexコンテナの高さがコンテンツ量にしか合わず、
+     下段(.ticket-info-bottom)が下端まで届かないことがあるため height:100%
+     を明示する(2026-09-17)。 */
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1312,6 +1317,7 @@ body.history-selection-mode .group-detail-actions {
 .ticket-strip {
   grid-column: 2;
   grid-row: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   border: 2px solid #1c1b18;
@@ -1350,7 +1356,7 @@ body.history-selection-mode .group-detail-actions {
 .ticket-vchar { font-size: 24px; line-height: 1.15; }
 
 /* 右列: 方式ボックス・買い目(番号ボックス)。合計は別行の.ticket-face-footerへ。 */
-.ticket-buy-col { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; }
+.ticket-buy-col { grid-column: 3; grid-row: 1; height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; }
 
 /* 方式ボックス(ボックス・ながし・フォーメーション等。1点のみの通常買いでは出さない) */
 .ticket-method-box {

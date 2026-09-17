@@ -554,11 +554,19 @@ function renderTicketDialogContent(group, amountPanelOpen) {
 
   const isMulti = group.length > 1;
   const useListRows = isMulti && group.length <= TICKET_LIST_ROWS_MAX;
+  // 単勝・複勝(馬名を表示する1頭のみの買い目)だけ、券面と同じ発想で
+  // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。それ以外
+  // (馬連・枠連・ワイド・馬単・三連複・三連単の通常1点買い。馬名は出さない)は、
+  // 複数点のときと同じ「選択+金額を同じ行」の形式(ticketMultiListRowHtml)にする
+  // (実物の馬券がそう印字されているため。2026-09-17)。
+  const isSingleHorse = (first.selections || []).length <= 1;
   const enLabelHtml = (TICKET_EN_LABELS[first.bet_type] || []).join("<br>");
   const methodInfo = isMulti ? ticketMethodBoxLabel(first.method) : null;
   const uniformAmount = isMulti ? describeGroupUniformAmount(group) : null;
   const selectionAreaHtml = !isMulti
-    ? ticketSingleSelectionHtml(first.bet_type, first.selections)
+    ? (isSingleHorse
+        ? ticketSingleSelectionHtml(first.bet_type, first.selections)
+        : ticketMultiListRowHtml(first.bet_type, first))
     : useListRows
       ? group.map((t) => ticketMultiListRowHtml(first.bet_type, t)).join("")
       : ticketMultiSelectionHtml(first.bet_type, group);
@@ -602,7 +610,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
               </div>`
             : ""
           }
-          ${!isMulti ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
+          ${!isMulti && isSingleHorse ? `<div class="ticket-single-amount">${ticketDetailAmountHtml(totalAmount)}</div>` : ""}
         </div>
         <div class="ticket-face-footer">
           <div class="ticket-totals">
