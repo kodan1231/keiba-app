@@ -1272,15 +1272,18 @@ body.history-selection-mode .group-detail-actions {
    左端(=縦帯の左端)に揃えて配置する(2026-09-17。以前はflexで3列を
    並べて合計欄を買い目列の中に置いていたため、縦帯の右合わせになって
    実物の配置と違っていた)。縦帯の中心が券面中央よりやや左に来るよう、
-   左列の幅は33%にしている。 */
+   左列の幅は33%→28%にしている(2026-09-18。縦帯をさらに左へ寄せ、
+   その分買い目列(単勝・複勝の馬名表示幅)を広げるため5ポイント縮小した)。 */
 .ticket-face-main {
   position: relative;
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
   /* 縦帯(中央列)は上下の英字表記(最長でQUINELLA/TRIFECTAの8文字)が
-     潰れたり3行に増えたりしない範囲でできるだけ細くしている。 */
-  grid-template-columns: 33% 56px 1fr;
+     潰れたり3行に増えたりしない範囲でできるだけ細くしている。56px→52px
+     (2026-09-18。約7%縮小。合わせて.ticket-strip-labelのfont-size/padding も
+     比例して詰め、8文字が1行に収まる余裕を維持している)。 */
+  grid-template-columns: 28% 52px 1fr;
   /* 1frではなくminmax(0,1fr)にする(1frは行内の最小コンテンツサイズが
      autoのままになり、環境によって1行目の高さが縮まないことがあるため。
      Safari等でaspect-ratio+grid+flexを組み合わせた際に高さ計算が
@@ -1324,12 +1327,13 @@ body.history-selection-mode .group-detail-actions {
    (grid-row:1。買い目列を含む)が圧迫されて縮み、単勝・複勝の馬名や金額の
    表示が崩れる不具合が出た(2026-09-18)。**グリッドの行サイズ計算に影響を
    与えないよう、position:absoluteで.ticket-face-main(position:relativeを追加)
-   の下端に直接固定する方式に変更**。左列(33%)の幅に合わせてwidthも33%にする。 */
+   の下端に直接固定する方式に変更**。左列(28%。2026-09-18に33%から変更)の
+   幅に合わせてwidthも28%にする。 */
 .ticket-info-bottom {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 33%;
+  width: 28%;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1351,12 +1355,15 @@ body.history-selection-mode .group-detail-actions {
 .ticket-strip-label {
   background: #1c1b18;
   color: #fff;
-  font-size: 8.5px;
+  /* 縦帯の幅を56px→52pxに詰めた(2026-09-18)ぶん、最長のQUINELLA/TRIFECTA
+     (8文字)が1行に収まる余裕を保つため、font-size・letter-spacing・左右padding も
+     比例して詰めている(8.5px→8px、0.1px→0、1px→0px)。 */
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.1px;
+  letter-spacing: 0;
   line-height: 1.3;
   text-align: center;
-  padding: 3px 1px;
+  padding: 3px 0;
   overflow-wrap: break-word;
 }
 .ticket-strip-method {
@@ -1523,7 +1530,7 @@ body.history-selection-mode .group-detail-actions {
 .ticket-dialog .group-detail-actions { margin-top: 10px; }
 
 @media (max-width: 420px) {
-  .ticket-face-main { grid-template-columns: 33% 48px 1fr; }
+  .ticket-face-main { grid-template-columns: 28% 45px 1fr; }
   .ticket-year-line { font-size: 19px; }
   .ticket-track-line { font-size: 27px; }
   .ticket-vchar { font-size: 19px; }
