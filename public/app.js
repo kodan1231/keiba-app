@@ -551,9 +551,6 @@ function renderTicketDialogContent(group, amountPanelOpen) {
   const first = group[0];
   const groupId = first.group_id;
   const totalAmount = sumTicketAmount(group);
-  const totalPayout = sumSettledPayout(group);
-  const hasSettled = group.some((t) => t.payout !== null && t.payout !== undefined);
-  const allSettled = group.every((t) => t.payout !== null && t.payout !== undefined);
 
   const isMulti = group.length > 1;
   const useListRows = isMulti && group.length <= TICKET_LIST_ROWS_MAX;
@@ -610,7 +607,6 @@ function renderTicketDialogContent(group, amountPanelOpen) {
         <div class="ticket-face-footer">
           <div class="ticket-totals">
             <div class="ticket-total-row"><span>合計</span><span class="ticket-total-values">${ticketSheetCountText(totalAmount)}${ticketTotalAmountHtml(totalAmount)}</span></div>
-            ${hasSettled ? `<div class="ticket-payout-row"><span>${allSettled ? "払戻" : "払戻(一部)"}</span><span class="ticket-total-values">${ticketSheetCountText(totalPayout)}${ticketTotalAmountHtml(totalPayout)}</span></div>` : ""}
           </div>
         </div>
       </div>

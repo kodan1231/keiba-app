@@ -1262,14 +1262,21 @@ body.history-selection-mode .group-detail-actions {
    実物の配置と違っていた)。縦帯の中心が券面中央よりやや左に来るよう、
    左列の幅は33%にしている。 */
 .ticket-face-main {
-  flex: 1;
+  flex: 1 1 0%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 33% 64px 1fr;
-  grid-template-rows: 1fr auto;
+  /* 縦帯(中央列)は上下の英字表記(最長でQUINELLA/TRIFECTAの8文字)が
+     潰れたり3行に増えたりしない範囲でできるだけ細くしている。 */
+  grid-template-columns: 33% 56px 1fr;
+  /* 1frではなくminmax(0,1fr)にする(1frは行内の最小コンテンツサイズが
+     autoのままになり、環境によって1行目の高さが縮まないことがあるため。
+     Safari等でaspect-ratio+grid+flexを組み合わせた際に高さ計算が
+     不安定になる既知の問題への対策。2026-09-17)。 */
+  grid-template-rows: minmax(0, 1fr) auto;
   column-gap: 8px;
   row-gap: 8px;
 }
+.ticket-face-main > * { min-height: 0; }
 
 /* 左列: 上下2ブロック(年/場名/R番号 と レース名/発売場/月日)に分け、
    justify-content:space-between で上下に散らし、実物同様に中間を空ける。 */
@@ -1313,12 +1320,13 @@ body.history-selection-mode .group-detail-actions {
 .ticket-strip-label {
   background: #1c1b18;
   color: #fff;
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  line-height: 1.35;
+  letter-spacing: 0.1px;
+  line-height: 1.3;
   text-align: center;
   padding: 3px 1px;
+  overflow-wrap: break-word;
 }
 .ticket-strip-method {
   text-align: center;
@@ -1387,9 +1395,9 @@ body.history-selection-mode .group-detail-actions {
 
 /* 複数点のうち点数が少ない場合、実物同様に1組み合わせ=1行で列挙する表示
    (docs/design/screens.md参照。TICKET_LIST_ROWS_MAX 以下のときだけ使う)。 */
-.ticket-line-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
-.ticket-line-row .ticket-selection-line { font-size: 15px; }
-.ticket-line-amount { font-size: 14px; white-space: nowrap; }
+.ticket-line-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.ticket-line-row .ticket-selection-line { font-size: 14px; min-width: 0; }
+.ticket-line-amount { font-size: 12.5px; white-space: nowrap; flex: 0 0 auto; }
 
 /* 実物の馬券の金額欄は桁数が固定で、空いている上位桁を星で埋めて印字される
    (ticketStarPad()参照)。星は本文よりわずかに小さくして数字を主役にする。 */
@@ -1429,22 +1437,22 @@ body.history-selection-mode .group-detail-actions {
   align-self: end;
 }
 .ticket-totals { border-top: 1px dashed rgba(28,27,24,0.5); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.ticket-total-row, .ticket-payout-row {
+.ticket-total-row {
   display: flex;
   flex-wrap: nowrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
   font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
 }
-.ticket-total-row > span:first-child, .ticket-payout-row > span:first-child {
+.ticket-total-row > span:first-child {
   flex: 0 0 auto;
   white-space: nowrap;
   font-family: var(--font-body);
 }
 .ticket-total-values { display: flex; gap: 8px; white-space: nowrap; flex: 0 0 auto; }
-.ticket-total-row { font-size: 17px; font-weight: 700; }
-.ticket-payout-row { font-size: 15px; color: var(--win); }
 
 .ticket-edit-rows { margin-top: 16px; }
 .ticket-edit-rows[hidden] { display: none; }
@@ -1452,7 +1460,7 @@ body.history-selection-mode .group-detail-actions {
 .ticket-dialog .group-detail-actions { margin-top: 10px; }
 
 @media (max-width: 420px) {
-  .ticket-face-main { grid-template-columns: 33% 54px 1fr; }
+  .ticket-face-main { grid-template-columns: 33% 48px 1fr; }
   .ticket-year-line { font-size: 19px; }
   .ticket-track-line { font-size: 27px; }
   .ticket-vchar { font-size: 19px; }
