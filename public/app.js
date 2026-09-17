@@ -374,7 +374,7 @@ function ticketBetTypeText(betType) {
 const TICKET_METHOD_LABELS = {
   box: { ja: "ボックス", en: "BOX" },
   nagashi: { ja: "ながし", en: "WHEEL" },
-  axis1: { ja: "軸1頭ながし", en: "WHEEL" },
+  axis1: { ja: "軸1頭流し", en: "WHEEL" },
   axis2: { ja: "軸2頭ながし", en: "WHEEL" },
   multi: { ja: "マルチ", en: "WHEEL" },
   axis2_multi: { ja: "軸2頭マルチ", en: "WHEEL" },

@@ -1218,7 +1218,10 @@ body.history-selection-mode .group-detail-actions {
   padding: 0;
   background: transparent;
   border: none;
-  overflow: visible;
+  /* .modal の overflow-y:auto / max-height:90vh を活かす(以前ここで
+     overflow:visible を指定していたため、金額変更パネルを開いて中身が
+     画面高さを超えてもスクロールできず、下の方の行が操作できなかった。
+     2026-09-17)。 */
 }
 
 .ticket-dialog-toolbar {
