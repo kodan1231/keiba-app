@@ -1359,9 +1359,13 @@ body.history-selection-mode .group-detail-actions {
 .ticket-buy-col { grid-column: 3; grid-row: 1; height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; }
 
 /* 方式ボックス(ボックス・ながし・フォーメーション等。1点のみの通常買いでは出さない) */
+/* 買い目エリアの横幅いっぱいに広げる(実物の馬券は方式ラベルの黒枠が
+   横幅いっぱいに伸び、和文ラベルが左・英文ラベルが右に離れて並ぶため。
+   2026-09-17。以前は内容幅だけの左寄せだった)。 */
 .ticket-method-box {
-  align-self: flex-start;
-  display: inline-flex;
+  align-self: stretch;
+  display: flex;
+  justify-content: space-between;
   align-items: baseline;
   gap: 8px;
   border: 2px solid #1c1b18;

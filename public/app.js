@@ -443,11 +443,14 @@ function ticketMultiSelectionHtml(betType, group) {
   return `<div class="ticket-box-row">${lines[0].values.map(ticketNumBoxHtml).join("")}</div>`;
 }
 
-// 複数点のうち、この点数以下なら実物の馬券と同じ「1行=1組み合わせ」の列挙形式
-// (下記 ticketMultiListRowHtml)にする。これを超える点数(ボックス等で数十点になる
-// 場合)は列挙すると長大になりすぎるため、従来通り軸/相手・ボックス等の要約表示
-// (ticketMultiSelectionHtml)にフォールバックする。
-const TICKET_LIST_ROWS_MAX = 6;
+// 「1行=1組み合わせ」の列挙形式(下記 ticketMultiListRowHtml)にするのは、
+// 方式が「通常」(複数の買い目を個別に手動購入した場合)かつこの点数以下のときだけ。
+// 実物の馬券は「ボックス」「ながし」「フォーメーション」等の明示的な方式では、
+// 点数に関わらず常に方式ラベル+要約表示(番号を横一列に並べる/軸・相手/着順ごとの列)
+// になり、全組み合わせを1行ずつ列挙することはない(2026-09-17。以前は方式を
+// 見ずに点数だけで判定しており、「ボックスなのに全順列がバラバラの行で並ぶ」
+// 見た目になっていた)。
+const TICKET_LIST_ROWS_MAX = 5;
 
 // 複数点のうち点数が少ない場合の1行表示。実物の馬券は「馬番▶馬番▶馬番 金額」を
 // 買い目の数だけ縦に並べる(軸/相手のような要約はしない)。馬名は出さない
@@ -553,7 +556,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
   const totalAmount = sumTicketAmount(group);
 
   const isMulti = group.length > 1;
-  const useListRows = isMulti && group.length <= TICKET_LIST_ROWS_MAX;
+  const useListRows = isMulti && first.method === "normal" && group.length <= TICKET_LIST_ROWS_MAX;
   // 単勝・複勝(馬名を表示する1頭のみの買い目)だけ、券面と同じ発想で
   // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。それ以外
   // (馬連・枠連・ワイド・馬単・三連複・三連単の通常1点買い。馬名は出さない)は、
