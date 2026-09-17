@@ -1378,16 +1378,16 @@ body.history-selection-mode .group-detail-actions {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 24px;
+  min-width: 28px;
+  height: 28px;
   padding: 0 2px;
   border: 2px solid #1c1b18;
   background: #fff;
   font-weight: 700;
-  font-size: 14px;
-  margin: 1.5px;
+  font-size: 17px;
+  margin: 0.5px;
 }
-.ticket-sep-arrow, .ticket-sep-dash { margin: 0 4px; font-weight: 700; font-size: 15px; }
+.ticket-sep-arrow, .ticket-sep-dash { margin: 0 1px; font-weight: 700; font-size: 15px; }
 
 .ticket-selection-line { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; font-size: 18px; }
 .ticket-horse-name {
@@ -1400,10 +1400,11 @@ body.history-selection-mode .group-detail-actions {
 }
 
 /* 複数点のうち点数が少ない場合、実物同様に1組み合わせ=1行で列挙する表示
-   (docs/design/screens.md参照。TICKET_LIST_ROWS_MAX 以下のときだけ使う)。 */
-.ticket-line-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
-.ticket-line-row .ticket-selection-line { font-size: 14px; min-width: 0; }
-.ticket-line-amount { font-size: 12.5px; white-space: nowrap; flex: 0 0 auto; }
+   (docs/design/screens.md参照。TICKET_LIST_ROWS_MAX 以下のときだけ使う)。
+   買い目エリアを左右均等(50%/50%)に分け、左=買い目番号・右=購入額とする。 */
+.ticket-line-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin-bottom: 2px; }
+.ticket-line-row .ticket-selection-line { flex: 1 1 50%; min-width: 0; font-size: 14px; }
+.ticket-line-amount { flex: 1 1 50%; min-width: 0; text-align: right; white-space: nowrap; }
 
 /* 実物の馬券の金額欄は桁数が固定で、空いている上位桁を星で埋めて印字される
    (ticketStarPad()参照)。星は本文よりわずかに小さくして数字を主役にする。 */
@@ -1472,7 +1473,7 @@ body.history-selection-mode .group-detail-actions {
   .ticket-year-line { font-size: 19px; }
   .ticket-track-line { font-size: 27px; }
   .ticket-vchar { font-size: 19px; }
-  .ticket-num-box { min-width: 19px; height: 19px; font-size: 12px; }
+  .ticket-num-box { min-width: 22px; height: 22px; font-size: 14px; }
 }
 
 /* ---------- 集計ページ: タブ ---------- */
