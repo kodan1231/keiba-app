@@ -107,12 +107,16 @@ export async function onRequestPost(context) {
     }
 
     const groupId = crypto.randomUUID();
+    // 購入方式(box/nagashi/formation)の入力構造。selectionsからの逆算では復元できない
+    // 情報(着順なし券種のフォーメーションのゾーン分け等)をそのまま保存する
+    // (docs/design/data-model.md「購入方式の入力構造(tickets.structure)」参照)。
+    const structureJson = g.structure && typeof g.structure === "object" ? JSON.stringify(g.structure) : null;
     for (const c of g.combos) {
       statements.push(
         env.DB.prepare(
           `INSERT INTO tickets
-            (user_id, group_id, race_id, race_date, track, race_number, race_name, bet_type, method, selections, amount, memo)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            (user_id, group_id, race_id, race_date, track, race_number, race_name, bet_type, method, selections, amount, memo, structure)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           userId,
           groupId,
@@ -125,7 +129,8 @@ export async function onRequestPost(context) {
           g.method || "normal",
           JSON.stringify(c.selections),
           c.amount,
-          g.memo || null
+          g.memo || null,
+          structureJson
         )
       );
     }

@@ -225,6 +225,12 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
      和文ラベルは軸1頭=「軸1頭流し」・軸2頭=「軸2頭ながし」(2026-09-17。
      表記をユーザー指定に合わせた。他の方式は「ボックス」「ながし」「マルチ」
      「軸2頭マルチ」「フォーメーション」のまま)。
+     **`method === "nagashi"`の場合、軸1頭流し/マルチ/軸2頭ながし/軸2頭マルチの
+     どれに該当するかは保存済みの馬番集合だけからは判定できない**(軸馬の集合が
+     どのパターンでも同じになるため)。`tickets.structure`(下記「購入方式の
+     入力構造」参照)があれば`structure.axis.length`+`structure.multi`から
+     確定させ、無ければ(過去データ・CSV取込)従来通り`method`文字列そのもので
+     `TICKET_METHOD_LABELS`を引く(`ticketMethodBoxLabel()`。2026-09-17)。
      **複数点(`group.length > 1`)のときだけ**表示する(1点のみの通常買いには
      方式ボックスは無い)。`align-self:stretch`+`justify-content:space-between`
      で**買い目エリアの横幅いっぱいに広げ**、和文ラベルを左・英文ラベルを右に
@@ -254,15 +260,19 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
        - `method === "normal"`(複数の買い目を個別に手動購入した場合。実物でも
          各組み合わせがそのまま1行ずつ印字される)。
        - `method === "formation"`かつ**着順なし(unordered)の券種**
-         (三連複・馬連・ワイド・枠連)。保存されたticketsのselectionsは
-         馬番順に正規化されており元のゾーン分けの情報が残らないため、
+         (三連複・馬連・ワイド・枠連)かつ`tickets.structure`が無い場合のみ
+         (過去データ・CSV取込)。保存されたticketsのselectionsは馬番順に
+         正規化されており元のゾーン分けの情報が残らないため、
          `describeGroupSelections()`では列分けできず「単純な馬番一覧」に
          丸まってしまう(方式ラベルは「フォーメーション」なのに中身がボックスと
          見分けが付かず誤解を招く。2026-09-17に発見)。列分け自体は表示できないが、
          実際の組み合わせをそのまま列挙すれば少なくとも買い目の内容は正確に伝わる
          ため、要約よりもこちらを優先する。**着順あり(ordered)の三連単・馬単の
-         フォーメーションは対象外**(`describeGroupSelections()`が着順ごとの
-         集合を正しく区別できるため、次項の要約表示のままでよい)。
+         フォーメーション、および`tickets.structure`がある場合(2026-09-17以降に
+         画面購入したグループ)は対象外**(前者は`describeGroupSelections()`が
+         着順ごとの集合を保存データからでも正しく区別できる。後者は
+         `structure.slots`から入力時のゾーン分けをそのまま復元できるため、
+         いずれも次項の要約表示のままでよい)。
      - **それ以外の複数点**(`method`が`box`/`nagashi`/`axis1`/`axis2`/`multi`/
        `axis2_multi`、着順ありのフォーメーション、または点数が
        `TICKET_LIST_ROWS_MAX`超のとき): 方式ラベル+要約表示
@@ -290,6 +300,31 @@ CSVインポートボタンを表示し、それ以下では非表示にする(�
        このダイアログの番号ボックス描画のために**生の馬番配列(`values`)を
        追加で返すよう拡張した**(既存の`value`はそのまま残しており、
        `groupCompactSummaryHtml()`側の挙動・予想画面への影響はない)。
+
+##### 購入方式の入力構造(tickets.structure)による正確な表示(2026-09-17〜)
+
+上記の通り、保存済みの`selections`(実際に生成された組み合わせ結果)からの逆算
+(`describeGroupSelections()`)だけでは、着順なし券種のフォーメーションのゾーン
+分けが復元不可能という制約があった。**過去の購入データ・CSV取込データはこの
+制約を許容する(遡及対応はしない)方針とし、今後の画面購入(カゴ経由)分のみ、
+購入モーダルが入力時点で保持している構造情報を`tickets.structure`にそのまま
+保存し、表示側はそれを最優先で使う**ようにした。
+
+- 保存元は`public/buy-purchase-modal.js`の`buildCurrentStructure()`。
+  `public/cart.js`(カート・`checkout()`)を経由して`POST /api/tickets/bulk`の
+  グループペイロードに含まれ、`functions/api/tickets/bulk.js`が同一`group_id`の
+  全チケット行に同じ`structure`(JSON文字列)を保存する。`GET /api/tickets`
+  (`functions/api/tickets/index.js`)は`selections`と同様にJSON.parseして返す。
+  JSON形式・method別の詳細は`docs/design/data-model.md`
+  「購入方式の入力構造(tickets.structure)」参照。
+- `describeGroupSelections()`(`ticket-view.js`)は`group[0].structure`があれば
+  最優先で使い(box→馬番一覧、nagashi→軸/相手、formation→着順ごとの集合を
+  そのまま`slots`から返す)、無ければ従来の推測ロジック(交差判定・着順ごとの
+  集合比較)にフォールバックする。この関数は履歴画面(本項)・予想登録画面の
+  購入済み馬券表示の両方から使われる共通部品のため、この優先順位の変更は
+  両画面に等しく効く。
+- `ticketMethodBoxLabel()`(`app.js`。本項の「方式ボックス」参照)も同様に
+  `structure`があれば優先する。
 - **2行目・合計欄(`.ticket-face-footer`。`grid-column: 2/4; grid-row: 2`)**:
   縦帯(2列目)と買い目列(3列目)にまたがって配置することで、**左端が縦帯の
   左端に揃う**(実物の配置に合わせた。買い目列の中に収めていた旧実装では

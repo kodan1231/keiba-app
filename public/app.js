@@ -380,7 +380,19 @@ const TICKET_METHOD_LABELS = {
   axis2_multi: { ja: "軸2頭マルチ", en: "WHEEL" },
   formation: { ja: "フォーメーション", en: "" },
 };
-function ticketMethodBoxLabel(method) {
+// method="nagashi"は保存データだけでは「軸1頭流し/マルチ/軸2頭ながし/軸2頭マルチ」の
+// 区別がつかない(軸馬の集合はどのパターンでも同じになるため)。画面購入分は
+// tickets.structureにその区別に必要な情報(axis/multi)がそのまま入っているため、
+// あればそれを最優先で使う(2026-09-17。docs/design/data-model.md
+// 「購入方式の入力構造(tickets.structure)」参照)。無ければ(過去データ・CSV取込)
+// 従来通りmethod文字列そのものでTICKET_METHOD_LABELSを引く。
+function ticketMethodBoxLabel(method, structure) {
+  if (method === "nagashi" && structure && Array.isArray(structure.axis)) {
+    const key = structure.axis.length >= 2
+      ? (structure.multi ? "axis2_multi" : "axis2")
+      : (structure.multi ? "multi" : "axis1");
+    return TICKET_METHOD_LABELS[key];
+  }
   return TICKET_METHOD_LABELS[method] || { ja: methodLabel(method), en: "" };
 }
 
@@ -576,16 +588,20 @@ function renderTicketDialogContent(group, amountPanelOpen) {
 
   const isMulti = group.length > 1;
   // フォーメーションのうち着順なし(unordered)の券種(三連複・馬連・ワイド・枠連)は、
-  // 保存データが馬番順に正規化されており元のゾーン分けの情報が残らないため、
+  // 保存データ(selections)が馬番順に正規化されており元のゾーン分けの情報が残らないため、
   // describeGroupSelections() では列分けできず「単純な馬番一覧」に丸まってしまう
   // (方式ラベルは「フォーメーション」なのに中身がボックスと見分かず誤解を招く)。
-  // この場合はボックス・ながしとは違い、要約よりも実際の組み合わせをそのまま
-  // 列挙する方が正確な情報になるため1行列挙に含める。着順あり(ordered)の
-  // フォーメーション(三連単・馬単)は describeGroupSelections() が着順ごとの
-  // 集合を正しく区別できるため、従来通り要約表示のままにする(2026-09-17)。
+  // ただし2026-09-17以降に画面購入したグループは tickets.structure に入力時の
+  // ゾーン分けがそのまま保存されており describeGroupSelections() がそれを最優先で
+  // 使うため、この問題に該当しない。structure が無い場合(過去データ・CSV取込)に限り、
+  // 要約よりも実際の組み合わせをそのまま列挙する方が正確な情報になるため1行列挙にする。
+  // 着順あり(ordered)のフォーメーション(三連単・馬単)は describeGroupSelections() が
+  // 着順ごとの集合を保存データからでも正しく区別できるため、従来通り要約表示のままにする。
   const betDef = BET_TYPES[first.bet_type] || {};
+  const hasFormationStructure = first.method === "formation"
+    && first.structure && Array.isArray(first.structure.slots);
   const useListRows = isMulti
-    && (first.method === "normal" || (first.method === "formation" && !betDef.ordered))
+    && (first.method === "normal" || (first.method === "formation" && !betDef.ordered && !hasFormationStructure))
     && group.length <= TICKET_LIST_ROWS_MAX;
   // 単勝・複勝(馬名を表示する1頭のみの買い目)だけ、券面と同じ発想で
   // 「選択+馬名」と「金額」を別行にする(.ticket-single-amount)。それ以外
@@ -594,7 +610,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
   // (実物の馬券がそう印字されているため。2026-09-17)。
   const isSingleHorse = (first.selections || []).length <= 1;
   const enLabelHtml = (TICKET_EN_LABELS[first.bet_type] || []).join("<br>");
-  const methodInfo = isMulti ? ticketMethodBoxLabel(first.method) : null;
+  const methodInfo = isMulti ? ticketMethodBoxLabel(first.method, first.structure) : null;
   const uniformAmount = isMulti ? describeGroupUniformAmount(group) : null;
   const selectionAreaHtml = !isMulti
     ? (isSingleHorse

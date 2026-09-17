@@ -606,6 +606,27 @@ document.getElementById("apply-amount-btn").onclick = () => {
   renderPreview();
 };
 
+// 購入方式(method)の入力構造をそのままJSONで返す(tickets.structureに保存する値)。
+// 2026-09-17追加: 保存済みのselections(実際の組み合わせ結果)からの逆算では、
+// 着順なし券種のフォーメーションのゾーン分けが復元不可能なため、入力時点でしか
+// 分からないこの情報をそのまま持たせる(docs/design/data-model.md
+// 「購入方式の入力構造(tickets.structure)」参照)。normalは組み合わせが常に1通りのため
+// null(=保存不要)。
+function buildCurrentStructure() {
+  const sortNums = (arr) => [...arr].sort((a, b) => a - b);
+  if (state.method === "box") {
+    return { numbers: sortNums([...state.boxSet]) };
+  }
+  if (state.method === "formation") {
+    return { slots: state.formationSlots.map(s => sortNums([...s])) };
+  }
+  if (state.method === "nagashi") {
+    const partners = [...state.partnerSet].filter(x => !state.axisSet.has(x));
+    return { axis: sortNums([...state.axisSet]), partners: sortNums(partners), multi: !!state.multi };
+  }
+  return null;
+}
+
 // 現在の選択状態(券種・購入方式・馬選択・組み合わせごとの金額)から、
 // 馬券かご(cart.js)へ追加する1グループ分のペイロードを組み立てる。
 //
@@ -640,6 +661,7 @@ function buildCurrentPurchasePayload() {
     race_name:selectedRace.race_name,
     bet_type:state.betType,
     method:state.method,
+    structure:buildCurrentStructure(),
     combos:payloadCombos
   };
 }

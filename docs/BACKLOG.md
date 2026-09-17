@@ -30,6 +30,17 @@
   (`users.api_token_hash`/`api_token_created_at`列追加+ユニークインデックス)が
   本番DB `keiba-yosou-db` へ未適用。JRAレース結果ユーザースクリプト取込み・
   管理画面「APIトークン」を使う前に適用が必要。
+- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-17)**: `migration.sql` の
+  `@STEP: tickets_structure`(`tickets.structure`列追加)が本番DB `keiba-yosou-db`
+  へ未適用。**`ALTER TABLE`自体は軽量だが、`functions/api/tickets/bulk.js`の
+  INSERT文が`structure`列を明示的に指定するようコード変更済みのため、
+  このマイグレーションを適用する前に今回の変更をデプロイすると、
+  `structure`列が存在せず`POST /api/tickets/bulk`(購入確定・カゴの「購入」ボタン)が
+  全件エラーになり新規購入ができなくなる**。デプロイ手順は
+  ①`wrangler d1 execute keiba-yosou-db --command "ALTER TABLE tickets ADD COLUMN structure TEXT;"`
+  (または`schema_migrations`未適用確認の上で`@STEP: tickets_structure`を適用)
+  → ②コードをデプロイ、の順を厳守すること。詳細は
+  `docs/design/data-model.md`「購入方式の入力構造(tickets.structure)」参照。
   `race_results_horse_key`・`race_stats_cache`・`races_cache`(チャンク分割版。
   `@STEP: races_cache_chunked`)は適用済み・`schema_migrations` 記録済み(`horse_key`
   の既存行バックフィルも完了。`race_results` 14768件更新)。実ブラウザでの数値確認は
@@ -72,6 +83,15 @@
   (`races.js`)・予想登録画面(`prediction.js`。日付/競馬場/R切替ナビに全件の
   `races`が必要なため対象外と判明)・データ検索画面・CSV取込一覧の内部呼び出しは
   無変更)を実施。
+  **購入履歴画面の馬券ダイアログ(実物のJRA馬券風デザイン)の新規実装**
+  (2026-09-16〜17。式別行タップ時のインライン展開をやめ、実物の馬券写真を
+  参照した専用デザインのダイアログ表示に変更。詳細は`docs/design/screens.md`
+  「購入方式グループのダイアログ」参照)、および**購入方式(box/nagashi/formation)の
+  入力構造をDBに保存する`tickets.structure`列の追加**(2026-09-17。着順なし券種
+  〈三連複等〉のフォーメーションは保存済みの組み合わせ結果から入力時のゾーン分けを
+  復元できない制約があったため、過去データ・CSV取込は現状の推測ロジックのまま
+  許容し、今後の画面購入分のみ購入時点の構造情報をそのまま保存して正しく
+  表示できるようにした。要マイグレーション適用。上記🔴参照)を実施。
   下記「⚠️ 調査中の不具合」の 🔵 実機検証未完了に、ユーザー確認待ちの項目がある。
 - **次に着手するタスク**: 下記「優先順位」の A 段(CSV返還行 payout〈CSVサンプル待ち〉)。
   片付いたら B 段へ。

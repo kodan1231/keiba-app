@@ -80,6 +80,7 @@
       race_name: payload.race_name,
       bet_type: payload.bet_type,
       method: payload.method,
+      structure: payload.structure || null,
       combos: payload.combos.map((c) => ({ selections: c.selections, amount: c.amount, checked: true })),
     });
     saveCart(cart);
@@ -381,6 +382,7 @@
         race_name: g.race_name,
         bet_type: g.bet_type,
         method: g.method,
+        structure: g.structure || null,
         combos: checkedCombos.map((c) => ({ selections: c.selections, amount: c.amount })),
       });
     }

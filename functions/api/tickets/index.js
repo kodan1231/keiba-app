@@ -19,6 +19,7 @@ export async function onRequestGet(context) {
   const items = results.map((row) => ({
     ...row,
     selections: JSON.parse(row.selections),
+    structure: row.structure ? JSON.parse(row.structure) : null,
   }));
 
   return Response.json(items);

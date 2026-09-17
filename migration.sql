@@ -182,3 +182,13 @@ ALTER TABLE races ADD COLUMN post_time TEXT;
 ALTER TABLE users ADD COLUMN api_token_hash TEXT;
 ALTER TABLE users ADD COLUMN api_token_created_at TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_token_hash ON users(api_token_hash);
+
+-- @STEP: tickets_structure
+-- 購入方式(method)の入力構造(box/nagashi/formationそれぞれの馬番構成)をJSONで保存する列。
+-- 従来は保存済みのselections(組み合わせ結果)からの推測でボックス/ながし/フォーメーションの
+-- 表示を復元していたが、着順なし券種(三連複等)のフォーメーションは組み合わせ保存時点で
+-- 馬番昇順に正規化されゾーン分け情報が失われ、復元不可能だった。過去の購入データ・CSV取込
+-- データはこの問題を許容し(推測ロジックのまま)、今後の画面購入分のみ購入時点の構造情報を
+-- そのまま保存して正しく表示できるようにする。詳細はdocs/design/screens.md
+-- 「購入方式グループのダイアログ」参照。
+ALTER TABLE tickets ADD COLUMN structure TEXT;

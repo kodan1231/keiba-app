@@ -149,6 +149,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   refunded INTEGER NOT NULL DEFAULT 0, -- 返還(取消・除外馬が絡む買い目)によりpayoutが確定した場合は1。
                                         -- 的中による払戻(refunded=0)と区別するためのフラグ。
                                         -- docs/DESIGN.md「返還(refund)処理」参照
+  structure TEXT,                 -- 購入方式(method)の入力構造をJSONで保存(box:{numbers}/nagashi:{axis,partners,multi}/formation:{slots})。
+                                   -- 2026-09-17追加。馬券帳の購入画面から新規購入したグループのみ入る(NULL許容)。
+                                   -- 表示側(app.js)はこれがあれば最優先で使い、無ければ従来の推測ロジックにフォールバックする。
+                                   -- 詳細はdocs/design/screens.md「購入方式グループのダイアログ」参照
   memo TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );

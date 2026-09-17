@@ -6,7 +6,7 @@
 
 | データ | テーブル | 備考 |
 |---|---|---|
-| 通常購入 | `tickets` | 購入グループ`group_id` + 組み合わせ1点=1行。ユーザーごとに分離 |
+| 通常購入 | `tickets` | 購入グループ`group_id` + 組み合わせ1点=1行。ユーザーごとに分離。`structure`列に購入方式(box/nagashi/formation)の入力構造をJSONで保持(2026-09-17〜。下記「購入方式の入力構造(tickets.structure)」参照) |
 | CSV原本(Club JRA-Net等) | `imported_tickets` | 外部CSVの原本をそのまま保持。ユーザーごとに分離 |
 | CSV購入グループ | `imported_ticket_groups` | CSVの1行=1購入グループ。ユーザーごとに分離 |
 | CSV個別買い目 | `imported_ticket_items` | 組み合わせを個別買い目へ分解したもの。`user_id`は持たず、`imported_ticket_groups`とのJOINで所有者を判定する |
@@ -19,6 +19,45 @@
 | レース | `races` | 出走馬表(予定)・着順(上位3着)・払戻・レース条件を保持。全ユーザー共有 |
 | レース結果詳細 | `race_results` | 馬単位の確定結果(全着順・タイム・着差・馬体重・コーナー通過順位等)を1頭1行で記録。全ユーザー共有。詳細は下記「レース結果の詳細記録(race_results)」参照 |
 | racesの事前計算キャッシュ | `races_cache` | `races`全件をJSON配列としてチャンク分割して保持。詳細は下記「races全件取得の事前計算キャッシュ(races_cache)」参照 |
+
+### 購入方式の入力構造(tickets.structure。2026-09-17〜)
+
+購入履歴画面(`app.js`)の馬券ダイアログは、購入方式(box/nagashi/formation)ごとの
+「入力した形」(ボックスの馬番一覧・ながしの軸/相手・フォーメーションの着順ごとの
+馬番ゾーン)を表示する。従来はこれを`tickets.selections`(実際に生成された組み合わせの
+結果)から逆算(`public/ticket-view.js` `describeGroupSelections()`)していたが、
+**着順なし券種(三連複・馬連・ワイド・枠連)のフォーメーションは、組み合わせ生成時に
+馬番昇順へ正規化される(`public/combos.js` `dedupeUnordered()`)ため、入力時のゾーン分け
+情報が保存後には復元不可能**という制約があった。
+
+対応方針は「過去の購入データ・CSV取込データはこの制約を許容し従来の推測ロジックのまま
+とする(遡及対応はしない)。今後の画面購入(カゴ経由)分のみ、購入モーダルが入力時点で
+既に保持している構造情報をそのまま保存し、表示側はそれを最優先で使う」とした。
+
+- `tickets.structure`(TEXT、NULL許容)に、method(box/nagashi/formation)に応じた
+  JSONを保存する。`method='normal'`(通常/単勝/複勝)は組み合わせが常に1通りのため
+  `structure`は常にNULL。
+  ```jsonc
+  // method = "box"
+  { "numbers": [1, 2, 3, 4] }
+
+  // method = "nagashi"
+  { "axis": [3], "partners": [1, 2, 5, 7], "multi": false }
+  // axis.length===1 && multi===false → 「軸1頭流し」
+  // axis.length===1 && multi===true  → 「マルチ」
+  // axis.length===2 && multi===false → 「軸2頭ながし」
+  // axis.length===2 && multi===true  → 「軸2頭マルチ」
+
+  // method = "formation"
+  { "slots": [[3, 5], [1, 2, 3, 4], [1, 2, 3, 4, 5, 6, 7]] }
+  ```
+- 保存元は`public/buy-purchase-modal.js`の`buildCurrentPurchasePayload()`(購入モーダルの
+  `state`から組み立てる)。カート(`public/cart.js`)を経由して
+  `POST /api/tickets/bulk`のグループペイロードに含まれ、同一`group_id`の全チケット行に
+  同じ`structure`が保存される。
+- 表示側(`public/app.js`)は`tickets.structure`があればそれを最優先で使い、無ければ
+  (過去データ・CSV取込)従来の`describeGroupSelections()`推測ロジックにフォールバックする。
+  詳細は`docs/design/screens.md`「購入方式グループのダイアログ」参照。
 
 ### races全件取得の事前計算キャッシュ(races_cache。2026-09-12〜)
 

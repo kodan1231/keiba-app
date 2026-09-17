@@ -83,8 +83,11 @@ function selectionCellHtml(betType, selections) {
 // 既知の制約: 着順なし(unordered)の券種のフォーメーションで、かつ共通の軸馬が
 // 1頭も無い(各着順グループが完全に別々の馬番)場合は、保存時点で組み合わせが
 // 馬番昇順に正規化されており元の枠分けを復元できないため、「馬番: 全馬番の一覧」に
-// 丸めるフォールバックになる(2026-09-12。現状把握している唯一の取りこぼしパターン。
-// 発生したら都度対応する)。
+// 丸めるフォールバックになる。ただし2026-09-17以降に画面購入(カゴ経由)した
+// グループは`tickets.structure`に購入時点の入力構造(box/nagashi/formationそれぞれの
+// 馬番構成)がそのまま保存されており、下記の通りそれを最優先で使うため、この制約に
+// 該当しない(過去データ・CSV取込データのみ引き続き対象。
+// docs/design/data-model.md「購入方式の入力構造(tickets.structure)」参照)。
 //
 // 1点のみのグループ(通常の単発購入)はコンパクト表示の必要が無いため null を返す。
 function describeGroupSelections(betType, group) {
@@ -92,6 +95,24 @@ function describeGroupSelections(betType, group) {
   const def = BET_TYPES[betType] || {};
   const n = def.n || (group[0].selections || []).length;
   if (!n) return null;
+
+  const structure = group[0].structure;
+  if (structure && Array.isArray(structure.slots)) {
+    return structure.slots.map((nums, i) => ({
+      label: selectionLabel(betType, i),
+      value: nums.join(","),
+      values: nums,
+    }));
+  }
+  if (structure && Array.isArray(structure.axis) && Array.isArray(structure.partners)) {
+    return [
+      { label: "軸馬", value: structure.axis.join("－"), values: structure.axis },
+      { label: "相手", value: structure.partners.join(","), values: structure.partners },
+    ];
+  }
+  if (structure && Array.isArray(structure.numbers)) {
+    return [{ label: "馬番", value: structure.numbers.join(","), values: structure.numbers }];
+  }
 
   const sortNums = (arr) => [...arr].sort((a, b) => Number(a) - Number(b));
   const ticketSets = group.map((t) => new Set((t.selections || []).map((s) => s.horse_number)));
