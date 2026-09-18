@@ -348,36 +348,47 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
 -- ============================================================
 
 -- GET /api/data-search/race-stats が毎回 race_results を読み直すのを避けるための
--- 事前計算キャッシュ(1行固定)。race_results を race_id でグルーピングしたものだけを
--- JSONで持つ(races 側は 11. races_cache を参照)。
--- 詳細・経緯は docs/design/data-search.md 参照。
+-- 事前計算キャッシュ。race_results を race_id でグルーピングしたものをJSONで持つ
+-- (races 側は 11. races_cache を参照)。
+--
+-- 2026-09-19修正: 当初は races_cache 導入前の races_cache と同じく「1行固定」だったが、
+-- race_results が26,000行規模まで育った結果、1行のJSON(約2.3MB)がD1の
+-- 「1行(1カラム値)あたり2,000,000バイト」の上限を超えてUPDATEが失敗し、
+-- GET /api/data-search/race-stats が500になる(データ検索画面「集計の取得に
+-- 失敗しました」)障害が発生した。races_cache が2026-09-12に同種の障害を経て
+-- チャンク分割方式へ変更されたのと同じ理由・同じ対処を、当時この
+-- race_stats_cache には反映し忘れていた。races_cache と同様、累積バイト数が
+-- CHUNK_MAX_BYTESを超えたら新しい行(チャンク)に切り替える方式にする。
+-- 無効化はDB側のトリガー(migration.sql の @STEP: race_stats_cache_chunked 参照)で
+-- 行う。race_results への INSERT/DELETE、および集計に使う列(horse_number/jockey/
+-- status/finish_position)の UPDATE があると race_stats_cache の全行が削除される
+-- (incident_note のみの編集では発火しない)。読み取り側(_lib/race-stats-cache.js)は
+-- 行が無ければその場で再計算して保存する(次回以降は保存済みの行を読むだけで済む)。
+-- 保存(db.batch)の失敗は必ずbest-effortで握りつぶし、読み取れた結果はそのまま返す
+-- (races_cache の recomputeRacesCache() と同じ考え方。CLAUDE.md「絶対に破っては
+-- いけない不変条件」参照)。詳細・経緯は docs/design/data-search.md 参照。
 CREATE TABLE IF NOT EXISTS race_stats_cache (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  payload TEXT,        -- JSON: { race_id: [{horse_number,jockey,status,finish_position}, ...], ... }
-                        -- NULL = 要再計算(下記トリガーでNULL化される)
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,         -- JSON: { race_id: [{horse_number,jockey,status,finish_position}, ...], ... } の一部
   updated_at TEXT
 );
-INSERT OR IGNORE INTO race_stats_cache (id, payload, updated_at) VALUES (1, NULL, NULL);
 
--- race_results への書き込みで自動的に payload を NULL 化する(無効化)。
--- incident_note のみの編集(GET /api/races/:id/results のPUT)では発火しない
--- (集計に使う列だけを対象にしているため)。
 CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_ins
 AFTER INSERT ON race_results
 BEGIN
-  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM race_stats_cache;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_del
 AFTER DELETE ON race_results
 BEGIN
-  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM race_stats_cache;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_upd
 AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
 BEGIN
-  UPDATE race_stats_cache SET payload = NULL WHERE id = 1;
+  DELETE FROM race_stats_cache;
 END;
 
 -- ============================================================

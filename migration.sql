@@ -192,3 +192,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_token_hash ON users(api_token_ha
 -- そのまま保存して正しく表示できるようにする。詳細はdocs/design/screens.md
 -- 「購入方式グループのダイアログ」参照。
 ALTER TABLE tickets ADD COLUMN structure TEXT;
+
+-- @STEP: race_stats_cache_chunked
+-- race_stats_cache(@STEP: race_stats_cache で導入)は当初1行固定でrace_results
+-- 全件のグルーピング結果を1つのJSONにまとめていたが、race_resultsが26,000行規模
+-- まで育った結果、1行のJSON(約2.3MB)がD1の「1行(1カラム値)あたり2,000,000バイト」
+-- の上限を超えてUPDATEが失敗し、GET /api/data-search/race-stats が500になる
+-- (データ検索画面「集計の取得に失敗しました」)障害が発生した(2026-09-19)。
+-- races_cache が2026-09-12に同種の障害を経てチャンク分割方式(@STEP:
+-- races_cache_chunked)へ変更されたのと同じ対処を、当時この race_stats_cache には
+-- 反映し忘れていた。race_stats_cache を複数行(チャンク)に分割して保持できる
+-- スキーマに作り直す(単なるキャッシュでrace_resultsから再計算可能なため、
+-- DROP TABLEしてよい。race_results自体は一切触らない)。詳細は
+-- docs/design/data-search.md 参照。
+DROP TABLE IF EXISTS race_stats_cache;
+CREATE TABLE race_stats_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+DROP TRIGGER IF EXISTS trg_race_stats_cache_invalidate_ins;
+DROP TRIGGER IF EXISTS trg_race_stats_cache_invalidate_del;
+DROP TRIGGER IF EXISTS trg_race_stats_cache_invalidate_upd;
+CREATE TRIGGER trg_race_stats_cache_invalidate_ins
+AFTER INSERT ON race_results
+BEGIN
+  DELETE FROM race_stats_cache;
+END;
+CREATE TRIGGER trg_race_stats_cache_invalidate_del
+AFTER DELETE ON race_results
+BEGIN
+  DELETE FROM race_stats_cache;
+END;
+CREATE TRIGGER trg_race_stats_cache_invalidate_upd
+AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
+BEGIN
+  DELETE FROM race_stats_cache;
+END;

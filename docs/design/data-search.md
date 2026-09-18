@@ -122,16 +122,31 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
    - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲
 2. **`race_results`(`race_stats_cache` テーブルの事前計算キャッシュから読む)**:
    `_lib/race-stats-cache.js` の `getRaceResultsGroupedByRaceId(db)` が
-   `SELECT payload FROM race_stats_cache WHERE id = 1`(1行read)を返す。`payload` は
-   `{ race_id: [{horse_number,jockey,status,finish_position}, ...], ... }` というJSONで、
-   `race_results` 全件を `race_id` でグルーピングしたもの。
-   - **無効化はDBトリガー**(`schema.sql`/`migration.sql` の `race_stats_cache` テーブル
-     定義参照)で自動的に行う。`race_results` への INSERT/DELETE、および集計に使う列
-     (`horse_number`/`jockey`/`status`/`finish_position`)の UPDATE があると、トリガーが
-     `payload` を `NULL` に戻す(`incident_note` のみの編集では発火しない)
-   - 読み取り側は `payload` が `NULL`(未計算 or 無効化された)なら、その場で
-     `race_results` を全件スキャンして再計算し、1行にUPSERTしてから使う
-     (`recomputeRaceStatsCache`)。次回以降は保存済みの1行を読むだけで済む
+   `SELECT payload FROM race_stats_cache ORDER BY chunk_index`(複数行read)の結果を
+   マージして返す。各行の `payload` は
+   `{ race_id: [{horse_number,jockey,status,finish_position}, ...], ... }` というJSONの
+   一部(`race_id` 単位でチャンク分割)で、全チャンクを連結すると `race_results` 全件を
+   `race_id` でグルーピングしたものと同じになる。
+   - **2026-09-19修正**: 当初は1行固定で `race_results` 全件のグルーピング結果を
+     1つのJSONにまとめていたが、`race_results` が26,000行規模まで育った結果、1行の
+     JSON(約2.3MB)がD1の「1行(1カラム値)あたり2,000,000バイト」の上限を超えて
+     UPDATEが失敗し、`GET /api/data-search/race-stats` が500になる(データ検索画面
+     「集計の取得に失敗しました」)障害が発生した。`races_cache` が2026-09-12に
+     同種の障害を経てチャンク分割方式(下記「races全件取得の事前計算キャッシュ」参照)へ
+     変更されたのと同じ対処を、当時この `race_stats_cache` には反映し忘れていたのが
+     原因。累積バイト数がチャンクの上限(1,500,000バイト。安全マージン込み)を超えたら
+     新しい行(チャンク)に切り替える方式にした
+   - **無効化はDBトリガー**(`schema.sql`/`migration.sql` の `@STEP:
+     race_stats_cache_chunked` 参照)で自動的に行う。`race_results` への
+     INSERT/DELETE、および集計に使う列(`horse_number`/`jockey`/`status`/
+     `finish_position`)の UPDATE があると、トリガーが `race_stats_cache` の全行を
+     削除する(`incident_note` のみの編集では発火しない)
+   - 読み取り側は行が無ければ(未計算 or 無効化された)、その場で `race_results` を
+     全件スキャンして再計算し、チャンク分割して保存してから使う
+     (`recomputeRaceStatsCache`)。次回以降は保存済みの行を読むだけで済む。
+     保存(`db.batch`)の失敗は必ずbest-effortで握りつぶし、読み取れた結果は
+     そのまま返す(`races_cache` の `recomputeRacesCache()` と同じ考え方。
+     CLAUDE.md「絶対に破ってはいけない不変条件」参照)
    - 「行数 ≥ `entries` 要素数」のレースだけ `race_results` を正のソースとして採用する
      (それ未満は `finish_order` へフォールバック)。この判定・フィルタ適用は今まで通り
      読み取り側(メモリ)で行う
