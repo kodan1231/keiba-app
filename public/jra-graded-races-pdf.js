@@ -2,37 +2,32 @@
 // グレード・参考情報(競馬場・コース・年齢条件)を抽出する。管理画面「重賞管理」
 // (public/admin.js)の重賞マスタ一括インポートで使う。
 //
-// 【実機未検証】このファイルはユーザー提供のPDF内容(視覚的なレンダリング結果)を
-// 元に実装したもので、実ブラウザのPDF.js抽出結果そのものでの検証は済んでいない
-// (jra-result-pdf.js冒頭の注記と同じ理由)。特に「グレードバッジ(GⅠ/GⅡ/GⅢ)の
-// 抽出順序が各レース行と同じ順序で一致する」という前提が崩れた場合に備え、
-// レース行数とグレードバッジ数が一致しない場合はレコードを1件も返さず
-// diagnostics.errors に理由を積む(件数不一致のまま誤った組み合わせで登録する
-// 事故を避けるため。2026-09-19に発覚した単勝人気誤取得と同種の「見た目とPDF.js
-// 抽出結果の位置ズレ」を警戒した設計)。
+// 2026-09-19: 実機のPDF.js抽出結果で検証済み(下記の行構造は実際の抽出結果を
+// 確認して確定した)。当初は「グレードバッジがページ末尾に別集約される」という
+// 誤った想定で実装しており、レース行を1件も検出できない不具合が実機で発生した。
 //
-// ページの構造(視覚上の表): 月日 / レース名 / 競馬場 / 性齢 / コース / 優勝馬 / 騎手 /
-// 結果(グレードバッジ+「レース結果」ボタン) / 過去成績。PDF化した際、グレードバッジ+
-// ボタン列(「結果」列)の内容は各行のテキストとは別に、ページ末尾側へまとめて
-// 抽出される(表内レース行がすべて先に並び、その後にグレード表記が同じ並び順で
-// 続く)。そのため「レース行を先頭から抽出」「グレード表記を別途抽出」した上で、
-// 出現順に1件ずつ対応付ける方式を取る。
+// 実際の行構造(タブ区切り。1レースにつき3行1組で抽出される):
+//   行1: [月日]                [コース種別+距離(例:"芝2,000")] [任意:結果ボタン文言]
+//   行2: [グレード+レース名(例:"GⅢ 中山金杯")] [競馬場] [年齢条件] [任意:優勝馬] [任意:優勝騎手]
+//   行3: [曜日]                [メートル(コース列の折り返し)]
+// 月日・曜日、コース種別+距離・メートルは、それぞれ表側で2行に折り返されているセルの
+// 上段・下段にあたる(単独行の競馬場・年齢条件・レース名等のセルは、この2行の中間の
+// Y座標で抽出されるため、行1→行2→行3の順で並ぶ)。優勝馬・優勝騎手は今回の用途
+// (レース名・グレードの分類マスタ)には不要なため解析しない。
+//
+// この構造により、グレード判定は「レース名を含む行2自身」から直接取り出すため、
+// 旧実装で警戒していた「別々に抽出した2つの配列を出現順で対応付ける」リスクは
+// 発生しない(行2の正規表現マッチ自体にグレードとレース名が両方含まれる)。
 
-const JRA_GRADED_RACES_PARSER_VERSION = "1.0-unverified";
+const JRA_GRADED_RACES_PARSER_VERSION = "2.0-verified";
 
-const JRA_GRADED_TRACKS = ["中山", "阪神", "京都", "東京", "中京", "新潟", "福島", "小倉", "函館", "札幌"];
+const JRA_GRADED_DATE_RE = /^(\d{1,2})月(\d{1,2})日$/;
+const JRA_GRADED_COURSE_RE = /^(芝|ダート|ダ|障)([\d,]+)$/;
+const JRA_GRADED_NAME_ROW_RE = /^(J・)?G([ⅠⅡⅢ])\s*(.+)$/;
 
 function jraGradedRacesJoinRowItems(items) {
   return jraPdfJoinRowItems(items);
 }
-
-const JRA_GRADED_ROW_RE = new RegExp(
-  `(\\d{1,2})月(\\d{1,2})日\\s*(?:祝日・)?[月火水木金土日]曜\\s*` +
-  `(.+?)\\s+(${JRA_GRADED_TRACKS.join("|")})\\s+` +
-  `([\\d歳以上牡牝せんｾﾝ・]+)\\s+(芝|ダート|ダ|障)\\s*([\\d,]+)\\s*メートル`,
-  "g"
-);
-const JRA_GRADED_GRADE_RE = /(J・)?G([ⅠⅡⅢ])/g;
 
 function jraGradedRacesCourseType(raw) {
   if (raw === "芝") return "芝";
@@ -40,75 +35,54 @@ function jraGradedRacesCourseType(raw) {
   return "ダート";
 }
 
-// 1ページ分の行配列(jraGradedRacesExtractPdfPages の pages[i])から、レース行の
-// 生マッチ配列とグレード表記の生マッチ配列を別々に取り出す。
-// ページ1のみ表ヘッダー(「...過去成績」)が付くため、それより前のタブ見出し等
-// (「GⅠレース」等のページ内タブ表記)を誤ってグレード表記として拾わないよう、
-// ヘッダーが見つかればそれより後ろだけを対象にする。
-function jraGradedRacesScanPage(rows) {
-  const flat = rows.map((r) => r.text || "").join("\n").replace(/[\s　]+/g, " ").trim();
-  const headerIdx = flat.indexOf("過去成績");
-  const scanText = headerIdx >= 0 ? flat.slice(headerIdx + "過去成績".length) : flat;
+// 行1(月日+コース)・行2(グレード+レース名+競馬場+年齢条件)の組から1レース分の
+// レコードを組み立てる。行の並びがこの2行連続のパターンに一致しない場合は
+// null を返す(該当レースを静かにスキップする。誤った組み合わせで登録するより
+// 安全なため)。
+function jraGradedRacesMatchPair(row1Text, row2Text) {
+  const cols1 = String(row1Text || "").split("\t").map((s) => s.trim());
+  const dateMatch = cols1[0] && cols1[0].match(JRA_GRADED_DATE_RE);
+  if (!dateMatch) return null;
+  const courseMatch = cols1[1] && cols1[1].match(JRA_GRADED_COURSE_RE);
+  if (!courseMatch) return null;
 
-  const raceMatches = [...scanText.matchAll(JRA_GRADED_ROW_RE)];
-  const gradeMatches = [...scanText.matchAll(JRA_GRADED_GRADE_RE)];
-  return { raceMatches, gradeMatches };
+  const cols2 = String(row2Text || "").split("\t").map((s) => s.trim());
+  const nameMatch = cols2[0] && cols2[0].match(JRA_GRADED_NAME_ROW_RE);
+  if (!nameMatch) return null;
+
+  return {
+    name: nameMatch[3].trim(),
+    grade: `G${{ "Ⅰ": "1", "Ⅱ": "2", "Ⅲ": "3" }[nameMatch[2]]}`,
+    is_jump: !!nameMatch[1],
+    track: cols2[1] || null,
+    age_condition: cols2[2] || null,
+    course_type: jraGradedRacesCourseType(courseMatch[1]),
+    distance: Number(courseMatch[2].replace(/,/g, "")),
+  };
 }
 
 function jraGradedRacesParseExtractedPages(pages) {
-  const diagnostics = { pages: pages.length, rows: 0, raceRows: 0, gradeTokens: 0, errors: [], rawText: "" };
-  const races = [];
-  const grades = [];
+  const diagnostics = { pages: pages.length, rows: 0, raceRows: 0, errors: [], rawText: "" };
 
-  // 実機での不一致原因調査用に、抽出された生テキストをそのまま残す
-  // (実機未検証のため、想定と違う抽出結果になった場合に管理画面の診断パネルで
-  // 確認できるようにする)。
+  // 実機での不一致原因調査用に、抽出された生テキストをそのまま残す。
   diagnostics.rawText = pages
     .map((rows, i) => `===== PAGE ${i + 1} =====\n${rows.map((r) => r.text || "").join("\n")}`)
     .join("\n\n");
 
+  const records = [];
   for (const rows of pages) {
     diagnostics.rows += rows.length;
-    const { raceMatches, gradeMatches } = jraGradedRacesScanPage(rows);
-    for (const m of raceMatches) {
-      races.push({
-        month: Number(m[1]),
-        day: Number(m[2]),
-        name: m[3].trim(),
-        track: m[4],
-        age_condition: m[5],
-        course_type: jraGradedRacesCourseType(m[6]),
-        distance: Number(String(m[7]).replace(/,/g, "")),
-      });
-    }
-    for (const m of gradeMatches) {
-      grades.push({ grade: `G${{ "Ⅰ": "1", "Ⅱ": "2", "Ⅲ": "3" }[m[2]]}`, is_jump: !!m[1] });
+    for (let i = 0; i < rows.length - 1; i++) {
+      const record = jraGradedRacesMatchPair(rows[i].text, rows[i + 1].text);
+      if (record) records.push(record);
     }
   }
-  diagnostics.raceRows = races.length;
-  diagnostics.gradeTokens = grades.length;
+  diagnostics.raceRows = records.length;
 
-  if (!races.length) {
+  if (!records.length) {
     diagnostics.errors.push("重賞レースの行を1件も検出できませんでした。");
     return { records: [], diagnostics };
   }
-  if (races.length !== grades.length) {
-    diagnostics.errors.push(
-      `レース行数(${races.length})とグレード表記の数(${grades.length})が一致しません。` +
-      `位置の対応付けが信頼できないため、登録候補を1件も生成しません。`
-    );
-    return { records: [], diagnostics };
-  }
-
-  const records = races.map((r, i) => ({
-    name: r.name,
-    grade: grades[i].grade,
-    is_jump: grades[i].is_jump,
-    track: r.track,
-    course_type: r.course_type,
-    distance: r.distance,
-    age_condition: r.age_condition,
-  }));
 
   return { records, diagnostics };
 }

@@ -740,8 +740,7 @@ function setupGradedRacesImport() {
           <div class="picker-hint">
             ページ数: ${parsed.diagnostics.pages}<br>
             抽出行数: ${parsed.diagnostics.rows}<br>
-            検出したレース行数: ${parsed.diagnostics.raceRows}<br>
-            検出したグレード表記数: ${parsed.diagnostics.gradeTokens}
+            検出したレース行数: ${parsed.diagnostics.raceRows}
           </div>
           <details style="margin-top:6px"><summary>抽出した生テキスト</summary>
             <pre style="white-space:pre-wrap;font-size:11px;max-height:400px;overflow:auto">${escapeHtml(parsed.diagnostics.rawText)}</pre>
