@@ -732,9 +732,26 @@ function setupGradedRacesImport() {
       const extracted = await jraGradedRacesExtractPdfPages(file);
       const parsed = jraGradedRacesParseExtractedPages(extracted.pages);
 
+      // 実機未検証のパーサーのため、成否にかかわらず抽出結果を確認できる診断パネルを
+      // 常に出す(jra-result-pdf.js等の他インポート機能と同じ考え方)。
+      const diagHtml = `
+        <details style="margin-top:10px">
+          <summary>解析診断情報(重賞一覧PDFパーサー ${escapeHtml(JRA_GRADED_RACES_PARSER_VERSION)})</summary>
+          <div class="picker-hint">
+            ページ数: ${parsed.diagnostics.pages}<br>
+            抽出行数: ${parsed.diagnostics.rows}<br>
+            検出したレース行数: ${parsed.diagnostics.raceRows}<br>
+            検出したグレード表記数: ${parsed.diagnostics.gradeTokens}
+          </div>
+          <details style="margin-top:6px"><summary>抽出した生テキスト</summary>
+            <pre style="white-space:pre-wrap;font-size:11px;max-height:400px;overflow:auto">${escapeHtml(parsed.diagnostics.rawText)}</pre>
+          </details>
+        </details>
+      `;
+
       if (parsed.diagnostics.errors.length) {
         statusEl.textContent = "";
-        previewEl.innerHTML = `<p class="submit-message error">${parsed.diagnostics.errors.map(escapeHtml).join("<br>")}</p>`;
+        previewEl.innerHTML = `<p class="submit-message error">${parsed.diagnostics.errors.map(escapeHtml).join("<br>")}</p>${diagHtml}`;
         return;
       }
 
@@ -754,6 +771,7 @@ function setupGradedRacesImport() {
         </table></div>
         <button type="button" class="stamp-btn" id="graded-races-import-confirm-btn">この内容で一括登録する(${parsed.records.length}件)</button>
         <p id="graded-races-import-message" class="submit-message" hidden></p>
+        ${diagHtml}
       `;
 
       document.getElementById("graded-races-import-confirm-btn")?.addEventListener("click", async (ev) => {

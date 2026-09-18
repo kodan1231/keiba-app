@@ -56,9 +56,16 @@ function jraGradedRacesScanPage(rows) {
 }
 
 function jraGradedRacesParseExtractedPages(pages) {
-  const diagnostics = { pages: pages.length, rows: 0, raceRows: 0, gradeTokens: 0, errors: [] };
+  const diagnostics = { pages: pages.length, rows: 0, raceRows: 0, gradeTokens: 0, errors: [], rawText: "" };
   const races = [];
   const grades = [];
+
+  // 実機での不一致原因調査用に、抽出された生テキストをそのまま残す
+  // (実機未検証のため、想定と違う抽出結果になった場合に管理画面の診断パネルで
+  // 確認できるようにする)。
+  diagnostics.rawText = pages
+    .map((rows, i) => `===== PAGE ${i + 1} =====\n${rows.map((r) => r.text || "").join("\n")}`)
+    .join("\n\n");
 
   for (const rows of pages) {
     diagnostics.rows += rows.length;
