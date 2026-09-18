@@ -113,11 +113,11 @@ CREATE INDEX idx_race_results_horse_name ON race_results(horse_name);
 - `race_results`にデータが無いレース(結果PDF未取込)ではこのセクション自体が
   非表示になる
 
-### 予想登録画面での過去成績参照(2026-09-10。クエリ方式は2026-09-11に変更。2026-09-18に推定上りを追加)
+### 予想登録画面での過去成績参照(2026-09-10。クエリ方式は2026-09-11に変更。2026-09-18に推定上り・レース名列を追加)
 
 - `prediction.html`で各馬の行を開くと、馬メモの下に「過去成績(出走履歴)」表を表示する。
-  列は日付・場R・コース・着順・人気・騎手・斤量・馬体重・タイム・**上がり**(`final_furlong_time`。
-  小数第1位まで)・着差
+  列は日付・場R・**レース名**・コース・着順・人気・騎手・斤量・馬体重・タイム・
+  **上がり**(`final_furlong_time`。小数第1位まで)・着差
 - 取得は `GET /api/races/:id/horse-history`(`functions/api/races/[id]/horse-history.js`)。
   出走各馬の突き合わせキー(`race_results.horse_key` に対応する値。逆引きエイリアスキーも
   含む)で `WHERE horse_key IN (...)` と直接絞り込む(全件スキャンではない。
