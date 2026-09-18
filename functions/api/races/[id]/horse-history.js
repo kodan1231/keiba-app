@@ -92,7 +92,7 @@ export async function onRequestGet(context) {
     `WITH ranked AS (
        SELECT rr.horse_key, rr.horse_name, rr.status, rr.finish_position, rr.win_popularity,
               rr.jockey, rr.weight_carried, rr.body_weight, rr.body_weight_change,
-              rr.time_text, rr.margin, rr.sex_age, rr.race_id,
+              rr.time_text, rr.margin, rr.final_furlong_time, rr.sex_age, rr.race_id,
               r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance,
               ROW_NUMBER() OVER (
                 PARTITION BY rr.horse_key
@@ -147,6 +147,7 @@ export async function onRequestGet(context) {
       body_weight_change: row.body_weight_change || null,
       time_text: row.time_text || null,
       margin: row.margin || null,
+      final_furlong_time: row.final_furlong_time ?? null,
     });
   }
 
