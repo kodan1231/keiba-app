@@ -37,6 +37,7 @@
 | `docs/design/payout-refund.md` | 払戻確定時のticket反映(全ユーザー)・払戻確定バッジ/的中率判定・**返還(refund)処理** |
 | `docs/design/stats-rules.md` | 集計ルール(収支・回収率・的中率の考え方) |
 | `docs/design/data-search.md` | データ検索画面(レース成績集計)・`race_results`/`payouts` 横断集計・検索ハブ構成・API仕様 |
+| `docs/design/graded-races.md` | 重賞マスタ(`graded_races`)・レース分類(重賞/条件戦/その他)判定ロジック・突き合わせキー・管理画面「重賞管理」・JRA重賞一覧PDFインポート・集計画面のフィルタ連携 |
 | `docs/design/ops.md` | CSSキャッシュ対策・DBマイグレーションの運用・DBファイルの役割 |
 
 機能→コードの対応、共有ヘルパー(`functions/api/_lib/`)の構成、絶対不変条件は

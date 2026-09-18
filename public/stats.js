@@ -399,19 +399,55 @@ function renderJockeyTable(items) {
   renderTable("jockey-table", "jockey", "騎手", "name");
 }
 
+// ---------- レース区分フィルタ(総合成績・レース別。2026-09-19追加) ----------
+// 各購入(t.race_category: "graded"/"condition"/"other")を「すべて/重賞のみ/条件戦のみ」で
+// 絞り込む。タブごとに独立した選択状態を持つ(docs/design/graded-races.md参照)。
+// レース情報が無い(race_idが無いレガシー取込等)購入はrace_category:"other"となり、
+// 「重賞のみ」「条件戦のみ」には出てこず「すべて」にのみ含まれる。
+const categoryFilterState = { overall: "all", race: "all" };
+
+function filterByCategory(items, mode) {
+  if (mode === "all") return items;
+  return items.filter((t) => t.race_category === mode);
+}
+
+function setupCategoryFilter(elId, tabKey, onChange) {
+  const wrap = document.getElementById(elId);
+  if (!wrap) return;
+  wrap.querySelectorAll(".horse-row-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.value === categoryFilterState[tabKey]) return;
+      wrap.querySelectorAll(".horse-row-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      categoryFilterState[tabKey] = btn.dataset.value;
+      onChange();
+    });
+  });
+}
+
+let allTickets = [];
+
 async function loadAndRender() {
   const [ticketRes, importedRes] = await Promise.all([authedFetch("/api/tickets"), authedFetch("/api/ticket-imports")]);
   if (!ticketRes.ok) return;
   const items = await ticketRes.json();
   const importedPayload = importedRes.ok ? await importedRes.json() : {items: []};
   const imported = Array.isArray(importedPayload.items) ? importedPayload.items : [];
-  const all = [...(Array.isArray(items) ? items : []), ...imported];
-  renderOverall(all);
-  renderRatioBreakdowns(all);
-  renderRaceTable(all);
-  renderCourseTable(all);
-  renderJockeyTable(all);
+  allTickets = [...(Array.isArray(items) ? items : []), ...imported];
+
+  renderOverall(filterByCategory(allTickets, categoryFilterState.overall));
+  renderRatioBreakdowns(filterByCategory(allTickets, categoryFilterState.overall));
+  renderRaceTable(filterByCategory(allTickets, categoryFilterState.race));
+  renderCourseTable(allTickets);
+  renderJockeyTable(allTickets);
 }
+
+setupCategoryFilter("overall-category-filter", "overall", () => {
+  renderOverall(filterByCategory(allTickets, categoryFilterState.overall));
+  renderRatioBreakdowns(filterByCategory(allTickets, categoryFilterState.overall));
+});
+setupCategoryFilter("race-category-filter", "race", () => {
+  renderRaceTable(filterByCategory(allTickets, categoryFilterState.race));
+});
 
 // escapeHtml / formatDateMd は utils.js のものを使用する
 // (2026-09-07: ローカルの formatDate("8/24"形式)を撤去し utils.js の

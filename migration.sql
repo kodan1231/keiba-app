@@ -229,3 +229,24 @@ AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
 BEGIN
   DELETE FROM race_stats_cache;
 END;
+
+-- @STEP: graded_races
+-- 集計画面(stats.html)の「総合成績」「レース別」タブで「重賞のみ／条件戦のみ」に
+-- 絞り込むための、重賞(G1/G2/G3)レース名のマスタ。管理画面から手入力、または
+-- JRA公式サイト「N年 重賞レース一覧」ページ(PDF)のインポートで登録する。
+-- 詳細は docs/design/graded-races.md 参照。
+CREATE TABLE IF NOT EXISTS graded_races (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  name_key TEXT NOT NULL UNIQUE,
+  grade TEXT NOT NULL,
+  is_jump INTEGER NOT NULL DEFAULT 0,
+  track TEXT,
+  course_type TEXT,
+  distance INTEGER,
+  age_condition TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);

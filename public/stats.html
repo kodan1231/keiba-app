@@ -28,6 +28,11 @@
 
     <section class="stats-section stats-panel" data-panel="overall">
       <h2 class="stats-heading">総合成績</h2>
+      <div class="horse-index-rows category-filter" id="overall-category-filter">
+        <button type="button" class="horse-row-btn active" data-value="all">すべて</button>
+        <button type="button" class="horse-row-btn" data-value="graded">重賞のみ</button>
+        <button type="button" class="horse-row-btn" data-value="condition">条件戦のみ</button>
+      </div>
       <div class="overall-grid" id="overall-summary"></div>
 
       <div class="ratio-block">
@@ -47,6 +52,11 @@
 
     <section class="stats-section stats-panel" data-panel="race" hidden>
       <h2 class="stats-heading">レース別収支</h2>
+      <div class="horse-index-rows category-filter" id="race-category-filter">
+        <button type="button" class="horse-row-btn active" data-value="all">すべて</button>
+        <button type="button" class="horse-row-btn" data-value="graded">重賞のみ</button>
+        <button type="button" class="horse-row-btn" data-value="condition">条件戦のみ</button>
+      </div>
       <div class="table-wrap"><table class="stats-table" id="race-table"></table></div>
     </section>
 

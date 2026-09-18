@@ -437,3 +437,38 @@ AFTER DELETE ON races
 BEGIN
   DELETE FROM races_cache;
 END;
+
+-- ============================================================
+-- 12. 重賞マスタ(graded_races)
+-- ============================================================
+
+-- 集計画面(stats.html)の「総合成績」「レース別」タブで「重賞のみ／条件戦のみ」に
+-- 絞り込むための、重賞(G1/G2/G3)レース名のマスタ。管理画面から手入力、または
+-- JRA公式サイト「N年 重賞レース一覧」ページ(PDF)のインポートで登録する
+-- (`functions/api/admin/graded-races/`)。判定ロジックの詳細は
+-- `functions/api/_lib/race-classification.js` / docs/design/graded-races.md 参照。
+--
+-- name_key: races.race_name との突き合わせキー。重賞一覧ページのレース名は
+-- 「第N回」等の回次表記を含まず、「ステークス/カップ/トロフィー」を「S/C/T」に
+-- 略記する(例:「紫苑S」)。一方、結果・出走馬PDFのrace_nameは「第11回紫苑ステークス」
+-- のように回次表記込み・略記なしで入る。突き合わせ側(races.race_name)を
+-- 正規化(「第N回」除去+NFKC+空白除去+ステークス→S/カップ→C/トロフィー→T)して
+-- name_keyと比較する(`gradedRaceNameKey()`を両方に適用)。自動突き合わせに失敗する
+-- 表記ゆれは、このテーブルへ実際のrace_name表記のまま追加登録すれば個別に対応できる
+-- (horse_aliases等と同じ「自動一致を基本にしつつ、外れたものは手動登録で拾う」方針)。
+CREATE TABLE IF NOT EXISTS graded_races (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,              -- 表示用のレース名(重賞一覧ページの表記。例: "紫苑S")
+  name_key TEXT NOT NULL UNIQUE,   -- 突き合わせキー(gradedRaceNameKey()で計算)
+  grade TEXT NOT NULL,             -- "G1" / "G2" / "G3"
+  is_jump INTEGER NOT NULL DEFAULT 0, -- 障害重賞(「J・G」表記)かどうか
+  track TEXT,                      -- 参考情報(競馬場。任意)
+  course_type TEXT,                -- 参考情報(芝/ダート/障。任意)
+  distance INTEGER,                -- 参考情報(任意)
+  age_condition TEXT,              -- 参考情報(例: "3歳牝"。任意)
+  source TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'jra_import'
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
+END;

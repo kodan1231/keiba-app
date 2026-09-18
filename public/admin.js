@@ -588,6 +588,208 @@ function setupHorseAliasNormalizeButton() {
   });
 }
 
+// ---------- 重賞管理(2026-09-19追加) ----------
+// 集計画面(stats.html)の「総合成績」「レース別」タブの「重賞のみ」フィルタで使う
+// 重賞(G1/G2/G3)レース名マスタの一覧表示・手入力での追加/編集/削除、および
+// JRA公式「N年 重賞レース一覧」ページ(PDF)からの一括インポート。
+// 詳細はdocs/design/graded-races.md参照。horse_aliases管理と同じ構図。
+
+async function loadGradedRaces() {
+  const table = document.getElementById("graded-races-table");
+  if (!table) return;
+  const res = await authedFetch("/api/admin/graded-races");
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  const data = await res.json();
+  const items = data.items || [];
+  if (!items.length) {
+    table.innerHTML = "<tr><td>登録済みの重賞はありません</td></tr>";
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr><th>レース名</th><th>グレード</th><th>障害</th><th>参考情報</th><th></th></tr></thead>
+    <tbody>
+      ${items.map((g) => {
+        const ref = [g.track, g.course_type, g.distance ? `${g.distance}m` : null, g.age_condition]
+          .filter(Boolean).join(" / ");
+        return `
+        <tr data-id="${g.id}">
+          <td>${escapeHtml(g.name)}</td>
+          <td>${escapeHtml(g.grade)}</td>
+          <td>${g.is_jump ? "○" : "—"}</td>
+          <td>${escapeHtml(ref || "—")}</td>
+          <td>
+            <button type="button" class="ghost-btn graded-race-edit-btn">編集</button>
+            <button type="button" class="icon-btn delete graded-race-delete-btn" title="削除">×</button>
+          </td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  `;
+  table.querySelectorAll(".graded-race-edit-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.closest("tr")?.dataset.id;
+      const item = items.find((g) => String(g.id) === id);
+      if (item) prefillGradedRaceForm(item);
+    });
+  });
+  table.querySelectorAll(".graded-race-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.closest("tr")?.dataset.id;
+      if (!id) return;
+      if (!confirm("この重賞マスタを削除しますか？")) return;
+      const res2 = await authedFetch(`/api/admin/graded-races/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res2.ok) {
+        const data2 = await res2.json().catch(() => ({}));
+        alert(data2.error || "削除に失敗しました。");
+        return;
+      }
+      await loadGradedRaces();
+    });
+  });
+}
+
+function prefillGradedRaceForm(item) {
+  document.getElementById("graded-race-id").value = item.id;
+  document.getElementById("graded-race-name").value = item.name;
+  document.getElementById("graded-race-grade").value = item.grade;
+  document.getElementById("graded-race-jump").checked = !!item.is_jump;
+  const cancelBtn = document.getElementById("graded-race-cancel-btn");
+  const submitBtn = document.getElementById("graded-race-submit-btn");
+  if (cancelBtn) cancelBtn.hidden = false;
+  if (submitBtn) submitBtn.textContent = "更新";
+  document.getElementById("graded-race-name").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function resetGradedRaceForm() {
+  document.getElementById("graded-race-id").value = "";
+  document.getElementById("graded-race-name").value = "";
+  document.getElementById("graded-race-grade").value = "G1";
+  document.getElementById("graded-race-jump").checked = false;
+  const cancelBtn = document.getElementById("graded-race-cancel-btn");
+  const submitBtn = document.getElementById("graded-race-submit-btn");
+  if (cancelBtn) cancelBtn.hidden = true;
+  if (submitBtn) submitBtn.textContent = "登録";
+}
+
+function setupGradedRaceForm() {
+  const form = document.getElementById("graded-race-form");
+  const messageEl = document.getElementById("graded-race-form-message");
+  const cancelBtn = document.getElementById("graded-race-cancel-btn");
+  if (!form) return;
+
+  cancelBtn?.addEventListener("click", () => resetGradedRaceForm());
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = document.getElementById("graded-race-id").value;
+    const name = document.getElementById("graded-race-name").value.trim();
+    const grade = document.getElementById("graded-race-grade").value;
+    const is_jump = document.getElementById("graded-race-jump").checked;
+    if (!name) return;
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    messageEl.hidden = true;
+
+    const body = JSON.stringify({ name, grade, is_jump });
+    const res = id
+      ? await authedFetch(`/api/admin/graded-races/${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body })
+      : await authedFetch("/api/admin/graded-races", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = id ? `「${name}」を更新しました。` : `「${name}」(${grade})を登録しました。`;
+      resetGradedRaceForm();
+      await loadGradedRaces();
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "登録に失敗しました。";
+    }
+    submitBtn.disabled = false;
+  });
+}
+
+// JRA公式「N年 重賞レース一覧」ページ(PDF)を選択すると、その場でクライアント側解析
+// (public/jra-graded-races-pdf.js)して検出件数をプレビュー表示し、確認ボタンを押したら
+// POST /api/admin/graded-races/import へまとめて送信する(結果PDFインポート等と同じ
+// 「解析→プレビュー→確定登録」の2段階フロー)。
+function setupGradedRacesImport() {
+  const fileInput = document.getElementById("graded-races-pdf-file");
+  const statusEl = document.getElementById("graded-races-import-status");
+  const previewEl = document.getElementById("graded-races-import-preview");
+  if (!fileInput) return;
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    previewEl.innerHTML = "";
+    statusEl.textContent = "解析中…";
+    fileInput.disabled = true;
+
+    try {
+      const extracted = await jraGradedRacesExtractPdfPages(file);
+      const parsed = jraGradedRacesParseExtractedPages(extracted.pages);
+
+      if (parsed.diagnostics.errors.length) {
+        statusEl.textContent = "";
+        previewEl.innerHTML = `<p class="submit-message error">${parsed.diagnostics.errors.map(escapeHtml).join("<br>")}</p>`;
+        return;
+      }
+
+      statusEl.textContent = `${parsed.records.length}件のレースを検出しました。内容を確認して登録してください。`;
+      previewEl.innerHTML = `
+        <div class="table-wrap"><table class="stats-table">
+          <thead><tr><th>レース名</th><th>グレード</th><th>競馬場</th><th>コース</th></tr></thead>
+          <tbody>
+            ${parsed.records.map((r) => `
+              <tr>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${r.is_jump ? "J・" : ""}${escapeHtml(r.grade)}</td>
+                <td>${escapeHtml(r.track || "")}</td>
+                <td>${escapeHtml(formatCourseText(r.course_type, r.distance) || "")}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table></div>
+        <button type="button" class="stamp-btn" id="graded-races-import-confirm-btn">この内容で一括登録する(${parsed.records.length}件)</button>
+        <p id="graded-races-import-message" class="submit-message" hidden></p>
+      `;
+
+      document.getElementById("graded-races-import-confirm-btn")?.addEventListener("click", async (ev) => {
+        const btn = ev.currentTarget;
+        const msgEl = document.getElementById("graded-races-import-message");
+        btn.disabled = true;
+        const res = await authedFetch("/api/admin/graded-races/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ races: parsed.records }),
+        });
+        const data = await res.json().catch(() => ({}));
+        msgEl.hidden = false;
+        if (res.ok) {
+          const created = (data.results || []).filter((r) => r.status === "created").length;
+          const updated = (data.results || []).filter((r) => r.status === "updated").length;
+          const invalid = (data.results || []).filter((r) => r.status === "invalid").length;
+          msgEl.className = "submit-message success";
+          msgEl.textContent = `登録が完了しました(新規${created}件・更新${updated}件${invalid ? `・スキップ${invalid}件` : ""})。`;
+          await loadGradedRaces();
+        } else {
+          msgEl.className = "submit-message error";
+          msgEl.textContent = data.error || "登録に失敗しました。";
+          btn.disabled = false;
+        }
+      });
+    } catch (e) {
+      statusEl.textContent = "";
+      previewEl.innerHTML = `<p class="submit-message error">解析に失敗しました: ${escapeHtml(e && e.message ? e.message : String(e))}</p>`;
+    } finally {
+      fileInput.disabled = false;
+      fileInput.value = "";
+    }
+  });
+}
+
 async function onReady() {
   const denied = document.getElementById("admin-denied-notice");
   const content = document.getElementById("admin-content");
@@ -603,6 +805,8 @@ async function onReady() {
   setupHorseAliasForm();
   setupHorseAliasNormalizeButton();
   setupApiTokenButtons();
+  setupGradedRaceForm();
+  setupGradedRacesImport();
   await Promise.all([
     loadUnregisteredRaces(),
     loadUsers(),
@@ -610,6 +814,7 @@ async function onReady() {
     loadHorseAliases(),
     setupHorseIndex(),
     loadApiTokenStatus(),
+    loadGradedRaces(),
   ]);
 }
 

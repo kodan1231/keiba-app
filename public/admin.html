@@ -135,6 +135,51 @@
           <p id="horse-alias-normalize-message" class="submit-message" hidden></p>
         </div>
       </section>
+
+      <!-- 重賞管理(2026-09-19追加)。集計画面(stats.html)の「総合成績」「レース別」タブの
+           「重賞のみ」フィルタで使う重賞(G1/G2/G3)レース名マスタ。手入力に加え、JRA公式
+           「N年 重賞レース一覧」ページ(PDF)からの一括インポートに対応する。
+           詳細はdocs/design/graded-races.md参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">重賞管理</h2>
+        <p class="ticket-sub">
+          集計画面の「重賞のみ」フィルタで使う重賞(G1/G2/G3)レース名のマスタです。
+          レース名はJRA公式「重賞レース一覧」ページの表記(略称。例:「紫苑S」)で
+          登録してください(結果・出走馬PDF側の「第N回◯◯ステークス」のような表記は
+          自動的に正規化して突き合わせます)。自動で一致しない表記ゆれがあれば、その
+          レースの実際の表記のまま追加登録することで個別に対応できます。
+        </p>
+
+        <div style="margin-bottom:16px">
+          <label class="ghost-btn" style="display:inline-block;cursor:pointer">
+            重賞一覧PDFを選択してインポート
+            <input type="file" id="graded-races-pdf-file" accept="application/pdf,.pdf" style="display:none" />
+          </label>
+          <p id="graded-races-import-status" class="ticket-sub"></p>
+          <div id="graded-races-import-preview"></div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
+          <form id="graded-race-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+            <input type="hidden" id="graded-race-id" value="" />
+            <label style="flex:1;min-width:160px">レース名(例: 紫苑S)
+              <input type="text" id="graded-race-name" placeholder="レース名" required />
+            </label>
+            <label>グレード
+              <select id="graded-race-grade">
+                <option value="G1">G1</option>
+                <option value="G2">G2</option>
+                <option value="G3">G3</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="graded-race-jump" /> 障害重賞</label>
+            <button type="submit" id="graded-race-submit-btn" class="stamp-btn">登録</button>
+            <button type="button" id="graded-race-cancel-btn" class="ghost-btn" hidden>編集をキャンセル</button>
+          </form>
+          <p id="graded-race-form-message" class="submit-message" hidden></p>
+          <div class="table-wrap"><table class="stats-table" id="graded-races-table"></table></div>
+        </div>
+      </section>
     </div>
   </main>
 </div>
@@ -142,6 +187,8 @@
 <script src="utils.js"></script>
 <script src="shell.js"></script>
 <script src="bettypes.js"></script>
+<script src="jra-pdf-common.js"></script>
+<script src="jra-graded-races-pdf.js"></script>
 <script src="auth.js"></script>
 <script src="cart.js"></script>
 <script src="admin.js"></script>

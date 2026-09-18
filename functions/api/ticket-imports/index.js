@@ -1,4 +1,4 @@
-import { getAllRacesRaw, backfillHorseNamesForRace } from "../_shared.js";
+import { getAllRacesRaw, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace } from "../_shared.js";
 
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -389,8 +389,15 @@ export async function onRequestGet(context){
     // races は races_cache(_lib/races-cache.js。2026-09-12追加)から読む。以前は
     // 毎回全件SELECTしており、races が育つにつれてimported_ticket_itemsと同種の
     // D1読み取り上限逼迫リスクがあった。
+    // race_category: 集計画面「総合成績」「レース別」タブの「すべて/重賞のみ/条件戦のみ」
+    // フィルタ用("graded"/"condition"/"other")。2026-09-19追加(docs/design/graded-races.md参照)。
+    const gradedMap=await loadGradedRaceMap(db);
     const raceCourseById=new Map();
-    for(const r of await getAllRacesRaw(db)) raceCourseById.set(r.id,{course_type:r.course_type,distance:r.distance});
+    for(const r of await getAllRacesRaw(db)) raceCourseById.set(r.id,{
+      course_type:r.course_type,
+      distance:r.distance,
+      category:classifyRace(gradedMap,{race_name:r.race_name,class_flags:r.class_flags}).category,
+    });
     const itemsByGroup=new Map();
     for(const idsChunk of chunk([...groupIds],90)){
       if(!idsChunk.length) continue;
@@ -402,7 +409,7 @@ export async function onRequestGet(context){
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
       const rc=raceCourseById.get(g.race_id)||null;
-      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
+      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,race_category:rc?rc.category:"other",bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // v10以前に取り込まれたレガシー行(未正規化)も、履歴APIで後方互換表示する。
     // 2026-08-14〜: Club JRA-Net購入履歴CSVは既に決着済みという方針統一に合わせ、
@@ -410,7 +417,7 @@ export async function onRequestGet(context){
     // (以前は payout: refund||null で、refund=0の場合にnull=未確定のままだった。
     // docs/BACKLOG.md「クラスタE」参照)。
     const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
-    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_course_type:null,race_distance:null,bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
+    for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_course_type:null,race_distance:null,race_category:"other",bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }
