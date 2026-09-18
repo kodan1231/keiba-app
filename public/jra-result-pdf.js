@@ -199,7 +199,16 @@ function jraResultParseHorseFromResultLine(text) {
 // 「実機未検証」の扱いとする(docs/DESIGN.md参照)。
 
 const JRA_RESULT_ROW_HEAD_RE = /^(\d{1,2})\s+(.*?)\s*(牡|牝|せん|セ|騸)\s*(\d{1,2})\s+([\d.]+)\s+(.+?)\s+(\d+:\d{2}\.\d)\s+(.*)$/;
-const JRA_RESULT_ROW_TAIL_RE = /^(.*?)\s*([\d.]+)\s+(\d+)\s*[（(]([^）)]*)[）)]\s+(.+?)\s+(\d+)\s*$/;
+// 末尾の末尾に「単勝人気」を捉える(\d+)$の後ろに、任意で1個だけ追加の数値項目を許容する
+// (?:\s+[\d.]+)?。重賞・特別戦のJRA結果PDFのみ、調教師名の後に単勝人気に続けて
+// もう1項目(収得賞金等とみられる数値)が付くことが判明した(2026-09-19。DB調査で
+// win_popularityが67〜114等の明らかな異常値になっているレースを全件確認したところ、
+// 100%が重賞・OP等の特別レース〈条件戦は0件〉だった)。この追加項目が無ければ
+// 従来通り(.+?)が調教師名を末尾まで貪欲に伸ばして唯一の(\d+)を単勝人気として捉える
+// (末尾に空白+数字の並びが1組しか無いため後方互換)。追加項目がある場合は、
+// 従来なら誤ってこの2個目の数値を単勝人気として捉えてしまっていた
+// (1個目の本来の単勝人気は(.+?)側=調教師名扱いで捨てられていた)。
+const JRA_RESULT_ROW_TAIL_RE = /^(.*?)\s*([\d.]+)\s+(\d+)\s*[（(]([^）)]*)[）)]\s+(.+?)\s+(\d+)(?:\s+[\d.]+)?\s*$/;
 const JRA_RESULT_MARGIN_WORDS = ["クビ", "アタマ", "ハナ", "大差"];
 
 // 着差とコーナー通過順位が混在した文字列(数字のみで区切り文字が無い)を分離する。
@@ -327,7 +336,7 @@ function jraResultParseStopRow(rawLine) {
   // 末尾トークン = 単勝人気(整数)。
   const popularityTok = tokens[tokens.length - 1];
   if (!/^\d+$/.test(popularityTok)) return null;
-  const winPopularity = Number(popularityTok);
+  let winPopularity = Number(popularityTok);
   const rest = tokens.slice(0, -1);
 
   // 末尾側から「整数トークン」の直後に「括弧書きトークン(増減)」が続く箇所を探し、
@@ -342,6 +351,15 @@ function jraResultParseStopRow(rawLine) {
   const bodyWeightChange = rest[bwIndex + 1].replace(/[（）()]/g, "");
   const trainerTokens = rest.slice(bwIndex + 2);
   if (!trainerTokens.length) return null;
+  // 重賞・特別戦のみ、調教師名の後に単勝人気に続けてもう1項目(収得賞金等とみられる
+  // 数値)が付くことがある(jraResultParseFullResultRow の JRA_RESULT_ROW_TAIL_RE と
+  // 同じ問題。2026-09-19)。trainerTokens の末尾が数値のまま残っていれば、それが
+  // 本来の単勝人気で、上で拾った popularityTok の方が余分な項目だったということなので
+  // 差し替える。
+  if (trainerTokens.length > 1 && /^\d+$/.test(trainerTokens[trainerTokens.length - 1])) {
+    winPopularity = Number(trainerTokens[trainerTokens.length - 1]);
+    trainerTokens.pop();
+  }
   const trainer = trainerTokens.join(" ");
 
   // 馬体重より手前(騎手+コーナー通過順位)を、末尾側から連続する整数トークンを
