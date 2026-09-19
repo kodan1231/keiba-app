@@ -26,6 +26,8 @@
 //     単一レース版を使う)
 // 新しく finish_order / payouts を更新する処理を追加する場合は、必ずここも呼ぶこと。
 
+import { runBatchInChunks } from "./http.js";
+
 const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
 
 function computeWinningCombos(betType, finishOrder, entries) {
@@ -185,7 +187,7 @@ export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, pay
 
   const statements = [];
   buildRecomputeStatements(db, tks, items, finishOrder, payoutsObj, entries, statements);
-  if (statements.length) await db.batch(statements);
+  if (statements.length) await runBatchInChunks(db, statements);
   return { updated: statements.length };
 }
 
@@ -193,25 +195,39 @@ export async function recomputeTicketPayoutsForRace(db, raceId, finishOrder, pay
 // results-import.js(JRAレース結果PDF一括登録)が、12レース分などをまとめて処理する際に
 // レースごとの逐次呼び出しによるサブリクエスト数超過を避けるために使う。
 // updates: [{ raceId, finishOrder, payoutsObj, entries }, ...]
+//
+// raceIds の件数は、results-import.js呼び出し時は1ファイルぶん(~12件)で自然に
+// バウンドされるが、tickets/bulk.js(馬券かご一括購入)呼び出し時は「1回のかご購入に
+// 含まれるユニークレース数」に依存し、かご自体(localStorage)には件数上限が無いため
+// D1の「1クエリ100バインドパラメータ」上限を超えうる。90件ずつチャンク分割して
+// SELECTする(2026-09-19。graded_races一括インポートで同種の上限超過による登録失敗が
+// 実際に発生したことを受けて横展開した)。
 export async function recomputeTicketPayoutsForRaces(db, updates) {
   const targets = (updates || []).filter((u) => u && u.raceId);
   if (!db || !targets.length) return { updated: 0 };
 
   const raceIds = targets.map((u) => u.raceId);
-  const placeholders = raceIds.map(() => "?").join(",");
-  const [{ results: tks }, { results: items }] = await Promise.all([
-    db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id IN (${placeholders})`).bind(...raceIds).all(),
-    db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, is_hit FROM imported_ticket_items WHERE race_id IN (${placeholders})`).bind(...raceIds).all(),
-  ]);
-  if ((!tks || !tks.length) && (!items || !items.length)) return { updated: 0 };
+  const tks = [];
+  const items = [];
+  for (let i = 0; i < raceIds.length; i += 90) {
+    const idsChunk = raceIds.slice(i, i + 90);
+    const placeholders = idsChunk.map(() => "?").join(",");
+    const [{ results: tksChunk }, { results: itemsChunk }] = await Promise.all([
+      db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, refunded FROM tickets WHERE race_id IN (${placeholders})`).bind(...idsChunk).all(),
+      db.prepare(`SELECT id, race_id, bet_type, selections, amount, payout, is_hit FROM imported_ticket_items WHERE race_id IN (${placeholders})`).bind(...idsChunk).all(),
+    ]);
+    tks.push(...(tksChunk || []));
+    items.push(...(itemsChunk || []));
+  }
+  if (!tks.length && !items.length) return { updated: 0 };
 
   const ticketsByRace = new Map();
-  for (const t of (tks || [])) {
+  for (const t of tks) {
     if (!ticketsByRace.has(t.race_id)) ticketsByRace.set(t.race_id, []);
     ticketsByRace.get(t.race_id).push(t);
   }
   const importedByRace = new Map();
-  for (const it of (items || [])) {
+  for (const it of items) {
     if (!importedByRace.has(it.race_id)) importedByRace.set(it.race_id, []);
     importedByRace.get(it.race_id).push(it);
   }
@@ -229,6 +245,6 @@ export async function recomputeTicketPayoutsForRaces(db, updates) {
     );
   }
 
-  if (statements.length) await db.batch(statements);
+  if (statements.length) await runBatchInChunks(db, statements);
   return { updated: statements.length };
 }

@@ -55,7 +55,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 
 | ファイル | 主な関数 |
 |---|---|
-| `_lib/http.js` | `jsonError(msg,status,extra?)` `readJsonBody(request)`→`{data}`\|`{error}` `parsePositiveIntId(raw,label?)`→`{id}`\|`{error}`。ハンドラは `const {data,error}=await readJsonBody(request); if(error) return error;` の形で使う |
+| `_lib/http.js` | `jsonError(msg,status,extra?)` `readJsonBody(request)`→`{data}`\|`{error}` `parsePositiveIntId(raw,label?)`→`{id}`\|`{error}`。ハンドラは `const {data,error}=await readJsonBody(request); if(error) return error;` の形で使う。`runBatchInChunks(db,statements,chunkSize=200)`(2026-09-19追加。`db.batch()`に積む文が大きくなりうる箇所は必ずこれを使う。下記不変条件参照) |
 | `_lib/auth.js` | `hashPassword` `verifyPassword` `isAdminUsername` `requireAdmin` `createSessionToken` `verifySessionToken` `generateApiToken` `hashApiToken` `verifyApiToken`(個人用アクセストークン。2026-09-13追加) |
 | `_lib/entries-merge.js` | `mergeEntriesByHorseName` `backfillHorseNamesForRace` `linkUnregisteredImportsToRace` `computeWakuNumberFromHorseNumber`(非export・内部) |
 | `_lib/jockey-alias.js` | `jockeyAliasKeyOf` `loadJockeyAliasMap` `applyJockeyAliasMap` `applyJockeyAliasesToEntries` `normalizeExistingJockeyNames` |
@@ -77,7 +77,19 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   件数が「1レースの出走馬」「1回の取込PDFのレース」等で自然にバウンドされるなら可。
   ユーザーの全履歴・全レース等、使い込むと増える集合を渡す場合は、対象テーブルが小さければ
   全件SELECTしてメモリ照合、大きければ90件ずつチャンク分割する
-  (2026-09-08にこの上限超過で `GET /api/ticket-imports` が落ちる障害があった)。
+  (2026-09-08にこの上限超過で `GET /api/ticket-imports` が落ちる障害があった。
+  2026-09-19には重賞マスタ一括インポート〈年間約140件〉で同じ上限超過による
+  登録失敗が発生。**「自然にバウンドされる」という判断自体を書いた本人が見誤った
+  実績があるため、IN句に渡す配列を書いたら必ずその場で件数の上限〈最大何件になり得るか〉を
+  コメントで具体的に書き出し、100に近い/超えうるなら機械的にチャンク分割する**。
+  「年1回」「管理者操作」等の頻度の低さは免除理由にならない)。
+- **`db.batch(statements)` に積む文の数が数百件規模になりうる箇所も、90〜200件ずつ
+  チャンク分割する(`_lib/http.js` の `runBatchInChunks(db, statements, chunkSize?)` を使う。
+  2026-09-19導入)**。対象行数が「1レースの出走馬」等で自然に数件〜数十件にバウンドされる
+  場合は分割不要だが、「CSV1行のボックス買い(組み合わせ数が出走頭数の階乗規模で
+  数百件に達しうる)」「PDF1ファイルの全レース×全出走馬」「かご購入に含まれる
+  ユニークレース数(かご自体に件数上限が無い)」等、要素数が構造的に大きくなり得る
+  ループでは新規実装時から必ずこのヘルパーを使うこと。
 - **馬の同一性は `horse_number` ではなく `horse_name`(馬名)をキーに判定する**。
   比較前に必ず空白正規化(全角スペース等を半角1つへ畳み込み・trim)を通す。
   レース横断で突き合わせる場合(予想画面の過去成績等)は `horseAliasKeyOf`

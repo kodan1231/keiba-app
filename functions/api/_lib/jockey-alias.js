@@ -9,6 +9,8 @@
 // 見習い減量記号(☆▲△★◇)は残したまま、記号を除いた部分の空白(全角/半角問わず)を
 // すべて除去した文字列を突き合わせキー(alias_key)とする。これにより「戸崎 圭太」
 // 「戸崎圭太」は同一キーとして扱われる(要件: スペース有無は同一人物とみなす)。
+import { runBatchInChunks } from "./http.js";
+
 const JOCKEY_MARK_RE = /^([☆▲△★◇])/;
 
 // 表記ゆれ文字列から突き合わせキーを生成する(見習い記号除去・空白除去)。
@@ -101,7 +103,7 @@ export async function normalizeExistingJockeyNames(db) {
         result.races++;
       }
     }
-    if (statements.length) await db.batch(statements);
+    if (statements.length) await runBatchInChunks(db, statements);
   }
 
   // race_results.jockey
@@ -116,7 +118,7 @@ export async function normalizeExistingJockeyNames(db) {
         result.race_results++;
       }
     }
-    if (statements.length) await db.batch(statements);
+    if (statements.length) await runBatchInChunks(db, statements);
   }
 
   // tickets.selections
@@ -139,7 +141,7 @@ export async function normalizeExistingJockeyNames(db) {
         result.tickets++;
       }
     }
-    if (statements.length) await db.batch(statements);
+    if (statements.length) await runBatchInChunks(db, statements);
   }
 
   // imported_ticket_items.selections
@@ -162,7 +164,7 @@ export async function normalizeExistingJockeyNames(db) {
         result.imported_ticket_items++;
       }
     }
-    if (statements.length) await db.batch(statements);
+    if (statements.length) await runBatchInChunks(db, statements);
   }
 
   return result;

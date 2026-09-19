@@ -16,6 +16,7 @@
 // 詳細は docs/design/horse-aliases.md 参照)。
 
 import { horseAliasKeyOf } from "./horse-alias.js";
+import { runBatchInChunks } from "./http.js";
 
 export async function upsertRaceResults(db, raceId, records) {
   if (!db || !raceId || !Array.isArray(records) || records.length === 0) return { updated: 0 };
@@ -196,6 +197,8 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
     }
   }
 
-  if (statements.length) await db.batch(statements);
+  // 12レース×18頭規模だと200件に達しうるため、90件ずつチャンク分割する
+  // (2026-09-19。graded_races一括インポートで発生したD1の上限超過を受けて横展開した)。
+  if (statements.length) await runBatchInChunks(db, statements, 90);
   return { updated: statements.length };
 }

@@ -1,4 +1,4 @@
-import { getAllRacesRaw, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace } from "../_shared.js";
+import { getAllRacesRaw, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace, runBatchInChunks } from "../_shared.js";
 
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -314,7 +314,11 @@ export async function onRequestPost(context){
         }
         const statement=db.prepare(`INSERT INTO imported_ticket_items(group_id,race_id,bet_type,selections,amount,payout,is_hit,result_inferred,source_key) VALUES(?,?,?,?,?,?,?,?,?)`).bind(groupId,race?.id||null,type,JSON.stringify(selectionsFromNums(nums)),perAmount,payout,isHit?1:0,inferred?1:0,`${sourceKey}:${key}`);
         statements.push(statement);}
-      if(statements.length) await db.batch(statements);
+      // 1行(1買い目)のCSVでも、ボックス買い等では組み合わせ数(items.length)が
+      // 大きな出走頭数だと数百件に達することがある(例: 18頭ボックス三連複=C(18,3)=816通り)。
+      // db.batch()に一度に積む文の数が大きくなりすぎないよう、90件ずつチャンク分割する
+      // (2026-09-19。graded_races一括インポートで発生したD1の上限超過を受けて横展開した)。
+      if(statements.length) await runBatchInChunks(db, statements, 90);
       // CSV取込結果のうち、着順が一意に定まる情報(単勝1着/馬単1・2着/三連単3着まで)は
       // races.finish_order へ、的中組み合わせごとの払戻レートは races.payouts へ反映する。
       if(race){

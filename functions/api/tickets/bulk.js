@@ -1,23 +1,9 @@
-import { recomputeTicketPayoutsForRaces, readJsonBody, jsonError } from "../_shared.js";
+import { recomputeTicketPayoutsForRaces, runBatchInChunks, readJsonBody, jsonError } from "../_shared.js";
 
 const VALID_BET_TYPES = [
   "tan", "fuku", "wakuren", "umaren", "wide", "umatan", "sanrenpuku", "sanrentan",
 ];
 const VALID_METHODS = ["normal", "box", "nagashi", "axis1", "axis2", "multi", "axis2_multi", "formation"];
-
-// db.batch()に一度に積む文の数の上限(安全のためのチャンク分割)。
-// db.batch()自体は1回のサブリクエストにまとまるため、通常のカゴ購入(数十〜百点程度)
-// なら分割せず1回で収まるが、想定外に大量の買い目が一度に送られてきた場合に備えて
-// 分割する(1回のdb.batch()呼び出しごとに1サブリクエストを消費するため、分割しすぎると
-// かえってサブリクエスト数上限に近づく点に注意。目安として超えることがまず無い
-// 200件をチャンクサイズとした)。
-const BATCH_CHUNK_SIZE = 200;
-
-async function runBatchInChunks(db, statements) {
-  for (let i = 0; i < statements.length; i += BATCH_CHUNK_SIZE) {
-    await db.batch(statements.slice(i, i + BATCH_CHUNK_SIZE));
-  }
-}
 
 // 1グループ分の必須項目・組み合わせの形式を検証する。問題があればエラーメッセージ
 // (文字列)を返し、問題なければnullを返す。
@@ -82,19 +68,24 @@ export async function onRequestPost(context) {
     return Response.json({ ok: true, results });
   }
 
-  // 対象レースをまとめて1回のSELECTで取得する(存在確認と、既に確定済みのレースへの
+  // 対象レースをまとめてSELECTで取得する(存在確認と、既に確定済みのレースへの
   // 払戻即時反映の両方に使う)。レースごとの個別SELECTはサブリクエスト数上限対策のため
   // 避ける。
-  // 注意: この IN 句は「1回のかご購入に含まれるユニークレース数」でバウンドされる前提。
-  // D1 の1クエリ100バインドパラメータ上限があるため、かご容量を100レース超に広げる等の
-  // 変更をする場合はチャンク分割が必要。
+  // かご(localStorage側)の保持件数には上限が無く、多くの異なるレースをまたいで
+  // まとめて購入することがD1の「1クエリ100バインドパラメータ」上限を超える可能性が
+  // あるため、90件ずつチャンク分割する(2026-09-19。graded_races一括インポートで
+  // 同種の上限超過による登録失敗が実際に発生したことを受けて横展開した)。
   const uniqueRaceIds = [...new Set(validGroups.map((g) => Number(g.race_id)))];
-  const placeholders = uniqueRaceIds.map(() => "?").join(",");
-  const { results: raceRows } = await env.DB
-    .prepare(`SELECT id, entries, finish_order, payouts FROM races WHERE id IN (${placeholders})`)
-    .bind(...uniqueRaceIds)
-    .all();
-  const raceById = new Map((raceRows || []).map((r) => [r.id, r]));
+  const raceById = new Map();
+  for (let i = 0; i < uniqueRaceIds.length; i += 90) {
+    const idsChunk = uniqueRaceIds.slice(i, i + 90);
+    const placeholders = idsChunk.map(() => "?").join(",");
+    const { results: raceRows } = await env.DB
+      .prepare(`SELECT id, entries, finish_order, payouts FROM races WHERE id IN (${placeholders})`)
+      .bind(...idsChunk)
+      .all();
+    for (const r of raceRows || []) raceById.set(r.id, r);
+  }
 
   const statements = [];
   const touchedRaceIds = new Set();

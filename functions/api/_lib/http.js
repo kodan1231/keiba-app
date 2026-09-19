@@ -49,3 +49,21 @@ export function parsePositiveIntId(raw, label = "ID") {
   }
   return { id };
 }
+
+// db.batch()に一度に積む文の数の上限(安全のためのチャンク分割)。
+// 2026-09-19新設: 元々 functions/api/tickets/bulk.js にローカル実装していたものを
+// 共通化した。管理画面の「既存データの馬名/騎手名を一括補正する」ボタン
+// (_lib/horse-alias.js・_lib/jockey-alias.js の normalizeExisting*)は対象行数が
+// races/race_results/tickets等の全件規模になり得るため(数万件の実績あり。
+// CLAUDE.md「大きな一括処理」参照)、チャンク分割せずに db.batch() へ一括で
+// 渡すとD1側の1リクエストあたりの処理量の上限に抵触するおそれがある。
+// db.batch()自体は1回のサブリクエストにまとまるため、通常規模の処理なら
+// 分割しなくても1回で収まるが、想定外に大量の文が積まれた場合に備えて分割する
+// (1回のdb.batch()呼び出しごとに1サブリクエストを消費するため、分割しすぎると
+// かえってサブリクエスト数上限に近づく点に注意。目安として超えることがまず無い
+// 200件をチャンクサイズとした)。
+export async function runBatchInChunks(db, statements, chunkSize = 200) {
+  for (let i = 0; i < statements.length; i += chunkSize) {
+    await db.batch(statements.slice(i, i + chunkSize));
+  }
+}

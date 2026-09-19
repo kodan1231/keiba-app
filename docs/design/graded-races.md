@@ -81,7 +81,12 @@ JRA公式サイト「N年 重賞レース一覧」ページのレース名表記
   (`public/jra-graded-races-pdf.js`でクライアント側解析 →
   `POST /api/admin/graded-races/import`で`name_key`一致ならUPDATE、
   無ければINSERT。グレードは年度によって変わりうる〈昇格・降格〉ため、
-  再インポートのたびに上書きする方針)
+  再インポートのたびに上書きする方針)。既存行の突き合わせ用SELECTは、
+  年間の重賞レース数(140件前後)がD1の「1クエリ100バインドパラメータ」上限を
+  超えるため90件ずつチャンク分割する(2026-09-19。導入直後にこの上限超過で
+  実際に登録が失敗する障害が発生し、`CLAUDE.md`の不変条件を横展開する形で
+  `_lib/ticket-payout.js`・`_lib/race-results.js`・`ticket-imports/index.js`・
+  `tickets/bulk.js`の同種の未チャンク箇所もあわせて修正した)
 
 ### JRA重賞一覧PDFの解析(実機で検証済み。2026-09-19)
 
