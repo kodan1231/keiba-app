@@ -76,7 +76,11 @@ JRA公式サイト「N年 重賞レース一覧」ページのレース名表記
 ## 管理画面「重賞管理」(`admin.html`)
 
 - 一覧表示・手入力での追加/編集/削除(`GET/POST /api/admin/graded-races`、
-  `PUT/DELETE /api/admin/graded-races/:id`)
+  `PUT/DELETE /api/admin/graded-races/:id`)。一覧の「編集」「×(削除)」ボタンは
+  `.row-actions`(`display:flex`)で1つの`<div>`にまとめて横並びにする。`.icon-btn`
+  (削除ボタン)は`display:flex`でブロック化されており、`.ghost-btn`(編集ボタン)と
+  同じ`<td>`にラップ無しで並べると改行されて縦2段になる不具合が2026-09-21に発生した
+  ため、以後この種のボタン組は必ず`.row-actions`で囲む
 - JRA公式「N年 重賞レース一覧」ページ(PDF)からの一括インポート
   (`public/jra-graded-races-pdf.js`でクライアント側解析 →
   `POST /api/admin/graded-races/import`で`name_key`一致ならUPDATE、

@@ -618,8 +618,10 @@ async function loadGradedRaces() {
           <td>${g.is_jump ? "○" : "—"}</td>
           <td>${escapeHtml(ref || "—")}</td>
           <td>
-            <button type="button" class="ghost-btn graded-race-edit-btn">編集</button>
-            <button type="button" class="icon-btn delete graded-race-delete-btn" title="削除">×</button>
+            <div class="row-actions">
+              <button type="button" class="ghost-btn graded-race-edit-btn">編集</button>
+              <button type="button" class="icon-btn delete graded-race-delete-btn" title="削除">×</button>
+            </div>
           </td>
         </tr>`;
       }).join("")}
