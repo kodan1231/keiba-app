@@ -99,13 +99,25 @@ function jraEntriesParseConditions(text) {
 // フォールバックする)。
 //
 // 2026-08-11追加: 性齢(sex_age)・負担重量(weight_carried)も戻り値に含める。
+// レース当日で既に馬体重(増減)が発表されている出走馬一覧PDFのみ、通常の
+// 出走馬一覧PDF(木・金曜等)には無い「馬体重(増減)」列が馬名の直後・性齢の直前に
+// 追加される(例: "ハイネスプラウド [TAB] 446kg(+2) 牡2 51.0kg …")。馬名の抽出は
+// 直後に性齢マーカー(牡/牝/せん/セ/騸)が続く直前までを遅延マッチで取るため、この列が
+// あると馬体重情報ごと馬名に取り込まれてしまい、サーバー側のマージ処理
+// (mergeEntriesByHorseName、馬名をキーに既存行と突き合わせる)で別馬扱いされ、
+// 同じ馬が枠番・馬番ありの行(馬体重付きの誤った馬名)と枠番・馬番なしの行(正しい馬名)に
+// 重複してしまう不具合が2026-09-21に発生した。性齢マーカーの直前にこの列があれば
+// 先に切り離しておく(出走馬一覧PDFインポートは馬体重自体を保存対象にしていないため
+// 〈docs/design/race-results.md「races.entriesとの役割分担」参照〉、値は使わず除去するだけでよい)。
+const JRA_ENTRIES_BODY_WEIGHT_RE = /[\t ]+\d{3,4}\s*kg\s*[（(][^）)]*[）)](?=\s*(?:牡|牝|せん|セ|騸))/;
+
 function jraEntriesParseHorseRow(rawLine) {
   const s = jraEntriesNormalizeLine(rawLine);
   if (!s) return null;
 
   let wakuNumber = null;
   let horseNumber = null;
-  let rest = s;
+  let rest = s.replace(JRA_ENTRIES_BODY_WEIGHT_RE, "");
 
   // 行頭の「枠番 馬番」を試みる(未検証の想定形式。上記コメント参照)。
   const numPrefix2 = rest.match(/^([1-8])\s+(\d{1,2})\s+(.+)$/);
