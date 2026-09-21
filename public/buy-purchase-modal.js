@@ -23,6 +23,12 @@ const state = {
   boxSet: new Set(),
   singleSet: new Set(),
   axisSet: new Set(),
+  // 三連単2頭軸専用: [1つ目に指定した着順の軸馬, 2つ目に指定した着順の軸馬]。
+  // axisSetはチェックした順序(=クリック順)しか分からず着順を特定できないため、
+  // 三連単2頭軸(マルチOFF)の組み合わせ生成にはこちらを使う(下記renderPicker/
+  // currentCombos参照。2026-09-21、netkeiba実物のUI〈1着軸/2着軸/相手の3列〉との
+  // 乖離指摘を受けて追加)。
+  axisOrder: [null, null],
   axisPlacement: "12",
   nagashiFixedSlot: 0,
   partnerSet: new Set(),
@@ -61,6 +67,7 @@ function resetState() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
+  state.axisOrder = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -199,6 +206,7 @@ function resetBetSelections() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
+  state.axisOrder = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -241,6 +249,7 @@ function resetMethodSelections() {
   state.boxSet = new Set();
   state.singleSet = new Set();
   state.axisSet = new Set();
+  state.axisOrder = [null, null];
   state.axisPlacement = "12";
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
@@ -311,7 +320,8 @@ function renderMethodOptions() {
   methodOptions.querySelectorAll('input[name="axis-placement"]').forEach(x => {
     x.onchange = () => {
       state.axisPlacement = x.value;
-      renderPreview();
+      // 列見出し(1着軸/2着軸等)がaxisPlacementに依存するため再描画する。
+      renderPicker();
     };
   });
   methodOptions.querySelectorAll('input[name="umatan-fixed-slot"]').forEach(x => {
@@ -328,10 +338,10 @@ function renderMethodOptions() {
   };
 }
 
-function horseRow(e, controlHtml) {
+function horseRow(e, controlHtml, extraRowClass) {
   const mark = (predictionMarks.get(Number(e.horse_number)) || []).join(" ");
   return `
-    <div class="bet-horse-row ${mark ? "has-prediction-mark" : ""}">
+    <div class="bet-horse-row ${mark ? "has-prediction-mark" : ""} ${extraRowClass || ""}">
       <span class="mini-waku waku-${e.waku_number||0}">${e.waku_number||"-"}</span>
       <span class="bet-horse-num">${e.horse_number}</span>
       <span class="bet-horse-name">${escapeHtml(e.horse_name||"馬名未登録")}</span>
@@ -340,6 +350,18 @@ function horseRow(e, controlHtml) {
       <span class="bet-horse-control">${controlHtml}</span>
     </div>
   `;
+}
+
+// 三連単2頭軸の列見出し。axisPlacement(1・2着/1・3着/2・3着)で選んだ2つの着順を
+// そのままラベルにする(netkeiba/JRA実物と同じ「1着軸」「2着軸」等の表記)。
+// 戻り値の順序(label1→axisOrder[0]、label2→axisOrder[1])はcurrentCombos()の
+// slots組み立てと対応させる(placement==="12"ならaxis[0]=1着,axis[1]=2着、という
+// 既存ロジックに合わせる)。
+function axisPositionLabels() {
+  const placement = state.axisPlacement || "12";
+  if (placement === "13") return ["1着軸", "3着軸"];
+  if (placement === "23") return ["2着軸", "3着軸"];
+  return ["1着軸", "2着軸"];
 }
 
 function renderPicker() {
@@ -374,21 +396,36 @@ function renderPicker() {
     )).join("");
   } else if (state.method === "nagashi") {
     if (state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
-      // JRA/netkeiba風の1リスト形式: 各馬の行に「軸」(最大2頭まで)と「相手」のチェックを並べる。
-      const axisFull = state.axisSet.size >= 2;
+      // netkeiba実物と同じ「軸1」「軸2」「相手」(三連単は着順ラベル「1着軸」「2着軸」等)の
+      // 3列(2026-09-21)。当初は三連複・三連単とも「軸」(最大2頭までのチェック)1列+
+      // 「相手」の2列で実装したが、次の2点でnetkeibaの実物と異なっていた。
+      //   - 三連単はマルチOFFだと軸馬をどちらの着順に置くかで舟券そのものが変わるため、
+      //     順序を持たない1列ではクリックした順序に頼らざるを得ず着順を確定できなかった
+      //   - 三連複は着順の概念が無く軸1/軸2の区別は組み合わせ上は不要だが、netkeiba実物
+      //     でも「軸1」「軸2」の2列に分かれている(見た目の一貫性のための仕様と判断し合わせた)
+      // そのため2頭軸は常にこの3列とし、三連単のみ列見出しをaxisPlacementに応じた
+      // 着順ラベルにする(axisPositionLabels())。
+      const [label1, label2] = state.betType === "sanrentan" ? axisPositionLabels() : ["軸1", "軸2"];
       html = entries.map(e => {
         const n = Number(e.horse_number);
-        const isAxis = state.axisSet.has(n);
+        const isPos1 = state.axisOrder[0] === n;
+        const isPos2 = state.axisOrder[1] === n;
+        const isAxis = isPos1 || isPos2;
         const isPartner = state.partnerSet.has(n);
-        const axisDisabled = !isAxis && axisFull;
         return horseRow(e, `
-          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を軸にする">
-            <input type="checkbox" class="axis-check-2" value="${n}" ${isAxis ? "checked" : ""} ${axisDisabled ? "disabled" : ""}>
+          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を${label1}にする">
+            <span class="axis2-check-tag">${label1}</span>
+            <input type="radio" name="axis-pos1" class="axis-pos1-radio" value="${n}" ${isPos1 ? "checked" : ""} ${isPos2 ? "disabled" : ""}>
+          </label>
+          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を${label2}にする">
+            <span class="axis2-check-tag">${label2}</span>
+            <input type="radio" name="axis-pos2" class="axis-pos2-radio" value="${n}" ${isPos2 ? "checked" : ""} ${isPos1 ? "disabled" : ""}>
           </label>
           <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を相手にする">
+            <span class="axis2-check-tag">相手</span>
             <input type="checkbox" class="partner-check" value="${n}" ${isPartner ? "checked" : ""} ${isAxis ? "disabled" : ""}>
           </label>
-        `);
+        `, "axis2-row axis2-row-3col");
       }).join("");
     } else {
       html = entries.map(e => {
@@ -408,10 +445,15 @@ function renderPicker() {
   }
 
   const isAxis2Picker = state.method === "nagashi" && state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan");
+  let axis2HeadColsHtml = "";
+  if (isAxis2Picker) {
+    const [label1, label2] = state.betType === "sanrentan" ? axisPositionLabels() : ["軸1", "軸2"];
+    axis2HeadColsHtml = `<span class="axis2-head-cols"><span>${label1}</span><span>${label2}</span><span>相手</span></span>`;
+  }
   pickerArea.innerHTML = `
     <div class="bet-horse-table-head">
       <span>枠</span><span>馬番</span><span>馬名</span><span>騎手</span><span>印</span>
-      <span>${isAxis2Picker ? '<span class="axis2-head-cols"><span>軸</span><span>相手</span></span>' : ""}</span>
+      <span>${axis2HeadColsHtml}</span>
     </div>
     <div class="bet-horse-list">${html}</div>
   `;
@@ -449,19 +491,27 @@ function bindPicker() {
     }
   );
 
-  // 2頭軸(1リスト+チェック形式): 「軸」チェックは最大2つまで、「軸」にチェックした馬は
-  // 「相手」に選べない(その逆も同様)。選択状態が変わると有効/無効表示も変わるため、
-  // ピッカー全体を再描画する。
-  pickerArea.querySelectorAll(".axis-check-2").forEach(x =>
+  // 2頭軸(軸1/軸2/相手の3列。三連複・三連単共通): 軸1・軸2はそれぞれ単一選択。
+  // 三連単はクリック順ではなく「どちらの列で選んだか」で着順を確定させるためこの形式が
+  // 必須(axisPositionLabels()参照)。三連複は着順の概念が無いため軸1/軸2の区別自体は
+  // 組み合わせ生成上意味を持たないが、netkeiba実物に合わせて同じ3列UIにしている。
+  // axisSetは他の共通ロジック(相手の除外判定・buildCurrentStructure)が参照しているため、
+  // axisOrderの変更のたびに作り直して同期させる。
+  pickerArea.querySelectorAll(".axis-pos1-radio").forEach(x =>
     x.onchange = () => {
       const n = Number(x.value);
-      if (x.checked) {
-        if (state.axisSet.size >= 2) { x.checked = false; return; }
-        state.axisSet.add(n);
-        state.partnerSet.delete(n);
-      } else {
-        state.axisSet.delete(n);
-      }
+      state.axisOrder[0] = n;
+      state.partnerSet.delete(n);
+      state.axisSet = new Set(state.axisOrder.filter((v) => v != null));
+      renderPicker();
+    }
+  );
+  pickerArea.querySelectorAll(".axis-pos2-radio").forEach(x =>
+    x.onchange = () => {
+      const n = Number(x.value);
+      state.axisOrder[1] = n;
+      state.partnerSet.delete(n);
+      state.axisSet = new Set(state.axisOrder.filter((v) => v != null));
       renderPicker();
     }
   );
@@ -507,7 +557,11 @@ function currentCombos() {
   }
 
   if (state.method === "nagashi") {
-    const axis = [...state.axisSet];
+    // 2頭軸(軸1/軸2/相手の3列)は axisOrder(どちらの列で選んだか)を使う。
+    // axisSetのSet反復順はクリック順に依存し列の意味を保証できないため使わない
+    // (2026-09-21の設計修正。axisPositionLabels()参照)。1頭軸(axisCount===1)は
+    // 従来通りaxisSet(単一選択のaxis-radio)を使う。
+    const axis = state.axisCount === 2 ? state.axisOrder.filter((x) => x != null) : [...state.axisSet];
     const partners = [...state.partnerSet].filter(x => !state.axisSet.has(x));
 
     if (state.axisCount === 1) {
