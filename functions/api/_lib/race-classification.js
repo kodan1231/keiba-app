@@ -12,22 +12,45 @@
 //   - どちらにも該当しないレース(特別・無名の2勝クラス以上等)は「other」とし、
 //     「すべて」にのみ表示される(「重賞のみ」「条件戦のみ」には出てこない)。
 
+import { runBatchInChunks } from "./http.js";
+
 const CONDITION_KEYWORDS = ["新馬", "未勝利", "1勝クラス"];
 
+// races.race_name から「回次(第N回)」表記を除いたベース名を計算する。
+// races.race_base_name 列に保存し、将来のレース名検索(同じレースの年をまたいだ
+// 過去履歴一覧化。docs/design/data-model.md「races.race_base_name」参照)で使う。
+// gradedRaceNameKey() と異なり、末尾の「ステークス/カップ/トロフィー」略記化は
+// しない(表示・検索用になるべく正式表記を保つため)。
+//
+// 先頭に誤って混入したグレードバッジ表記(「GⅠ」「J・GⅢ」等)も除去する
+// (2026-09-19以前にインポートされた一部のrace_nameに、結果PDF解析のズレで
+// グレードバッジが誤って先頭に付いたまま保存されているケースがある。これにより、
+// race_base_nameは既に混入済みの過去データに対しても正しいベース名を返せる)。
+export function raceBaseNameOf(rawName) {
+  let s = String(rawName ?? "").normalize("NFKC").trim();
+  if (!s) return null;
+  // 回次・混入グレードバッジのどちらが先に来ても(あるいは両方あっても)確実に
+  // 除去できるよう、どちらにもマッチしなくなるまで繰り返し剥がす。
+  // NFKC正規化でローマ数字(Ⅰ/Ⅱ/Ⅲ)がI/II/IIIへ分解された後の形も許容する。
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/^第\d+回\s*/, "");
+    s = s.replace(/^(?:J・)?G(?:[ⅠⅡⅢ]|I{1,3})\s*/, "");
+    s = s.trim();
+  } while (s !== prev && s);
+  return s || null;
+}
+
 // races.race_name → graded_races.name_key と同じ形へ正規化する。
-//   1. NFKC正規化 + 全空白除去
-//   2. 先頭の「第N回」を除去(重賞一覧ページのレース名には回次表記が無いため)
-//   3. 先頭に誤って混入したグレードバッジ表記(「GⅠ」「J・GⅢ」等)を除去
-//      (2026-09-19以前にインポートされた一部のrace_nameに、結果PDF解析の
-//      ズレでグレードバッジが誤って先頭に付いたまま保存されているケースがある)
-//   4. 末尾の「ステークス/カップ/トロフィー」を「S/C/T」に統一する
+//   1. raceBaseNameOf() で回次・混入グレードバッジを除去
+//   2. 残りの全角/半角空白を除去
+//   3. 末尾の「ステークス/カップ/トロフィー」を「S/C/T」に統一する
 //      (重賞一覧ページのレース名は略記、結果・出走馬PDFのレース名は正式表記のため)
 export function gradedRaceNameKey(rawName) {
-  let s = String(rawName ?? "").normalize("NFKC").replace(/[　\s]+/g, "");
-  if (!s) return "";
-  s = s.replace(/^第\d+回/, "");
-  // NFKC正規化でローマ数字(Ⅰ/Ⅱ/Ⅲ)がI/II/IIIへ分解された後の形も許容する。
-  s = s.replace(/^(?:J・)?G(?:[ⅠⅡⅢ]|I{1,3})/, "");
+  const base = raceBaseNameOf(rawName);
+  if (!base) return "";
+  let s = base.replace(/[　\s]+/g, "");
   s = s
     .replace(/ステークス$/, "S")
     .replace(/カップ$/, "C")
@@ -58,4 +81,23 @@ export async function loadGradedRaceMap(db) {
     map.set(r.name_key, { grade: r.grade, is_jump: !!r.is_jump });
   }
   return map;
+}
+
+// races全件のrace_base_nameを再計算する一括補正(管理画面「重賞管理」の
+// 「レースのベース名を再計算する」ボタンから呼び出す)。race_base_name列追加時の
+// 初回バックフィル、および将来raceBaseNameOf()の正規化ルールを変更した際の
+// 再計算に使う。1回のSELECTで全件取得→メモリ上で判定→変更行だけdb.batch()
+// (runBatchInChunks)でまとめてUPDATEする、他の一括補正(jockey-alias.js等)と
+// 同じ方式。何度実行しても安全(冪等)。
+export async function recomputeAllRaceBaseNames(db) {
+  const { results } = await db.prepare("SELECT id, race_name, race_base_name FROM races").all();
+  const statements = [];
+  for (const row of results || []) {
+    const next = raceBaseNameOf(row.race_name);
+    if (next !== (row.race_base_name ?? null)) {
+      statements.push(db.prepare("UPDATE races SET race_base_name = ? WHERE id = ?").bind(next, row.id));
+    }
+  }
+  if (statements.length) await runBatchInChunks(db, statements);
+  return { updated: statements.length };
 }

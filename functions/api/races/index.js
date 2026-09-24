@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // races は「全画面共通の入口」として非常に頻繁に呼ばれるため、races_cache
@@ -81,14 +81,15 @@ export async function onRequestPost(context) {
     // 新規登録時も、出走馬表と同時に着順・払戻が入力されているケースがあるため
     // (例: 結果が既に出ているレースを後から一括登録する場合)、finish_order/payouts も保存する。
     const result = await env.DB.prepare(
-      `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance, entries, finish_order, payouts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO races (race_date, track, race_number, race_name, race_base_name, course_type, distance, entries, finish_order, payouts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         race_date,
         track,
         race_number,
         race_name || null,
+        raceBaseNameOf(race_name),
         course_type || null,
         distance || null,
         JSON.stringify(normalizedEntries),

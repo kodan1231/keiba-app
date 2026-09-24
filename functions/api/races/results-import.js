@@ -11,6 +11,7 @@ import {
   applyHorseAliasMap,
   readJsonBody,
   jsonError,
+  raceBaseNameOf,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -130,12 +131,13 @@ export async function onRequestPost(context) {
   if (toInsert.length) {
     const stmts = toInsert.map((it) =>
       db.prepare(
-        `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance,
+        `INSERT INTO races (race_date, track, race_number, race_name, race_base_name, course_type, distance,
           weight_type, class_flags, course_direction, weather, track_condition, post_time,
           entries, finish_order, payouts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
-        it.raceDate, it.track, it.raceNumber, it.item.race_name || null, it.item.course_type || null,
+        it.raceDate, it.track, it.raceNumber, it.item.race_name || null, raceBaseNameOf(it.item.race_name),
+        it.item.course_type || null,
         it.item.distance ? Number(it.item.distance) : null,
         it.item.weight_type || null, it.item.class_flags || null, it.item.course_direction || null,
         it.item.weather || null, it.item.track_condition || null, it.item.post_time || null,
@@ -191,7 +193,10 @@ export async function onRequestPost(context) {
 
       fields.push("entries = ?");
       values.push(JSON.stringify(it.mergedEntries));
-      if (!it.existing.race_name && it.item.race_name) { fields.push("race_name = ?"); values.push(it.item.race_name); }
+      if (!it.existing.race_name && it.item.race_name) {
+        fields.push("race_name = ?"); values.push(it.item.race_name);
+        fields.push("race_base_name = ?"); values.push(raceBaseNameOf(it.item.race_name));
+      }
       if (!it.existing.course_type && it.item.course_type) { fields.push("course_type = ?"); values.push(it.item.course_type); }
       if (!it.existing.distance && it.item.distance) { fields.push("distance = ?"); values.push(Number(it.item.distance)); }
       if (!it.existing.weight_type && it.item.weight_type) { fields.push("weight_type = ?"); values.push(it.item.weight_type); }

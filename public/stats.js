@@ -339,12 +339,18 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
   });
 }
 
+// レース名の表示は race_base_name(races.race_base_name。回次「第N回」を除いたベース名。
+// 常に最新のraces側の値)を優先し、無ければ race_name(購入時点のスナップショット)に
+// フォールバックする。race_name をそのまま使うと、購入後にレース名を修正しても
+// 表示に反映されない・結果PDF解析のズレでグレードバッジが混入したままになる、
+// という問題があったため(2026-09-24。docs/design/data-model.md「races.race_base_name」参照)。
 function renderRaceTable(items) {
   const groups = groupBy(items, (t) => `${t.race_date}__${t.track}__${t.race_number}`);
   raceRows = Array.from(groups.entries()).map(([key, tickets]) => {
     const t0 = tickets[0];
+    const displayName = t0.race_base_name || t0.race_name;
     return {
-      name: `${formatDateMd(t0.race_date)} ${t0.track} ${t0.race_number}R${t0.race_name ? " " + t0.race_name : ""}`,
+      name: `${formatDateMd(t0.race_date)} ${t0.track} ${t0.race_number}R${displayName ? " " + displayName : ""}`,
       // 初期表示は「日付・競馬場・レース番号」の順でソートするため、この3つを連結したキーで比較する。
       dateKey: `${t0.race_date}_${t0.track}_${String(t0.race_number).padStart(2, "0")}`,
       stats: computeGroupStats(tickets),

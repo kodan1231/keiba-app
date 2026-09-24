@@ -13,10 +13,15 @@ export async function onRequestGet(context) {
   // フィルタ用("graded"/"condition"/"other")。race_name・class_flagsをgraded_races
   // マスタ(小テーブル。全件1回読み)と突き合わせて判定する(2026-09-19追加。
   // docs/design/graded-races.md参照)。
+  // race_base_name: races.race_base_name(回次除去済みのベース名)をそのまま返す
+  // (2026-09-24追加)。tickets.race_name は購入時点のスナップショットのため、後から
+  // レース名が修正されても追随しない。集計画面「レース別」の表示はこちら
+  // (常に最新のraces.race_base_name)を優先する。docs/design/data-model.md参照。
   const { results } = await env.DB.prepare(
     `SELECT t.*, r.finish_order AS race_finish_order, r.payouts AS race_payouts,
             r.course_type AS race_course_type, r.distance AS race_distance,
-            r.race_name AS race_race_name, r.class_flags AS race_class_flags
+            r.race_name AS race_race_name, r.class_flags AS race_class_flags,
+            r.race_base_name AS race_base_name
      FROM tickets t
      LEFT JOIN races r ON r.id = t.race_id
      WHERE t.user_id = ?

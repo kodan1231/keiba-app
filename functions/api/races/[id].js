@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -49,6 +49,10 @@ export async function onRequestPut(context) {
       fields.push(`${key} = ?`);
       values.push(data[key]);
     }
+  }
+  if ("race_name" in data) {
+    fields.push("race_base_name = ?");
+    values.push(raceBaseNameOf(data.race_name));
   }
   if ("entries" in data) {
     if (!Array.isArray(data.entries)) {

@@ -178,6 +178,37 @@ D1無料枠の日次上限そのものの詳細・注意点は`CLAUDE.md`「絶�
   この共通関数を呼び出す。`races.html`は`utils.js`を各画面固有のJS(`races.js`等)より先に
   読み込む構成のため、この共有が成立している
 
+### races.race_base_name(2026-09-24追加)
+
+`races.race_name`は結果・出走馬PDFの正式表記(回次込み。例:「第11回紫苑ステークス」)の
+まま保存する一方、`race_base_name`は`race_name`から回次(「第N回」)を除いたベース名
+(例:「紫苑ステークス」)を保存する。将来のレース名検索(同じレースの年をまたいだ
+過去履歴一覧化)・集計画面「レース別」の表示で使う。
+
+- 計算は`raceBaseNameOf(rawName)`(`functions/api/_lib/race-classification.js`)。
+  NFKC正規化 + 先頭の「第N回」除去に加えて、**先頭に誤って混入したグレードバッジ
+  表記(「GⅠ」「J・GⅢ」等)も除去する**(結果PDF解析のズレでレース名抽出時に
+  グレードバッジ単独行が先に拾われてしまい、`race_name`にバッジが混入したまま
+  保存されているケースへの防御。`docs/design/graded-races.md`「突き合わせキー」参照)。
+  回次・バッジのどちらが先に来ても(両方あっても)剥がせるよう、どちらにも
+  マッチしなくなるまで繰り返し除去する
+- `gradedRaceNameKey()`(重賞マスタとの突き合わせキー)は`raceBaseNameOf()`の結果に
+  対して空白除去・略称化(ステークス→S等)を追加で行うよう、内部でこの関数を再利用する
+  ようリファクタリングした(算出結果自体は変更なし)
+- `race_name`を書き込む全経路(レース新規登録`POST /api/races`・編集`PUT /api/races/:id`
+  ・出走馬一覧PDFインポート・JRAレース結果PDFインポート)で、`race_name`と同時に
+  `race_base_name`を計算・保存する
+- **集計画面「レース別」の表示名は`race_base_name`を優先し、無ければ`race_name`に
+  フォールバックする**(`public/stats.js`の`renderRaceTable()`)。`tickets.race_name`・
+  `imported_ticket_groups.race_name`は購入・取込時点のスナップショットで、後から
+  `races.race_name`を修正しても追随しないため、`GET /api/tickets`・
+  `GET /api/ticket-imports`は常に最新の`races.race_base_name`をJOINして
+  `race_base_name`フィールドとして別途返す(購入・取込側の`race_name`自体は
+  従来通りスナップショットのまま変更しない)
+- 既存行への初回バックフィルは、管理画面「重賞管理」の「レースのベース名を
+  再計算する」ボタン(`recomputeAllRaceBaseNames()`。全件SELECT→メモリ判定→
+  変更行のみ`db.batch()`。何度実行しても安全)で行う。自動実行はしない
+
 ### レース条件の詳細カラム
 
 出走馬一覧PDF・JRAレース結果PDFいずれにも、以下のレース条件詳細が「発走時刻：hh時mm分」の

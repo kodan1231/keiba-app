@@ -65,7 +65,11 @@ CREATE TABLE IF NOT EXISTS races (
   race_date TEXT NOT NULL,        -- 開催日 (YYYY-MM-DD)
   track TEXT NOT NULL,            -- 競馬場
   race_number INTEGER NOT NULL,   -- レース番号 (1-12)
-  race_name TEXT,                 -- レース名(任意)
+  race_name TEXT,                 -- レース名(任意。回次込み・正式表記のまま保存する)
+  race_base_name TEXT,            -- race_nameから「第N回」等の回次を除いたベース名
+                                   -- (2026-09-24追加。将来のレース名検索用。
+                                   -- raceBaseNameOf()で計算し、race_name書き込み時に
+                                   -- 同時に保存する。docs/design/data-model.md参照)
   course_type TEXT,               -- コース種別: 芝/ダート/障害(任意入力)
   distance INTEGER,               -- 距離(メートル・任意入力)
   weight_type TEXT,               -- 斤量区分: 馬齢/定量/別定/ハンデ(任意入力)

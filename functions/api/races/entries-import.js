@@ -8,6 +8,7 @@ import {
   applyHorseAliasMap,
   readJsonBody,
   jsonError,
+  raceBaseNameOf,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -80,6 +81,7 @@ export async function onRequestPost(context) {
       key,
       incomingEntries,
       race_name: item.race_name || null,
+      race_base_name: raceBaseNameOf(item.race_name),
       course_type: item.course_type || null,
       distance: item.distance ? Number(item.distance) : null,
       weight_type: item.weight_type || null,
@@ -131,15 +133,16 @@ export async function onRequestPost(context) {
     const stmts = toInsert.map((it) =>
       db
         .prepare(
-          `INSERT INTO races (race_date, track, race_number, race_name, course_type, distance,
+          `INSERT INTO races (race_date, track, race_number, race_name, race_base_name, course_type, distance,
             weight_type, class_flags, course_direction, entries)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           it.raceDate,
           it.track,
           it.raceNumber,
           it.race_name,
+          it.race_base_name,
           it.course_type,
           it.distance,
           it.weight_type,
@@ -164,6 +167,8 @@ export async function onRequestPost(context) {
       if (!it.existing.race_name && it.race_name) {
         fields.push("race_name = ?");
         values.push(it.race_name);
+        fields.push("race_base_name = ?");
+        values.push(it.race_base_name);
       }
       if (!it.existing.course_type && it.course_type) {
         fields.push("course_type = ?");

@@ -179,6 +179,17 @@
           <p id="graded-race-form-message" class="submit-message" hidden></p>
           <div class="table-wrap"><table class="stats-table" id="graded-races-table"></table></div>
         </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
+          <p class="ticket-sub">
+            レース名から「第N回」等の回次を除いたベース名(races.race_base_name。
+            集計画面「レース別」の表示や、将来のレース名検索で使います)を全レース分
+            再計算します。列追加直後の初回実行、またはレース名を手動修正した後に
+            反映されない場合に実行してください。
+          </p>
+          <button type="button" id="race-base-name-recompute-btn" class="ghost-btn">レースのベース名を再計算する</button>
+          <p id="race-base-name-recompute-status" class="submit-message" hidden></p>
+        </div>
       </section>
     </div>
   </main>

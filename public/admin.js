@@ -673,6 +673,33 @@ function resetGradedRaceForm() {
   if (submitBtn) submitBtn.textContent = "登録";
 }
 
+// レースのベース名(race_base_name。「第N回」等の回次を除いた名前)を全レース分
+// 再計算する。race_base_name列追加直後の初回バックフィル用(2026-09-24追加)。
+// 何度実行しても安全(冪等)。
+function setupRaceBaseNameRecomputeButton() {
+  const btn = document.getElementById("race-base-name-recompute-btn");
+  const messageEl = document.getElementById("race-base-name-recompute-status");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    messageEl.hidden = true;
+
+    const res = await authedFetch("/api/admin/races/recompute-base-names", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `再計算が完了しました(${data.updated || 0}件を更新)。`;
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "再計算に失敗しました。";
+    }
+    btn.disabled = false;
+  });
+}
+
 function setupGradedRaceForm() {
   const form = document.getElementById("graded-race-form");
   const messageEl = document.getElementById("graded-race-form-message");
@@ -826,6 +853,7 @@ async function onReady() {
   setupApiTokenButtons();
   setupGradedRaceForm();
   setupGradedRacesImport();
+  setupRaceBaseNameRecomputeButton();
   await Promise.all([
     loadUnregisteredRaces(),
     loadUsers(),

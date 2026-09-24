@@ -250,3 +250,13 @@ CREATE TABLE IF NOT EXISTS graded_races (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
+
+-- @STEP: races_base_name
+-- races.race_name から「第N回」等の回次表記を除いたベース名(race_base_name)を
+-- 保存する列を追加する。将来、レース名で検索して同じレースの過去履歴(年をまたいだ
+-- 開催)を一覧化する機能のための下地。raceBaseNameOf()(functions/api/_lib/
+-- race-classification.js)で計算し、race_name を書き込む全経路(レース新規登録・編集・
+-- 出走馬一覧PDF/結果PDFインポート)で同時に保存する。既存行への初回バックフィルは
+-- 管理画面「重賞管理」の「レースのベース名を再計算する」ボタン(冪等・何度実行しても
+-- 安全)で行う。詳細は docs/design/data-model.md「races.race_base_name」参照。
+ALTER TABLE races ADD COLUMN race_base_name TEXT;

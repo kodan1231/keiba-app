@@ -10,8 +10,22 @@
 - **実機確認はユーザー側**。Claude は `node --check` と静的レビュー・シミュレーションのみ。
   着手・完了報告時に検証状況を明示する。
 
-## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-12)
+## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-24)
 
+- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-24)**: `migration.sql` の
+  `@STEP: races_base_name`(`races.race_base_name`列追加)が本番DB `keiba-yosou-db`
+  へ未適用。**このマイグレーションを適用する前にコードをデプロイすると、
+  `functions/api/races/index.js`(POST)・`functions/api/races/[id].js`(PUT)・
+  `functions/api/races/entries-import.js`・`functions/api/races/results-import.js`
+  のINSERT/UPDATE文がいずれも`race_base_name`列を明示的に指定するため、
+  「no such column: race_base_name」でレース新規登録・編集・出走馬一覧PDF/結果PDFの
+  インポートが全滅する**。デプロイ手順は①`wrangler d1 execute keiba-yosou-db
+  --command "ALTER TABLE races ADD COLUMN race_base_name TEXT;"`(または
+  `schema_migrations`未適用確認の上で`@STEP: races_base_name`を適用)→ ②コードを
+  デプロイ、の順を厳守すること。適用後、管理画面「重賞管理」の「レースのベース名を
+  再計算する」ボタンを1回押して既存行をバックフィルする(押さなくてもエラーには
+  ならないが、押すまで集計画面「レース別」の表示名が`race_name`のフォールバックの
+  ままになる)。詳細は`docs/design/data-model.md`「races.race_base_name」参照。
 - **🔴 本番DBが2026-09-12中、D1無料枠の日次rows_read上限(500万行/日)を使い切って
   全画面で情報が見れない状態になっている**。原因・詳細・恒久対策は下記
   「D1無料枠の日次上限に関する注意(2026-09-12発生)」参照。**UTC 0時(日本時間
@@ -132,6 +146,7 @@
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
+| 🔵 実機検証未完了(要マイグレーション適用) | `races.race_base_name`列追加(2026-09-24。race_nameから「第N回」等の回次・混入グレードバッジを除いたベース名を、race_name書き込みの全経路〈レース新規登録・編集・出走馬一覧PDF/結果PDFインポート〉で同時保存。集計画面「レース別」の表示名はこちらを優先〈`GET /api/tickets`・`GET /api/ticket-imports`がJOINして返す〉。既存行バックフィルは管理画面「重賞管理」の「レースのベース名を再計算する」ボタン`POST /api/admin/races/recompute-base-names`)は`node --check`とNode上での`raceBaseNameOf()`/`gradedRaceNameKey()`の入出力確認(回次のみ・バッジのみ・両方・順序違い等)のみ。**本番適用手順**: `migration.sql`の`@STEP: races_base_name`を適用→バックフィルボタンを押す(上記🔰参照)。**実ブラウザで**: レース新規登録・編集・出走馬一覧PDF/結果PDFインポート後にrace_base_nameが正しく保存されること、集計画面「レース別」で重賞のレース名が回次なしで正しく表示されること(グレードバッジ混入済みの既存データでも直ること)、バックフィルボタンを押すと既存レース全件の表示が直ること、`gradedRaceNameKey()`のリファクタリング後も「重賞のみ」フィルタの判定結果が従来と変わらないことを確認する | `docs/design/data-model.md`「races.race_base_name」 |
 | 🔵 実機検証未完了 | 集計画面に「競馬場別」タブを追加(2026-09-24。`track`のみでまとめる〈コース種別・距離では分けない〉収支表。既存の「コース別」より粗い粒度。`public/stats.js`の`renderTrackTable()`。レース区分フィルタ〈重賞のみ/条件戦のみ〉は既存のコース別・騎手別と同じく無し)は`node --check`のみ。**実ブラウザで**: 「競馬場別」タブに競馬場ごとの購入/払戻/収支/回収率/的中率が表示されること、列見出しクリックでソートできること、競馬場未登録の購入が「競馬場不明」にまとまること、総合成績タブの「競馬場別 購入比率」棒グラフの金額と整合していることを確認する | `docs/design/stats-rules.md`「競馬場別収支」 |
 | 🔵 実機検証未完了 | 払戻モーダルでの出走取消馬の手動設定(2026-09-24。`races-payout-modal.js`に馬番チェックボックス欄〈`renderScratchedSection()`〉を追加し、`races.payouts.refunds`を手動編集できるようにした。除外は出走馬表確定前に取り除く運用のため対象外、取消のみ扱う。枠連の返還同枠〈`waku_numbers`〉は出走馬表の枠番情報からクライアント側で自動算出〈`computeRefundWakuNumbers()`〉。バックエンド〈`PUT /api/races/:id`・`recomputeTicketPayoutsForRace`〉は無変更で既存の返還判定ロジックがそのまま処理する)は`node --check`のみ。**実ブラウザで**: 払戻モーダルで馬番をチェックし保存すると該当馬が絡む馬券(単勝・複勝・馬連等)の`tickets.payout`が購入金額と同額(`refunded=1`)になること、枠連は該当枠の全頭をチェックした場合のみ返還になること、出走馬表未登録のレースでもチェックのみで馬番ベースの返還が反映されること、PDFインポート済みレースを開いた際に既存の返還内容がチェック済みで表示されること、を確認する | `docs/design/payout-refund.md`「払戻モーダルでの手動入力(出走取消馬)」 |
 | 🔵 実機検証未完了 | 買い目画面・履歴画面のページ遷移レイテンシ改善(2026-09-13。`GET /api/races?since=`〈直近1ヶ月+未来レース全部。範囲指定時は`races_cache`を経由せず`idx_races_date`で直接SELECT〉・`GET /api/races/:id`〈単一レース取得。新設〉を追加し、買い目画面(`buy.js`)・履歴画面(`app.js`)の初期表示をこれに切り替え、深リンク・古い購入履歴の金額再計算は範囲外時に`/api/races/:id`で個別取得するフォールバックを実装)は`node --check`のみ。**実ブラウザで**: 買い目画面・履歴画面が従来通り表示されること(直近1ヶ月より前の購入履歴・レースが欠けないこと)、買い目画面へ古いレースの`?race=`深リンクで遷移した際に購入モーダルが正しく開くこと、履歴画面で1ヶ月より前の購入履歴の金額を編集した際に払戻金額が正しく再計算されること、実際にページ遷移が速くなったと感じられるかを確認する | `docs/design/data-model.md`「GET /api/races の範囲限定・単一レース取得API」 |

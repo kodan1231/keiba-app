@@ -73,6 +73,12 @@ JRA公式サイト「N年 重賞レース一覧」ページのレース名表記
 (`horse_aliases`等と同じ「自動一致を基本にしつつ、外れたものは手動登録で拾う」方針。
 厳密な一意名寄せの仕組みは持たない)。
 
+上記1〜3(NFKC正規化・回次除去・混入グレードバッジ除去)は`raceBaseNameOf()`として
+切り出されており、`gradedRaceNameKey()`はその結果に4(略称化)を追加するだけの薄い
+ラッパーになっている(2026-09-24。`raceBaseNameOf()`は`races.race_base_name`列の計算にも
+使う汎用関数のため、末尾の略称化だけ`gradedRaceNameKey()`側に残した。詳細は
+`docs/design/data-model.md`「races.race_base_name」参照)。
+
 ## 管理画面「重賞管理」(`admin.html`)
 
 - 一覧表示・手入力での追加/編集/削除(`GET/POST /api/admin/graded-races`、
