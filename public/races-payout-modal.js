@@ -185,31 +185,37 @@ function renderPayoutBlocks() {
   const entries = currentPayoutEntries;
 
   ticketsSection.innerHTML = `
-    <p class="picker-hint" style="margin-top:16px">払戻金額(100円あたり)。購入金額に応じて自動計算されます。上の1〜3着を入力すると、的中する組み合わせが表示されます。</p>
-    <div class="payout-by-type">
+    <div class="payout-flat-rows">
       ${BET_TYPE_ORDER.map((betType) => {
         const betTickets = currentTickets.filter((t) => t.bet_type === betType);
         const required = REQUIRED_TOP[betType];
         const enoughInfo = finishOrder && finishOrder.length >= required;
         const combos = enoughInfo ? computeWinningCombos(betType, finishOrder, entries) : [];
-        return `
-          <div class="payout-type-block" data-bet-type="${betType}">
-            <div class="result-head-line"><span class="bet-badge">${betTypeLabel(betType)}</span>${betTickets.length > 0 ? `<span class="point-count">${betTickets.length}点購入</span>` : ""}</div>
-            ${!enoughInfo
-              ? `<p class="buy-hint">${required}着まで入力すると表示されます。</p>`
-              : `<div class="payout-rate-rows">${combos
-                  .map((c) => {
-                    const rate = findStoredRate(currentRacePayouts, betType, c.combo);
-                    return `
-                      <label class="payout-rate-row" data-combo='${escapeAttr(JSON.stringify(c.combo))}'>
-                        <span class="payout-rate-label">${c.label}</span>
-                        <input type="number" class="payout-rate-input" min="0" step="10" value="${rate !== null ? rate : ""}" ${c.combo ? "" : "disabled"} placeholder="未確定" />
-                      </label>
-                    `;
-                  })
-                  .join("")}</div>`}
-          </div>
-        `;
+
+        // 各行が単独で意味が通るよう、全行に式別バッジを付ける(複数段組みで流し込むため)。
+        // 購入点数は式別単位の値で行ごとに表示すると誤解を招くため、バッジのツールチップに置く。
+        const badgeCell = `<span class="bet-badge"${betTickets.length > 0 ? ` title="この式別の購入: ${betTickets.length}点"` : ""}>${betTypeLabel(betType)}</span>`;
+
+        if (!enoughInfo) {
+          return `
+            <label class="payout-rate-row" data-bet-type="${betType}">
+              ${badgeCell}
+              <span class="buy-hint" style="grid-column:span 2;margin:0">${required}着まで入力すると表示されます</span>
+            </label>
+          `;
+        }
+        return combos
+          .map((c) => {
+            const rate = findStoredRate(currentRacePayouts, betType, c.combo);
+            return `
+              <label class="payout-rate-row" data-bet-type="${betType}" data-combo='${escapeAttr(JSON.stringify(c.combo))}'>
+                ${badgeCell}
+                <span class="payout-rate-label">${c.label}</span>
+                <input type="number" class="payout-rate-input" min="0" step="10" value="${rate !== null ? rate : ""}" ${c.combo ? "" : "disabled"} placeholder="未確定" />
+              </label>
+            `;
+          })
+          .join("");
       }).join("")}
     </div>
   `;
@@ -218,10 +224,13 @@ function renderPayoutBlocks() {
 // 再描画で消えてしまう前に、今表示されている入力値をstateへ退避する。
 // まだ着順不足で表示されていない式別(hint表示のみ)は、以前の値をそのまま保持する。
 function captureEnteredRatesIntoState() {
-  ticketsSection.querySelectorAll(".payout-type-block").forEach((block) => {
-    const betType = block.dataset.betType;
-    const rows = Array.from(block.querySelectorAll(".payout-rate-row"));
-    if (rows.length === 0) return;
+  const rowsByType = new Map();
+  ticketsSection.querySelectorAll(".payout-rate-row[data-combo]").forEach((row) => {
+    const betType = row.dataset.betType;
+    if (!rowsByType.has(betType)) rowsByType.set(betType, []);
+    rowsByType.get(betType).push(row);
+  });
+  rowsByType.forEach((rows, betType) => {
     const combos = rows
       .map((row) => ({
         combo: row.dataset.combo === "null" ? null : JSON.parse(row.dataset.combo),

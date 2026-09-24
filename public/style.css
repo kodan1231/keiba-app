@@ -1124,42 +1124,32 @@ body.history-selection-mode .group-detail-actions {
 .preview-combo-amount { width: 90px; font-family: var(--font-mono); }
 
 /* ---------- 馬券式別の払戻入力 ----------
-   モーダル幅を活かして横に並べることで縦スクロール量を減らす
-   (幅は余っているのに縦に長くなるのを避けるため)。 */
-.payout-by-type {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 10px 14px;
+   「式別バッジ・組番・金額入力」を1行にまとめ、行を複数段組み(CSS columns)で
+   流し込んで縦スクロール量を減らす(モーダル幅に応じて自動で段数が変わる)。
+   各行に式別バッジを付けて単独で意味が通るようにしている。
+   注: <label>にはグローバルに display:flex; flex-direction:column が掛かっている
+   ため、行は display:grid を明示して上書きする。 */
+.payout-flat-rows {
+  columns: 250px;
+  column-gap: 24px;
   margin-top: 10px;
-  align-items: start;
-}
-
-.payout-type-block {
-  border: 1px solid var(--rule-strong);
-  background: #fff;
-  padding: 10px 14px;
-}
-.payout-type-block .result-head-line { margin-bottom: 8px; }
-
-.payout-rate-rows {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 2px 14px;
 }
 
 .payout-rate-row {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: 56px 1fr 90px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
-  padding: 5px 0;
+  gap: 8px;
+  padding: 4px 0;
   border-bottom: 1px dashed var(--rule);
+  font-size: 13px;
+  break-inside: avoid;
 }
-.payout-rate-row:last-child { border-bottom: none; }
+/* 狭い画面用の .bet-badge { grid-area: badge } を打ち消す(この行のグリッドには
+   名前付きエリアが無く、暗黙の列が増えて崩れるため)。 */
+.payout-rate-row .bet-badge { padding: 3px 2px; font-size: 12px; grid-area: auto; justify-self: stretch; }
 .payout-rate-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.payout-rate-input { width: 90px; font-family: var(--font-mono); flex-shrink: 0; }
+.payout-rate-input { width: 90px; font-family: var(--font-mono); }
 
 .payout-race-info { margin-top: -8px; margin-bottom: 14px; }
 
