@@ -109,12 +109,14 @@ function groupBy(items, keyFn) {
 // compareValues() の仕様により、ソート方向によらず常に末尾に表示される。
 const sortState = {
   race: { key: "date", dir: "desc" },
+  track: { key: "totalAmount", dir: "desc" },
   course: { key: "totalAmount", dir: "desc" },
   jockey: { key: "rate", dir: "desc" },
 };
 
 // ソート対象の行データ(再計算せず並べ替えだけで再描画できるようキャッシュしておく)
 let raceRows = [];
+let trackRows = [];
 let courseRows = [];
 let jockeyRows = [];
 
@@ -130,6 +132,7 @@ const STAT_COLUMNS = [
 // 的中率列を除外する。競馬場別・騎手別は複数レースにまたがる集計のため引き続き表示する。
 const STAT_COLUMNS_BY_TABLE = {
   race: STAT_COLUMNS.filter((c) => c.key !== "hitRate"),
+  track: STAT_COLUMNS,
   course: STAT_COLUMNS,
   jockey: STAT_COLUMNS,
 };
@@ -284,7 +287,7 @@ function sortIndicator(tableKey, key) {
 
 function renderTable(elId, tableKey, labelHeader, labelKey) {
   const table = document.getElementById(elId);
-  const rowsCache = { race: raceRows, course: courseRows, jockey: jockeyRows }[tableKey];
+  const rowsCache = { race: raceRows, track: trackRows, course: courseRows, jockey: jockeyRows }[tableKey];
   const state = sortState[tableKey];
   const rows = sortRows(rowsCache, state.key, state.dir);
 
@@ -348,6 +351,17 @@ function renderRaceTable(items) {
     };
   });
   renderTable("race-table", "race", "レース", "date");
+}
+
+// 競馬場別収支: trackのみでまとめる(コース種別・距離では分けない。コース別収支より
+// 粗い粒度)。総合成績タブの「競馬場別 購入比率」棒グラフ(byTrack)と同じ集計単位。
+function renderTrackTable(items) {
+  const groups = groupBy(items, (t) => String(t.track || "").trim() || "競馬場不明");
+  trackRows = Array.from(groups.entries()).map(([track, tickets]) => ({
+    name: track,
+    stats: computeGroupStats(tickets),
+  }));
+  renderTable("track-table", "track", "競馬場", "name");
 }
 
 // コース別収支: 「競馬場 × コース種別(芝/ダート/障害) × 距離」でまとめる。
@@ -437,6 +451,7 @@ async function loadAndRender() {
   renderOverall(filterByCategory(allTickets, categoryFilterState.overall));
   renderRatioBreakdowns(filterByCategory(allTickets, categoryFilterState.overall));
   renderRaceTable(filterByCategory(allTickets, categoryFilterState.race));
+  renderTrackTable(allTickets);
   renderCourseTable(allTickets);
   renderJockeyTable(allTickets);
 }

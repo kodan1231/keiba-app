@@ -22,6 +22,7 @@
     <nav class="stats-tabs">
       <button type="button" class="stats-tab active" data-tab="overall">総合成績</button>
       <button type="button" class="stats-tab" data-tab="race">レース別</button>
+      <button type="button" class="stats-tab" data-tab="track">競馬場別</button>
       <button type="button" class="stats-tab" data-tab="course">コース別</button>
       <button type="button" class="stats-tab" data-tab="jockey">騎手別</button>
     </nav>
@@ -58,6 +59,12 @@
         <button type="button" class="horse-row-btn" data-value="condition">条件戦のみ</button>
       </div>
       <div class="table-wrap"><table class="stats-table" id="race-table"></table></div>
+    </section>
+
+    <section class="stats-section stats-panel" data-panel="track" hidden>
+      <h2 class="stats-heading">競馬場別収支</h2>
+      <p class="stats-note">競馬場ごとの収支。コース種別・距離では分けません(コース種別・距離ごとに見たい場合は「コース別」タブを使ってください)。競馬場が登録されていない購入は「競馬場不明」にまとめて表示します。</p>
+      <div class="table-wrap"><table class="stats-table" id="track-table"></table></div>
     </section>
 
     <section class="stats-section stats-panel" data-panel="course" hidden>
