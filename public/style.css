@@ -1157,7 +1157,8 @@ body.history-selection-mode .group-detail-actions {
   border-bottom: 1px dashed var(--rule);
 }
 .payout-rate-row:last-child { border-bottom: none; }
-.payout-rate-input { width: 90px; font-family: var(--font-mono); }
+.payout-rate-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.payout-rate-input { width: 90px; font-family: var(--font-mono); flex-shrink: 0; }
 
 .payout-race-info { margin-top: -8px; margin-bottom: 14px; }
 

@@ -202,7 +202,7 @@ function renderPayoutBlocks() {
                     const rate = findStoredRate(currentRacePayouts, betType, c.combo);
                     return `
                       <label class="payout-rate-row" data-combo='${escapeAttr(JSON.stringify(c.combo))}'>
-                        ${c.label}の払戻(100円あたり)
+                        <span class="payout-rate-label">${c.label}</span>
                         <input type="number" class="payout-rate-input" min="0" step="10" value="${rate !== null ? rate : ""}" ${c.combo ? "" : "disabled"} placeholder="未確定" />
                       </label>
                     `;
