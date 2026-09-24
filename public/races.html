@@ -111,10 +111,9 @@
           <label>1着<select id="r-finish-1"></select></label>
           <label>2着<select id="r-finish-2"></select></label>
           <label>3着<select id="r-finish-3"></select></label>
+          <button type="button" id="race-scratched-open-btn" class="ghost-btn" style="align-self:flex-end">出走取消馬選択</button>
         </div>
       </div>
-
-      <div id="race-scratched-section" class="finish-top3-box"></div>
 
       <div id="race-tickets-section"></div>
 
@@ -131,6 +130,18 @@
         <button type="submit" class="stamp-btn">保存する</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- 出走取消馬選択ダイアログ(払戻モーダル内の「出走取消馬選択」ボタンから開く) -->
+<div id="race-scratched-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>出走取消馬を選択</h2>
+    <p class="picker-hint" style="margin-bottom:6px">出走取消馬(返還対象。馬番確定後に取消になった馬のみ選択してください。除外は出走馬表側で対応済みのため対象外です)</p>
+    <div id="race-scratched-picker" class="horse-grid"></div>
+    <div class="modal-actions">
+      <button type="button" id="race-scratched-modal-close-btn" class="stamp-btn">閉じる</button>
+    </div>
   </div>
 </div>
 

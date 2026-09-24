@@ -20,7 +20,9 @@ const finish2Select = document.getElementById("r-finish-2");
 const finish3Select = document.getElementById("r-finish-3");
 const raceResultsDetailSection = document.getElementById("race-results-detail-section");
 const raceResultsDetailTable = document.getElementById("race-results-detail-table");
-const scratchedSection = document.getElementById("race-scratched-section");
+const scratchedOpenBtn = document.getElementById("race-scratched-open-btn");
+const scratchedModal = document.getElementById("race-scratched-modal");
+const scratchedPicker = document.getElementById("race-scratched-picker");
 
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
@@ -68,45 +70,63 @@ payoutHorseCountSelect.addEventListener("change", () => {
   for (const n of [...currentScratchedHorseNumbers]) {
     if (n > newCount) currentScratchedHorseNumbers.delete(n);
   }
-  renderScratchedSection();
+  updateScratchedButtonLabel();
   renderPayoutBlocks();
 });
 
 // ---------- 出走取消馬(返還対象)の選択 ----------
 // 除外は出走馬表確定前に出走馬表側で取り除く運用のためここでは扱わない
 // (docs/design/payout-refund.md「払戻モーダルでの手動入力(出走取消馬)」参照)。
-function renderScratchedSection() {
+// 着順の横の「出走取消馬選択」ボタンから専用ダイアログ(race-scratched-modal)を開いて
+// 複数選択する(2026-09-24。以前は払戻モーダル内に常時表示のチェックボックス欄
+// だったが、払戻モーダルが縦に長くなるためダイアログへ切り出した)。
+
+// ボタンの表示を選択件数に応じて更新する(ダイアログを開かなくても選択状況が分かるように)。
+function updateScratchedButtonLabel() {
+  const n = currentScratchedHorseNumbers.size;
+  scratchedOpenBtn.textContent = n > 0 ? `出走取消馬選択(${n}頭)` : "出走取消馬選択";
+}
+
+// ダイアログを開くたびに、その時点の出走頭数・出走馬表で選択肢を作り直す。
+function renderScratchedPicker() {
   const entries = currentPayoutEntries;
   const nameOf = (n) => {
     const e = entries.find((x) => x.horse_number === n);
     return e && e.horse_name ? e.horse_name : "";
   };
-  scratchedSection.innerHTML = `
-    <p class="picker-hint" style="margin-bottom:6px">出走取消馬(返還対象。馬番確定後に取消になった馬のみ選択してください。除外は出走馬表側で対応済みのため対象外です)</p>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
-      ${Array.from({ length: currentPayoutHorseCount }, (_, i) => i + 1)
-        .map((n) => {
-          const name = nameOf(n);
-          const checked = currentScratchedHorseNumbers.has(n);
-          return `
-            <label class="scratched-horse-chip" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rule-strong,#ccc);padding:4px 8px;cursor:pointer;${checked ? "background:var(--ink,#1c1b18);color:#fff;" : ""}">
-              <input type="checkbox" class="scratched-horse-check" value="${n}" ${checked ? "checked" : ""} style="margin:0" />
-              ${n}番${name ? "・" + escapeHtml(name) : ""}
-            </label>
-          `;
-        })
-        .join("")}
-    </div>
-  `;
-  scratchedSection.querySelectorAll(".scratched-horse-check").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const n = Number(cb.value);
-      if (cb.checked) currentScratchedHorseNumbers.add(n);
-      else currentScratchedHorseNumbers.delete(n);
-      renderScratchedSection();
+  scratchedPicker.innerHTML = Array.from({ length: currentPayoutHorseCount }, (_, i) => i + 1)
+    .map((n) => {
+      const name = nameOf(n);
+      const selected = currentScratchedHorseNumbers.has(n);
+      return `<button type="button" class="horse-chip${selected ? " selected" : ""}" data-horse-number="${n}"><span class="chip-num">${n}番</span>${name ? escapeHtml(name) : ""}</button>`;
+    })
+    .join("");
+  scratchedPicker.querySelectorAll(".horse-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const n = Number(btn.dataset.horseNumber);
+      if (currentScratchedHorseNumbers.has(n)) currentScratchedHorseNumbers.delete(n);
+      else currentScratchedHorseNumbers.add(n);
+      btn.classList.toggle("selected");
+      updateScratchedButtonLabel();
     });
   });
 }
+
+scratchedOpenBtn.addEventListener("click", () => {
+  renderScratchedPicker();
+  scratchedModal.hidden = false;
+});
+document.getElementById("race-scratched-modal-close-btn").addEventListener("click", () => {
+  scratchedModal.hidden = true;
+});
+// 背景クリックで閉じる。ESCキーは専用に登録しない
+// (registerEscToClose()は「非hiddenなら閉じる」方式のため、このダイアログにも
+// 登録すると払戻モーダル側のハンドラと同時に発火し両方閉じてしまう。
+// 代わりに closePayoutModal() 側でこのダイアログが開いていれば先にそちらだけを
+// 閉じるようにしているため、ESCでも実質「まずダイアログだけ閉じる」動作になる)。
+scratchedModal.addEventListener("click", (e) => {
+  if (e.target === scratchedModal) scratchedModal.hidden = true;
+});
 
 // 取消馬番から「返還同枠」(枠連の返還判定に使う)を自動算出する。ある枠に属する
 // 出走馬が全頭取消なら、その枠番を返す。出走馬表が未登録(枠番情報が無い)場合は
@@ -344,7 +364,7 @@ function openPayoutModal(race) {
   currentScratchedHorseNumbers = new Set(
     ((race.payouts && race.payouts.refunds) || []).flatMap((r) => r.horse_numbers || [])
   );
-  renderScratchedSection();
+  updateScratchedButtonLabel();
   loadTicketsForRace(race.id);
   loadRaceResultsDetail(race.id);
 
@@ -355,6 +375,13 @@ function openPayoutModal(race) {
 }
 
 function closePayoutModal() {
+  // 出走取消馬選択ダイアログが開いたまま払戻モーダルを閉じると、ダイアログだけが
+  // 残留してしまう。ESC/キャンセル/背景クリックのいずれの経路でも、開いていれば
+  // まずダイアログ側だけを閉じる(払戻モーダル自体は開いたまま)。
+  if (!scratchedModal.hidden) {
+    scratchedModal.hidden = true;
+    return;
+  }
   payoutModal.hidden = true;
 }
 // ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
