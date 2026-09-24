@@ -20,9 +20,15 @@ const finish2Select = document.getElementById("r-finish-2");
 const finish3Select = document.getElementById("r-finish-3");
 const raceResultsDetailSection = document.getElementById("race-results-detail-section");
 const raceResultsDetailTable = document.getElementById("race-results-detail-table");
+const scratchedSection = document.getElementById("race-scratched-section");
 
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
+
+// 出走取消馬の馬番(払戻確定時の返還判定に使う。races.payouts.refunds として保存する。
+// 除外は出走馬表確定前に取り除く運用のため対象外。docs/design/payout-refund.md
+// 「払戻モーダルでの手動入力(出走取消馬)」参照)
+let currentScratchedHorseNumbers = new Set();
 
 // ---------- 初期化: セレクトの選択肢を用意 ----------
 payoutHorseCountSelect.innerHTML = HORSE_COUNT_OPTIONS;
@@ -59,8 +65,66 @@ payoutHorseCountSelect.addEventListener("change", () => {
   // 頭数変更時、既存の着順選択が新しい頭数の範囲を超えていれば維持できないため、
   // 範囲内に収まるものだけ保持する。
   renderFinishSelects(newCount, (finishOrder || []).filter((n) => n <= newCount));
+  for (const n of [...currentScratchedHorseNumbers]) {
+    if (n > newCount) currentScratchedHorseNumbers.delete(n);
+  }
+  renderScratchedSection();
   renderPayoutBlocks();
 });
+
+// ---------- 出走取消馬(返還対象)の選択 ----------
+// 除外は出走馬表確定前に出走馬表側で取り除く運用のためここでは扱わない
+// (docs/design/payout-refund.md「払戻モーダルでの手動入力(出走取消馬)」参照)。
+function renderScratchedSection() {
+  const entries = currentPayoutEntries;
+  const nameOf = (n) => {
+    const e = entries.find((x) => x.horse_number === n);
+    return e && e.horse_name ? e.horse_name : "";
+  };
+  scratchedSection.innerHTML = `
+    <p class="picker-hint" style="margin-bottom:6px">出走取消馬(返還対象。馬番確定後に取消になった馬のみ選択してください。除外は出走馬表側で対応済みのため対象外です)</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      ${Array.from({ length: currentPayoutHorseCount }, (_, i) => i + 1)
+        .map((n) => {
+          const name = nameOf(n);
+          const checked = currentScratchedHorseNumbers.has(n);
+          return `
+            <label class="scratched-horse-chip" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rule-strong,#ccc);padding:4px 8px;cursor:pointer;${checked ? "background:var(--ink,#1c1b18);color:#fff;" : ""}">
+              <input type="checkbox" class="scratched-horse-check" value="${n}" ${checked ? "checked" : ""} style="margin:0" />
+              ${n}番${name ? "・" + escapeHtml(name) : ""}
+            </label>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+  scratchedSection.querySelectorAll(".scratched-horse-check").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const n = Number(cb.value);
+      if (cb.checked) currentScratchedHorseNumbers.add(n);
+      else currentScratchedHorseNumbers.delete(n);
+      renderScratchedSection();
+    });
+  });
+}
+
+// 取消馬番から「返還同枠」(枠連の返還判定に使う)を自動算出する。ある枠に属する
+// 出走馬が全頭取消なら、その枠番を返す。出走馬表が未登録(枠番情報が無い)場合は
+// 算出できないため空配列を返す(枠連の返還のみ非対応。PDFインポート経由と同じ制約)。
+function computeRefundWakuNumbers(scratchedSet, entries) {
+  if (!scratchedSet.size || !entries.length) return [];
+  const byWaku = new Map();
+  for (const e of entries) {
+    if (e.waku_number === null || e.waku_number === undefined) continue;
+    if (!byWaku.has(e.waku_number)) byWaku.set(e.waku_number, []);
+    byWaku.get(e.waku_number).push(e.horse_number);
+  }
+  const wakuNumbers = [];
+  for (const [waku, horseNumbers] of byWaku) {
+    if (horseNumbers.every((n) => scratchedSet.has(n))) wakuNumbers.push(waku);
+  }
+  return wakuNumbers.sort((a, b) => a - b);
+}
 
 finish1Select.addEventListener("change", renderPayoutBlocks);
 finish2Select.addEventListener("change", renderPayoutBlocks);
@@ -158,6 +222,13 @@ function buildPayoutSubmission() {
   for (const betType of BET_TYPE_ORDER) {
     const combos = currentRacePayouts[betType] || [];
     if (combos.length > 0) payoutsPayload[betType] = combos;
+  }
+
+  if (currentScratchedHorseNumbers.size > 0) {
+    payoutsPayload.refunds = [{
+      horse_numbers: Array.from(currentScratchedHorseNumbers).sort((a, b) => a - b),
+      waku_numbers: computeRefundWakuNumbers(currentScratchedHorseNumbers, currentPayoutEntries),
+    }];
   }
 
   return { payoutsPayload };
@@ -270,6 +341,10 @@ function openPayoutModal(race) {
   payoutHorseCountSelect.value = count;
   renderFinishSelects(count, race.finish_order);
   currentRacePayouts = race.payouts || {};
+  currentScratchedHorseNumbers = new Set(
+    ((race.payouts && race.payouts.refunds) || []).flatMap((r) => r.horse_numbers || [])
+  );
+  renderScratchedSection();
   loadTicketsForRace(race.id);
   loadRaceResultsDetail(race.id);
 
