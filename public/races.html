@@ -111,8 +111,10 @@
           <label>2着<select id="r-finish-2"></select></label>
           <label>3着<select id="r-finish-3"></select></label>
           <button type="button" id="race-scratched-open-btn" class="ghost-btn" style="align-self:flex-end">出走取消馬選択</button>
+          <button type="button" id="race-payout-import-open-btn" class="ghost-btn" style="align-self:flex-end">払戻一括取込</button>
         </div>
       </div>
+      <p id="payout-import-status" class="submit-message" hidden></p>
 
       <div id="race-tickets-section"></div>
 
@@ -129,6 +131,20 @@
         <button type="submit" class="stamp-btn">保存する</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- 払戻一括取込ダイアログ(払戻モーダル内の「払戻一括取込」ボタンから開く) -->
+<div id="race-payout-import-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>払戻の一括取込</h2>
+    <p class="picker-hint">楽天競馬・netkeibaの払戻表をコピーして貼り付けてください。着順(1〜3着)と各式別の払戻を設定します。「保存する」を押すまでは確定しません。</p>
+    <textarea id="race-payout-import-text" rows="12" style="width:100%" placeholder="単勝 ... 複勝 ... の払戻表を貼り付け"></textarea>
+    <p id="race-payout-import-message" class="submit-message error" hidden></p>
+    <div class="modal-actions">
+      <button type="button" id="race-payout-import-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="race-payout-import-run-btn" class="stamp-btn">取り込む</button>
+    </div>
   </div>
 </div>
 
@@ -196,6 +212,7 @@
      HORSE_COUNT_OPTIONSを参照するため、races.jsを先に読み込む必要がある)。 -->
 <script src="races.js"></script>
 <script src="races-entries-modal.js"></script>
+<script src="payout-paste-parser.js"></script>
 <script src="races-payout-modal.js"></script>
 </body>
 </html>

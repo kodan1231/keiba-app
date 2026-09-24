@@ -23,6 +23,11 @@ const raceResultsDetailTable = document.getElementById("race-results-detail-tabl
 const scratchedOpenBtn = document.getElementById("race-scratched-open-btn");
 const scratchedModal = document.getElementById("race-scratched-modal");
 const scratchedPicker = document.getElementById("race-scratched-picker");
+const payoutImportOpenBtn = document.getElementById("race-payout-import-open-btn");
+const payoutImportModal = document.getElementById("race-payout-import-modal");
+const payoutImportText = document.getElementById("race-payout-import-text");
+const payoutImportMessage = document.getElementById("race-payout-import-message");
+const payoutImportStatus = document.getElementById("payout-import-status");
 
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
@@ -126,6 +131,72 @@ document.getElementById("race-scratched-modal-close-btn").addEventListener("clic
 // 閉じるようにしているため、ESCでも実質「まずダイアログだけ閉じる」動作になる)。
 scratchedModal.addEventListener("click", (e) => {
   if (e.target === scratchedModal) scratchedModal.hidden = true;
+});
+
+// ---------- 払戻一括取込(楽天競馬・netkeibaの払戻表の貼り付け) ----------
+// 解析は payout-paste-parser.js の parsePayoutPaste()。貼り付けた式別ごとの払戻を
+// currentRacePayouts へ上書きし、着順(1〜3着)も貼り付け内容から推定してセットする
+// (組み合わせ行は着順から算出した的中組み合わせにしか表示されないため)。
+// 貼り付けに含まれない式別は現在の入力をそのまま残す。保存は「保存する」を押した時。
+payoutImportOpenBtn.addEventListener("click", () => {
+  payoutImportText.value = "";
+  payoutImportMessage.hidden = true;
+  payoutImportModal.hidden = false;
+  payoutImportText.focus();
+});
+document.getElementById("race-payout-import-cancel-btn").addEventListener("click", () => {
+  payoutImportModal.hidden = true;
+});
+payoutImportModal.addEventListener("click", (e) => {
+  if (e.target === payoutImportModal) payoutImportModal.hidden = true;
+});
+document.getElementById("race-payout-import-run-btn").addEventListener("click", () => {
+  const r = parsePayoutPaste(payoutImportText.value);
+  const types = BET_TYPE_ORDER.filter((t) => r.payouts[t]);
+  const showError = (msg) => {
+    payoutImportMessage.textContent = msg;
+    payoutImportMessage.hidden = false;
+  };
+  if (!types.length) {
+    showError(r.errors.join(" ") || "取り込める払戻が見つかりませんでした。");
+    return;
+  }
+
+  // 馬番が現在の出走頭数を超える場合は頭数を広げる(選択肢は5〜18頭)。
+  const maxHorse = Math.max(
+    ...types.filter((t) => t !== "wakuren").flatMap((t) => r.payouts[t].flatMap((p) => p.combo))
+  );
+  if (maxHorse > 18) {
+    showError(`馬番${maxHorse}が18を超えています。貼り付け内容を確認してください。`);
+    return;
+  }
+  const finishOrder = r.finishOrder || readFinishTop3();
+  if (maxHorse > currentPayoutHorseCount) {
+    currentPayoutHorseCount = maxHorse;
+    payoutHorseCountSelect.value = maxHorse;
+  }
+  renderFinishSelects(currentPayoutHorseCount, finishOrder);
+
+  captureEnteredRatesIntoState(); // 貼り付けに含まれない式別の入力中の値を退避
+  currentRacePayouts = { ...currentRacePayouts, ...r.payouts };
+  ticketsSection.innerHTML = ""; // 再描画時に古いDOMの値で上書きされないよう空にする
+  renderPayoutBlocks();
+
+  // 枠連は出走馬表の枠番から的中組み合わせを算出するため、枠番が未登録だと行が無効化され
+  // 取り込んだ値を表示・保存できない。
+  const problems = [...r.errors, ...r.warnings];
+  const wakurenSkipped = types.includes("wakuren")
+    && ticketsSection.querySelector('.payout-rate-row[data-bet-type="wakuren"][data-combo="null"]');
+  if (wakurenSkipped) problems.push("枠連: 出走馬表に枠番が登録されていないため設定できませんでした。");
+
+  const okTypes = types.filter((t) => !(t === "wakuren" && wakurenSkipped));
+  const notes = [`${okTypes.map(betTypeLabel).join("・")}を設定しました。`];
+  if (r.finishOrder) notes.push(`着順: ${r.finishOrder.map((n) => n + "番").join(" → ")}`);
+  if (r.ignored.length) notes.push(`取込対象外: ${r.ignored.join("・")}`);
+  payoutImportStatus.className = `submit-message ${problems.length ? "error" : "success"}`;
+  payoutImportStatus.textContent = [...notes, ...problems, "「保存する」を押すと確定します。"].join(" ");
+  payoutImportStatus.hidden = false;
+  payoutImportModal.hidden = true;
 });
 
 // 取消馬番から「返還同枠」(枠連の返還判定に使う)を自動算出する。ある枠に属する
@@ -374,6 +445,7 @@ function openPayoutModal(race) {
     ((race.payouts && race.payouts.refunds) || []).flatMap((r) => r.horse_numbers || [])
   );
   updateScratchedButtonLabel();
+  payoutImportStatus.hidden = true;
   loadTicketsForRace(race.id);
   loadRaceResultsDetail(race.id);
 
@@ -387,9 +459,11 @@ function closePayoutModal() {
   // 出走取消馬選択ダイアログが開いたまま払戻モーダルを閉じると、ダイアログだけが
   // 残留してしまう。ESC/キャンセル/背景クリックのいずれの経路でも、開いていれば
   // まずダイアログ側だけを閉じる(払戻モーダル自体は開いたまま)。
-  if (!scratchedModal.hidden) {
-    scratchedModal.hidden = true;
-    return;
+  for (const sub of [payoutImportModal, scratchedModal]) {
+    if (!sub.hidden) {
+      sub.hidden = true;
+      return;
+    }
   }
   payoutModal.hidden = true;
 }
