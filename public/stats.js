@@ -426,8 +426,19 @@ function renderJockeyTable(items) {
 // 「重賞のみ」「条件戦のみ」には出てこず「すべて」にのみ含まれる。
 const categoryFilterState = { overall: "all", race: "all" };
 
+// 中央競馬(JRA)10場。これ以外の競馬場は地方競馬として扱う(競馬場名が空の購入は
+// どちらにも含めず「すべて」にのみ出る)。buy.js の RACE_TRACK_ORDER と同じ場の一覧。
+const JRA_TRACKS = new Set(["東京", "中山", "京都", "阪神", "札幌", "函館", "福島", "新潟", "中京", "小倉"]);
+
 function filterByCategory(items, mode) {
   if (mode === "all") return items;
+  if (mode === "jra") return items.filter((t) => JRA_TRACKS.has(String(t.track || "").trim()));
+  if (mode === "local") {
+    return items.filter((t) => {
+      const track = String(t.track || "").trim();
+      return track && !JRA_TRACKS.has(track);
+    });
+  }
   return items.filter((t) => t.race_category === mode);
 }
 
