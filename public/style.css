@@ -2705,17 +2705,28 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 }
 @media(max-width:430px) {
   .bet-horse-row.axis2-row {
-    grid-template-columns: 16px 20px minmax(60px,1fr) 16px 92px;
+    grid-template-columns: 16px 20px minmax(0,1fr) 16px auto;
+  }
+  .bet-horse-row.axis2-row .check-inline {
+    flex: 0 0 auto;
+    min-width: 30px;
   }
   /* 3列(1着軸/2着軸/相手)は2列よりcontrol列の幅を広めに確保する。
      馬名列はminmax(50px,1fr)で残り幅を吸収し、はみ出た分は
      .bet-horse-name の text-overflow:ellipsis(既存ルール)で省略する。 */
   .bet-horse-row.axis2-row-3col {
-    grid-template-columns: 14px 18px minmax(50px,1fr) 14px 140px;
+    grid-template-columns: 14px 18px minmax(0,1fr) 14px auto;
     gap: 3px;
   }
+  /* 操作列は固定幅ではなく中身の幅(auto)にし、各項目は縮ませず最小幅を持たせる
+     (2026-09-26。固定140px+min-width:0だと、実機iPhone SE3で3つのラジオ/チェックと
+     「1着軸/2着軸/相手」の小ラベルが互いに重なった)。はみ出す分は馬名列が省略で吸収する。 */
   .bet-horse-row.axis2-row-3col .bet-horse-control {
-    gap: 3px;
+    gap: 6px;
+  }
+  .bet-horse-row.axis2-row-3col .check-inline {
+    flex: 0 0 auto;
+    min-width: 30px;
   }
   .bet-horse-row.axis2-row-3col .axis2-check-tag {
     font-size: 8px;
