@@ -510,8 +510,9 @@ function openHorseMemo(card) {
   horseMemoTitle.textContent = `${name} のメモ`;
   horseMemoText.value = horseNotes[name]?.memo || "";
   horseMemoStatus.hidden = true;
+  // 自動フォーカスはしない(スマホで開いた瞬間にキーボードが出て画面が動く・拡大されるのを
+  // 避ける。入力したい時に入力欄をタップする)。
   horseMemoModal.hidden = false;
-  horseMemoText.focus();
 }
 
 function closeHorseMemo() {
