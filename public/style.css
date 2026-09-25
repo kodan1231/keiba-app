@@ -2857,13 +2857,29 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   font-size: 10px;
 }
 
-/* 勝負レース(自分の予想登録画面での個人設定)の「★」マーク。2026-09-12追加。 */
-.key-race-star {
-  display: inline-block;
-  margin-left: 2px;
-  color: var(--hanko);
-  font-size: 11px;
+/* 勝負レース(自分の個人設定)の★/☆トグル。購入画面のレース一覧の行の右端に重ねる
+   (2026-09-25。以前は勝負レースのレース名の後ろに表示のみの「★」を出していた)。 */
+.race-row-wrap { position: relative; }
+.race-row-wrap .race-column-row { padding-right: 44px; }
+.key-race-mini {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #bbb;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
 }
+.key-race-mini:hover { background: rgba(0, 0, 0, .06); }
+.key-race-mini.active { color: var(--hanko); }
+.key-race-mini:disabled { opacity: .5; cursor: default; }
 
 /* PCで最低3競馬場が見切れずに収まるよう、購入画面のカラム最小幅を縮小する
    (buy.htmlの#race-gridにのみ適用し、races.htmlのレース管理画面のカラム幅には

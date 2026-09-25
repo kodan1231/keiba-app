@@ -243,13 +243,20 @@ function renderGrid() {
             if (r.post_time) infoParts.push(escapeHtml(r.post_time));
             if (courseText) infoParts.push(escapeHtml(courseText));
             infoParts.push(r.entries.length ? `${r.entries.length}頭` : "出走馬未登録");
+            // 勝負レースの★/☆トグルは行ボタン(予想画面へ遷移)の中に入れられない
+            // (ボタンの入れ子は不正)ため、ラッパー内で行ボタンの右端に重ねて置く。
+            const isKey = myKeyRaceIds.has(Number(r.id));
             return `
-              <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
-                data-id="${r.id}" type="button">
-                <b>${i+1}R</b>
-                <span>${escapeHtml(r.race_name || "")}${myKeyRaceIds.has(Number(r.id)) ? ' <span class="key-race-star" title="勝負レース">★</span>' : ""}</span>
-                <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}</small>
-              </button>`;
+              <div class="race-row-wrap">
+                <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
+                  data-id="${r.id}" type="button">
+                  <b>${i+1}R</b>
+                  <span>${escapeHtml(r.race_name || "")}</span>
+                  <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}</small>
+                </button>
+                <button type="button" class="key-race-mini ${isKey ? "active" : ""}" data-key-race-id="${r.id}"
+                  aria-pressed="${isKey}" title="勝負レース(${isKey ? "ON" : "OFF"})">${isKey ? "★" : "☆"}</button>
+              </div>`;
           }).join("")}
         </section>
       `).join("")}
@@ -263,6 +270,37 @@ function renderGrid() {
       location.href = `prediction.html?race=${encodeURIComponent(btn.dataset.id)}`;
     };
   });
+
+  raceGrid.querySelectorAll("button[data-key-race-id]").forEach(btn => {
+    btn.onclick = () => toggleKeyRaceFromGrid(btn);
+  });
+}
+
+// レース一覧の★/☆ボタンで勝負レースをON/OFFする(2026-09-25。予想登録画面のトグルと
+// 同じ PUT /api/predictions/key-race)。一覧全体を描き直さず、押したボタンだけ更新する
+// (カラムの横スクロール位置などを保つため)。
+async function toggleKeyRaceFromGrid(btn) {
+  const raceId = Number(btn.dataset.keyRaceId);
+  const next = !myKeyRaceIds.has(raceId);
+  btn.disabled = true;
+  try {
+    const res = await authedFetch("/api/predictions/key-race", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ race_id: raceId, is_key_race: next }),
+    });
+    if (!res.ok) {
+      alert("勝負レースの切り替えに失敗しました。");
+      return;
+    }
+    if (next) myKeyRaceIds.add(raceId); else myKeyRaceIds.delete(raceId);
+    btn.classList.toggle("active", next);
+    btn.setAttribute("aria-pressed", String(next));
+    btn.title = `勝負レース(${next ? "ON" : "OFF"})`;
+    btn.textContent = next ? "★" : "☆";
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function renderCalendar() {
