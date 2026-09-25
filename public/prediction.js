@@ -439,30 +439,24 @@ function renderHorses() {
             })()}
           </span>
           <span class="prediction-mark-inline" aria-label="予想印">
+            <button type="button" class="horse-memo-btn ${note.memo ? "has-memo" : ""}" ${e.horse_name ? `title="${note.memo ? "この馬のメモがあります" : "この馬のメモを入力"}"` : 'disabled title="馬名が未登録のためメモは使えません"'}>メモ</button>
             <select class="prediction-mark-select" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
               <option value="">−</option>
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
             </select>
           </span>
-          <span class="note-toggle-tail">
-            ${note.memo ? `<span class="memo-mark" title="この馬のメモがあります">▼</span>` : ""}
-          </span>
         </div>
         <div class="horse-note-editor" hidden>
-          <label class="horse-memo-label">
-            <textarea class="horse-memo" rows="3" maxlength="5000" aria-label="この馬についてのメモ"
-              >${escapeHtml(note.memo || "")}</textarea>
-          </label>
-          <span class="horse-note-status" hidden></span>
-          <div class="horse-history" hidden></div>
+          <div class="horse-history"></div>
         </div>
       </article>
     `;
   }).join("");
 
-  // 馬名行のクリックで展開パネル(馬メモ + 過去成績)を開閉する。
-  // 印セレクトのクリックでは展開を切り替えない。開閉トグルの「＋/−」記号は
-  // 表示しない(2026-09-10。行ホバーの背景変化とメモ「▼」マークで開閉可能なことを示す)。
+  // 馬名行のクリックで展開パネル(過去成績のみ。馬メモは「メモ」ボタンのダイアログ)を
+  // 開閉する。印セレクト・メモボタンのクリックでは展開を切り替えない
+  // (どちらも .prediction-mark-inline 内)。開閉トグルの「＋/−」記号は表示しない
+  // (2026-09-10。行ホバーの背景変化で開閉可能なことを示す)。
   horsesEl.querySelectorAll(".horse-note-toggle").forEach(btn => {
     btn.addEventListener("click", (event) => {
       if (event.target.closest(".prediction-mark-inline")) return;
@@ -490,33 +484,89 @@ function renderHorses() {
     });
   });
 
-  // メモは入力変更後に自動保存。短時間の連続入力はデバウンスする。
-  horsesEl.querySelectorAll(".horse-memo").forEach(textarea => {
-    let timer;
-    textarea.addEventListener("input", () => {
-      clearTimeout(timer);
-      const card = textarea.closest(".horse-note-card");
-      timer = setTimeout(() => saveHorseNote(card), 500);
+  // 「メモ」ボタン: 馬メモのダイアログを開く。
+  horsesEl.querySelectorAll(".horse-memo-btn").forEach(btn => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openHorseMemo(btn.closest(".horse-note-card"));
     });
   });
 }
 
-async function saveHorseNote(card) {
+// ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------
+// 入力変更後に自動保存する(短時間の連続入力はデバウンス)。閉じる時は保留中の保存を
+// 即時に実行する。メモは馬名キー(全レース共通)なので、ダイアログは開いた馬の名前だけを持つ。
+const horseMemoModal = document.getElementById("horse-memo-modal");
+const horseMemoTitle = document.getElementById("horse-memo-title");
+const horseMemoText = document.getElementById("horse-memo-text");
+const horseMemoStatus = document.getElementById("horse-memo-status");
+let memoEditingName = null;
+let memoSaveTimer = null;
+
+function openHorseMemo(card) {
   const name = normalizeHorseName(card.dataset.horseName);
   if (!name) return;
-  const memo = card.querySelector(".horse-memo").value.trim();
-  const status = card.querySelector(".horse-note-status");
+  memoEditingName = name;
+  horseMemoTitle.textContent = `${name} のメモ`;
+  horseMemoText.value = horseNotes[name]?.memo || "";
+  horseMemoStatus.hidden = true;
+  horseMemoModal.hidden = false;
+  horseMemoText.focus();
+}
+
+function closeHorseMemo() {
+  if (memoSaveTimer) {
+    clearTimeout(memoSaveTimer);
+    memoSaveTimer = null;
+    saveHorseNote(memoEditingName, horseMemoText.value);
+  }
+  horseMemoModal.hidden = true;
+}
+
+horseMemoText.addEventListener("input", () => {
+  clearTimeout(memoSaveTimer);
+  const name = memoEditingName;
+  const text = horseMemoText.value;
+  memoSaveTimer = setTimeout(() => {
+    memoSaveTimer = null;
+    saveHorseNote(name, text);
+  }, 500);
+});
+document.getElementById("horse-memo-close-btn").addEventListener("click", closeHorseMemo);
+horseMemoModal.addEventListener("click", (e) => { if (e.target === horseMemoModal) closeHorseMemo(); });
+registerEscToClose(horseMemoModal, closeHorseMemo);
+
+async function saveHorseNote(name, memoRaw) {
+  if (!name) return;
+  const memo = String(memoRaw ?? "").trim();
   const res = await authedFetch("/api/horse-notes", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ horse_name: name, memo })
   });
-  status.hidden = false;
-  status.textContent = res.ok ? "自動保存済み" : "保存に失敗しました";
-  status.className = `horse-note-status ${res.ok ? "success" : "error"}`;
   if (res.ok) {
     horseNotes[name] = { memo };
+    updateMemoButtons(name);
   }
+  if (memoEditingName === name && !horseMemoModal.hidden) {
+    horseMemoStatus.hidden = false;
+    horseMemoStatus.textContent = res.ok ? "自動保存済み" : "保存に失敗しました";
+    horseMemoStatus.className = `horse-note-status ${res.ok ? "success" : "error"}`;
+  }
+}
+
+// 「メモ」ボタンの見た目(メモ登録済みの強調)を、その馬名のメモの有無に合わせる。
+// nameを省略すると全馬を更新する。
+function updateMemoButtons(name) {
+  horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
+    const cardName = normalizeHorseName(card.dataset.horseName);
+    if (name && cardName !== name) return;
+    const btn = card.querySelector(".horse-memo-btn");
+    if (!btn || btn.disabled) return;
+    const has = Boolean(horseNotes[cardName]?.memo);
+    btn.classList.toggle("has-memo", has);
+    btn.title = has ? "この馬のメモがあります" : "この馬のメモを入力";
+  });
 }
 
 async function savePredictionMarks() {
@@ -553,34 +603,12 @@ function applyPrediction() {
   });
 }
 
+// 馬メモ(horseNotes)の取得はrenderHorses()より後に完了するため、renderHorses()内で
+// 組み立てる「メモ」ボタンは常に「メモ未取得」の状態で描画される
+// (2026-08-24。以前の「▼」マークで起きていた同じ問題)。取得完了後のこのタイミングで
+// ボタンの「メモあり」の強調を反映する。
 function applyHorseNotes() {
-  horsesEl.querySelectorAll(".horse-note-card").forEach(card => {
-    const name = normalizeHorseName(card.dataset.horseName);
-    const note = horseNotes[normalizeHorseName(name)]?.memo || "";
-    const textarea = card.querySelector(".horse-memo");
-    if (textarea) textarea.value = note;
-
-    // 2026-08-24修正: 馬メモ(horseNotes)の取得はrenderHorses()より後に完了するため、
-    // renderHorses()内で組み立てる「▼」マークは常に「メモ未取得」の状態で描画されて
-    // しまい、実際にメモがある馬でも一覧上は▼マークが表示されない不具合があった。
-    // (メモ本文自体はこの関数でtextareaへ反映されていたため、行を開けば中身は見える
-    // が、一覧を見ただけではどの馬にメモがあるか分からない状態になっていた)
-    // メモ取得完了後のこのタイミングで、▼マークの追加/削除も行うようにする。
-    const tail = card.querySelector(".note-toggle-tail");
-    if (!tail) return;
-    let mark = tail.querySelector(".memo-mark");
-    if (note) {
-      if (!mark) {
-        mark = document.createElement("span");
-        mark.className = "memo-mark";
-        mark.title = "この馬のメモがあります";
-        mark.textContent = "▼";
-        tail.insertBefore(mark, tail.firstChild);
-      }
-    } else if (mark) {
-      mark.remove();
-    }
-  });
+  updateMemoButtons();
 }
 
 // 過去成績(race_results 由来)を取得する。予想印・馬メモの読み込みからは切り離し、
@@ -602,7 +630,7 @@ async function loadHorseHistory() {
   }
 }
 
-// 過去成績（出走履歴）を各馬の展開パネル（馬メモの下）へ流し込む。horseHistory の
+// 過去成績（出走履歴）を各馬の展開パネルへ流し込む。horseHistory の
 // 取得は renderHorses() より後に完了するため、applyHorseNotes() と同じくこのタイミングで
 // 描画する。0走の馬はセクションごと非表示のまま（従来どおりメモのみ）。
 function applyHorseHistory() {
@@ -611,9 +639,8 @@ function applyHorseHistory() {
     if (!box) return;
     const name = normalizeHorseName(card.dataset.horseName);
     const rows = horseHistory[name] || [];
-    if (!rows.length) { box.hidden = true; box.innerHTML = ""; return; }
-    box.hidden = false;
-    box.innerHTML = renderHorseHistory(rows);
+    // 展開パネルは過去成績だけなので、0走の馬も空のパネルにならないよう案内を出す。
+    box.innerHTML = rows.length ? renderHorseHistory(rows) : `<p class="horse-history-empty">過去成績はありません</p>`;
   });
 }
 
