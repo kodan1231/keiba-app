@@ -2848,6 +2848,9 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .horse-memo-btn.has-memo { border-color: var(--hanko); color: var(--hanko); font-weight: 700; }
 .horse-memo-btn.has-memo::after { content: "●"; font-size: 8px; margin-left: 3px; }
 .horse-history-empty { font-size: 12px; color: var(--ink-soft); margin: 0; }
+/* 馬メモダイアログのtextarea。iOS Safariは16px未満の入力欄にフォーカスすると
+   画面を自動拡大するため(グローバルのtextareaは14px)、16pxにして拡大を防ぐ。 */
+#horse-memo-text { font-size: 16px; }
 
 /* メモ登録済みの馬が出走している場合の「▼」マーク(購入画面のレース一覧で使用)。 */
 .memo-mark {
