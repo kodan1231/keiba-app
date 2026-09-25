@@ -682,7 +682,6 @@ function renderHorseHistory(rows) {
       </tr>`;
   }).join("");
   return `
-    <div class="horse-history-head">過去成績（${rows.length}走）</div>
     <div class="horse-history-scroll">
       <table class="horse-history-table">
         <thead>

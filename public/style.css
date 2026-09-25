@@ -2447,8 +2447,8 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 
 /* 予想登録画面: 馬の展開パネル内に出す「過去成績(出走履歴)」。race_results 由来の
    データを新しい順に全件表示する(2026-09-10)。列が多いので横スクロールで見せる。 */
-.horse-history { margin-top: 10px; }
-.horse-history-head { font-size: 12px; font-weight: 700; color: #555; margin-bottom: 4px; }
+.horse-history { margin: 0; }
+.horse-note-editor { padding: 4px 8px 6px; }
 .horse-history-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .horse-history-table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
 .horse-history-table th,
