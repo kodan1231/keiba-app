@@ -43,9 +43,12 @@ export async function backfillHorseNamesForRace(db, raceId, entries) {
 
   let updated = 0;
   for (const table of ["imported_ticket_items", "tickets"]) {
-    const { results } = await db.prepare(`SELECT id, selections FROM ${table} WHERE race_id = ?`).bind(raceId).all();
+    const { results } = await db.prepare(`SELECT id, bet_type, selections FROM ${table} WHERE race_id = ?`).bind(raceId).all();
     const statements = [];
     for (const row of results || []) {
+      // 枠連は selections の horse_number に枠番が入っている(馬番ではない)ため、
+      // 馬番として馬名・騎手を引くと別の馬の名前を書き込んでしまう。対象外にする。
+      if (row.bet_type === "wakuren") continue;
       let selections;
       try {
         selections = JSON.parse(row.selections || "[]");

@@ -352,6 +352,119 @@ function horseRow(e, controlHtml, extraRowClass) {
   `;
 }
 
+// ---------- 枠連(枠番で買う) ----------
+// 枠連は馬番ではなく枠番(1〜8枠)の組み合わせで買う。選択肢の行は枠ごと(その枠に入る
+// 出走馬を併記)にし、state の各Set・normalOrder には馬番ではなく枠番を入れる
+// (bindPicker()・resetState()等の既存ロジックをそのまま流用するため)。
+// 購入データ(tickets.selections)は horse_number・waku_number の両方に枠番を入れ、
+// 馬名・騎手は空にする(CSV取込の枠連が horse_number に枠番を入れている既存の形に揃え、
+// 払戻判定〈waku_number参照〉・履歴/かごの表示〈horse_number参照〉をそのまま使えるようにする)。
+// 同枠(ゾロ目。例: 3-3)は、その枠に出走馬が2頭以上いる場合のみ買える。
+
+// 枠番ごとの出走馬。枠番が未確定の出走馬が1頭でもいれば null(枠連は購入できない)。
+function wakuGroups(race) {
+  const entries = race.entries || [];
+  if (!entries.length || entries.some((e) => e.waku_number === null || e.waku_number === undefined)) return null;
+  const byWaku = new Map();
+  for (const e of [...entries].sort((a, b) => Number(a.horse_number) - Number(b.horse_number))) {
+    if (!byWaku.has(e.waku_number)) byWaku.set(e.waku_number, []);
+    byWaku.get(e.waku_number).push(e);
+  }
+  return [...byWaku.entries()].sort((a, b) => a[0] - b[0]).map(([waku, list]) => ({ waku, entries: list }));
+}
+
+function frameRow(g, controlHtml) {
+  const marks = g.entries.flatMap((e) => predictionMarks.get(Number(e.horse_number)) || []).join(" ");
+  const horses = g.entries.map((e) => `${e.horse_number} ${escapeHtml(e.horse_name || "")}`).join(" / ");
+  return `
+    <div class="bet-horse-row ${marks ? "has-prediction-mark" : ""}">
+      <span class="mini-waku waku-${g.waku}">${g.waku}</span>
+      <span class="bet-horse-num">${g.waku}枠</span>
+      <span class="bet-horse-name" title="${horses}">${horses}</span>
+      <span class="bet-horse-jockey"></span>
+      <span class="bet-horse-mark">${marks}</span>
+      <span class="bet-horse-control">${controlHtml}</span>
+    </div>
+  `;
+}
+
+function renderWakurenPicker() {
+  const groups = wakuGroups(selectedRace);
+  if (!groups) {
+    pickerArea.innerHTML = `<p class="buy-hint">枠番が未登録の出走馬がいるため、枠連は購入できません。レース管理で出走馬表の枠番を登録してください。</p>`;
+    previewSection.hidden = true;
+    return;
+  }
+  let html;
+  if (state.method === "normal") {
+    html = groups.map((g) => frameRow(g, [0, 1].map((i) =>
+      `<label class="radio-inline"><input type="radio" name="normal-${i}" data-slot="${i}" value="${g.waku}" ${state.normalOrder[i] === g.waku ? "checked" : ""}></label>`
+    ).join(""))).join("");
+  } else if (state.method === "box") {
+    html = groups.map((g) => frameRow(g,
+      `<label class="check-inline"><input type="checkbox" class="horse-check" value="${g.waku}" ${state.boxSet.has(g.waku) ? "checked" : ""} aria-label="${g.waku}枠を選択"></label>`
+    )).join("");
+  } else if (state.method === "nagashi") {
+    html = groups.map((g) => {
+      const axisControl = `<input type="radio" name="axis-one" class="axis-radio" value="${g.waku}" ${state.axisSet.has(g.waku) ? "checked" : ""}>`;
+      const partner = `<input type="checkbox" class="partner-check" value="${g.waku}" ${state.partnerSet.has(g.waku) ? "checked" : ""}>`;
+      return frameRow(g, `<label class="control-label">${axisControl}</label><label class="control-label">${partner}</label>`);
+    }).join("");
+  } else {
+    html = groups.map((g) => frameRow(g, [0, 1].map((i) =>
+      `<label class="check-inline"><input type="checkbox" class="formation-check" data-slot="${i}" value="${g.waku}" ${state.formationSlots[i].has(g.waku) ? "checked" : ""} aria-label="${selectionLabel("wakuren", i)}"></label>`
+    ).join(""))).join("");
+  }
+  pickerArea.innerHTML = `
+    <div class="bet-horse-table-head">
+      <span>枠</span><span>枠番</span><span>出走馬</span><span></span><span>印</span>
+      <span></span>
+    </div>
+    <div class="bet-horse-list">${html}</div>
+  `;
+  bindPicker();
+  renderPreview();
+}
+
+// 枠連の組み合わせ生成。a,bを枠番とし、同枠(a===b)は出走馬が2頭以上の枠のみ有効。
+// 結果は枠番の昇順に正規化し、重複を除く。
+function currentWakurenCombos() {
+  const groups = wakuGroups(selectedRace);
+  if (!groups) return [];
+  const size = new Map(groups.map((g) => [g.waku, g.entries.length]));
+  const pairs = (as, bs) => {
+    const seen = new Set();
+    const out = [];
+    for (const a of as) {
+      for (const b of bs) {
+        if (a === b && (size.get(a) || 0) < 2) continue;
+        const c = a <= b ? [a, b] : [b, a];
+        const key = c.join(",");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(c);
+      }
+    }
+    return out.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  };
+  if (state.method === "normal") {
+    if (state.normalOrder.some((x) => x == null)) return [];
+    return pairs([state.normalOrder[0]], [state.normalOrder[1]]);
+  }
+  if (state.method === "box") {
+    const arr = [...state.boxSet];
+    return pairs(arr, arr);
+  }
+  if (state.method === "formation") {
+    return pairs([...state.formationSlots[0]], [...state.formationSlots[1]]);
+  }
+  if (state.method === "nagashi") {
+    if (state.axisSet.size !== 1) return [];
+    return pairs([...state.axisSet], [...state.partnerSet]);
+  }
+  return [];
+}
+
 // 三連単2頭軸の列見出し。axisPlacement(1・2着/1・3着/2・3着)で選んだ2つの着順を
 // そのままラベルにする(netkeiba/JRA実物と同じ「1着軸」「2着軸」等の表記)。
 // 戻り値の順序(label1→axisOrder[0]、label2→axisOrder[1])はcurrentCombos()の
@@ -372,6 +485,11 @@ function renderPicker() {
   if (!selectedRace.entries.length) {
     pickerArea.innerHTML = `<p class="buy-hint">出走馬が未登録です。レース管理で出走馬を登録してから購入してください。</p>`;
     previewSection.hidden = true;
+    return;
+  }
+
+  if (state.betType === "wakuren") {
+    renderWakurenPicker();
     return;
   }
 
@@ -536,6 +654,8 @@ function bindPicker() {
 function currentCombos() {
   const def = BET_TYPES[state.betType];
 
+  if (state.betType === "wakuren") return currentWakurenCombos();
+
   if (state.method === "normal") {
     if (def.n === 1) {
       return [...state.singleSet].map(x => [x]);
@@ -632,7 +752,9 @@ function renderPreview() {
         const key = JSON.stringify(c);
         return `
           <div class="preview-combo-row">
-            <span>${c.map(h => `${h} ${escapeHtml(map[h]?.horse_name || "")}`).join(def.ordered ? " → " : " - ")}</span>
+            <span>${state.betType === "wakuren"
+              ? c.map(w => `${w}枠`).join(" - ")
+              : c.map(h => `${h} ${escapeHtml(map[h]?.horse_name || "")}`).join(def.ordered ? " → " : " - ")}</span>
             <input class="preview-combo-amount" data-key='${escapeAttr(key)}'
               type="number" min="100" step="100" value="${comboAmounts.get(key)}">
           </div>
@@ -675,7 +797,8 @@ function buildCurrentStructure() {
     return { slots: state.formationSlots.map(s => sortNums([...s])) };
   }
   if (state.method === "nagashi") {
-    const partners = [...state.partnerSet].filter(x => !state.axisSet.has(x));
+    // 枠連は軸と同じ枠を相手にできる(同枠のゾロ目)ため、軸を相手から除外しない。
+    const partners = [...state.partnerSet].filter(x => state.betType === "wakuren" || !state.axisSet.has(x));
     return { axis: sortNums([...state.axisSet]), partners: sortNums(partners), multi: !!state.multi };
   }
   return null;
@@ -696,6 +819,8 @@ function buildCurrentPurchasePayload() {
   const map = Object.fromEntries(selectedRace.entries.map(e => [e.horse_number, e]));
   const payloadCombos = combos.map(c => ({
     selections: c.map(h => {
+      // 枠連は c の要素が枠番。horse_number・waku_number の両方に枠番を入れる(上記参照)。
+      if (state.betType === "wakuren") return { horse_number:h, waku_number:h, horse_name:"", jockey:"" };
       const e = map[h] || {};
       return {
         horse_number:h,
