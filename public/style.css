@@ -2545,8 +2545,13 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 @media(max-width:700px){
   .masthead-nav { overflow-x:auto; white-space:nowrap; max-width:100%; }
   .bet-horse-table-head { display:none; }
+  /* 操作列(最後の列)は固定幅ではなく中身の幅(auto)にし、折り返さず縮まない
+     (2026-09-26。固定38pxだと、三連複/三連単の通常・フォーメーション(操作が3つ)が
+     縦に折り返し、2頭軸は互いに重なった。iPhone SE3は、横にはみ出す要素があると
+     Safariが表示を縮小して実効幅が430pxを超え、下の430px以下のルールが効かず
+     このルールが使われるため、ここで壊れないようにしておく必要がある)。 */
   .bet-horse-row {
-    grid-template-columns:28px 34px minmax(90px,1fr) 38px 38px;
+    grid-template-columns:28px 34px minmax(0,1fr) 38px auto;
     gap:5px;
     padding:4px 6px;
   }
@@ -2554,7 +2559,13 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   /* 印列は grid-column/grid-row とも auto にリセットする(旧ルールの残骸で
      馬番・馬名が1列ずつズレる事故を防ぐため)。 */
   .bet-horse-mark { grid-column:auto; grid-row:auto; }
-  .bet-horse-control { grid-column:auto; padding-left:0; }
+  .bet-horse-control { grid-column:auto; padding-left:0; flex-wrap:nowrap; justify-content:flex-end; }
+  .bet-horse-control .check-inline,
+  .bet-horse-control .control-label,
+  .bet-horse-control .radio-inline { flex:0 0 auto; }
+  /* 2頭軸(軸1/軸2/相手)の行も同様に操作列を中身の幅にする(各項目の最小幅は
+     基本ルールより後ろにある下の max-width:700px ブロックで指定)。 */
+  .bet-horse-row.axis2-row { grid-template-columns:22px 26px minmax(0,1fr) 22px auto; }
   .horse-note-preview { max-width:150px; }
   /* CSVインポートはPC利用のみを想定し、スマホ幅では非表示(機能・APIは維持) */
   #csv-import-btn { display:none; }
@@ -2566,7 +2577,7 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
    縦に並んでしまう・馬名が折り返る、といった崩れをさらに詰めて解消する */
 @media(max-width:430px){
   .bet-horse-row {
-    grid-template-columns:18px 22px minmax(96px,1fr) 18px 84px;
+    grid-template-columns:18px 22px minmax(60px,1fr) 18px auto;
     gap:4px;
     padding:4px 4px;
   }
@@ -2703,13 +2714,16 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 @media(min-width:701px) {
   .axis2-check-tag { display:none; }
 }
+/* 2頭軸の操作列は中身の幅(auto)、各項目は縮ませず最小幅を持たせる。430px超〜700pxでも
+   (iPhone SE3で実効幅が430pxを超えることがあるため)適用する。基本ルール(上)より後ろに
+   置いて同じ詳細度で上書きする。 */
+@media(max-width:700px) {
+  .bet-horse-row.axis2-row .bet-horse-control { gap: 6px; }
+  .bet-horse-row.axis2-row .check-inline { flex: 0 0 auto; min-width: 30px; }
+}
 @media(max-width:430px) {
   .bet-horse-row.axis2-row {
     grid-template-columns: 16px 20px minmax(0,1fr) 16px auto;
-  }
-  .bet-horse-row.axis2-row .check-inline {
-    flex: 0 0 auto;
-    min-width: 30px;
   }
   /* 3列(1着軸/2着軸/相手)は2列よりcontrol列の幅を広めに確保する。
      馬名列はminmax(50px,1fr)で残り幅を吸収し、はみ出た分は
