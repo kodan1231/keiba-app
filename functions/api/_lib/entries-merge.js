@@ -146,18 +146,34 @@ function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
 //     その後に取消・除外になった場合。取消馬にはPDF上も馬番が付かないため永久にnullのまま
 //     残り、馬番未確定の馬が1頭でもいるとレース全体が「枠番・馬番未確定(購入不可)」に
 //     なってしまう。馬番がある項目は購入済み馬券・予想印が参照しうるため残す
-export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratchedNames = []) {
+//
+// opts.authoritative(出走馬一覧PDFインポートのみtrueで呼ぶ。2026-09-27追加):
+//   取込側の全馬に馬番があれば「馬番確定後の完全な出走馬一覧」として扱い、
+//   - 取込側に無い馬名で馬番が未確定(null)の既存項目を取り除く。馬番確定前に取り込んだ後、
+//     枠順確定までに除外になった馬はPDFから消える(取消の行も出ない)ため、残っていると
+//     頭数が実際より多くなって枠番がずれ、馬番未確定の馬が残ってレース全体が購入不可になる
+//   - 枠番を「馬番と頭数からの自動計算値」で振り直す(既存値も上書き)。枠番は馬番確定時の
+//     頭数から機械的に決まるため、上記のような頭数の誤りで保存された誤った枠番もここで直る
+//   結果PDFインポート(results-import.js)は取消馬の情報を渡さず頭数が不正確になるため
+//   このオプションを使わない
+export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratchedNames = [], opts = {}) {
   const scratchedSet = new Set(
     (Array.isArray(scratchedNames) ? scratchedNames : []).map(normalizeHorseNameForMerge).filter(Boolean)
   );
+  const incomingList = Array.isArray(incomingEntries) ? incomingEntries : [];
+  const authoritative =
+    !!opts.authoritative && incomingList.length > 0 && incomingList.every((e) => Number.isInteger(e?.horse_number));
+  const incomingNames = new Set(incomingList.map((e) => normalizeHorseNameForMerge(e?.horse_name)).filter(Boolean));
   const removed = [];
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
     .filter((e) => normalizeHorseNameForMerge(e?.horse_name))
     .filter((e) => {
       const name = normalizeHorseNameForMerge(e.horse_name);
+      const unnumbered = !Number.isInteger(e.horse_number);
       const garbage = /^(取消|除外)\s/.test(name);
-      const scratchedUnnumbered = scratchedSet.has(name) && !Number.isInteger(e.horse_number);
-      if (garbage || scratchedUnnumbered) { removed.push(e.horse_name); return false; }
+      const scratchedUnnumbered = scratchedSet.has(name) && unnumbered;
+      const droppedUnnumbered = authoritative && unnumbered && !incomingNames.has(name);
+      if (garbage || scratchedUnnumbered || droppedUnnumbered) { removed.push(e.horse_name); return false; }
       return true;
     });
   const merged = cleanedExisting.map((e) => ({ ...e }));
@@ -227,7 +243,7 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratc
     const computed = computeWakuNumberFromHorseNumber(e.horse_number, horseCount);
     if (e.waku_number === null || e.waku_number === undefined) {
       e.waku_number = computed;
-    } else if (isCompleteSmallField && e.waku_number !== computed) {
+    } else if ((isCompleteSmallField || authoritative) && e.waku_number !== computed) {
       e.waku_number = computed;
     }
   }

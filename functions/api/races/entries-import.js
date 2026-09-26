@@ -125,7 +125,7 @@ export async function onRequestPost(context) {
     const rk = `${it.raceDate}__${it.track}__${it.raceNumber}`;
     const existing = existingByKey.get(rk);
     if (!existing) {
-      const { entries } = mergeEntriesByHorseName([], it.incomingEntries, it.scratched.map((x) => x.horse_name));
+      const { entries } = mergeEntriesByHorseName([], it.incomingEntries, it.scratched.map((x) => x.horse_name), { authoritative: true });
       toInsert.push({ ...it, entries });
     } else {
       let currentEntries = [];
@@ -134,7 +134,7 @@ export async function onRequestPost(context) {
       } catch {
         currentEntries = [];
       }
-      const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name));
+      const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name), { authoritative: true });
       toUpdate.push({ ...it, existing, mergedEntries, conflicts, removed });
     }
   }
