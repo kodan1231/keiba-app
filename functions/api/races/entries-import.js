@@ -134,8 +134,8 @@ export async function onRequestPost(context) {
       } catch {
         currentEntries = [];
       }
-      const { entries: mergedEntries, conflicts } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name));
-      toUpdate.push({ ...it, existing, mergedEntries, conflicts });
+      const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name));
+      toUpdate.push({ ...it, existing, mergedEntries, conflicts, removed });
     }
   }
 
@@ -207,7 +207,7 @@ export async function onRequestPost(context) {
     await db.batch(stmts);
     toUpdate.forEach((it) => {
       it.id = it.existing.id;
-      results.push({ status: "updated", id: it.existing.id, key: it.key, conflicts: it.conflicts, scratched: scratchedReport(it.scratched, it.mergedEntries) });
+      results.push({ status: "updated", id: it.existing.id, key: it.key, conflicts: it.conflicts, scratched: scratchedReport(it.scratched, it.mergedEntries), removed: it.removed || [] });
     });
   }
 

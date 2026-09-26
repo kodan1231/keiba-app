@@ -548,6 +548,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
   let created = 0, updated = 0;
   const allConflicts = [];
   const allScratched = [];
+  const allRemoved = [];
   const failures = [];
   for (let i = 0; i < targets.length; i++) {
     const f = targets[i];
@@ -565,6 +566,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
       for (const x of data.results || []) {
         for (const c of x.conflicts || []) allConflicts.push({ key: x.key, ...c });
         for (const sc of x.scratched || []) allScratched.push({ key: x.key, ...sc });
+        for (const name of x.removed || []) allRemoved.push({ key: x.key, horse_name: name });
       }
     } catch (e) {
       console.error("[JRA Entries PDF] registration failed", f.fileName, e);
@@ -584,6 +586,9 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
       `  ${c.key} / ${c.horse_name}${c.horse_number !== null ? `(${c.horse_number}番と推定)` : ""}: ${c.label}${c.in_entries ? "(既に出走馬表にいるため残しています。不要なら出走馬表から削除してください)" : "(出走馬表には登録していません)"}`
     );
     message += `\n\n取消・除外の馬 ${allScratched.length}頭:\n${lines.join("\n")}\n(取消の返還は、払戻を登録する際に「出走取消馬選択」で設定してください)`;
+  }
+  if (allRemoved.length) {
+    message += `\n\n出走馬表から削除した項目(取消馬の壊れた項目・馬番未確定のまま取消になった馬) ${allRemoved.length}件:\n${allRemoved.map((c) => `  ${c.key} / ${c.horse_name}`).join("\n")}`;
   }
   if (failures.length) message += `\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
   alert(message);

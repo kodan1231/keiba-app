@@ -138,9 +138,28 @@ function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
 // entriesに含めないが、JRAは取消・除外の後も枠番を割り当て直さないため、枠番の自動計算では
 // 頭数に数える(2026-09-27。含めないと、取消馬の後ろの馬の枠番が全てずれる)。
 // 既にentriesに同名の馬がいる場合は二重に数えない。
+//
+// 既存entriesの整理(戻り値のremoved。2026-09-27):
+//   - 馬名が「取消 ◯◯」「除外 ◯◯」の項目 … 取消馬の行を通常の馬として解析していた旧バグで
+//     作られた壊れた項目。常に取り除く
+//   - scratchedNamesと同名で馬番が未確定(null)の項目 … 枠番・馬番の確定前に取り込んだ馬が
+//     その後に取消・除外になった場合。取消馬にはPDF上も馬番が付かないため永久にnullのまま
+//     残り、馬番未確定の馬が1頭でもいるとレース全体が「枠番・馬番未確定(購入不可)」に
+//     なってしまう。馬番がある項目は購入済み馬券・予想印が参照しうるため残す
 export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratchedNames = []) {
+  const scratchedSet = new Set(
+    (Array.isArray(scratchedNames) ? scratchedNames : []).map(normalizeHorseNameForMerge).filter(Boolean)
+  );
+  const removed = [];
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
-    .filter((e) => normalizeHorseNameForMerge(e?.horse_name));
+    .filter((e) => normalizeHorseNameForMerge(e?.horse_name))
+    .filter((e) => {
+      const name = normalizeHorseNameForMerge(e.horse_name);
+      const garbage = /^(取消|除外)\s/.test(name);
+      const scratchedUnnumbered = scratchedSet.has(name) && !Number.isInteger(e.horse_number);
+      if (garbage || scratchedUnnumbered) { removed.push(e.horse_name); return false; }
+      return true;
+    });
   const merged = cleanedExisting.map((e) => ({ ...e }));
   const byName = new Map(merged.map((e, i) => [normalizeHorseNameForMerge(e.horse_name), i]));
   const conflicts = [];
@@ -213,7 +232,7 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratc
     }
   }
 
-  return { entries: sortEntriesByHorseNumberForMerge(merged), conflicts };
+  return { entries: sortEntriesByHorseNumberForMerge(merged), conflicts, removed };
 }
 
 // entries配列を馬番順に並べ替える。races.js の出走馬表編集画面は
