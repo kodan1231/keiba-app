@@ -208,7 +208,7 @@ function jraEntriesParseHorseRow(rawLine) {
   };
 }
 
-const JRA_ENTRIES_PARSER_VERSION = "1.5.0-shared-normalize";
+const JRA_ENTRIES_PARSER_VERSION = "1.6.0-scratched";
 
 function jraEntriesParseExtractedPages(pages) {
   const lines = [];
@@ -304,6 +304,11 @@ function jraEntriesParseExtractedPages(pages) {
     // 馬名以降が次の行に分離することが確認されている(2026-08-08確認)。単独の数字だけの
     // 行が来たら「保留中の馬番」として記憶しておき、次の行と結合してから解析する。
     let pendingHorseNumber = null;
+    // 取消・除外の馬(行頭の馬番の位置に「取消」「除外」と印字される)は出走馬に含めず、
+    // scratchedHorses へ別に記録する(2026-09-27。詳細は下記)。馬番は印字されないため、
+    // 直前の馬の馬番+1と推定する(出走馬表は馬番順のため)。
+    const scratchedHorses = [];
+    let lastHorseNumber = null;
     for (let i = 0; i < block.length; i++) {
       const line = block[i].text;
       if (/^枠\s*馬番\s*馬名/.test(line)) { inTable = true; continue; }
@@ -315,6 +320,26 @@ function jraEntriesParseExtractedPages(pages) {
       // 計上されるだけで実害はないが、診断情報のノイズになるため事前に除外する。
       if (/^https?:\/\//.test(line) || /出走馬一覧\s*JRA$/.test(line) || /^\d{4}\/\d{2}\/\d{2}\s+\d{1,2}:\d{2}/.test(line)) continue;
 
+      // 取消・除外の馬の行(例: "取消 ニシノドリーマー 牝2 55.0kg 野中 悠太郎 竹内 正洋 取消")。
+      // 従来はこれを通常の行として解析し、馬名が「取消 ニシノドリーマー」・騎手名が
+      // 「野中 悠太郎 竹内」(末尾のオッズ欄の「取消」が調教師名に混ざる)という壊れた
+      // 出走馬として取り込んでいた(既に同じ馬が登録済みだと別馬扱いで重複していた)。
+      // 出走馬には含めず記録だけ残し、サーバー側で枠番計算の頭数に数える
+      // (JRAは取消後も枠番を割り当て直さないため、取消馬を含めた頭数で計算する必要がある)。
+      const scratchedRow = line.match(/^(取消|除外)\s+(.+)$/);
+      if (scratchedRow) {
+        pendingHorseNumber = null;
+        const parsed = jraEntriesParseHorseRow(scratchedRow[2].replace(/\s+(取消|除外)\s*$/, ""));
+        if (parsed) {
+          const inferred = lastHorseNumber !== null ? lastHorseNumber + 1 : (entries.length === 0 ? 1 : null);
+          if (inferred !== null) lastHorseNumber = inferred;
+          scratchedHorses.push({ label: scratchedRow[1], horse_name: parsed.horse_name, horse_number: inferred });
+        } else {
+          diagnostics.horseRowsFailed++;
+        }
+        continue;
+      }
+
       const bareNumber = line.match(/^(\d{1,2})$/);
       if (bareNumber) { pendingHorseNumber = Number(bareNumber[1]); continue; }
 
@@ -323,6 +348,7 @@ function jraEntriesParseExtractedPages(pages) {
       pendingHorseNumber = null;
       if (horse) {
         entries.push(horse);
+        lastHorseNumber = Number.isInteger(horse.horse_number) ? horse.horse_number : null;
         diagnostics.horseRowsDetected++;
       } else {
         diagnostics.horseRowsFailed++;
@@ -331,6 +357,7 @@ function jraEntriesParseExtractedPages(pages) {
 
     raceDiag.entries = entries.length;
     raceDiag.raceName = raceName;
+    raceDiag.scratched = scratchedHorses.map((s) => `${s.label} ${s.horse_name}${s.horse_number !== null ? `(${s.horse_number}番と推定)` : ""}`);
     if (!entries.length) raceDiag.errors.push("出走馬情報を取得できませんでした");
 
     if (entries.length) {
@@ -339,6 +366,7 @@ function jraEntriesParseExtractedPages(pages) {
         race_name: raceName, course_type: courseType, distance,
         weight_type: weightType, class_flags: classFlags, course_direction: courseDirection,
         entries: entries.map(({ trainer, ...rest }) => rest), // trainerは今回のフェーズでは送信しない(BACKLOG参照)
+        ...(scratchedHorses.length ? { scratched_horses: scratchedHorses } : {}),
       });
     }
     diagnostics.raceDiagnostics.push(raceDiag);
@@ -396,7 +424,8 @@ async function jraEntriesExtractPdfPages(file, log = () => {}) {
 
 function jraEntriesRenderDiagnostics(d) {
   const raceRows = (d.raceDiagnostics || []).map((r) => {
-    const err = r.errors?.length ? `<ul>${r.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : "なし";
+    const scratchedNote = r.scratched?.length ? `<div>取込対象外: ${r.scratched.map((x) => escapeHtml(x)).join(" / ")}</div>` : "";
+    const err = (r.errors?.length ? `<ul>${r.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : "なし") + scratchedNote;
     return `<tr><td>${escapeHtml(r.key)}</td><td>${escapeHtml(r.raceName || "")}</td><td>${r.entries}</td><td>${err}</td></tr>`;
   }).join("");
   return `<details open style="margin-top:10px"><summary>解析診断情報（出走馬一覧 Parser ${JRA_ENTRIES_PARSER_VERSION}）</summary>
@@ -493,7 +522,7 @@ jraEntriesParseBtn?.addEventListener("click", async () => {
       </details>`).join("")}
     <details><summary>実行ログ (${logs.length})</summary><pre style="white-space:pre-wrap">${escapeHtml(logs.join("\n"))}</pre></details>
     <div class="import-preview-list">${jraEntriesParsedRecords.map((r) => {
-      return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name || "")} <span>出走馬 ${r.entries.length}頭 / 枠番・馬番${r.entries.some((e) => e.horse_number !== null) ? "あり" : "なし"}</span></div>`;
+      return `<div class="import-preview-row"><strong>${escapeHtml(r.race_date)} ${escapeHtml(r.track)} ${r.race_number}R</strong> ${escapeHtml(r.race_name || "")} <span>出走馬 ${r.entries.length}頭 / 枠番・馬番${r.entries.some((e) => e.horse_number !== null) ? "あり" : "なし"}${r.scratched_horses?.length ? ` / 取消・除外 ${r.scratched_horses.map((x) => escapeHtml(x.horse_name)).join("・")}(取込対象外)` : ""}</span></div>`;
     }).join("")}</div>`;
     for (const f of jraEntriesParsedFiles) f.extracted = null;
     jraEntriesImportSubmit.disabled = jraEntriesParsedRecords.length === 0;
@@ -518,6 +547,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
 
   let created = 0, updated = 0;
   const allConflicts = [];
+  const allScratched = [];
   const failures = [];
   for (let i = 0; i < targets.length; i++) {
     const f = targets[i];
@@ -534,6 +564,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
       updated += (data.results || []).filter((x) => x.status === "updated").length;
       for (const x of data.results || []) {
         for (const c of x.conflicts || []) allConflicts.push({ key: x.key, ...c });
+        for (const sc of x.scratched || []) allScratched.push({ key: x.key, ...sc });
       }
     } catch (e) {
       console.error("[JRA Entries PDF] registration failed", f.fileName, e);
@@ -547,6 +578,12 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
       `  ${c.key} / ${c.horse_name}: 既存${c.field === "waku_number" ? "枠番" : "馬番"}=${c.existing} → 取込値=${c.incoming}(競合のため更新していません)`
     );
     message += `\n\n⚠️ ${allConflicts.length}件の枠番・馬番の競合がありました(自動更新していません。手動確認してください)：\n${lines.join("\n")}`;
+  }
+  if (allScratched.length) {
+    const lines = allScratched.map((c) =>
+      `  ${c.key} / ${c.horse_name}${c.horse_number !== null ? `(${c.horse_number}番と推定)` : ""}: ${c.label}${c.in_entries ? "(既に出走馬表にいるため残しています。不要なら出走馬表から削除してください)" : "(出走馬表には登録していません)"}`
+    );
+    message += `\n\n取消・除外の馬 ${allScratched.length}頭:\n${lines.join("\n")}\n(取消の返還は、払戻を登録する際に「出走取消馬選択」で設定してください)`;
   }
   if (failures.length) message += `\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
   alert(message);

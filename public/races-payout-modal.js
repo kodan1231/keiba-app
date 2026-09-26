@@ -436,7 +436,10 @@ function openPayoutModal(race) {
   payoutRaceInfo.textContent = `${formatDate(race.race_date)} ${race.track} ${race.race_number}R${race.race_name ? "・" + race.race_name : ""}${courseText ? "・" + courseText : ""}`;
 
   currentPayoutEntries = race.entries || [];
-  const count = Math.max(race.entries.length, 8);
+  // 取消馬は出走馬表に無いことがあり、馬番に欠番があると entries.length が最大馬番より
+  // 小さくなる(例: 16頭立てで1頭取消なら15件。着順・取消馬の選択肢から16番が消える)。
+  const maxNumber = Math.max(0, ...race.entries.map((e) => Number(e.horse_number) || 0));
+  const count = Math.max(race.entries.length, maxNumber, 8);
   currentPayoutHorseCount = count;
   payoutHorseCountSelect.value = count;
   renderFinishSelects(count, race.finish_order);

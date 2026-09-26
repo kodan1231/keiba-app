@@ -31,6 +31,13 @@ function normalizeHorseName(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
 }
 
+// 取消・除外の馬の報告用。既に出走馬表(entries)に同名の馬が残っている場合は
+// in_entries=true(自動では取り除かない。購入済みの馬券・予想印が参照しているため)。
+function scratchedReport(scratched, entries) {
+  const names = new Set((entries || []).map((e) => normalizeHorseName(e.horse_name)));
+  return scratched.map((x) => ({ ...x, in_entries: names.has(x.horse_name) }));
+}
+
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -80,6 +87,10 @@ export async function onRequestPost(context) {
       raceNumber,
       key,
       incomingEntries,
+      // 取消・除外の馬(出走馬には含めない)。枠番計算の頭数にだけ数える。
+      scratched: (Array.isArray(item.scratched_horses) ? item.scratched_horses : [])
+        .map((x) => ({ label: String(x?.label || "取消"), horse_name: normalizeHorseName(x?.horse_name), horse_number: x?.horse_number ?? null }))
+        .filter((x) => x.horse_name),
       race_name: item.race_name || null,
       race_base_name: raceBaseNameOf(item.race_name),
       course_type: item.course_type || null,
@@ -114,7 +125,7 @@ export async function onRequestPost(context) {
     const rk = `${it.raceDate}__${it.track}__${it.raceNumber}`;
     const existing = existingByKey.get(rk);
     if (!existing) {
-      const { entries } = mergeEntriesByHorseName([], it.incomingEntries);
+      const { entries } = mergeEntriesByHorseName([], it.incomingEntries, it.scratched.map((x) => x.horse_name));
       toInsert.push({ ...it, entries });
     } else {
       let currentEntries = [];
@@ -123,7 +134,7 @@ export async function onRequestPost(context) {
       } catch {
         currentEntries = [];
       }
-      const { entries: mergedEntries, conflicts } = mergeEntriesByHorseName(currentEntries, it.incomingEntries);
+      const { entries: mergedEntries, conflicts } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name));
       toUpdate.push({ ...it, existing, mergedEntries, conflicts });
     }
   }
@@ -155,7 +166,7 @@ export async function onRequestPost(context) {
     batchResults.forEach((res, i) => {
       const id = res.meta.last_row_id;
       toInsert[i].id = id;
-      results.push({ status: "created", id, key: toInsert[i].key, conflicts: [] });
+      results.push({ status: "created", id, key: toInsert[i].key, conflicts: [], scratched: scratchedReport(toInsert[i].scratched, toInsert[i].entries) });
     });
   }
 
@@ -196,7 +207,7 @@ export async function onRequestPost(context) {
     await db.batch(stmts);
     toUpdate.forEach((it) => {
       it.id = it.existing.id;
-      results.push({ status: "updated", id: it.existing.id, key: it.key, conflicts: it.conflicts });
+      results.push({ status: "updated", id: it.existing.id, key: it.key, conflicts: it.conflicts, scratched: scratchedReport(it.scratched, it.mergedEntries) });
     });
   }
 

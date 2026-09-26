@@ -134,7 +134,11 @@ function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
   return 8;
 }
 
-export function mergeEntriesByHorseName(existingEntries, incomingEntries) {
+// scratchedNames(省略可): 出走馬一覧PDFで取消・除外と印字されていた馬の馬名。これらは
+// entriesに含めないが、JRAは取消・除外の後も枠番を割り当て直さないため、枠番の自動計算では
+// 頭数に数える(2026-09-27。含めないと、取消馬の後ろの馬の枠番が全てずれる)。
+// 既にentriesに同名の馬がいる場合は二重に数えない。
+export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratchedNames = []) {
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
     .filter((e) => normalizeHorseNameForMerge(e?.horse_name));
   const merged = cleanedExisting.map((e) => ({ ...e }));
@@ -188,7 +192,12 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries) {
   // 上書きしないが、「馬番が1〜Nの連番で揃った8頭以下の出走馬表」に限っては枠番=馬番で
   // 一意に決まる(選択の余地が無い)ため、旧アルゴリズムのバグで誤って保存された確定値も
   // ここで補正する(2026-09-08)。
-  const horseCount = merged.length;
+  const scratchedNotInEntries = new Set(
+    (Array.isArray(scratchedNames) ? scratchedNames : [])
+      .map(normalizeHorseNameForMerge)
+      .filter((n) => n && !byName.has(n))
+  );
+  const horseCount = merged.length + scratchedNotInEntries.size;
   const confirmedHorseNumbers = merged.map((e) => e.horse_number).filter(Number.isInteger);
   const isCompleteSmallField =
     horseCount <= 8 &&
