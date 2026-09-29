@@ -1575,22 +1575,31 @@ body.history-selection-mode .group-detail-actions {
 .hi-result-btn:hover { background: rgba(0, 0, 0, .04); }
 .hi-result-name { font-weight: 700; }
 .hi-result-count { font-size: .75rem; opacity: .7; }
-#hi-detail .stats-heading { margin-top: 26px; }
-#hi-detail .stats-subheading { margin-top: 18px; }
-#hi-detail .stats-subheading:first-of-type { margin-top: 10px; }
+/* 縦スクロールを減らすための詰め(2026-09-29)。馬名の右に馬齢・性別を並べ、
+   見出し・段間のmarginも合わせて詰めている。 */
+.hi-detail-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.hi-detail-title .stats-heading { margin: 0; }
+.hi-detail-age { font-size: 13px; color: var(--ink-soft); }
+#hi-detail .stats-heading { margin-top: 20px; }
+#hi-detail .stats-subheading { margin-top: 12px; }
+#hi-detail .stats-subheading:first-of-type { margin-top: 8px; }
 /* 血統/調教師・馬主・生産牧場を別々の段に分けるぶん、カードの最小幅を広げて
-   1段あたりの枚数を絞る(2026-09-29。父/母/母父・調教師/馬主/生産牧場でそれぞれ3枚)。 */
+   1段あたりの枚数を絞る(2026-09-29。父/母/母父・調教師/馬主/生産牧場でそれぞれ3枚)。
+   カード自体もpadding・文字サイズを縮めて縦を約20%詰めている。 */
 .hi-master-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 4px; }
-.hi-admin-panel { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule); }
+.hi-master-grid .overall-card { padding: 11px 14px; gap: 4px; }
+.hi-master-grid .overall-value { font-size: 16px; }
+#hi-fetch-note { margin: 6px 0; }
+.hi-admin-panel { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule); }
 .hi-admin-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.hi-edit-form { margin-top: 14px; }
+.hi-edit-form { margin-top: 12px; }
 .hi-edit-field {
   display: flex; flex-direction: column; gap: 6px;
   background: var(--paper-raised); border: 1px solid var(--rule-strong);
-  padding: 14px; font-size: 12px; color: var(--ink-soft);
+  padding: 11px 14px; font-size: 12px; color: var(--ink-soft);
 }
 .hi-edit-field input { padding: 8px; font-size: 14px; font-family: var(--font-body); color: var(--ink); }
-.hi-edit-form-actions { display: flex; gap: 10px; margin-top: 12px; }
+.hi-edit-form-actions { display: flex; gap: 10px; margin-top: 10px; }
 
 /* ---------- 管理画面: 馬名エイリアスの登録馬一覧(50音行 + 検索) ---------- */
 .horse-index { margin: 10px 0 4px; }
