@@ -22,9 +22,9 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 
 ## 検索ハブとしての構成
 
-将来「馬名検索」「騎手検索」等のタブを同画面へ追加できるよう、`data-search.html` は
+将来「騎手検索」等のタブを同画面へ追加できるよう、`data-search.html` は
 `stats.html` と同じくタブ切り替え構成にする(`.stats-tabs` / `.stats-panel` のクラスを流用)。
-**現時点で実装するタブは「レース成績」の1つだけ**。
+**現時点で実装済みのタブは「レース成績」「馬情報検索」の2つ**(馬情報検索は2026-09-28追加)。
 
 ## フィルタ(すべて任意・未選択=すべて)
 
@@ -187,7 +187,110 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 
 - 平均・率は対象 0 件のとき `null`(画面は「該当データなし」表示)
 
-## 既知の制約・今後
+## 馬情報検索タブ(2026-09-28追加)
+
+馬名の部分一致で検索し、馬齢・性別・血統(父/母/母父)・調教師・馬主・生産牧場・
+過去全出走履歴を表示するタブ。血統・馬主・生産牧場は現行の一括取込(出走馬一覧PDF/
+結果PDF/結果HTML)のいずれからも取得できないため、netkeiba(db.netkeiba.com)から
+取得してキャッシュする(ユーザー承認済み。詳細は下記「netkeiba連携」)。
+
+- 画面: `public/data-search.html`(`data-panel="horse-info"`)/ `public/data-search.js`(`hi*`)
+- API:
+  - `GET /api/data-search/horse-search?q=`(`functions/api/data-search/horse-search.js`)
+    … 検索候補一覧(部分一致・最大50件)。`races` は `races_cache` 経由(全件スキャンしない)。
+  - `GET /api/data-search/horse-info?name=`(`functions/api/data-search/horse-info.js`)
+    … 詳細(馬齢・性別・過去全出走履歴・血統/調教師/馬主/生産牧場)。`race_results` は
+    `horse_key` の直接検索(`GET /api/races/:id/horse-history` と同じ設計。回数上限なし)
+  - `PUT /api/data-search/horse-info`(同ファイル。**管理者専用**)
+    … `{ name, sire?, dam?, dam_sire?, trainer?, owner?, breeder? }` で手動編集
+    (`data_source='manual'`)。`{ name, action: "refetch" }` でnetkeibaから強制再取得
+    (手動編集済みでも上書きする。管理者の明示操作のため)
+- いずれのGETも全ユーザー共有データの閲覧のため `requireAdmin` しない(`race-stats.js`
+  と同じ扱い)。編集・再取得のみ管理者専用(`races` 等の他の共有データ編集と同じ扱い)
+
+### 表示項目の出どころ
+
+| 項目 | 出どころ |
+|---|---|
+| 馬齢・性別 | 自アプリの `race_results`(直近出走の `sex_age` をそのまま採用。去勢等で性別が変わりうるため常に最新レースを正とする。生年月日は保持しない) |
+| 過去全出走履歴 | 自アプリの `race_results`(`horse_key` で直接検索。結果PDF/結果HTML未取込のレースは含まれない。予想登録画面の「過去成績」と同じ制約) |
+| 血統(父/母/母父)・馬主・生産牧場 | netkeiba(下記参照)。取得できなければ空欄+手動編集可能 |
+| 調教師 | netkeibaに加え、2026-09-28以降に取り込む出走馬一覧PDF/結果PDF/結果HTMLからも取得できる(下記「調教師の反映」参照) |
+
+### `horses` テーブル(馬情報マスタ)
+
+`schema.sql` / `migration.sql`(`@STEP: horses_master`)参照。`horse_key`
+(= `horseAliasKeyOf(horse_name)`。`horse_aliases` と同じキー)で1馬1行。
+「検索されて初めて取得するオンデマンドキャッシュ」であり、`races`/`race_results` の
+全件規模とは違い、実際に検索されたことがある馬の分だけ行ができる。
+
+`data_source` は `'netkeiba'` / `'import'` / `'manual'` の3値。**`'manual'`(管理者が
+編集フォームで保存した)行は、管理者の明示的な「netkeibaから再取得」操作以外では
+自動上書きしない**(netkeiba再取得・出走馬一覧PDF等の取込どちらも対象外にする)。
+1レコード全体で1つの `data_source` しか持たない(フィールド単位の来歴は追跡しない)ため、
+「調教師だけ手動修正したら血統欄の自動更新も止まる」という割り切りをしている。
+
+### netkeiba連携
+
+`_lib/netkeiba.js`(取得・パースのみ。DB不使用)/ `_lib/horse-master.js`(DB連携)。
+
+- **取得元**: netkeiba(db.netkeiba.com)。個人の馬券帳アプリからオンデマンド(検索された
+  馬についてのみ、1回きり)で取得する用途として2026-09-28にユーザー承認済み。
+  取得先サイトの利用規約・負荷への配慮は運用者の自己責任(このアプリの想定利用規模は
+  個人〜少人数)。
+- **馬名→netkeiba馬IDの解決**: `db.netkeiba.com/?pid=horse_list&word=<検索語>` を叩く。
+  完全一致1件のみの場合は馬個別ページ(`/horse/<id>/`)へ302リダイレクトされる
+  (このレスポンス本文はプロフィールテーブルを含む馬個別ページそのもの)。
+  リダイレクトされない場合(該当0件、または同名馬が複数存在。JRA登録馬名は数十年後に
+  再利用され得るため実際に起こり得る)は検索結果一覧ページをパースし、名前が完全一致する
+  候補だけに絞る。複数候補が残った場合、自アプリの直近出走履歴から推定した生年
+  (`race_date`の年 − `sex_age`の年齢 + 1)に最も近い候補を採用する(推定できなければ
+  先頭候補。**取り違えのリスクが残る既知の制約**。誤りは管理者が編集フォームで修正する)
+- **血統(父/母/母父)**: 馬個別ページから読み込まれる非同期API
+  (`db.netkeiba.com/horse/ajax_horse_pedigree.html?input=UTF-8&output=json&id=<id>`)。
+  返る血統表は常に「父側2行+母側2行」の3代簡易表(2026-09-28に実データで確認済み)。
+  検索結果一覧ページ側にも父/母/母父の列があり、そちらで済ませられる場合はこのAPIを
+  呼ばない(完全一致1件のリダイレクト経路のみ、この非同期APIを追加で呼ぶ)
+- **調教師・馬主・生産牧場**: 完全一致1件の場合は馬個別ページの「プロフィール」テーブル
+  (`db_prof_table`)、複数候補の場合は検索結果一覧ページの該当列から取得する
+- **EUC-JPエンコーディング**: db.netkeiba.comはレガシーなEUC-JPサイトで、検索クエリも
+  EUC-JPでパーセントエンコードする必要がある(UTF-8のままでは文字化けして0件になる)。
+  CloudflareWorkersの`TextEncoder`はUTF-8固定でEUC-JP出力ができないため、全角カタカナ
+  (JIS X 0208第5行。EUC-JPでは `[0xA5, コードポイント - 0x3000]` の単純な線形変換。
+  2026-09-28に実データで確認済み)だけを手動でパーセントエンコードする。**JRA登録馬名は
+  全角カタカナのみという前提**のため、それ以外の文字(漢字・ひらがな等)を含む馬名は
+  エンコード不可としてnetkeiba取得自体を諦める(`fetch_error='encoding_unsupported'`。
+  手動編集にフォールバック)。レスポンス側(HTML本文)のEUC-JP→Unicodeデコードは
+  `TextDecoder("euc-jp")` に依存する(WorkersのEncoding Standard実装が対応している前提。
+  **wrangler dev実機での動作確認が必要**。対応していない場合は例外となり、
+  `getOrFetchHorseMaster`がcatchしてfetch_errorに記録する〈読み取り自体は失敗しない〉)
+- **取得のタイミング**: `GET /api/data-search/horse-info` で該当馬の `horses` 行が
+  無いときだけ、その場でnetkeiba取得を試み、成功・失敗いずれの結果も保存する
+  (失敗時も `fetch_error` を記録して行を作ることで、以後の検索で毎回netkeibaへ
+  問い合わせるのを防ぐ)。以後は管理者の「netkeibaから再取得」ボタンでのみ再試行する
+
+### 調教師の反映(出走馬一覧PDF/結果PDF/結果HTML)
+
+2026-09-28以降、以下の取込経路は調教師名も解析結果に含めるようになった
+(従来は騎手名との境界判定にのみ使い、保存せず捨てていた。`docs/design/entries-import.md`
+`docs/design/results-import.md` 参照)。
+
+- `public/jra-entries-pdf.js`(出走馬一覧PDF)
+- `public/jra-result-pdf.js`(JRAレース結果PDF)
+- `public/jra-result-html.js`(結果HTMLユーザースクリプト。**PC版のtd.trainerセレクタは
+  他列の命名規則からの類推で、実ページでの確認ができていない**。誤っていてもnullに
+  なるだけで取込自体は失敗しない。スマホ版は実データで確認済み)
+
+`races.entries` / `race_results` 自体には調教師カラムを追加しない(既存の
+`mergeEntriesByHorseName` のフィールドホワイトリストにも含めない)。代わりに
+`_lib/horse-master.js` の `applyImportedTrainerNames(db, entries)` が、取込1回に含まれる
+`{horse_name, trainer}` の集合を受け取り、**「既にhorsesテーブルに行がある馬」だけ**
+`trainer` 列を上書きする(best-effort。`data_source='manual'` の行は対象外)。
+新規にhorses行を作ることはしない(オンデマンドキャッシュの設計を保つため)。
+`entries-import.js` / `results-import.js` それぞれの取込処理の最後で1回だけ呼ぶ
+(1回の取込に含まれるユニーク馬の horse_key は90件ずつチャンク分割してIN句に渡す)。
+
+## 既知の制約・今後(レース成績タブ)
 
 - `races.course_type` / `races.distance` は現状インデックスが無い。行数が増えたら
   `migration.sql` に `races(track, course_type, distance)` の複合インデックスを追加する
@@ -200,4 +303,14 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
   (`finish_order` は同着を区別しない)
 - 降着・失格馬の `race_results.status` は今回対象外(`docs/BACKLOG.md` 参照)。
   現状は `finished` として扱われる
-- 馬名検索・騎手個別検索タブは未実装(検索ハブの土台だけ用意)
+
+## 既知の制約・今後(馬情報検索タブ)
+
+- netkeibaは非公式なスクレイピング的利用であり、サイト側のHTML構造変更で
+  取得・パースが壊れる可能性がある(壊れても`fetch_error`に記録されるだけで、
+  他画面・取込処理には影響しない)
+- 同名馬(数十年後の名前再利用)の取り違えリスクが残る(上記「netkeiba連携」参照)
+- `td.trainer`(結果HTML・PC版)は実ページでの確認ができていない
+- 過去全出走履歴は `race_results` ベースのみ(結果PDF/結果HTML未取込のレースは
+  「出走履歴なし」に見える。`races.entries` のみのレースへのフォールバックは今回未実装)
+- 騎手個別検索タブは未実装(検索ハブの土台だけ用意)

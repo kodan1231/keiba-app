@@ -27,7 +27,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 予想登録画面(予想印・馬メモ・過去成績) | `public/prediction.js`, `public/prediction.html`, `functions/api/races/[id]/horse-history.js` |
 | 購入馬券グループ表示の共通部品(履歴・予想の両画面) | `public/ticket-view.js`(`groupTicketsByGroupId` `ticketMoneyText` `ticketGroupStatus` `selectionCellHtml` 等。history/prediction のみ読込) |
 | 集計画面(総合成績/レース別に「重賞のみ/条件戦のみ」フィルタあり) | `public/stats.js`, `public/stats.html` |
-| データ検索画面(レース成績集計) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js` |
+| データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/netkeiba.js`, `functions/api/_lib/horse-master.js` |
 | 重賞管理(管理画面)・レース分類(重賞/条件戦/その他) | `public/jra-graded-races-pdf.js`, `functions/api/admin/graded-races/*`, `functions/api/_lib/race-classification.js` |
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
 | 出走馬一覧PDFインポート | `public/jra-entries-pdf.js`, `functions/api/races/entries-import.js` |
@@ -63,6 +63,8 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/race-results.js` | `upsertRaceResults` `upsertRaceResultsBulk` |
 | `_lib/ticket-payout.js` | `recomputeTicketPayoutsForRace` `recomputeTicketPayoutsForRaces` `findStoredRateServer`(非export・内部) |
 | `_lib/race-classification.js` | `gradedRaceNameKey` `isConditionRace` `classifyRace` `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) |
+| `_lib/netkeiba.js` | `fetchNetkeibaHorseInfo`(netkeiba〈db.netkeiba.com〉から血統/調教師/馬主/生産牧場を取得・パースするのみ。DB不使用。2026-09-28追加) |
+| `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) |
 
 ## 絶対に破ってはいけない不変条件
 

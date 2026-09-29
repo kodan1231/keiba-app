@@ -102,9 +102,14 @@ dateInput.value = selectedDate;
 async function loadPurchasedRaceIds() {
   const ids = new Set();
   try {
+    // 直近1ヶ月分だけで足りる(バッジ表示はレース一覧の表示範囲=直近+未来のみ対象)ため、
+    // GET /api/races?since= と同じ範囲限定を付けて呼ぶ(2026-09-29追加。全履歴を毎回
+    // 読んでいたことがCloudflare WorkersのCPU時間上限超過の一因になっていたため。
+    // docs/design/data-model.md「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。
+    const since = monthsAgoDateKey(1);
     const [ticketsRes, importedRes] = await Promise.all([
-      authedFetch("/api/tickets"),
-      authedFetch("/api/ticket-imports"),
+      authedFetch(`/api/tickets?since=${since}`),
+      authedFetch(`/api/ticket-imports?since=${since}`),
     ]);
     if (ticketsRes.ok) {
       const tickets = await ticketsRes.json().catch(() => []);

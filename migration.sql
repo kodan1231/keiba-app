@@ -260,3 +260,30 @@ CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
 -- 管理画面「重賞管理」の「レースのベース名を再計算する」ボタン(冪等・何度実行しても
 -- 安全)で行う。詳細は docs/design/data-model.md「races.race_base_name」参照。
 ALTER TABLE races ADD COLUMN race_base_name TEXT;
+
+-- @STEP: horses_master
+-- データ検索画面「馬情報検索」タブ用の馬情報マスタ。血統(父/母/母父)・馬主・生産牧場は
+-- 出走馬一覧PDF/結果PDF/結果HTMLいずれの一括取込からも取得できないため、netkeiba
+-- (db.netkeiba.com)から取得してキャッシュする(_lib/netkeiba.js)。調教師は同じく
+-- netkeiba経由に加え、2026-09-28以降に取り込む出走馬一覧PDF/結果PDF/結果HTMLの
+-- 副産物としても取得できる(_lib/horse-master.js の applyImportedTrainerNames)。
+-- 「検索されて初めて取得するオンデマンドキャッシュ」の設計のため、races/race_results
+-- 全体の行数とは違い際限なく育たない。詳細はdocs/design/data-search.md「馬情報検索タブ」参照。
+CREATE TABLE IF NOT EXISTS horses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  horse_key TEXT NOT NULL UNIQUE,
+  horse_name TEXT NOT NULL,
+  sire TEXT,
+  dam TEXT,
+  dam_sire TEXT,
+  trainer TEXT,
+  owner TEXT,
+  breeder TEXT,
+  netkeiba_horse_id TEXT,
+  data_source TEXT NOT NULL DEFAULT 'netkeiba',
+  fetch_error TEXT,
+  fetched_at TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_horses_horse_name ON horses(horse_name);

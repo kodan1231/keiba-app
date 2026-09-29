@@ -10,7 +10,22 @@
 - **実機確認はユーザー側**。Claude は `node --check` と静的レビュー・シミュレーションのみ。
   着手・完了報告時に検証状況を明示する。
 
-## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-24)
+## 🔰 次のチャットで最初に読むこと(最終更新 2026-09-29)
+
+- **本番で`exceededResources`(Cloudflare WorkersのCPU時間上限超過)エラーが
+  バースト発生(2026-09-29。原因特定・修正済み・要デプロイ確認)**: D1の日次行数上限
+  超過ではなく、`GET /api/tickets`・`GET /api/ticket-imports`が常に「ログインユーザーの
+  全履歴」を無条件に返しており、ユーザーの購入・取込履歴が数千件規模に育った結果、
+  1リクエストあたりのJOIN・JSON処理のCPUコストが上限に近づいていたことが原因
+  (Cloudflare GraphQL Analytics APIで直接確認)。呼び出し側の実際の用途を見ると
+  馬券購入画面(`buy.js`)・予想登録画面(`prediction.js`)・レース管理画面の払戻入力
+  モーダル(`races-payout-modal.js`)は「全履歴」ではなく「直近だけ」「1レース分だけ」で
+  足りていたため、`GET /api/races?since=`と同じ考え方で`?since=`/`?race_id=`による
+  範囲限定を追加し、これら3画面をサーバー側フィルタに切り替えた。購入履歴画面
+  (`app.js`)・集計画面(`stats.js`)は全履歴が必要な設計のため意図的に対象外のまま
+  (無変更)。詳細は`docs/design/data-model.md`「GET /api/tickets・GET /api/ticket-imports
+  の範囲限定」参照。**実機確認未実施**(本番デプロイ後、購入画面・予想登録画面・
+  払戻入力モーダルが正常に動くこと、エラーが収まることを確認すること)。
 
 - **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-24)**: `migration.sql` の
   `@STEP: races_base_name`(`races.race_base_name`列追加)が本番DB `keiba-yosou-db`
@@ -174,6 +189,7 @@
 | 🔵 実機検証未完了 | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。マイグレーション適用・`horse_key`バックフィル(`race_results` 14768件)は2026-09-12に本番完了済み。`node --check`と設計上のシミュレーションのみで、**実ブラウザでの数値確認が未実施**: 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
 
 | 🔵 実機検証一部完了 | JRAレース結果ユーザースクリプト取込み(2026-09-13。JRA公式サイトの結果ページ上で動くユーザースクリプト`public/jra-result-importer.user.js`(`https://keiba-yosou-app.pages.dev/jra-result-importer.user.js`を開くだけでインストール可能)から、ページのHTML(`public/jra-result-html.js`で解析)を`POST /api/races/results-import`〈PDFインポートと同一エンドポイント〉へ送信できるようにした。認証は管理画面「APIトークン」〈`functions/api/admin/api-token.js`〉で発行する個人用アクセストークン〈`Authorization: Bearer`〉。あわせて発走時刻`races.post_time`を新規保存し、馬券購入画面のレース選択グリッドに表示するようにした。マイグレーション〈`@STEP: races_post_time`・`@STEP: users_api_token`〉は本番`keiba-yosou-db`へ適用済み)は、**iPhone Safari(Userscripts拡張)+スマホ版サイト(sp.jra.jp)で実機確認済み**(2026-09-13。2026-09-12中山12レース分を送信し成功、本番DBの`races`(race_name・post_time・course_type・distance・weight_type・class_flags・weather・track_condition・finish_order)・`race_results`(全頭分)・payouts(全式別)がJRA公式ページの表示と一致することを`wrangler d1 execute`で確認済み)。実機確認の過程で、スマホ版のHTML構造がPC版と全く異なることが判明し専用パーサー(`jraResultHtmlParseMobilePage`)を追加、重賞・特別戦でレース名が空になる不具合(`.titleRaceName`未対応)・class_flagsが年齢条件込みだと空になる不具合(正規表現の数字除外)も発見・修正済み。**未確認のまま残っている点**: ①PC版(`www.jra.go.jp`)側は`jraResultHtmlParseRaceUnit`のコードレビューのみで実機確認していない、②「12時実行なら途中まで・17時実行なら全レース」という部分確定の挙動は未確認(1回で全レース確定済みの状態でしか試していない)、③`races.post_time`が馬券購入画面のレース選択グリッドに実際に表示されることは未確認(DB上の値は確認済み) | `docs/design/results-import.md`「ユーザースクリプトによるHTML取込み」・`docs/design/auth-multiuser.md`「個人用アクセストークン」 |
+| 🔵 実機検証未完了(要マイグレーション適用) | データ検索画面「馬情報検索」タブを新規追加(2026-09-28。馬名部分一致検索→馬齢・性別・過去全出走履歴(`race_results`)+血統(父/母/母父)・調教師・馬主・生産牧場(netkeiba取得。無ければ管理者が編集可能)を表示。`horses`テーブル新設・`_lib/netkeiba.js`・`_lib/horse-master.js`・`GET/PUT /api/data-search/horse-info`・`GET /api/data-search/horse-search`。あわせて出走馬一覧PDF/結果PDF/結果HTMLが調教師名も送信するようになった)は`node --check`と設計上のレビューのみ。**本番適用手順**: `migration.sql`の`@STEP: horses_master`を適用(未適用でも`horses`関連の処理はbest-effortでcatchされるため取込・購入等の既存機能は壊れないが、新タブの検索・詳細APIは「no such table: horses」で失敗する)。**実ブラウザで**: ①馬情報検索タブで部分一致検索→候補クリックで詳細が開くこと、②未取得の馬でnetkeiba検索が実際に成功し血統・調教師・馬主・生産牧場が埋まること(`TextDecoder("euc-jp")`がCloudflare Workers実行環境で動くか自体が未確認)、③取得失敗時に「手入力できます」の案内が出て編集フォームで保存できること、④管理者の「netkeibaから再取得」ボタンが動くこと、⑤出走馬一覧PDF/結果PDFを取り込んだ際に既存の`horses`行の調教師欄が更新されること、⑥結果HTML(PC版)の`td.trainer`セレクタが実ページに存在するか(存在しない場合はnullのままで取込自体は失敗しない想定)を確認する | `docs/design/data-search.md`「馬情報検索タブ」 |
 
 ## D1無料枠の日次上限に関する注意(2026-09-12発生)
 

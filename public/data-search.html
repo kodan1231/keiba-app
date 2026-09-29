@@ -21,6 +21,7 @@
 
     <nav class="stats-tabs">
       <button type="button" class="stats-tab active" data-tab="race-stats">レース成績</button>
+      <button type="button" class="stats-tab" data-tab="horse-info">馬情報検索</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="race-stats">
@@ -64,6 +65,44 @@
         <p class="stats-note">大きい馬番は多頭数のレースにしか出走しないため、出走数の母数が小さくなります。</p>
         <div class="table-wrap"><table class="stats-table" id="ds-horse-number-table"></table></div>
 
+      </div>
+
+    </section>
+
+    <!-- 馬情報検索タブ(2026-09-28追加)。仕様はdocs/design/data-search.md「馬情報検索タブ」参照。
+         馬齢・性別・過去全出走履歴は自アプリのrace_resultsから、血統・調教師・馬主・生産牧場は
+         netkeiba(db.netkeiba.com)から取得してhorsesテーブルにキャッシュしたものを表示する。 -->
+    <section class="stats-section stats-panel" data-panel="horse-info" hidden>
+
+      <label class="horse-index-search-label">馬名で検索(部分一致)
+        <input type="search" id="hi-search" placeholder="例: イクイノックス" />
+      </label>
+      <p class="ticket-sub" id="hi-search-status">馬名の一部を入力してください。</p>
+      <ul class="hi-result-list" id="hi-result-list" hidden></ul>
+
+      <div id="hi-detail" hidden>
+        <h2 class="stats-heading" id="hi-detail-name"></h2>
+        <p class="ticket-sub" id="hi-detail-sub"></p>
+
+        <div class="overall-grid" id="hi-master-grid"></div>
+        <p class="submit-message" id="hi-fetch-note" hidden></p>
+
+        <div data-admin-only hidden>
+          <button type="button" class="ghost-btn" id="hi-refetch-btn">netkeibaから再取得する</button>
+          <form id="hi-edit-form" class="form-row" style="flex-wrap:wrap;align-items:flex-end;margin-top:12px">
+            <label style="flex:1;min-width:140px">父<input type="text" id="hi-edit-sire" /></label>
+            <label style="flex:1;min-width:140px">母<input type="text" id="hi-edit-dam" /></label>
+            <label style="flex:1;min-width:140px">母父<input type="text" id="hi-edit-dam_sire" /></label>
+            <label style="flex:1;min-width:140px">調教師<input type="text" id="hi-edit-trainer" /></label>
+            <label style="flex:1;min-width:140px">馬主<input type="text" id="hi-edit-owner" /></label>
+            <label style="flex:1;min-width:140px">生産牧場<input type="text" id="hi-edit-breeder" /></label>
+            <button type="submit" class="stamp-btn">保存する</button>
+          </form>
+          <p id="hi-edit-message" class="submit-message" hidden></p>
+        </div>
+
+        <h2 class="stats-heading">過去全出走履歴</h2>
+        <div class="table-wrap"><table class="stats-table" id="hi-history-table"></table></div>
       </div>
 
     </section>

@@ -233,10 +233,12 @@ async function loadTicketsForRace(raceId) {
     renderPayoutBlocks();
     return;
   }
-  const res = await authedFetch("/api/tickets");
+  // 対象レース1件分だけで足りるため、サーバー側で ?race_id= 絞り込みをかけて呼ぶ
+  // (2026-09-29追加。docs/design/data-model.md
+  // 「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。
+  const res = await authedFetch(`/api/tickets?race_id=${encodeURIComponent(raceId)}`);
   if (!res.ok) { currentTickets = []; renderPayoutBlocks(); return; }
-  const allTickets = await res.json();
-  currentTickets = allTickets.filter((t) => t.race_id === raceId);
+  currentTickets = await res.json();
   renderPayoutBlocks();
 }
 

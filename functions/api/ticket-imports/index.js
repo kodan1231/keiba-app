@@ -375,7 +375,17 @@ export async function onRequestGet(context){
   try{
     const db=context.env.DB; const out=[];
     const userId=context.data.userId;
-    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
+    // ?race_id= / ?since=(2026-09-29追加): 予想登録画面(1レース分)・馬券購入画面
+    // (直近分)は全履歴が不要なため、範囲を絞れるようにした
+    // (docs/design/data-model.md「GET /api/tickets・GET /api/ticket-imports の
+    // 範囲限定」参照)。未指定時は従来通り全件(購入履歴画面・集計画面はこちら)。
+    const url=new URL(context.request.url);
+    const raceIdFilter=url.searchParams.get("race_id");
+    const sinceFilter=url.searchParams.get("since");
+    const groupWhere=["user_id=?"]; const groupBinds=[userId];
+    if(raceIdFilter){ groupWhere.push("race_id=?"); groupBinds.push(raceIdFilter); }
+    else if(sinceFilter){ groupWhere.push("race_date>=?"); groupBinds.push(sinceFilter); }
+    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} ORDER BY race_date DESC,id DESC`).bind(...groupBinds).all()).results||[];
     // グループ毎にimported_ticket_itemsを個別クエリすると、取込件数が増えるほど
     // Cloudflare Workersのサブリクエスト数上限に抵触しうる。かといって全ユーザー分の
     // imported_ticket_itemsを毎回全件SELECTする方式は、このテーブルが育つにつれて
@@ -401,7 +411,12 @@ export async function onRequestGet(context){
     // (常に最新のraces.race_base_name)を優先する(2026-09-24追加)。
     const gradedMap=await loadGradedRaceMap(db);
     const raceCourseById=new Map();
-    for(const r of await getAllRacesRaw(db)) raceCourseById.set(r.id,{
+    // race_id指定時は対象レースが最大1件なので、races_cache経由の全件取得ではなく
+    // そのレースだけを直接SELECTする(2026-09-29追加。範囲限定の一環)。
+    const racesForEnrichment=raceIdFilter
+      ? [await db.prepare('SELECT * FROM races WHERE id=?').bind(raceIdFilter).first()].filter(Boolean)
+      : await getAllRacesRaw(db);
+    for(const r of racesForEnrichment) raceCourseById.set(r.id,{
       course_type:r.course_type,
       distance:r.distance,
       category:classifyRace(gradedMap,{race_name:r.race_name,class_flags:r.class_flags}).category,
@@ -425,7 +440,11 @@ export async function onRequestGet(context){
     // 「的中／返還」列が空(refund=0)の行も payout=0(確定・不的中) として扱う
     // (以前は payout: refund||null で、refund=0の場合にnull=未確定のままだった。
     // docs/BACKLOG.md「クラスタE」参照)。
-    const legacy=(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
+    // race_id指定時: レガシー行は常にrace_id=nullで出力される(下記)ため、
+    // race_id一致では絶対にヒットしない。since指定時も呼び出し側(buy.js)は
+    // race_idしか使わないため同様に無意味。いずれもこのクエリ自体を省略する
+    // (2026-09-29追加。範囲限定の一環)。
+    const legacy=(raceIdFilter||sinceFilter)?[]:(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_base_name:null,race_course_type:null,race_distance:null,race_category:"other",bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
     return Response.json({ok:true,items:out});
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}

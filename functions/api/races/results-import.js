@@ -12,6 +12,7 @@ import {
   readJsonBody,
   jsonError,
   raceBaseNameOf,
+  applyImportedTrainerNames,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -353,6 +354,12 @@ export async function onRequestPost(context) {
   if (recomputeUpdates.length) {
     await recomputeTicketPayoutsForRaces(db, recomputeUpdates);
   }
+
+  // 8) 馬情報マスタ(horses)の調教師欄への反映(best-effort。docs/design/data-search.md
+  //    「馬情報検索タブ」参照)。raceResultsInputは各行が{horse_name, trainer, ...}を
+  //    持つ(結果PDF/結果HTMLが調教師名を読み取れた場合のみ)。既にhorses行がある馬だけを
+  //    対象にする(内部でIN句をチャンク分割している)。
+  await applyImportedTrainerNames(db, items.flatMap((it) => it.raceResultsInput));
 
   return Response.json({ ok: true, results });
 }

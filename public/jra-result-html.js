@@ -106,6 +106,11 @@ function jraResultHtmlParseRow(tr) {
   );
   const popText = jraResultHtmlText(tr.querySelector("td.pop"));
   const winPopularity = popText && /^\d+$/.test(popText) ? Number(popText) : null;
+  // td.trainer は他列(td.jockey等)の命名規則からの類推であり、実ページでの確認が
+  // できていない(2026-09-28追加。docs/design/data-search.md「馬情報検索タブ」参照)。
+  // 実際のクラス名が異なる場合はnullのまま(取込自体は失敗しない)。
+  const trainerEl = tr.querySelector("td.trainer a");
+  const trainer = trainerEl ? jraResultHtmlText(trainerEl) : null;
 
   return {
     finishPosition,
@@ -131,6 +136,7 @@ function jraResultHtmlParseRow(tr) {
       final_furlong_time: Number.isFinite(finalFurlong) ? finalFurlong : null,
       body_weight,
       body_weight_change,
+      trainer,
       win_popularity: winPopularity,
     },
   };
@@ -320,6 +326,11 @@ function jraResultHtmlMobileParseRow(tr) {
     jockeyMark = jockeyLink.previousSibling.textContent.trim();
   }
   const jockey = jockeyLink ? `${jockeyMark}${jraResultHtmlText(jockeyLink)}` : null;
+  // jockeyAnchors[1] が調教師名(2026-09-28追加。horsesマスタの調教師欄反映用。
+  // docs/design/data-search.md「馬情報検索タブ」参照。races.entries/race_resultsの
+  // 保存対象ではなく、race_results側の連想配列にのみ載せてサーバーへ送る)。
+  const trainerLink = jockeyAnchors[1] || null;
+  const trainer = trainerLink ? jraResultHtmlText(trainerLink) : null;
   const weightCarriedMatch = jockeyTrainerSpan
     ? jraResultHtmlText(jockeyTrainerSpan).match(/\((\d+(?:\.\d+)?)\)/)
     : null;
@@ -356,6 +367,7 @@ function jraResultHtmlMobileParseRow(tr) {
       final_furlong_time: timeMatch ? Number(timeMatch[3]) : null,
       body_weight: bodyWeightMatch ? Number(bodyWeightMatch[1]) : null,
       body_weight_change: bodyWeightMatch ? bodyWeightMatch[2] || null : null,
+      trainer,
       win_popularity: winPopMatch ? Number(winPopMatch[1]) : null,
     },
   };

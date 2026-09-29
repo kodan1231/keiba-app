@@ -1,8 +1,11 @@
 import { loadGradedRaceMap, classifyRace } from "../_shared.js";
 
 export async function onRequestGet(context) {
-  const { env } = context;
+  const { env, request } = context;
   const userId = context.data.userId;
+  const url = new URL(request.url);
+  const raceId = url.searchParams.get("race_id");
+  const since = url.searchParams.get("since");
   // race_finish_order / race_payouts: 集計画面で「着順または払戻のいずれかが確定していれば
   // 判定対象に含める」ためにレース側の確定情報も一緒に返す(購入履歴自身のpayoutだけでは
   // 着順は確定しているが払戻レート未入力のレースを判定対象にできないため)。
@@ -17,6 +20,16 @@ export async function onRequestGet(context) {
   // (2026-09-24追加)。tickets.race_name は購入時点のスナップショットのため、後から
   // レース名が修正されても追随しない。集計画面「レース別」の表示はこちら
   // (常に最新のraces.race_base_name)を優先する。docs/design/data-model.md参照。
+  //
+  // ?race_id= / ?since=(2026-09-29追加): 予想登録画面・レース管理画面の払戻入力
+  // モーダルは1レース分、馬券購入画面は直近分だけで足りるため、範囲を絞れるようにした
+  // (`GET /api/races?since=`と同じ考え方。docs/design/data-model.md
+  // 「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。未指定時は
+  // 従来通り全件を返す(購入履歴画面・集計画面は無変更で動く)。
+  const whereParts = ["t.user_id = ?"];
+  const binds = [userId];
+  if (raceId) { whereParts.push("t.race_id = ?"); binds.push(raceId); }
+  else if (since) { whereParts.push("t.race_date >= ?"); binds.push(since); }
   const { results } = await env.DB.prepare(
     `SELECT t.*, r.finish_order AS race_finish_order, r.payouts AS race_payouts,
             r.course_type AS race_course_type, r.distance AS race_distance,
@@ -24,9 +37,9 @@ export async function onRequestGet(context) {
             r.race_base_name AS race_base_name
      FROM tickets t
      LEFT JOIN races r ON r.id = t.race_id
-     WHERE t.user_id = ?
+     WHERE ${whereParts.join(" AND ")}
      ORDER BY t.race_date DESC, t.track ASC, t.race_number ASC, t.created_at ASC`
-  ).bind(userId).all();
+  ).bind(...binds).all();
 
   const gradedMap = await loadGradedRaceMap(env.DB);
 

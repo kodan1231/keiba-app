@@ -475,4 +475,43 @@ CREATE TABLE IF NOT EXISTS graded_races (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
-END;
+-- (直前にあった、対応するBEGINの無い孤立した"END;"はここで除去した。おそらく
+-- コピー&ペーストの取り違えによる混入。トリガーは全て自分のBEGIN...ENDブロック内で
+-- 閉じており、この行は不要かつ「wrangler d1 execute --file=schema.sql」実行時に
+-- 後続の文が実行されない原因になり得たため、13.節追加にあわせて削除した)
+
+-- ============================================================
+-- 13. 馬情報マスタ(horses) — データ検索画面「馬情報検索」タブ
+-- ============================================================
+
+-- 血統(父/母/母父)・馬主・生産牧場は、出走馬一覧PDF/結果PDF/結果HTMLいずれの
+-- 一括取込からも取得できないため、netkeiba(db.netkeiba.com)の馬個別ページ・
+-- 検索結果一覧ページから取得してキャッシュする(_lib/netkeiba.js)。調教師は同じく
+-- netkeiba経由に加え、2026-09-28以降に取り込む出走馬一覧PDF/結果PDF/結果HTMLの
+-- 副産物としても取得できる(_lib/horse-master.js の applyImportedTrainerNames)。
+-- 馬の同一性は horse_aliases と同じ horseAliasKeyOf(NFKC正規化+全空白除去)を
+-- キーにする。詳細はdocs/design/data-search.md「馬情報検索タブ」参照。
+--
+-- 「検索されて初めて取得するオンデマンドキャッシュ」の設計のため、races/race_results
+-- 全体の行数と違い際限なく育まない(検索されたことがある馬の分だけ行ができる)。
+CREATE TABLE IF NOT EXISTS horses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  horse_key TEXT NOT NULL UNIQUE,   -- horseAliasKeyOf(horse_name)
+  horse_name TEXT NOT NULL,          -- 表示名(検索時点でのraces.entries/race_results側の表記)
+  sire TEXT,                         -- 父
+  dam TEXT,                          -- 母
+  dam_sire TEXT,                     -- 母父
+  trainer TEXT,                      -- 調教師(最新)
+  owner TEXT,                        -- 馬主
+  breeder TEXT,                      -- 生産牧場
+  netkeiba_horse_id TEXT,            -- netkeibaの馬ID(db.netkeiba.com/horse/<id>/)
+  data_source TEXT NOT NULL DEFAULT 'netkeiba', -- 'netkeiba' | 'import' | 'manual'
+                                      -- 'manual'の行は、管理者の明示的な「netkeibaから再取得」
+                                      -- 操作以外では自動上書きしない(取込側のtrainer反映も対象外)。
+  fetch_error TEXT,                  -- 直近のnetkeiba取得が失敗/未ヒットだった理由。成功時はNULL
+                                      -- (例: "not_found" "encoding_unsupported" "network_error")
+  fetched_at TEXT,                   -- netkeibaへの取得を試行した日時(成功/失敗問わず)
+  updated_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_horses_horse_name ON horses(horse_name);

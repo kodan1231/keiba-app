@@ -161,6 +161,46 @@ D1無料枠の日次上限そのものの詳細・注意点は`CLAUDE.md`「絶�
   データ検索画面「レース成績」タブ・CSV取込一覧の内部呼び出し
   (`getAllRacesRaw()`直接呼び出し)も対象外。
 
+### GET /api/tickets・GET /api/ticket-imports の範囲限定(?since / ?race_id)(2026-09-29〜)
+
+いずれもこれまで`?`パラメータなし固定で、ログインユーザーの購入履歴・CSV取込履歴を
+**常に全件**返していた。ユーザーごとの履歴が数千件規模に育つと、フル取得
+(JOIN・JSON.parse・`classifyRace`ループ・レスポンスのJSON直列化)のCPUコストが
+Cloudflare Workersの1リクエストあたりCPU時間上限に近づき、2026-09-29に実際に
+`exceededResources`(CPU時間超過によるリクエスト失敗)がバースト発生した
+(発生時は馬券購入画面・予想登録画面からの`GET /api/tickets`/`GET /api/ticket-imports`
+呼び出しがボリュームの大半を占めていた。D1の日次行数上限は超えておらず、
+D1無料枠の日次上限に関する注意〈上記〉とは別の障害)。
+
+呼び出し側の実際の用途を見ると、購入履歴画面(`app.js`)・集計画面(`stats.js`)以外は
+「全履歴」ではなく「特定の1レース分だけ」または「直近だけ」で足りていたため、
+`GET /api/races?since=`(上記)と同じ考え方で範囲を絞れるようにした。
+
+- `GET /api/tickets?race_id=<id>`: `tickets`側を`WHERE t.user_id=? AND
+  t.race_id=?`に絞る。対象は常に「1レース分の購入」なので自然にバウンドされる。
+- `GET /api/tickets?since=YYYY-MM-DD`: `WHERE t.user_id=? AND t.race_date>=?`
+  (`idx_tickets_race_date`使用)。
+- `GET /api/ticket-imports?race_id=<id>`: `imported_ticket_groups`側を
+  `WHERE user_id=? AND race_id=?`に絞る。旧形式(`imported_tickets`。正規化前の
+  生データ)は`race_id`を常に持たない=`race_id`指定時は絶対に一致しないため、
+  このクエリ自体を省略する。
+- `GET /api/ticket-imports?since=YYYY-MM-DD`: `imported_ticket_groups`側を
+  `WHERE user_id=? AND race_date>=?`に絞る。同様に旧形式クエリは省略する。
+- いずれも未指定時は従来通り全件を返す(`app.js`・`stats.js`は無変更で動く)。
+
+**呼び出し側の使い分け**:
+- 馬券購入画面(`buy.js`の`loadPurchasedRaceIds()`。レース一覧の「購入済み」
+  バッジ表示専用で、レースIDの集合だけ分かれば十分)は`?since=<今日から1ヶ月前>`
+  (`/api/races?since=`と同じ`monthsAgoDateKey(1)`)を付けて呼ぶ。
+- 予想登録画面(`prediction.js`の`loadRaceTickets()`。表示中の1レース分の購入
+  馬券だけを表示)・レース管理画面の払戻入力モーダル(`races-payout-modal.js`の
+  `loadTicketsForRace()`。同じく1レース分)は`?race_id=<表示中のレースID>`を
+  付けて呼ぶ(取得後にクライアント側で`race_id`一致フィルタをかけていたのを
+  サーバー側フィルタに置き換えた)。
+- 購入履歴画面(`app.js`)はカレンダーで任意の過去日へ遡れる仕様のため、
+  集計画面(`stats.js`)は全期間の集計が前提のため、いずれも対象外(パラメータ
+  なしで全件取得を維持)。
+
 ### レース情報のコース種別・距離
 
 `races`テーブルは`course_type`(TEXT)・`distance`(INTEGER)を持つ。

@@ -9,6 +9,7 @@ import {
   readJsonBody,
   jsonError,
   raceBaseNameOf,
+  applyImportedTrainerNames,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -79,6 +80,10 @@ export async function onRequestPost(context) {
         jockey: e.jockey ? applyJockeyAliasMap(aliasMap, e.jockey) : null,
         sex_age: e.sex_age || null,
         weight_carried: e.weight_carried ?? null,
+        // trainer(調教師)はraces.entriesには保存しない(mergeEntriesByHorseNameが
+        // 保存対象フィールドをホワイトリストしているため、渡しても無視される)。
+        // ここではhorsesマスタへの反映(下記6)用に一時的に持ち回るだけ。
+        trainer: e.trainer || null,
       }));
 
     items.push({
@@ -326,6 +331,11 @@ export async function onRequestPost(context) {
     const payoutsObj = it.existing.payouts ? JSON.parse(it.existing.payouts) : null;
     await recomputeTicketPayoutsForRace(db, it.id, finishOrder, payoutsObj, it.mergedEntries);
   }
+
+  // 7) 馬情報マスタ(horses)の調教師欄への反映(best-effort。docs/design/data-search.md
+  //    「馬情報検索タブ」参照)。既にhorses行がある馬だけを対象にする(内部でIN句を
+  //    チャンク分割している)。
+  await applyImportedTrainerNames(db, items.flatMap((it) => it.incomingEntries));
 
   return Response.json({ ok: true, results });
 }

@@ -200,7 +200,8 @@ function jraEntriesParseHorseRow(rawLine) {
   return {
     horse_name: horseName,
     jockey: apprenticeMark ? `${apprenticeMark}${jockey}` : jockey,
-    trainer, // 保存対象外(entries-import.js側で無視される。docs/BACKLOG.md参照)
+    trainer, // 2026-09-28: races.entriesには保存されないが、horsesマスタ(調教師欄)の
+             // 反映用にサーバーへ送信する(docs/design/data-search.md「馬情報検索タブ」参照)
     waku_number: wakuNumber,
     horse_number: horseNumber,
     sex_age: sexAge,
@@ -365,7 +366,7 @@ function jraEntriesParseExtractedPages(pages) {
         race_date: h.date, track: h.track, race_number: number,
         race_name: raceName, course_type: courseType, distance,
         weight_type: weightType, class_flags: classFlags, course_direction: courseDirection,
-        entries: entries.map(({ trainer, ...rest }) => rest), // trainerは今回のフェーズでは送信しない(BACKLOG参照)
+        entries, // 2026-09-28: 調教師名(trainer)も送信するようになった(horsesマスタへの反映用。docs/design/data-search.md「馬情報検索タブ」参照)
         ...(scratchedHorses.length ? { scratched_horses: scratchedHorses } : {}),
       });
     }

@@ -50,15 +50,19 @@ function showEmpty(message) {
 // 予想印とは別に「このレースで購入した馬券」を馬番ベースで一覧表示する。
 // 馬名が分からなくても、買い目・購入金額・払戻金額は把握できるようにするため。
 async function loadRaceTickets() {
+  // 表示中の1レース分だけで足りるため、サーバー側で ?race_id= 絞り込みをかけて呼ぶ
+  // (2026-09-29追加。全履歴を毎回読んでいたことがCloudflare WorkersのCPU時間上限
+  // 超過の一因になっていたため。docs/design/data-model.md
+  // 「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。
+  const raceId = encodeURIComponent(selectedRace.id);
   const [ticketsRes, importedRes] = await Promise.all([
-    authedFetch("/api/tickets"),
-    authedFetch("/api/ticket-imports"),
+    authedFetch(`/api/tickets?race_id=${raceId}`),
+    authedFetch(`/api/ticket-imports?race_id=${raceId}`),
   ]);
   const tickets = ticketsRes.ok ? await ticketsRes.json() : [];
   const importedPayload = importedRes.ok ? await importedRes.json() : { items: [] };
   const imported = Array.isArray(importedPayload) ? importedPayload : (importedPayload.items || []);
-  const all = [...(Array.isArray(tickets) ? tickets : []), ...(Array.isArray(imported) ? imported : [])];
-  return all.filter((t) => Number(t.race_id) === Number(selectedRace.id));
+  return [...(Array.isArray(tickets) ? tickets : []), ...(Array.isArray(imported) ? imported : [])];
 }
 
 // グループカード(購入方式単位)の開閉をトグルする。app.jsの.group-card-head

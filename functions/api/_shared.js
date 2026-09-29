@@ -24,3 +24,5 @@ export * from "./_lib/race-results.js";
 export * from "./_lib/race-stats-cache.js";
 export * from "./_lib/races-cache.js";
 export * from "./_lib/race-classification.js";
+export * from "./_lib/netkeiba.js";
+export * from "./_lib/horse-master.js";

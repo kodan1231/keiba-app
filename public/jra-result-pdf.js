@@ -259,7 +259,8 @@ function jraResultParseFullResultRow(restAfterRank, rank) {
     final_furlong_time: Number.isFinite(finalFurlong) ? finalFurlong : null,
     body_weight: Number.isFinite(bodyWeight) ? bodyWeight : null,
     body_weight_change: change || null,
-    _trainer: trainer, // 保存対象外(APIへは送らない。docs/DESIGN.md参照)
+    trainer, // 2026-09-28: horsesマスタ(調教師欄)反映用にサーバーへ送信する
+             // (docs/design/data-search.md「馬情報検索タブ」参照)
     win_popularity: Number.isInteger(Number(popularityStr)) ? Number(popularityStr) : null,
   };
 }
@@ -387,6 +388,7 @@ function jraResultParseStopRow(rawLine) {
     final_furlong_time: null,
     body_weight: Number.isFinite(bodyWeight) ? bodyWeight : null,
     body_weight_change: bodyWeightChange || null,
+    trainer, // 2026-09-28: horsesマスタ(調教師欄)反映用にサーバーへ送信する
     win_popularity: Number.isInteger(winPopularity) ? winPopularity : null,
   };
 }
@@ -737,7 +739,6 @@ function parseRaceBlock(block, header, number, diagnostics) {
               const full = jraResultParseFullResultRow(line, pendingRank);
               if (full) {
                 full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
-                delete full._trainer;
                 current.race_results.push(full);
                 jraResultApplySexAgeWeightToEntries(current.entries, full.horse_number, full.sex_age, full.weight_carried);
                 diagnostics.fullResultRowsDetected++;
@@ -769,7 +770,6 @@ function parseRaceBlock(block, header, number, diagnostics) {
               const full = jraResultParseFullResultRow(rm[2], rank);
               if (full) {
                 full.incident_note = incidentNotes.get(String(full.horse_name || "")) || null;
-                delete full._trainer;
                 current.race_results.push(full);
                 jraResultApplySexAgeWeightToEntries(current.entries, full.horse_number, full.sex_age, full.weight_carried);
                 diagnostics.fullResultRowsDetected++;
