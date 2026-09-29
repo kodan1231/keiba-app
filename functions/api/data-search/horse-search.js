@@ -13,12 +13,17 @@ import { jsonError, getAllRacesRaw, loadHorseAliasMap, applyHorseAliasMap, horse
 // 詳細は docs/design/data-search.md「馬情報検索タブ」参照。
 
 const MAX_RESULTS = 50;
+// 1文字だと該当馬が多すぎて絞り込みの意味がほぼ無いうえ、races全件スキャンの
+// コストに見合わないため、クライアント側(data-search.js の HI_SEARCH_MIN_LENGTH)に
+// 加えてサーバー側でも検証する(直接APIを叩かれた場合の防御)。
+const MIN_QUERY_LENGTH = 2;
 
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").normalize("NFKC").trim();
   if (!q) return Response.json({ query: "", horses: [] });
+  if (q.length < MIN_QUERY_LENGTH) return jsonError(`検索キーワードは${MIN_QUERY_LENGTH}文字以上入力してください`, 400);
   if (q.length > 40) return jsonError("検索キーワードが長すぎます", 400);
 
   const db = env.DB;

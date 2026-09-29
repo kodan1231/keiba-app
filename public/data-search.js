@@ -210,6 +210,7 @@ function dsInit() {
 
 // ---------- 馬情報検索タブ ----------
 
+const HI_SEARCH_MIN_LENGTH = 2; // サーバー負荷対策(1文字だと該当馬が多すぎるため)。GET /api/data-search/horse-search 側でも検証する
 const hiEls = {};
 let hiSearchTimer = null;
 let hiCurrentName = null;
@@ -491,7 +492,12 @@ function hiInit() {
     hiEls.detail.hidden = true;
     if (!q) {
       hiEls.resultList.hidden = true;
-      hiEls.searchStatus.textContent = "馬名の一部を入力してください。";
+      hiEls.searchStatus.textContent = "馬名の一部を2文字以上入力してください。";
+      return;
+    }
+    if (q.length < HI_SEARCH_MIN_LENGTH) {
+      hiEls.resultList.hidden = true;
+      hiEls.searchStatus.textContent = `あと${HI_SEARCH_MIN_LENGTH - q.length}文字以上入力してください。`;
       return;
     }
     hiEls.searchStatus.textContent = "検索中…";

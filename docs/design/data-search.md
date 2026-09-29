@@ -198,6 +198,9 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 - API:
   - `GET /api/data-search/horse-search?q=`(`functions/api/data-search/horse-search.js`)
     … 検索候補一覧(部分一致・最大50件)。`races` は `races_cache` 経由(全件スキャンしない)。
+    **`q` は2文字未満だと400**(1文字だと該当馬が多すぎて絞り込みの意味が薄いうえ、
+    races全件スキャンのコストに見合わないため。クライアント側(`data-search.js`の
+    `HI_SEARCH_MIN_LENGTH`)でも2文字未満は送信しない)
   - `GET /api/data-search/horse-info?name=`(`functions/api/data-search/horse-info.js`)
     … 詳細(馬齢・性別・過去全出走履歴・血統/調教師/馬主/生産牧場)。`race_results` は
     `horse_key` の直接検索(`GET /api/races/:id/horse-history` と同じ設計。回数上限なし)
