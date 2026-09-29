@@ -213,6 +213,7 @@ function dsInit() {
 const hiEls = {};
 let hiSearchTimer = null;
 let hiCurrentName = null;
+let hiCurrentMaster = null;
 
 function hiFetchNoteText(master) {
   if (!master) return "";
@@ -235,16 +236,8 @@ function hiFetchNoteText(master) {
   return "";
 }
 
-function hiRenderMasterGrid(master) {
-  const cards = [
-    ["父", master?.sire],
-    ["母", master?.dam],
-    ["母父", master?.damSire],
-    ["調教師", master?.trainer],
-    ["馬主", master?.owner],
-    ["生産牧場", master?.breeder],
-  ];
-  hiEls.masterGrid.innerHTML = cards
+function hiCardsHtml(cards) {
+  return cards
     .map(
       ([label, value]) => `
       <div class="overall-card">
@@ -253,6 +246,21 @@ function hiRenderMasterGrid(master) {
       </div>`
     )
     .join("");
+}
+
+// 血統(父/母/母父)と調教師・馬主・生産牧場を別々の段で表示する(2026-09-29。
+// 段を分けたぶん1段あたりのカード数が減り、その分1枚ずつ横に広くなる)。
+function hiRenderMasterGrids(master) {
+  hiEls.masterGridPedigree.innerHTML = hiCardsHtml([
+    ["父", master?.sire],
+    ["母", master?.dam],
+    ["母父", master?.damSire],
+  ]);
+  hiEls.masterGridConnections.innerHTML = hiCardsHtml([
+    ["調教師", master?.trainer],
+    ["馬主", master?.owner],
+    ["生産牧場", master?.breeder],
+  ]);
 }
 
 function hiFillEditForm(master) {
@@ -310,12 +318,14 @@ function hiRenderDetail(data) {
       ? `${data.sex}${data.age}(${data.ageAsOfRaceDate || "直近出走"}時点の性齢)`
       : "性齢不明(出走履歴なし)";
 
-  hiRenderMasterGrid(data.master);
+  hiCurrentMaster = data.master;
+  hiRenderMasterGrids(data.master);
   const note = hiFetchNoteText(data.master);
   hiEls.fetchNote.hidden = !note;
   hiEls.fetchNote.textContent = note;
 
   hiFillEditForm(data.master);
+  hiEls.editForm.hidden = true; // 馬を切り替えたら編集フォームは閉じておく
   hiEls.editMessage.hidden = true;
   hiRenderHistoryTable(data.history);
 
@@ -372,7 +382,25 @@ async function hiLoadSearch(q) {
   }
 }
 
+function hiApplyMasterUpdate(master) {
+  hiCurrentMaster = master;
+  hiRenderMasterGrids(master);
+  const note = hiFetchNoteText(master);
+  hiEls.fetchNote.hidden = !note;
+  hiEls.fetchNote.textContent = note;
+}
+
 function setupHiEditForm() {
+  // 「編集する」ボタンを押すまで編集フォームは表示しない(常時表示にしない。2026-09-29)。
+  hiEls.editToggleBtn.addEventListener("click", () => {
+    hiFillEditForm(hiCurrentMaster);
+    hiEls.editMessage.hidden = true;
+    hiEls.editForm.hidden = false;
+  });
+  hiEls.editCancelBtn.addEventListener("click", () => {
+    hiEls.editForm.hidden = true;
+  });
+
   hiEls.editForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!hiCurrentName) return;
@@ -396,15 +424,14 @@ function setupHiEditForm() {
     });
     const data = await res.json().catch(() => ({}));
 
-    hiEls.editMessage.hidden = false;
     if (res.ok) {
+      hiApplyMasterUpdate(data.master);
+      hiEls.editForm.hidden = true; // 保存したら編集フォームは閉じる
+      hiEls.editMessage.hidden = false;
       hiEls.editMessage.className = "submit-message success";
       hiEls.editMessage.textContent = "保存しました。";
-      hiRenderMasterGrid(data.master);
-      const note = hiFetchNoteText(data.master);
-      hiEls.fetchNote.hidden = !note;
-      hiEls.fetchNote.textContent = note;
     } else {
+      hiEls.editMessage.hidden = false;
       hiEls.editMessage.className = "submit-message error";
       hiEls.editMessage.textContent = data.error || "保存に失敗しました。";
     }
@@ -425,11 +452,9 @@ function setupHiEditForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        hiRenderMasterGrid(data.master);
-        hiFillEditForm(data.master);
-        const note = hiFetchNoteText(data.master);
-        hiEls.fetchNote.hidden = !note;
-        hiEls.fetchNote.textContent = note;
+        hiApplyMasterUpdate(data.master);
+        // 編集フォームを開いたままだった場合は、表示中の値も再取得結果に合わせる。
+        if (!hiEls.editForm.hidden) hiFillEditForm(data.master);
       }
     } finally {
       hiEls.refetchBtn.disabled = false;
@@ -444,8 +469,11 @@ function hiInit() {
   hiEls.detail = document.getElementById("hi-detail");
   hiEls.detailName = document.getElementById("hi-detail-name");
   hiEls.detailSub = document.getElementById("hi-detail-sub");
-  hiEls.masterGrid = document.getElementById("hi-master-grid");
+  hiEls.masterGridPedigree = document.getElementById("hi-master-grid-pedigree");
+  hiEls.masterGridConnections = document.getElementById("hi-master-grid-connections");
   hiEls.fetchNote = document.getElementById("hi-fetch-note");
+  hiEls.editToggleBtn = document.getElementById("hi-edit-toggle-btn");
+  hiEls.editCancelBtn = document.getElementById("hi-edit-cancel-btn");
   hiEls.editForm = document.getElementById("hi-edit-form");
   hiEls.editSire = document.getElementById("hi-edit-sire");
   hiEls.editDam = document.getElementById("hi-edit-dam");

@@ -84,19 +84,32 @@
         <h2 class="stats-heading" id="hi-detail-name"></h2>
         <p class="ticket-sub" id="hi-detail-sub"></p>
 
-        <div class="overall-grid" id="hi-master-grid"></div>
+        <h3 class="stats-subheading">血統</h3>
+        <div class="overall-grid hi-master-grid" id="hi-master-grid-pedigree"></div>
+
+        <h3 class="stats-subheading">調教師・馬主・生産牧場</h3>
+        <div class="overall-grid hi-master-grid" id="hi-master-grid-connections"></div>
+
         <p class="submit-message" id="hi-fetch-note" hidden></p>
 
-        <div data-admin-only hidden>
-          <button type="button" class="ghost-btn" id="hi-refetch-btn">netkeibaから再取得する</button>
-          <form id="hi-edit-form" class="form-row" style="flex-wrap:wrap;align-items:flex-end;margin-top:12px">
-            <label style="flex:1;min-width:140px">父<input type="text" id="hi-edit-sire" /></label>
-            <label style="flex:1;min-width:140px">母<input type="text" id="hi-edit-dam" /></label>
-            <label style="flex:1;min-width:140px">母父<input type="text" id="hi-edit-dam_sire" /></label>
-            <label style="flex:1;min-width:140px">調教師<input type="text" id="hi-edit-trainer" /></label>
-            <label style="flex:1;min-width:140px">馬主<input type="text" id="hi-edit-owner" /></label>
-            <label style="flex:1;min-width:140px">生産牧場<input type="text" id="hi-edit-breeder" /></label>
-            <button type="submit" class="stamp-btn">保存する</button>
+        <div data-admin-only hidden class="hi-admin-panel">
+          <div class="hi-admin-actions">
+            <button type="button" class="ghost-btn" id="hi-edit-toggle-btn">編集する</button>
+            <button type="button" class="ghost-btn" id="hi-refetch-btn">netkeibaから再取得する</button>
+          </div>
+          <form id="hi-edit-form" class="hi-edit-form" hidden>
+            <div class="overall-grid hi-master-grid">
+              <label class="hi-edit-field">父<input type="text" id="hi-edit-sire" /></label>
+              <label class="hi-edit-field">母<input type="text" id="hi-edit-dam" /></label>
+              <label class="hi-edit-field">母父<input type="text" id="hi-edit-dam_sire" /></label>
+              <label class="hi-edit-field">調教師<input type="text" id="hi-edit-trainer" /></label>
+              <label class="hi-edit-field">馬主<input type="text" id="hi-edit-owner" /></label>
+              <label class="hi-edit-field">生産牧場<input type="text" id="hi-edit-breeder" /></label>
+            </div>
+            <div class="hi-edit-form-actions">
+              <button type="submit" class="stamp-btn">保存する</button>
+              <button type="button" class="ghost-btn" id="hi-edit-cancel-btn">キャンセル</button>
+            </div>
           </form>
           <p id="hi-edit-message" class="submit-message" hidden></p>
         </div>
