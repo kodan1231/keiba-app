@@ -436,6 +436,18 @@ input, select, textarea {
   color: var(--ink);
 }
 textarea { resize: vertical; }
+/* iOS Safari は font-size 16px 未満の入力欄にフォーカスすると画面全体を自動ズームする
+   (馬券かごの「1点あたり」欄で発生。2026-09-30)。タッチ端末では入力欄を一律16pxにして
+   自動ズーム自体を起こさない。個別に小さい font-size を指定している欄も多いため !important で
+   上書きする。viewport の maximum-scale=1 で止める方法はピンチズームまで殺すため採らない
+   (prediction.html のみ従来から maximum-scale=1.0 を指定している)。 */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
 
 /* 選択馬の行(馬券登録フォーム内) */
 .selection-rows { display: flex; flex-direction: column; gap: 8px; }
