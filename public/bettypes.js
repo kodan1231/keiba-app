@@ -47,3 +47,33 @@ function formatSelections(betType, selections) {
   const nums = selections.map((s) => s.horse_number ?? "?");
   return nums.join(def && def.ordered ? " → " : " - ");
 }
+
+// 買い目グループの要約行(netkeiba風の簡易表示)。購入モーダルの買い目欄と馬券かごで共用する。
+// structure は tickets.structure と同じ形({numbers}/{axis,partners}/{slots}/null)、
+// comboNumbers は各買い目の馬番(枠連は枠番)配列の配列。
+// structure が無い場合(通常・単複の複数頭選択・一部の買い目を外したグループ)は、
+// 1点ならその買い目、複数点なら登場する番号の一覧に丸める。
+// 戻り値: [{ label, value }, ...]
+function describeBetStructure(betType, structure, comboNumbers) {
+  const unit = betType === "wakuren" ? "枠番" : "馬番";
+  const join = (arr) => arr.join(",");
+  if (structure && Array.isArray(structure.slots)) {
+    return structure.slots.map((nums, i) => ({ label: selectionLabel(betType, i), value: join(nums) }));
+  }
+  if (structure && Array.isArray(structure.axis) && Array.isArray(structure.partners)) {
+    return [
+      { label: "軸", value: structure.axis.join("－") },
+      { label: "相手", value: join(structure.partners) },
+    ];
+  }
+  if (structure && Array.isArray(structure.numbers)) {
+    return [{ label: unit, value: join(structure.numbers) }];
+  }
+  const combos = comboNumbers || [];
+  if (combos.length === 1) {
+    const def = BET_TYPES[betType];
+    return [{ label: "買い目", value: combos[0].join(def && def.ordered ? " → " : " - ") }];
+  }
+  const nums = [...new Set(combos.flat())].sort((a, b) => Number(a) - Number(b));
+  return [{ label: unit, value: join(nums) }];
+}

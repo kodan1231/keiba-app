@@ -757,24 +757,28 @@ textarea { resize: vertical; }
 
 .preview-area { margin-bottom: 16px; }
 
+/* 買い目欄の要約(2026-09-30〜。見出し行＋馬番構成の行。組み合わせ一覧は折りたたみ) */
 .preview-summary {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 15px;
   padding: 12px 14px;
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
+.preview-summary-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.preview-count { margin-left: auto; font-family: var(--font-mono); font-weight: 700; font-size: 15px; }
+.preview-summary-line { display: flex; gap: 10px; font-size: 13px; padding: 2px 0; }
+.preview-summary-label { min-width: 4.5em; color: var(--ink-soft); }
+.preview-summary-value { font-family: var(--font-mono); font-weight: 700; word-break: break-all; }
+.preview-toggle { margin-bottom: 8px; }
+.preview-combo-tools { display: flex; gap: 8px; margin-bottom: 6px; }
+.preview-combo-check-row { justify-content: flex-start; cursor: pointer; }
 .preview-total { font-weight: 700; font-size: 18px; color: var(--hanko); }
 
 .preview-combo-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 1400px;
+  max-height: 360px;
   overflow-y: auto;
   border: 1px solid var(--rule);
   padding: 8px 10px;

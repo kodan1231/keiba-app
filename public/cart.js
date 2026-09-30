@@ -18,9 +18,10 @@
 //   [{ groupKey, race_id, race_date, track, race_number, race_name, bet_type,
 //      method, combos: [{ selections, amount, checked }, ...] }, ...]
 // 「かごに追加」1回の操作 = 1グループ。同じレース・式別でも常に新規グループとして
-// 追加する(マージしない)。金額は購入モーダル側で入力した暫定値がそのまま入り、
-// カゴ側で一括/個別に上書きできる。購入対象はチェックボックス(買い目ごと)で
-// 選べ、グループ側には一括選択/解除のチェックも置く。
+// 追加する(マージしない)。2026-09-30: 金額は購入モーダルでは入力せず、かごへ追加した
+// 時点で各点 CART_DEFAULT_AMOUNT(100円)が入り、カゴ側で一括(グループ見出し直下の
+// 「1点あたり」欄。閉じたままでも操作可)/個別(展開時)に設定・変更する。購入対象は
+// チェックボックス(買い目ごと)で選べ、グループ側には一括選択/解除のチェックも置く。
 //
 // サーバーとの通信は「購入」ボタン押下時の POST /api/tickets/bulk (groups配列形式。
 // functions/api/tickets/bulk.js参照)のみで、かごへの追加・削除・金額編集は
@@ -68,6 +69,10 @@
     return cart.find((g) => g.groupKey === groupKey);
   }
 
+  // かごへ追加した直後の1点あたり金額(購入モーダルでは金額を入力しないため)。
+  const CART_DEFAULT_AMOUNT = 100;
+  window.CART_DEFAULT_AMOUNT = CART_DEFAULT_AMOUNT;
+
   // ---------- 公開関数: かごへの追加(購入モーダル側から呼ばれる) ----------
   function addToCart(payload) {
     const cart = loadCart();
@@ -81,7 +86,11 @@
       bet_type: payload.bet_type,
       method: payload.method,
       structure: payload.structure || null,
-      combos: payload.combos.map((c) => ({ selections: c.selections, amount: c.amount, checked: true })),
+      combos: payload.combos.map((c) => ({
+        selections: c.selections,
+        amount: Number(c.amount) > 0 ? Number(c.amount) : CART_DEFAULT_AMOUNT,
+        checked: true,
+      })),
     });
     saveCart(cart);
     renderBadge();
@@ -150,10 +159,18 @@
       }
       .cart-group-head:hover { background: rgba(28,27,24,0.04); }
       .cart-group-money { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 13px; }
+      .cart-group-sub {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 0 12px 10px 36px; font-size: 13px;
+      }
+      .cart-group-summary { flex: 1; min-width: 160px; }
+      .cart-summary-line { display: flex; gap: 8px; }
+      .cart-summary-label { min-width: 3.5em; color: var(--ink-soft, #55524a); }
+      .cart-summary-value { font-family: var(--font-mono, monospace); font-weight: 700; word-break: break-all; }
+      .cart-unit-amount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+      .cart-unit-amount input { width: 90px; font-family: var(--font-mono, monospace); }
       .cart-group-body { border-top: 1px dashed var(--rule, #c9c5b8); padding: 10px 12px; }
       .cart-group-body[hidden] { display: none; }
-      .cart-bulk-amount { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-      .cart-bulk-amount input { width: 110px; }
       .cart-combo-row {
         display: flex; align-items: center; gap: 10px; padding: 6px 0;
         border-bottom: 1px dashed var(--rule, #c9c5b8); font-size: 13px;
@@ -246,8 +263,18 @@
   function renderGroupHtml(g) {
     const allChecked = g.combos.every((c) => c.checked);
     const someChecked = g.combos.some((c) => c.checked);
+    const checkedN = g.combos.filter((c) => c.checked).length;
     const subtotal = g.combos.filter((c) => c.checked).reduce((s, c) => s + Number(c.amount || 0), 0);
     const expanded = expandedGroupKeys.has(g.groupKey);
+    // 全点同額ならその額を「1点あたり」欄に表示、バラけていれば空欄(個別設定中)。
+    const amounts = new Set(g.combos.map((c) => Number(c.amount || 0)));
+    const unitAmount = amounts.size === 1 ? [...amounts][0] : null;
+    const methodText = methodLabel(g.method) + (g.structure && g.structure.multi ? "(マルチ)" : "");
+    const summaryLines = describeBetStructure(
+      g.bet_type,
+      g.structure,
+      g.combos.map((c) => (c.selections || []).map((s) => s.horse_number))
+    );
     return `
       <div class="cart-group" data-key="${g.groupKey}">
         <div class="cart-group-head" data-toggle="${g.groupKey}">
@@ -257,16 +284,26 @@
           <span>${escapeHtml(formatDate(g.race_date))}</span>
           <span>${escapeHtml(g.track)}${g.race_number}R</span>
           <span class="bet-badge">${escapeHtml(betTypeLabel(g.bet_type))}</span>
-          <span class="method-badge">${escapeHtml(methodLabel(g.method))}</span>
-          <span>${g.combos.length}点</span>
+          <span class="method-badge">${escapeHtml(methodText)}</span>
+          <span>${checkedN === g.combos.length ? `${g.combos.length}点` : `${checkedN}/${g.combos.length}点`}</span>
           <span class="cart-group-money">${formatYen(subtotal)}</span>
           <button type="button" class="icon-btn delete cart-delete-group" data-key="${g.groupKey}" title="削除">×</button>
         </div>
-        <div class="cart-group-body" ${expanded ? "" : "hidden"}>
-          <div class="cart-bulk-amount">
-            <input type="number" min="100" step="100" class="cart-bulk-amount-input" placeholder="一括金額" />
-            <button type="button" class="ghost-btn cart-bulk-amount-btn" data-key="${g.groupKey}">全点に反映</button>
+        <div class="cart-group-sub">
+          <div class="cart-group-summary">
+            ${summaryLines.map((l) => `
+              <div class="cart-summary-line">
+                <span class="cart-summary-label">${escapeHtml(l.label)}</span>
+                <span class="cart-summary-value">${escapeHtml(l.value)}</span>
+              </div>
+            `).join("")}
           </div>
+          <label class="cart-unit-amount">1点あたり
+            <input type="number" min="100" step="100" class="cart-group-amount" data-key="${g.groupKey}"
+              value="${unitAmount !== null ? unitAmount : ""}" placeholder="${unitAmount !== null ? "" : "個別設定"}" />円
+          </label>
+        </div>
+        <div class="cart-group-body" ${expanded ? "" : "hidden"}>
           ${g.combos.map((c, ci) => `
             <div class="cart-combo-row">
               <input type="checkbox" class="cart-combo-check" data-key="${g.groupKey}" data-ci="${ci}" ${c.checked ? "checked" : ""} />
@@ -344,14 +381,14 @@
       });
     });
 
-    body.querySelectorAll(".cart-bulk-amount-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const wrap = btn.closest(".cart-group-body");
-        const value = Number(wrap.querySelector(".cart-bulk-amount-input").value) || 0;
-        if (!value) { alert("金額を入力してください"); return; }
+    // グループ見出し直下の「1点あたり」欄。入力確定(change)でグループ内の全買い目
+    // (未チェック分を含む)へ反映する。空欄・0円の確定は反映せず元の表示に戻す。
+    body.querySelectorAll(".cart-group-amount").forEach((input) => {
+      input.addEventListener("change", () => {
+        const value = Number(input.value) || 0;
+        if (value <= 0) { renderPanel(); return; }
         const cart = loadCart();
-        const g = findGroup(cart, btn.dataset.key);
+        const g = findGroup(cart, input.dataset.key);
         if (!g) return;
         g.combos.forEach((c) => (c.amount = value));
         saveCart(cart);
@@ -382,7 +419,9 @@
         race_name: g.race_name,
         bet_type: g.bet_type,
         method: g.method,
-        structure: g.structure || null,
+        // 2026-09-30: 一部の買い目だけを購入する場合、structure(入力構造)は実際の買い目と
+        // 一致しない(履歴の要約が「全点買った」ように見える)ため送らない。
+        structure: checkedCombos.length === g.combos.length ? (g.structure || null) : null,
         combos: checkedCombos.map((c) => ({ selections: c.selections, amount: c.amount })),
       });
     }
@@ -434,7 +473,8 @@
       }
       purchasedPoints += result.count || 0;
       const remaining = g.combos.filter((c) => !c.checked);
-      if (remaining.length) nextCart.push({ ...g, combos: remaining });
+      // 残りは元の入力構造の一部でしかないため structure を外す(上記参照)。
+      if (remaining.length) nextCart.push({ ...g, structure: null, combos: remaining });
     }
 
     saveCart(nextCart);

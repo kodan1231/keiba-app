@@ -13,7 +13,12 @@
 // buy-purchase-modal.js より前に cart.js を読み込む必要がある。
 
 let selectedRace = null;
-let comboAmounts = new Map();
+// 買い目欄で個別にチェックを外した組み合わせ(JSON.stringify(combo) のキー)。
+// 2026-09-30: 金額入力はかご側へ移したため、以前の組み合わせごとの金額Map
+// (comboAmounts)は廃止し、「かごへ入れない買い目」だけを持つ形にした。
+let excludedComboKeys = new Set();
+// 買い目欄の組み合わせ一覧を展開しているか(初期は要約のみ表示)。
+let previewExpanded = false;
 let predictionMarks = new Map();
 
 const state = {
@@ -51,7 +56,6 @@ const pickerArea = document.getElementById("picker-area");
 const pickerTitle = document.getElementById("picker-dialog-title");
 const previewSection = document.getElementById("preview-section");
 const previewArea = document.getElementById("preview-area");
-const amountInput = document.getElementById("amount-input");
 const submitBtn = document.getElementById("submit-btn");
 const submitMessage = document.getElementById("submit-message");
 
@@ -74,7 +78,8 @@ function resetState() {
   state.axisCount = 1;
   state.multi = false;
   state.formationSlots = [];
-  comboAmounts = new Map();
+  excludedComboKeys = new Set();
+  previewExpanded = false;
 }
 
 // 出走馬に枠番・馬番が未確定(null)の馬が1頭でも含まれていれば true。
@@ -213,7 +218,7 @@ function resetBetSelections() {
   state.axisCount = 1;
   state.multi = false;
   state.formationSlots = Array.from({length:n}, () => new Set());
-  comboAmounts = new Map();
+  excludedComboKeys = new Set();
 }
 
 function methodsFor() {
@@ -254,7 +259,7 @@ function resetMethodSelections() {
   state.nagashiFixedSlot = 0;
   state.partnerSet = new Set();
   state.formationSlots = Array.from({length:n}, () => new Set());
-  comboAmounts = new Map();
+  excludedComboKeys = new Set();
 }
 
 function renderMethodOptions() {
@@ -720,6 +725,31 @@ function currentCombos() {
   return [];
 }
 
+// 買い目欄の要約行。基本は describeBetStructure()(bettypes.js。かごと共用)だが、
+// 着順あり券種の流し(マルチOFF)は軸馬の着順が組み合わせを左右するため、
+// structure(軸を昇順ソートして持つ)ではなく state から着順ラベル付きで組み立てる。
+function previewSummaryLines(combos) {
+  const def = BET_TYPES[state.betType];
+  if (state.method === "nagashi" && def.ordered && !state.multi) {
+    const partners = [...state.partnerSet].filter(x => !state.axisSet.has(x)).sort((a, b) => a - b);
+    let axisLines;
+    if (state.axisCount === 2) {
+      const [l1, l2] = axisPositionLabels();
+      axisLines = [{ label: l1, value: String(state.axisOrder[0]) }, { label: l2, value: String(state.axisOrder[1]) }];
+    } else {
+      const slot = state.betType === "umatan" ? state.nagashiFixedSlot : 0;
+      axisLines = [{ label: `${slot + 1}着軸`, value: String([...state.axisSet][0]) }];
+    }
+    return [...axisLines, { label: "相手", value: partners.join(",") }];
+  }
+  return describeBetStructure(state.betType, buildCurrentStructure(), combos);
+}
+
+// 2026-09-30: netkeiba風に、買い目欄は初期表示を「要約(方式・馬番構成・点数)」のみとし、
+// 「組み合わせを表示」で展開した一覧から買い目を個別に外せる形にした。
+// 以前は全組み合わせを常時展開し、各行に金額入力欄を置いていたが、金額はかご側で
+// 設定・変更する方式に変更したためモーダルからは金額入力を廃止した
+// (docs/design/screens.md「購入画面」参照)。
 function renderPreview() {
   if (!selectedRace) return;
   const combos = currentCombos();
@@ -732,55 +762,88 @@ function renderPreview() {
     return;
   }
 
+  // 買い目の組み替えで消えた組み合わせの除外指定は捨てる
+  // (同じ組み合わせが後で復活したとき、外したまま残っていると気付きにくいため)。
+  const keys = new Set(combos.map(c => JSON.stringify(c)));
+  for (const k of [...excludedComboKeys]) if (!keys.has(k)) excludedComboKeys.delete(k);
+
   const map = Object.fromEntries(selectedRace.entries.map(e => [e.horse_number, e]));
   const def = BET_TYPES[state.betType];
-
-  combos.forEach(c => {
-    const key = JSON.stringify(c);
-    if (!comboAmounts.has(key)) comboAmounts.set(key, Number(amountInput.value) || 100);
-  });
-
-  const total = combos.reduce((sum,c) => sum + (comboAmounts.get(JSON.stringify(c)) || 0), 0);
+  const methodText = methodLabel(state.method) + (state.method === "nagashi" && state.multi ? "(マルチ)" : "");
+  const lines = previewSummaryLines(combos);
 
   previewArea.innerHTML = `
     <div class="preview-summary">
-      <b>${combos.length}点</b>
-      <b>合計 ${formatYen(total)}</b>
+      <div class="preview-summary-head">
+        <span class="bet-badge">${escapeHtml(BET_LABELS[state.betType])}</span>
+        <span class="method-badge">${escapeHtml(methodText)}</span>
+        <span class="preview-count" id="preview-count"></span>
+      </div>
+      ${lines.map(l => `
+        <div class="preview-summary-line">
+          <span class="preview-summary-label">${escapeHtml(l.label)}</span>
+          <span class="preview-summary-value">${escapeHtml(l.value)}</span>
+        </div>
+      `).join("")}
     </div>
-    <div class="preview-combo-list">
-      ${combos.map(c => {
-        const key = JSON.stringify(c);
-        return `
-          <div class="preview-combo-row">
-            <span>${state.betType === "wakuren"
-              ? c.map(w => `${w}枠`).join(" - ")
-              : c.map(h => `${h} ${escapeHtml(map[h]?.horse_name || "")}`).join(def.ordered ? " → " : " - ")}</span>
-            <input class="preview-combo-amount" data-key='${escapeAttr(key)}'
-              type="number" min="100" step="100" value="${comboAmounts.get(key)}">
-          </div>
-        `;
-      }).join("")}
-    </div>
+    <button type="button" class="ghost-btn preview-toggle" id="preview-toggle" aria-expanded="${previewExpanded}">
+      ${previewExpanded ? "▾ 組み合わせを閉じる" : "▸ 組み合わせを表示"}
+    </button>
+    ${previewExpanded ? `
+      <div class="preview-combo-tools">
+        <button type="button" class="ghost-btn" id="preview-check-all">すべて選択</button>
+        <button type="button" class="ghost-btn" id="preview-uncheck-all">すべて解除</button>
+      </div>
+      <div class="preview-combo-list">
+        ${combos.map(c => {
+          const key = JSON.stringify(c);
+          return `
+            <label class="preview-combo-row preview-combo-check-row">
+              <input type="checkbox" class="preview-combo-check" data-key='${escapeAttr(key)}' ${excludedComboKeys.has(key) ? "" : "checked"}>
+              <span class="preview-combo-label">${state.betType === "wakuren"
+                ? c.map(w => `${w}枠`).join(" - ")
+                : c.map(h => `${h} ${escapeHtml(map[h]?.horse_name || "")}`).join(def.ordered ? " → " : " - ")}</span>
+            </label>
+          `;
+        }).join("")}
+      </div>
+    ` : ""}
   `;
 
-  previewArea.querySelectorAll(".preview-combo-amount").forEach(input => {
+  document.getElementById("preview-toggle").onclick = () => {
+    previewExpanded = !previewExpanded;
+    renderPreview();
+  };
+  const setAll = (checked) => {
+    excludedComboKeys = checked ? new Set() : new Set(keys);
+    renderPreview();
+  };
+  const checkAllBtn = document.getElementById("preview-check-all");
+  if (checkAllBtn) checkAllBtn.onclick = () => setAll(true);
+  const uncheckAllBtn = document.getElementById("preview-uncheck-all");
+  if (uncheckAllBtn) uncheckAllBtn.onclick = () => setAll(false);
+
+  // 個別チェックの切り替えでは一覧を再描画しない(一覧内のスクロール位置を保つため)。
+  // 点数表示とボタンの活性だけを更新する。
+  previewArea.querySelectorAll(".preview-combo-check").forEach(input => {
     input.onchange = () => {
-      comboAmounts.set(input.dataset.key, Number(input.value) || 0);
-      renderPreview();
+      input.checked ? excludedComboKeys.delete(input.dataset.key) : excludedComboKeys.add(input.dataset.key);
+      updatePreviewCount(combos.length);
     };
   });
+  updatePreviewCount(combos.length);
 
   // 買い目を組み替えた場合、直前の「◯点を馬券かごへ追加しました」メッセージを
   // 引きずらないよう非表示に戻す(ボタンのテキストは常に固定なのでリセット不要)。
-  submitBtn.disabled = false;
   submitMessage.hidden = true;
 }
 
-document.getElementById("apply-amount-btn").onclick = () => {
-  const value = Number(amountInput.value) || 100;
-  currentCombos().forEach(c => comboAmounts.set(JSON.stringify(c), value));
-  renderPreview();
-};
+function updatePreviewCount(total) {
+  const selected = total - excludedComboKeys.size;
+  const el = document.getElementById("preview-count");
+  if (el) el.textContent = selected === total ? `${total}点` : `${selected}点(全${total}点中)`;
+  submitBtn.disabled = selected === 0;
+}
 
 // 購入方式(method)の入力構造をそのままJSONで返す(tickets.structureに保存する値)。
 // 2026-09-17追加: 保存済みのselections(実際の組み合わせ結果)からの逆算では、
@@ -812,8 +875,14 @@ function buildCurrentStructure() {
 // 変わった(実際の購入確定はカゴ画面側で行う)。この関数の役割自体は変わらず、
 // 引き続き選択状態から送信用ペイロードを組み立てるだけの責務に留める。
 // 組み合わせが1つも無い場合は null を返す。
+//
+// 2026-09-30: 買い目欄で個別に外した組み合わせは含めない。金額はここでは持たせず、
+// かご側(addToCart)で既定額を入れる。一部を外した場合は structure(入力構造)と
+// 実際の買い目が一致しなくなり、履歴の要約表示が「全点買った」ように見えるため
+// structure を null にする(履歴は実際の買い目からの推定表示にフォールバックする)。
 function buildCurrentPurchasePayload() {
-  const combos = currentCombos();
+  const allCombos = currentCombos();
+  const combos = allCombos.filter(c => !excludedComboKeys.has(JSON.stringify(c)));
   if (!combos.length) return null;
 
   const map = Object.fromEntries(selectedRace.entries.map(e => [e.horse_number, e]));
@@ -828,8 +897,7 @@ function buildCurrentPurchasePayload() {
         horse_name:e.horse_name || "",
         jockey:e.jockey || ""
       };
-    }),
-    amount:comboAmounts.get(JSON.stringify(c)) || 0
+    })
   }));
 
   return {
@@ -840,7 +908,7 @@ function buildCurrentPurchasePayload() {
     race_name:selectedRace.race_name,
     bet_type:state.betType,
     method:state.method,
-    structure:buildCurrentStructure(),
+    structure:combos.length === allCombos.length ? buildCurrentStructure() : null,
     combos:payloadCombos
   };
 }
@@ -857,11 +925,6 @@ function buildCurrentPurchasePayload() {
 submitBtn.onclick = () => {
   const purchasePayload = buildCurrentPurchasePayload();
   if (!purchasePayload) return;
-
-  if (purchasePayload.combos.some(x => !x.amount)) {
-    alert("金額を確認してください");
-    return;
-  }
 
   const count = purchasePayload.combos.length;
   // addToCart() は public/cart.js が公開するグローバル関数。カゴ配列(localStorage)へ
@@ -881,5 +944,5 @@ submitBtn.onclick = () => {
   // submitMessageを非表示に戻すため、確認メッセージは最後に表示する。
   submitMessage.hidden = false;
   submitMessage.className = "submit-message success";
-  submitMessage.textContent = `${count}点を馬券かごへ追加しました。`;
+  submitMessage.textContent = `${count}点を馬券かごへ追加しました(各${formatYen(CART_DEFAULT_AMOUNT)}。金額はかごで変更できます)。`;
 };
