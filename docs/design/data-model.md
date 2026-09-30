@@ -47,6 +47,11 @@
   // axis.length===1 && multi===true  → 「マルチ」
   // axis.length===2 && multi===false → 「軸2頭ながし」
   // axis.length===2 && multi===true  → 「軸2頭マルチ」
+  // 着順あり券種(馬単・三連単)のmulti===falseのみ、2026-10-01以降は軸馬を置いた着順を追加で持つ
+  // (axisは昇順ソート済みで着順を持たないため)。キーは着順(1始まり)、値は馬番:
+  { "axis": [5], "partners": [1, 2, 3], "multi": false, "axis_positions": { "2": 5 } }       // 三連単 2着流し
+  { "axis": [2, 7], "partners": [1, 4], "multi": false, "axis_positions": { "1": 7, "3": 2 } } // 三連単2頭軸 1・3着
+  // 履歴の券面表示(app.jsのticketMultiSelectionHtml())が軸/相手の列を着順どおりに並べるのに使う
 
   // method = "formation"
   { "slots": [[3, 5], [1, 2, 3, 4], [1, 2, 3, 4, 5, 6, 7]] }

@@ -445,6 +445,34 @@ function ticketMultiSelectionHtml(betType, group) {
     const n = def.n || axisValues.length + partnerValues.length;
     const partnerColCount = def.ordered ? Math.max(1, n - axisValues.length) : 1;
 
+    // 軸馬を置いた着順が保存されている場合(tickets.structure.axis_positions。着順あり券種の
+    // マルチOFF、2026-10-01以降の画面購入分)は、1着から順に「軸の着順なら軸馬、それ以外は
+    // 相手」の列を並べる(三連単2着流し=「相手→軸→相手」、2頭軸1・3着=「軸→相手→軸」等)。
+    // 無い場合(過去データ・CSV取込)は従来どおり「軸→相手」の並び。
+    const axisPositions = group[0] && group[0].structure && group[0].structure.axis_positions;
+    if (def.ordered && axisPositions && typeof axisPositions === "object") {
+      let axisLabelShown = false;
+      let partnerLabelShown = false;
+      const cols = Array.from({ length: n }, (_, i) => {
+        const horse = axisPositions[String(i + 1)];
+        if (horse !== undefined && horse !== null) {
+          const label = axisLabelShown ? " " : "(軸)";
+          axisLabelShown = true;
+          return `<div class="ticket-axis-col">
+            <span class="ticket-axis-label">${label}</span>
+            <div class="ticket-num-col">${ticketNumBoxHtml(horse)}</div>
+          </div>`;
+        }
+        const label = partnerLabelShown ? " " : "(相手)";
+        partnerLabelShown = true;
+        return `<div class="ticket-axis-col">
+          <span class="ticket-axis-label">${label}</span>
+          <div class="ticket-num-col">${partnerValues.map(ticketNumBoxHtml).join("")}</div>
+        </div>`;
+      });
+      return `<div class="ticket-axis-multi-row">${cols.join("")}</div>`;
+    }
+
     const axisCols = axisValues.map(
       (v, i) => `<div class="ticket-axis-col">
         <span class="ticket-axis-label">${i === 0 ? "(軸)" : " "}</span>

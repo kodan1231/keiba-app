@@ -294,6 +294,18 @@ function renderMethodOptions() {
     `;
   }
 
+  // 三連単1頭軸の軸の着順(2026-10-01追加。以前は1着固定のみで、2着流し・3着流しが
+  // 買えなかった)。マルチONは軸の着順を問わない(全着順を買う)ため出さない。
+  if (isSanrentan && state.axisCount === 1 && !state.multi) {
+    html += `
+      <div class="inline-options axis-placement-options">
+        ${[0, 1, 2].map(i =>
+          `<label><input type="radio" name="sanrentan-fixed-slot" value="${i}" ${state.nagashiFixedSlot===i?"checked":""}> ${i + 1}着流し</label>`
+        ).join("")}
+      </div>
+    `;
+  }
+
   if (isSanrentan && state.axisCount === 2) {
     html += `
       <div class="inline-options axis-placement-options">
@@ -332,17 +344,21 @@ function renderMethodOptions() {
       renderPicker();
     };
   });
-  methodOptions.querySelectorAll('input[name="umatan-fixed-slot"]').forEach(x => {
+  // 馬単・三連単1頭軸の軸の着順。列ラベル(「N着軸」)が変わるため馬選択ごと再描画する。
+  methodOptions.querySelectorAll('input[name="umatan-fixed-slot"], input[name="sanrentan-fixed-slot"]').forEach(x => {
     x.onchange = () => {
       state.nagashiFixedSlot = Number(x.value);
-      renderPreview();
+      renderPicker();
     };
   });
 
+  // マルチの切り替えで着順オプションの表示有無・列の並び(三連単2頭軸)・列ラベルが
+  // 変わるため、オプションと馬選択を再描画する。
   const mt = document.getElementById("multi-toggle");
   if (mt) mt.onchange = () => {
     state.multi = mt.checked;
-    renderPreview();
+    renderMethodOptions();
+    renderPicker();
   };
 }
 
@@ -485,6 +501,59 @@ function axisPositionLabels() {
   return ["1着軸", "2着軸"];
 }
 
+// 流しの馬選択の列定義。kind: "axis"(1頭軸のラジオ)/"pos1"・"pos2"(2頭軸の各軸のラジオ。
+// axisOrder[0]/[1]に対応)/"partner"(相手のチェックボックス)。
+//
+// 2026-10-01: 三連単2頭軸(マルチOFF)は、列を1着・2着・3着の着順どおりに並べ、
+// 軸に選んだ着順の列をラジオ、残りの着順の列を相手のチェックボックスにする
+// (例: 1・3着 → 「1着軸(ラジオ)/相手(チェック)/3着軸(ラジオ)」)。以前はどの着順を
+// 選んでも「左・中=軸のラジオ、右=相手」の並びで、画面上の列と着順が一致していなかった。
+// マルチONは軸の着順を問わない(全着順を買う)ため従来どおり「軸・軸・相手」の並び。
+// 着順あり券種(馬単・三連単)の1頭軸は「N着軸/相手」の2列ラベル付きにする(相手は軸以外の
+// 全着順に入るため、着順ごとに列を分けると同じチェックが2列並ぶだけになるので2列のまま)。
+// 着順なし券種の1頭軸はラベル無し2列(従来どおり)。
+function nagashiColumns() {
+  const def = BET_TYPES[state.betType];
+  if (state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
+    if (state.betType === "sanrentan" && !state.multi) {
+      const p = { "12": [0, 1], "13": [0, 2], "23": [1, 2] }[state.axisPlacement || "12"];
+      return [0, 1, 2].map(pos =>
+        pos === p[0] ? { kind: "pos1", label: `${pos + 1}着軸` }
+        : pos === p[1] ? { kind: "pos2", label: `${pos + 1}着軸` }
+        : { kind: "partner", label: "相手" });
+    }
+    const [l1, l2] = state.betType === "sanrentan" ? axisPositionLabels() : ["軸1", "軸2"];
+    return [{ kind: "pos1", label: l1 }, { kind: "pos2", label: l2 }, { kind: "partner", label: "相手" }];
+  }
+  if (def.ordered) {
+    const axisLabel = state.multi ? "軸" : `${state.nagashiFixedSlot + 1}着軸`;
+    return [{ kind: "axis", label: axisLabel }, { kind: "partner", label: "相手" }];
+  }
+  return [{ kind: "axis", label: "" }, { kind: "partner", label: "" }];
+}
+
+function nagashiControlHtml(col, e) {
+  const n = Number(e.horse_number);
+  const name = escapeHtml(e.horse_name || "馬");
+  const isPos1 = state.axisOrder[0] === n;
+  const isPos2 = state.axisOrder[1] === n;
+  const tag = col.label ? `<span class="axis2-check-tag">${col.label}</span>` : "";
+  let input;
+  if (col.kind === "pos1") {
+    input = `<input type="radio" name="axis-pos1" class="axis-pos1-radio" value="${n}" ${isPos1 ? "checked" : ""} ${isPos2 ? "disabled" : ""}>`;
+  } else if (col.kind === "pos2") {
+    input = `<input type="radio" name="axis-pos2" class="axis-pos2-radio" value="${n}" ${isPos2 ? "checked" : ""} ${isPos1 ? "disabled" : ""}>`;
+  } else if (col.kind === "axis") {
+    input = `<input type="radio" name="axis-one" class="axis-radio" value="${n}" ${state.axisSet.has(n) ? "checked" : ""}>`;
+  } else {
+    // 2頭軸は軸に選んだ馬を相手にできない(1頭軸は従来どおり、相手から軸馬を除いて組み合わせる)。
+    const disabled = state.axisCount === 2 && (isPos1 || isPos2);
+    input = `<input type="checkbox" class="partner-check" value="${n}" ${state.partnerSet.has(n) ? "checked" : ""} ${disabled ? "disabled" : ""}>`;
+  }
+  if (!col.label) return `<label class="control-label">${input}</label>`;
+  return `<label class="check-inline" aria-label="${name}を${col.label}にする">${tag}${input}</label>`;
+}
+
 function renderPicker() {
   if (!selectedRace) return;
   pickerSection.hidden = false;
@@ -521,47 +590,10 @@ function renderPicker() {
       `<label class="check-inline"><input type="checkbox" class="horse-check" value="${e.horse_number}" ${state.boxSet.has(e.horse_number)?"checked":""} aria-label="${escapeHtml(e.horse_name||"馬")}を選択"></label>`
     )).join("");
   } else if (state.method === "nagashi") {
-    if (state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan")) {
-      // netkeiba実物と同じ「軸1」「軸2」「相手」(三連単は着順ラベル「1着軸」「2着軸」等)の
-      // 3列(2026-09-21)。当初は三連複・三連単とも「軸」(最大2頭までのチェック)1列+
-      // 「相手」の2列で実装したが、次の2点でnetkeibaの実物と異なっていた。
-      //   - 三連単はマルチOFFだと軸馬をどちらの着順に置くかで舟券そのものが変わるため、
-      //     順序を持たない1列ではクリックした順序に頼らざるを得ず着順を確定できなかった
-      //   - 三連複は着順の概念が無く軸1/軸2の区別は組み合わせ上は不要だが、netkeiba実物
-      //     でも「軸1」「軸2」の2列に分かれている(見た目の一貫性のための仕様と判断し合わせた)
-      // そのため2頭軸は常にこの3列とし、三連単のみ列見出しをaxisPlacementに応じた
-      // 着順ラベルにする(axisPositionLabels())。
-      const [label1, label2] = state.betType === "sanrentan" ? axisPositionLabels() : ["軸1", "軸2"];
-      html = entries.map(e => {
-        const n = Number(e.horse_number);
-        const isPos1 = state.axisOrder[0] === n;
-        const isPos2 = state.axisOrder[1] === n;
-        const isAxis = isPos1 || isPos2;
-        const isPartner = state.partnerSet.has(n);
-        return horseRow(e, `
-          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を${label1}にする">
-            <span class="axis2-check-tag">${label1}</span>
-            <input type="radio" name="axis-pos1" class="axis-pos1-radio" value="${n}" ${isPos1 ? "checked" : ""} ${isPos2 ? "disabled" : ""}>
-          </label>
-          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を${label2}にする">
-            <span class="axis2-check-tag">${label2}</span>
-            <input type="radio" name="axis-pos2" class="axis-pos2-radio" value="${n}" ${isPos2 ? "checked" : ""} ${isPos1 ? "disabled" : ""}>
-          </label>
-          <label class="check-inline" aria-label="${escapeHtml(e.horse_name||"馬")}を相手にする">
-            <span class="axis2-check-tag">相手</span>
-            <input type="checkbox" class="partner-check" value="${n}" ${isPartner ? "checked" : ""} ${isAxis ? "disabled" : ""}>
-          </label>
-        `, "axis2-row axis2-row-3col");
-      }).join("");
-    } else {
-      html = entries.map(e => {
-        const axisControl = `<input type="radio" name="axis-one" class="axis-radio" value="${e.horse_number}" ${state.axisSet.has(e.horse_number)?"checked":""}>`;
-        const partner = `<input type="checkbox" class="partner-check" value="${e.horse_number}" ${state.partnerSet.has(e.horse_number)?"checked":""}>`;
-        return horseRow(e,
-          `<label class="control-label">${axisControl}</label><label class="control-label">${partner}</label>`
-        );
-      }).join("");
-    }
+    // 列の並び・ラジオ/チェックの別・ラベルは nagashiColumns() に集約(2026-10-01)。
+    const cols = nagashiColumns();
+    const rowClass = cols.length === 3 ? "axis2-row axis2-row-3col" : cols[0].label ? "axis2-row" : "";
+    html = entries.map(e => horseRow(e, cols.map(col => nagashiControlHtml(col, e)).join(""), rowClass)).join("");
   } else {
     html = entries.map(e => horseRow(e,
       Array.from({length:BET_TYPES[state.betType].n}, (_,i) =>
@@ -570,11 +602,12 @@ function renderPicker() {
     )).join("");
   }
 
-  const isAxis2Picker = state.method === "nagashi" && state.axisCount === 2 && (state.betType === "sanrenpuku" || state.betType === "sanrentan");
   let axis2HeadColsHtml = "";
-  if (isAxis2Picker) {
-    const [label1, label2] = state.betType === "sanrentan" ? axisPositionLabels() : ["軸1", "軸2"];
-    axis2HeadColsHtml = `<span class="axis2-head-cols"><span>${label1}</span><span>${label2}</span><span>相手</span></span>`;
+  if (state.method === "nagashi") {
+    const cols = nagashiColumns();
+    if (cols[0].label) {
+      axis2HeadColsHtml = `<span class="axis2-head-cols">${cols.map(c => `<span>${c.label}</span>`).join("")}</span>`;
+    }
   }
   pickerArea.innerHTML = `
     <div class="bet-horse-table-head">
@@ -697,8 +730,9 @@ function currentCombos() {
 
       if (def.ordered) {
         if (state.multi) return generateAxis1Multi(axis[0], partners);
-        // 馬単流しは1着固定/2着固定を選択。三連単1頭軸は従来どおり1着固定。
-        const fixedSlot = state.betType === "umatan" ? state.nagashiFixedSlot : 0;
+        // 馬単流しは1着固定/2着固定、三連単1頭軸は1着/2着/3着流しを選択
+        // (2026-10-01以前は三連単1頭軸は1着固定のみだった)。
+        const fixedSlot = state.nagashiFixedSlot;
         return generateCombinations(slotsForNagashiOrdered(def.n, axis[0], fixedSlot, partners), true);
       }
 
@@ -740,7 +774,7 @@ function previewSummaryLines(combos) {
       const [l1, l2] = axisPositionLabels();
       axisLines = [{ label: l1, value: String(state.axisOrder[0]) }, { label: l2, value: String(state.axisOrder[1]) }];
     } else {
-      const slot = state.betType === "umatan" ? state.nagashiFixedSlot : 0;
+      const slot = state.nagashiFixedSlot;
       axisLines = [{ label: `${slot + 1}着軸`, value: String([...state.axisSet][0]) }];
     }
     return [...axisLines, { label: "相手", value: partners.join(",") }];
@@ -870,7 +904,19 @@ function buildCurrentStructure() {
   if (state.method === "nagashi") {
     // 枠連は軸と同じ枠を相手にできる(同枠のゾロ目)ため、軸を相手から除外しない。
     const partners = [...state.partnerSet].filter(x => state.betType === "wakuren" || !state.axisSet.has(x));
-    return { axis: sortNums([...state.axisSet]), partners: sortNums(partners), multi: !!state.multi };
+    const structure = { axis: sortNums([...state.axisSet]), partners: sortNums(partners), multi: !!state.multi };
+    // 着順あり券種(馬単・三連単)のマルチOFFは、軸馬を置いた着順を保存する(2026-10-01〜)。
+    // axis は昇順ソート済みで着順を持たないため、{ 着順(1始まり): 馬番 } の形で別に持つ。
+    // 三連単1頭軸の2着流し・3着流し追加に伴い、履歴で正しい着順を表示するための情報。
+    if (BET_TYPES[state.betType].ordered && !state.multi) {
+      if (state.axisCount === 2) {
+        const p = { "12": [1, 2], "13": [1, 3], "23": [2, 3] }[state.axisPlacement || "12"];
+        structure.axis_positions = { [p[0]]: state.axisOrder[0], [p[1]]: state.axisOrder[1] };
+      } else {
+        structure.axis_positions = { [state.nagashiFixedSlot + 1]: [...state.axisSet][0] };
+      }
+    }
+    return structure;
   }
   return null;
 }
