@@ -441,9 +441,13 @@ textarea { resize: vertical; }
    自動ズーム自体を起こさない。個別に小さい font-size を指定している欄も多いため !important で
    上書きする。viewport の maximum-scale=1 で止める方法はピンチズームまで殺すため採らない
    (prediction.html のみ従来から maximum-scale=1.0 を指定している)。 */
+/* 2026-10-01: 予想登録画面ヘッダー1行目の日付・競馬場・R番号セレクト(.prediction-select)は
+   対象外にする。16px化で幅が増え、iPhone SE3で「確定済」ボタンが2行目へ折り返したため
+   (このセレクトは430px以下で12pxに詰めて1行に収める前提。自動ズームは全画面の
+   viewport maximum-scale=1.0 で抑止しているのでfont-sizeに頼らなくてよい)。 */
 @media (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-  select,
+  select:not(.prediction-select),
   textarea {
     font-size: 16px !important;
   }
@@ -2728,7 +2732,11 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
      ヘッダー1行目に収まるよう、幅・余白・フォントを詰める。
      レース名・頭数・条件バッジ(牝/H)は2行目(.prediction-race-meta)。 */
   .prediction-race-header { padding:10px 10px; }
-  .prediction-race-title { gap:4px; }
+  /* ボタン文言(投票/確定済/購入不可)の長さで折り返さないよう1行固定にし、
+     はみ出す場合はセレクト側を縮める(2026-10-01) */
+  .prediction-race-title { gap:4px; flex-wrap:nowrap; }
+  .prediction-race-title .prediction-select { flex:0 1 auto; }
+  .prediction-race-title .stamp-btn { flex:none; }
   .prediction-select {
     font-size:12px;
     padding:4px 3px;
