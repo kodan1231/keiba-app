@@ -794,7 +794,7 @@ function renderPreview() {
         <button type="button" class="ghost-btn" id="preview-check-all">すべて選択</button>
         <button type="button" class="ghost-btn" id="preview-uncheck-all">すべて解除</button>
       </div>
-      <div class="preview-combo-list">
+      <div class="preview-combo-list preview-combo-check-list">
         ${combos.map(c => {
           const key = JSON.stringify(c);
           return `
