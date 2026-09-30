@@ -18,6 +18,10 @@ function validateGroup(g) {
   if (!VALID_BET_TYPES.includes(g.bet_type)) return "馬券種類が不正です";
   if (g.method && !VALID_METHODS.includes(g.method)) return "購入方式が不正です";
   if (g.combos.some((c) => !c.amount || !Array.isArray(c.selections))) return "組み合わせごとの金額が不正です";
+  // 実際の馬券と同じく100円単位のみ(2026-09-30。かご側でも同じ検証をしている)。
+  if (g.combos.some((c) => !Number.isInteger(Number(c.amount)) || Number(c.amount) < 100 || Number(c.amount) % 100 !== 0)) {
+    return "金額は100円単位で指定してください";
+  }
   return null;
 }
 

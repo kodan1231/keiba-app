@@ -73,6 +73,14 @@
   const CART_DEFAULT_AMOUNT = 100;
   window.CART_DEFAULT_AMOUNT = CART_DEFAULT_AMOUNT;
 
+  // 購入金額は実際の馬券と同じく100円単位のみ(10円・1円単位は不可)。
+  // サーバー側(functions/api/tickets/bulk.js)でも同じ検証をしている。
+  function isValidAmount(value) {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 100 && n % 100 === 0;
+  }
+  const INVALID_AMOUNT_MESSAGE = "金額は100円単位(100円以上)で入力してください。";
+
   // ---------- 公開関数: かごへの追加(購入モーダル側から呼ばれる) ----------
   function addToCart(payload) {
     const cart = loadCart();
@@ -154,21 +162,29 @@
       .cart-empty { text-align: center; color: var(--ink-soft, #55524a); padding: 40px 20px; }
       .cart-group { border: 1px solid var(--rule-strong, #1c1b18); background: #fff; margin-bottom: 10px; }
       .cart-group-head {
-        display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
+        display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; cursor: pointer;
         flex-wrap: wrap;
       }
       .cart-group-head:hover { background: rgba(28,27,24,0.04); }
-      .cart-group-money { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 13px; }
+      /* グループ小計は見出し直下の「1点あたり…(合計◯円)」に表示するため、見出し行には置かない */
+      .cart-group-head .cart-delete-group { margin-left: auto; }
       .cart-group-sub {
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        padding: 0 12px 10px 36px; font-size: 13px;
+        display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap;
+        padding: 0 12px 8px 36px; font-size: 13px;
       }
-      .cart-group-summary { flex: 1; min-width: 160px; }
+      .cart-group-summary { flex: 1; min-width: 140px; }
       .cart-summary-line { display: flex; gap: 8px; }
       .cart-summary-label { min-width: 3.5em; color: var(--ink-soft, #55524a); }
       .cart-summary-value { font-family: var(--font-mono, monospace); font-weight: 700; word-break: break-all; }
-      .cart-unit-amount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-      .cart-unit-amount input { width: 90px; font-family: var(--font-mono, monospace); }
+      /* 全体の label{flex-direction:column} を打ち消し、「1点あたり[ ]円(合計◯円)」を1行にする */
+      .cart-unit-amount {
+        display: inline-flex; flex-direction: row; align-items: center; gap: 6px;
+        white-space: nowrap; font-size: 13px; color: var(--ink, #1c1b18); margin-left: auto;
+      }
+      .cart-unit-amount input {
+        width: 84px; padding: 4px 6px; font-family: var(--font-mono, monospace); text-align: right;
+      }
+      .cart-unit-total { font-family: var(--font-mono, monospace); color: var(--ink-soft, #55524a); }
       .cart-group-body { border-top: 1px dashed var(--rule, #c9c5b8); padding: 10px 12px; }
       .cart-group-body[hidden] { display: none; }
       .cart-combo-row {
@@ -286,7 +302,6 @@
           <span class="bet-badge">${escapeHtml(betTypeLabel(g.bet_type))}</span>
           <span class="method-badge">${escapeHtml(methodText)}</span>
           <span>${checkedN === g.combos.length ? `${g.combos.length}点` : `${checkedN}/${g.combos.length}点`}</span>
-          <span class="cart-group-money">${formatYen(subtotal)}</span>
           <button type="button" class="icon-btn delete cart-delete-group" data-key="${g.groupKey}" title="削除">×</button>
         </div>
         <div class="cart-group-sub">
@@ -301,6 +316,7 @@
           <label class="cart-unit-amount">1点あたり
             <input type="number" min="100" step="100" class="cart-group-amount" data-key="${g.groupKey}"
               value="${unitAmount !== null ? unitAmount : ""}" placeholder="${unitAmount !== null ? "" : "個別設定"}" />円
+            <span class="cart-unit-total">(合計${formatYen(subtotal)})</span>
           </label>
         </div>
         <div class="cart-group-body" ${expanded ? "" : "hidden"}>
@@ -371,10 +387,11 @@
     body.querySelectorAll(".cart-combo-amount").forEach((input) => {
       input.addEventListener("click", (e) => e.stopPropagation());
       input.addEventListener("change", () => {
+        if (!isValidAmount(input.value)) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
         const cart = loadCart();
         const g = findGroup(cart, input.dataset.key);
         if (!g) return;
-        g.combos[Number(input.dataset.ci)].amount = Number(input.value) || 0;
+        g.combos[Number(input.dataset.ci)].amount = Number(input.value);
         saveCart(cart);
         renderBadge();
         renderPanel();
@@ -382,11 +399,13 @@
     });
 
     // グループ見出し直下の「1点あたり」欄。入力確定(change)でグループ内の全買い目
-    // (未チェック分を含む)へ反映する。空欄・0円の確定は反映せず元の表示に戻す。
+    // (未チェック分を含む)へ反映する。空欄の確定は反映せず元の表示に戻す。
+    // 100円単位でない値は警告して元に戻す。
     body.querySelectorAll(".cart-group-amount").forEach((input) => {
       input.addEventListener("change", () => {
-        const value = Number(input.value) || 0;
-        if (value <= 0) { renderPanel(); return; }
+        if (input.value.trim() === "") { renderPanel(); return; }
+        if (!isValidAmount(input.value)) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
+        const value = Number(input.value);
         const cart = loadCart();
         const g = findGroup(cart, input.dataset.key);
         if (!g) return;
@@ -406,8 +425,8 @@
     for (const g of cart) {
       const checkedCombos = g.combos.filter((c) => c.checked);
       if (!checkedCombos.length) continue;
-      if (checkedCombos.some((c) => !c.amount)) {
-        alert("金額が未入力(または0円)の買い目があります。確認してください。");
+      if (checkedCombos.some((c) => !isValidAmount(c.amount))) {
+        alert("金額が100円単位になっていない(または未入力の)買い目があります。確認してください。");
         return;
       }
       groups.push({
