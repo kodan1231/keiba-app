@@ -139,6 +139,17 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: var(--hanko);
   border: 1px solid var(--hanko);
 }
+/* 購入不可(予想登録画面の「投票」ボタン。枠番・馬番未確定時。2026-09-30〜): グレーで押せない */
+.stamp-btn.is-unavailable,
+.stamp-btn.is-unavailable:hover,
+.stamp-btn.is-unavailable:active {
+  background: #d9d7d0;
+  color: #77746b;
+  border: 1px solid #bdbab1;
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
 
 .ghost-btn {
   background: transparent;
@@ -816,6 +827,7 @@ textarea { resize: vertical; }
 
 .submit-message { margin-top: 12px; font-size: 13px; }
 .submit-message.success { color: var(--win); }
+.submit-message-cart-btn { margin-left: 8px; padding: 4px 12px; font-size: 12.5px; }
 .submit-message.error { color: var(--lose); }
 
 /* ---------- レース管理ページ ---------- */
@@ -2108,6 +2120,8 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   border-bottom: 1px solid var(--rule);
   background: var(--paper-raised);
 }
+/* 見出し右上の「馬券かご」ボタン＋×(2026-09-30〜) */
+.purchase-dialog-head-actions { display: flex; align-items: center; gap: 12px; flex: none; }
 .purchase-kicker, .panel-eyebrow {
   margin: 0 0 4px;
   font-family: var(--font-mono);

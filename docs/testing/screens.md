@@ -20,7 +20,7 @@ Cloudflare Pagesの標準挙動(「/」にはindex.htmlを返す)がそのまま
   表示され、購入履歴画面に正しく遷移すること
 - ヘッダーの「馬券購入」ナビリンクをクリックすると`index.html`が表示され、アドレスバーが
   `/buy`のような意図しないURLにならないこと
-- `prediction.html`の「このレースの馬券を購入」ボタンから`index.html?race=ID`へ遷移し、
+- `prediction.html`の「投票」ボタンから`index.html?race=ID`へ遷移し、
   該当レースの購入モーダルが直接開くこと
 - `stats.html`・`races.html`・`admin.html`・`history.html`へURLを直接指定してアクセスした
   場合も、従来通りそれぞれの画面がそのまま表示されること

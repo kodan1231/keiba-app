@@ -271,19 +271,26 @@ async function selectRace() {
   // よう修正した(public/utils.js参照)。
   const settled = !!selectedRace.finish_order || hasSettledPayoutRates(selectedRace.payouts);
   // 出走馬一覧PDFインポート(枠番なし)対応により、枠番・馬番が未確定のレースが存在しうる。
-  // 未確定の間は buy.js 側で購入自体をブロックするため、ここでもボタンの見た目を変える
-  // (クリック自体はできる。buy.js側の案内バナーで説明する)。
+  // 未確定の間は購入できない(購入モーダル側〈buy-purchase-modal.js〉でも、URL直打ち等に
+  // 備えて案内を出して購入UIをブロックしている)。
   const hasUnconfirmedNumbers = (selectedRace.entries || []).some((e) => e.horse_number === null || e.horse_number === undefined);
+  // 2026-09-30: 購入不可はグレー(is-unavailable)にし、購入画面へ遷移させない
+  // (以前は確定済と同じ色で、遷移先の購入モーダルで案内を出して購入をブロックしていた)。
+  // <a>のためhrefを外し、aria-disabledとクリック抑止で押せないことを明示する。
   if (hasUnconfirmedNumbers) {
-    buyBtn.textContent = "枠番・馬番未確定(購入不可)";
-    buyBtn.classList.add("is-settled");
+    buyBtn.textContent = "購入不可";
+    buyBtn.classList.remove("is-settled");
+    buyBtn.classList.add("is-unavailable");
+    buyBtn.removeAttribute("href");
+    buyBtn.setAttribute("aria-disabled", "true");
+    buyBtn.onclick = (e) => e.preventDefault();
     buyBtn.title = "枠番・馬番が確定するまで購入できません";
   } else if (settled) {
-    buyBtn.textContent = "結果確定済(購入する)";
+    buyBtn.textContent = "確定済";
     buyBtn.classList.add("is-settled");
     buyBtn.title = "このレースは結果確定済みですが、購入履歴の登録は引き続き行えます";
   } else {
-    buyBtn.textContent = "このレースの馬券を購入";
+    buyBtn.textContent = "投票";
     buyBtn.classList.remove("is-settled");
     buyBtn.removeAttribute("title");
   }
@@ -333,7 +340,7 @@ function renderRaceHeader() {
   // ヘッダーは2行構成。
   //  1行目: 日付・競馬場名・レース番号(いずれもセレクト。ページ遷移なしで別レースへ
   //         切り替え。日付・競馬場変更時は現在のR番号をできるだけ維持=switchToRaceKeeping)
-  //         + 「このレースの馬券を購入」ボタン(右寄せ)
+  //         + 「投票」ボタン(右寄せ。旧「このレースの馬券を購入」)
   //  2行目: レース名・勝負レーストグル・コース情報(芝/ダート+距離)・頭数・
   //         条件バッジ(牝馬限定なら「牝」・ハンデ戦なら「H」)
   // 牝馬限定は class_flags の生テキストに「牝」を含むか、ハンデ戦は weight_type
@@ -357,7 +364,7 @@ function renderRaceHeader() {
       <select id="prediction-racenum-select" class="prediction-select" aria-label="レース番号を選択">
         ${racesForTrack.map(r => `<option value="${r.id}" ${Number(r.id) === Number(selectedRace.id) ? "selected" : ""}>${r.race_number}R</option>`).join("")}
       </select>
-      <a id="buy-race-btn" class="stamp-btn" href="#">このレースの馬券を購入</a>
+      <a id="buy-race-btn" class="stamp-btn" href="#">投票</a>
     </div>
     <div class="prediction-race-meta">
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}

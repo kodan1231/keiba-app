@@ -81,6 +81,26 @@
   }
   const INVALID_AMOUNT_MESSAGE = "金額は100円単位(100円以上)で入力してください。";
 
+  // 金額入力欄(2026-09-30〜): ユーザーが動かせるのは百の位以上だけにし、十の位・一の位は
+  // 入力欄の後ろに「00円」として固定表示する(入力欄の値 = 金額 / 100)。
+  function hundredsInputHtml(className, dataAttrs, amount, placeholder) {
+    const value = amount === null || amount === undefined ? "" : Number(amount) / 100;
+    return `<span class="cart-yen-input"><input type="number" min="1" step="1" inputmode="numeric"
+      class="${className}" ${dataAttrs} value="${value}" placeholder="${placeholder || ""}"
+      /><span class="cart-yen-suffix">00円</span></span>`;
+  }
+  // 入力欄の値(百の位以上)→金額。1以上の整数でなければ null。
+  function amountFromHundredsInput(input) {
+    const n = Number(input.value);
+    return input.value.trim() !== "" && Number.isInteger(n) && n >= 1 ? n * 100 : null;
+  }
+  // 小数点・指数・符号は打てないようにする(貼り付け等はchange時の検証で弾く)。
+  function blockNonDigitKeys(input) {
+    input.addEventListener("keydown", (e) => {
+      if ([".", ",", "e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+    });
+  }
+
   // ---------- 公開関数: かごへの追加(購入モーダル側から呼ばれる) ----------
   function addToCart(payload) {
     const cart = loadCart();
@@ -106,9 +126,11 @@
   window.addToCart = addToCart;
 
   // ---------- ヘッダーバッジ ----------
+  // 2026-09-30: 購入モーダル見出しにも「かご」ボタン(バッジ付き)を置いたため、
+  // #cart-badge-count だけでなく .cart-badge-count を持つ全要素を更新する。
   function renderBadge() {
-    const countEl = document.getElementById("cart-badge-count");
-    if (!countEl) return;
+    const countEls = document.querySelectorAll(".cart-badge-count");
+    if (!countEls.length) return;
     // 2026-09-07修正: バッジ用CSS(.cart-badge-count の絶対配置スタイル)は、以前は
     // カゴパネルを一度開いたとき(ensureOverlay()内)にしか注入されていなかった。
     // そのため、パネルを開く前に「かごへ追加」しただけの状態では、数字が丸バッジ
@@ -118,8 +140,10 @@
     // 済ませておく(injectStyles()は二重注入を自身でガードしているので安全)。
     injectStyles();
     const count = checkedCount(loadCart());
-    countEl.textContent = String(count);
-    countEl.hidden = count === 0;
+    countEls.forEach((el) => {
+      el.textContent = String(count);
+      el.hidden = count === 0;
+    });
   }
 
   // ---------- スタイル注入(style.cssは編集せず、このファイル内で完結させる) ----------
@@ -181,9 +205,11 @@
         display: inline-flex; flex-direction: row; align-items: center; gap: 6px;
         white-space: nowrap; font-size: 13px; color: var(--ink, #1c1b18); margin-left: auto;
       }
-      .cart-unit-amount input {
-        width: 84px; padding: 4px 6px; font-family: var(--font-mono, monospace); text-align: right;
+      .cart-yen-input { display: inline-flex; align-items: center; gap: 1px; font-family: var(--font-mono, monospace); }
+      .cart-yen-input input {
+        width: 64px; padding: 4px 6px; font-family: var(--font-mono, monospace); text-align: right;
       }
+      .cart-yen-suffix { font-family: var(--font-mono, monospace); }
       .cart-unit-total { font-family: var(--font-mono, monospace); color: var(--ink-soft, #55524a); }
       .cart-group-body { border-top: 1px dashed var(--rule, #c9c5b8); padding: 10px 12px; }
       .cart-group-body[hidden] { display: none; }
@@ -193,7 +219,6 @@
       }
       .cart-combo-row:last-child { border-bottom: none; }
       .cart-combo-label { flex: 1; font-family: var(--font-mono, monospace); }
-      .cart-combo-amount { width: 90px; font-family: var(--font-mono, monospace); }
       .cart-panel-foot {
         display: flex; align-items: center; gap: 10px; padding: 12px 16px;
         border-top: 1px solid var(--rule-strong, #1c1b18); background: var(--paper-raised, #f7f6f0);
@@ -254,10 +279,16 @@
     overlayEl.hidden = false;
     document.body.classList.add("modal-open");
   }
+  // 購入モーダル(buy-purchase-modal.js)の「かご」ボタンから開くために公開する。
+  window.openCart = openPanel;
+  // 購入モーダルのESC処理が、かごが上に開いているときは自分を閉じないよう判定に使う。
+  window.isCartOpen = () => !!overlayEl && !overlayEl.hidden;
 
   function closePanel() {
     if (overlayEl) overlayEl.hidden = true;
-    document.body.classList.remove("modal-open");
+    // 購入モーダルの上に開いていた場合は、下の購入モーダル用のスクロール固定を残す。
+    const purchaseModal = document.getElementById("purchase-modal");
+    if (!purchaseModal || purchaseModal.hidden) document.body.classList.remove("modal-open");
   }
 
   // ---------- パネル描画 ----------
@@ -314,8 +345,7 @@
             `).join("")}
           </div>
           <label class="cart-unit-amount">1点あたり
-            <input type="number" min="100" step="100" class="cart-group-amount" data-key="${g.groupKey}"
-              value="${unitAmount !== null ? unitAmount : ""}" placeholder="${unitAmount !== null ? "" : "個別設定"}" />円
+            ${hundredsInputHtml("cart-group-amount", `data-key="${g.groupKey}"`, unitAmount, unitAmount !== null ? "" : "個別")}
             <span class="cart-unit-total">(合計${formatYen(subtotal)})</span>
           </label>
         </div>
@@ -324,7 +354,7 @@
             <div class="cart-combo-row">
               <input type="checkbox" class="cart-combo-check" data-key="${g.groupKey}" data-ci="${ci}" ${c.checked ? "checked" : ""} />
               <span class="cart-combo-label">${escapeHtml(formatSelections(g.bet_type, c.selections))}</span>
-              <input type="number" min="100" step="100" class="cart-combo-amount" data-key="${g.groupKey}" data-ci="${ci}" value="${c.amount}" />
+              ${hundredsInputHtml("cart-combo-amount", `data-key="${g.groupKey}" data-ci="${ci}"`, c.amount)}
             </div>
           `).join("")}
         </div>
@@ -386,12 +416,14 @@
 
     body.querySelectorAll(".cart-combo-amount").forEach((input) => {
       input.addEventListener("click", (e) => e.stopPropagation());
+      blockNonDigitKeys(input);
       input.addEventListener("change", () => {
-        if (!isValidAmount(input.value)) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
+        const amount = amountFromHundredsInput(input);
+        if (amount === null) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
         const cart = loadCart();
         const g = findGroup(cart, input.dataset.key);
         if (!g) return;
-        g.combos[Number(input.dataset.ci)].amount = Number(input.value);
+        g.combos[Number(input.dataset.ci)].amount = amount;
         saveCart(cart);
         renderBadge();
         renderPanel();
@@ -402,10 +434,11 @@
     // (未チェック分を含む)へ反映する。空欄の確定は反映せず元の表示に戻す。
     // 100円単位でない値は警告して元に戻す。
     body.querySelectorAll(".cart-group-amount").forEach((input) => {
+      blockNonDigitKeys(input);
       input.addEventListener("change", () => {
         if (input.value.trim() === "") { renderPanel(); return; }
-        if (!isValidAmount(input.value)) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
-        const value = Number(input.value);
+        const value = amountFromHundredsInput(input);
+        if (value === null) { alert(INVALID_AMOUNT_MESSAGE); renderPanel(); return; }
         const cart = loadCart();
         const g = findGroup(cart, input.dataset.key);
         if (!g) return;

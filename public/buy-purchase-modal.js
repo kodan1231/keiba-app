@@ -158,7 +158,7 @@ function hideDownstream() {
 }
 
 function closePurchaseModal() {
-  // 予想登録画面の「このレースの馬券を購入」から来た場合(?from=prediction)は、
+  // 予想登録画面の「投票」ボタンから来た場合(?from=prediction)は、
   // 購入画面に留まらず元の予想登録画面へ戻す。それ以外は購入画面にとどまる。
   const params = new URLSearchParams(location.search);
   if (params.get("from") === "prediction" && params.get("race")) {
@@ -181,7 +181,19 @@ function closePurchaseModal() {
 }
 document.getElementById("close-purchase-modal").onclick = closePurchaseModal;
 // ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
-registerEscToClose(modal, closePurchaseModal);
+// 馬券かごを購入モーダルの上に開いている場合は、ESCでかごだけを閉じる(cart.js側の
+// ESC処理が閉じる)。こちらのリスナーが先に走るため、かごが開いていれば何もしない。
+registerEscToClose(modal, () => {
+  if (typeof isCartOpen === "function" && isCartOpen()) return;
+  closePurchaseModal();
+});
+
+// 2026-09-30: 購入モーダルは全画面を覆い共通ヘッダーの「かご」ボタンが押せないため、
+// モーダル見出しにも馬券かごを開くボタンを置く(かごはモーダルの上に重ねて開く)。
+function openCartFromPurchase() {
+  if (typeof openCart === "function") openCart();
+}
+document.getElementById("purchase-cart-btn").onclick = openCartFromPurchase;
 
 function renderBetTypes() {
   betButtons.innerHTML = Object.entries(BET_LABELS)
@@ -949,5 +961,7 @@ submitBtn.onclick = () => {
   // submitMessageを非表示に戻すため、確認メッセージは最後に表示する。
   submitMessage.hidden = false;
   submitMessage.className = "submit-message success";
-  submitMessage.textContent = `${count}点を馬券かごへ追加しました(各${formatYen(CART_DEFAULT_AMOUNT)}。金額はかごで変更できます)。`;
+  submitMessage.innerHTML = `${count}点を馬券かごへ追加しました(各${formatYen(CART_DEFAULT_AMOUNT)}。金額はかごで変更できます)。
+    <button type="button" class="ghost-btn submit-message-cart-btn" id="submit-message-cart-btn">馬券かごを見る</button>`;
+  document.getElementById("submit-message-cart-btn").onclick = openCartFromPurchase;
 };
