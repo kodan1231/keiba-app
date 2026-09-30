@@ -212,3 +212,58 @@ function registerEscToClose(modalEl, closeFn) {
     closeFn();
   });
 }
+
+// ---------- iOS Safari の入力欄フォーカス時の自動ズーム抑止(2026-10-01) ----------
+// iOS Safari は入力欄をタップすると画面全体を自動ズームする(iPhone SE3で馬券かごの
+// 「1点あたり」欄で発生)。viewport に maximum-scale=1.0 を常時付けると自動ズームは止まるが、
+// ホーム画面から開いた場合等にピンチズームまで効かなくなった(予想登録画面・馬券購入画面で
+// 指摘)ため、入力欄をタップした瞬間だけ maximum-scale=1.0 を付け、フォーカスが外れたら
+// 元の viewport に戻す。自動ズームはフォーカス時に判定されるため、focus より前に発火する
+// touchstart で付ける。ピンチで拡大した状態で入力欄をタップした場合は等倍に戻る。
+(function preventInputAutoZoom() {
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) return;
+  const baseContent = meta.getAttribute("content") || "width=device-width, initial-scale=1.0";
+  const lockedContent = `${baseContent}, maximum-scale=1.0`;
+  const FIELD_SELECTOR = 'input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]), select, textarea';
+  let restoreTimer = null;
+
+  // ラベル内の文字をタップして入力欄にフォーカスが移る場合も対象にする。
+  function fieldFromTarget(target) {
+    if (!(target instanceof Element)) return null;
+    const direct = target.closest(FIELD_SELECTOR);
+    if (direct) return direct;
+    const label = target.closest("label");
+    return label ? label.querySelector(FIELD_SELECTOR) : null;
+  }
+
+  document.addEventListener("touchstart", (e) => {
+    if (!fieldFromTarget(e.target)) return;
+    clearTimeout(restoreTimer);
+    meta.setAttribute("content", lockedContent);
+  }, { capture: true, passive: true });
+
+  function isFieldFocused() {
+    const el = document.activeElement;
+    return !!(el && el.matches && el.matches(FIELD_SELECTOR));
+  }
+
+  // 入力欄の上から始めたスクロール等でフォーカスが移らなかった場合は、固定したままに
+  // しない(ピンチズームが効かないままになるため)。
+  document.addEventListener("touchend", () => {
+    clearTimeout(restoreTimer);
+    restoreTimer = setTimeout(() => {
+      if (!isFieldFocused()) meta.setAttribute("content", baseContent);
+    }, 500);
+  }, { capture: true, passive: true });
+
+  document.addEventListener("focusout", (e) => {
+    if (!fieldFromTarget(e.target)) return;
+    // 別の入力欄へ続けてフォーカスが移る場合に一瞬解除されて自動ズームが走らないよう、
+    // 少し待ってから、どの入力欄にもフォーカスが無ければ戻す。
+    clearTimeout(restoreTimer);
+    restoreTimer = setTimeout(() => {
+      if (!isFieldFocused()) meta.setAttribute("content", baseContent);
+    }, 300);
+  }, true);
+})();
