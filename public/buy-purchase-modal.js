@@ -46,7 +46,6 @@ const modal = document.getElementById("purchase-modal");
 const titleEl = document.getElementById("purchase-dialog-title");
 const betButtons = document.getElementById("bet-type-buttons");
 const betTypeSection = document.getElementById("bet-type-section");
-const raceSettledBadge = document.getElementById("race-settled-badge");
 const raceUnconfirmedBlock = document.getElementById("race-unconfirmed-block");
 const methodSection = document.getElementById("method-section");
 const methodButtons = document.getElementById("method-buttons");
@@ -108,7 +107,6 @@ async function openPurchase(race) {
 
   if (unconfirmed) {
     // 枠番・馬番が未確定のため、購入UI自体を表示しない(案内のみ表示してブロックする)。
-    raceSettledBadge.hidden = true;
     betTypeSection.hidden = true;
     hideDownstream();
     return;
@@ -126,16 +124,9 @@ async function openPurchase(race) {
   } catch (_) {}
 
   // レースの着順 or 払戻が確定済みでも、購入履歴の登録し忘れに対応できるよう
-  // 購入自体は引き続きできるようにする。確定済みであることが分かるよう、
-  // 2026-08-19: 以前は案内バナーで表示していたが、レース名見出しの横に
-  // 「確定済」バッジを表示する方式に変更した(購入UIはブロックしない)。
-  // 2026-08-23修正: race.payoutsに「返還」情報(payouts.refunds。取消・除外・中止馬の
-  // 馬番/枠番の記録であり、実際の払戻レートではない)のみが入っている場合に、
-  // 誤って「確定済」と判定されてしまう不具合があった。実際の払戻レート(式別ごとの
-  // データ)が1件以上あるかどうかで判定する共通関数 hasSettledPayoutRates() を使う
-  // よう修正した(public/utils.js参照)。
-  const settled = !!race.finish_order || hasSettledPayoutRates(race.payouts);
-  raceSettledBadge.hidden = !settled;
+  // 購入自体は引き続きできるようにする(購入UIはブロックしない)。
+  // 2026-08-19〜2026-09-30はレース名見出しの横に「確定済」バッジを表示していた
+  // (それ以前は案内バナー)が、2026-10-01に不要として廃止した。
   betTypeSection.hidden = false;
 
   renderBetTypes();
