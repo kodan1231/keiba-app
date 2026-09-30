@@ -987,9 +987,13 @@ PC幅では表ヘッダーの見出しと二重になるため701px以上で非�
 - **入力欄の自動ズーム防止**(2026-09-30〜): iOS Safariは`font-size`16px未満の入力欄に
   フォーカスすると画面全体を自動ズームする(iPhone SE3で馬券かごの「1点あたり」欄をタップして
   発生)。`@media (pointer: coarse)`(タッチ端末)で`input`(チェックボックス・ラジオ・ファイル
-  以外)・`select`・`textarea`を一律`font-size: 16px !important`にして自動ズーム自体を起こさない。
-  viewportの`maximum-scale=1`で止める方法はピンチズームも効かなくなるため採らない
-  (`prediction.html`のみ従来から`maximum-scale=1.0`指定あり)
+  以外)・`select`・`textarea`を一律`font-size: 16px !important`にしている。ただし実機(iPhone SE3)
+  ではこれだけでは止まらなかったため、同日、**全7画面のviewportに`maximum-scale=1.0`を追加**した
+  (以前は`prediction.html`のみ指定)。iOS Safari(iOS 10以降)は`maximum-scale`をユーザーの
+  ピンチズームには適用せず、フォーカス時の自動ズームだけを抑止する。Android Chromeでは
+  ピンチズームも効かなくなる(ユーザー補助の「ズームを強制的に有効にする」で解除可能)が、
+  主な利用端末がiPhoneのため許容した。当初は「ピンチズームまで殺す」懸念から
+  `maximum-scale`を避けてfont-sizeのみで対処しようとしていた経緯がある
 - **モバイルヘッダー(masthead)**: `600px`以下では「馬券帳」のタイトル表記を非表示にし、
   ナビ(馬券購入・馬券履歴・集計・レース管理・管理)・ユーザー名・退場ボタン等を**すべて
   1つの行**にまとめる。この1行が画面幅に収まりきらない場合は、折り返しではなく**行全体を
