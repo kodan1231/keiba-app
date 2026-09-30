@@ -759,18 +759,24 @@ textarea { resize: vertical; }
 
 /* 買い目欄の要約(2026-09-30〜。見出し行＋馬番構成の行。組み合わせ一覧は折りたたみ) */
 .preview-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   padding: 12px 14px;
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
   margin-bottom: 10px;
 }
+/* 要約左の「かごへ追加する」チェック(一覧の開閉に関係なく常時表示) */
+.preview-master-check { flex: none; padding-top: 3px; cursor: pointer; }
+.preview-master-check input { width: 20px; height: 20px; margin: 0; cursor: pointer; }
+.preview-summary-body { flex: 1; min-width: 0; }
 .preview-summary-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .preview-count { margin-left: auto; font-family: var(--font-mono); font-weight: 700; font-size: 15px; }
 .preview-summary-line { display: flex; gap: 10px; font-size: 13px; padding: 2px 0; }
 .preview-summary-label { min-width: 4.5em; color: var(--ink-soft); }
 .preview-summary-value { font-family: var(--font-mono); font-weight: 700; word-break: break-all; }
 .preview-toggle { margin-bottom: 8px; }
-.preview-combo-tools { display: flex; gap: 8px; margin-bottom: 6px; }
 /* 旧「買い目＋金額欄」用の .preview-combo-row{display:grid;1fr 110px} と、全体の
    label{flex-direction:column} を打ち消す(2クラス指定で詳細度を上げている) */
 .preview-combo-row.preview-combo-check-row {
@@ -786,13 +792,6 @@ textarea { resize: vertical; }
 }
 .preview-combo-check-row input { flex: none; margin: 0; }
 .preview-combo-check-row .preview-combo-label { flex: 1; min-width: 0; }
-/* 展開一覧は幅に応じて複数列に流す(点数が多いと縦に長くなりすぎるため) */
-.preview-combo-list.preview-combo-check-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  column-gap: 16px;
-  row-gap: 0;
-}
 .preview-total { font-weight: 700; font-size: 18px; color: var(--hanko); }
 
 .preview-combo-list {

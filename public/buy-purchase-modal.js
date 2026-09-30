@@ -774,27 +774,28 @@ function renderPreview() {
 
   previewArea.innerHTML = `
     <div class="preview-summary">
-      <div class="preview-summary-head">
-        <span class="bet-badge">${escapeHtml(BET_LABELS[state.betType])}</span>
-        <span class="method-badge">${escapeHtml(methodText)}</span>
-        <span class="preview-count" id="preview-count"></span>
-      </div>
-      ${lines.map(l => `
-        <div class="preview-summary-line">
-          <span class="preview-summary-label">${escapeHtml(l.label)}</span>
-          <span class="preview-summary-value">${escapeHtml(l.value)}</span>
+      <label class="preview-master-check" title="この買い目をかごへ追加する">
+        <input type="checkbox" id="preview-master-check" aria-label="この買い目をかごへ追加する">
+      </label>
+      <div class="preview-summary-body">
+        <div class="preview-summary-head">
+          <span class="bet-badge">${escapeHtml(BET_LABELS[state.betType])}</span>
+          <span class="method-badge">${escapeHtml(methodText)}</span>
+          <span class="preview-count" id="preview-count"></span>
         </div>
-      `).join("")}
+        ${lines.map(l => `
+          <div class="preview-summary-line">
+            <span class="preview-summary-label">${escapeHtml(l.label)}</span>
+            <span class="preview-summary-value">${escapeHtml(l.value)}</span>
+          </div>
+        `).join("")}
+      </div>
     </div>
     <button type="button" class="ghost-btn preview-toggle" id="preview-toggle" aria-expanded="${previewExpanded}">
       ${previewExpanded ? "▾ 組み合わせを閉じる" : "▸ 組み合わせを表示"}
     </button>
     ${previewExpanded ? `
-      <div class="preview-combo-tools">
-        <button type="button" class="ghost-btn" id="preview-check-all">すべて選択</button>
-        <button type="button" class="ghost-btn" id="preview-uncheck-all">すべて解除</button>
-      </div>
-      <div class="preview-combo-list preview-combo-check-list">
+      <div class="preview-combo-list">
         ${combos.map(c => {
           const key = JSON.stringify(c);
           return `
@@ -814,14 +815,13 @@ function renderPreview() {
     previewExpanded = !previewExpanded;
     renderPreview();
   };
-  const setAll = (checked) => {
-    excludedComboKeys = checked ? new Set() : new Set(keys);
+  // 要約側のチェック(一覧の開閉に関係なく常時表示)。グループ全体をかごへ入れるかどうかの
+  // 一括切り替えを兼ねる。一部だけ外しているときは indeterminate(updatePreviewCount参照)。
+  // 以前の展開時専用の「すべて選択/すべて解除」ボタンはこのチェックに置き換えた。
+  document.getElementById("preview-master-check").onchange = (e) => {
+    excludedComboKeys = e.target.checked ? new Set() : new Set(keys);
     renderPreview();
   };
-  const checkAllBtn = document.getElementById("preview-check-all");
-  if (checkAllBtn) checkAllBtn.onclick = () => setAll(true);
-  const uncheckAllBtn = document.getElementById("preview-uncheck-all");
-  if (uncheckAllBtn) uncheckAllBtn.onclick = () => setAll(false);
 
   // 個別チェックの切り替えでは一覧を再描画しない(一覧内のスクロール位置を保つため)。
   // 点数表示とボタンの活性だけを更新する。
@@ -842,6 +842,11 @@ function updatePreviewCount(total) {
   const selected = total - excludedComboKeys.size;
   const el = document.getElementById("preview-count");
   if (el) el.textContent = selected === total ? `${total}点` : `${selected}点(全${total}点中)`;
+  const master = document.getElementById("preview-master-check");
+  if (master) {
+    master.checked = selected === total;
+    master.indeterminate = selected > 0 && selected < total;
+  }
   submitBtn.disabled = selected === 0;
 }
 
