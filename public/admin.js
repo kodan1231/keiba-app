@@ -261,15 +261,26 @@ function setupApiTokenButtons() {
   }
 }
 
+// ---------- 登録済み一覧の開閉(2026-10-02追加) ----------
+// 騎手名エイリアス・馬名エイリアス・重賞の登録済み一覧は件数が増えてきたため、
+// <details class="admin-collapsible">(初期状態は閉じる。開閉状態は保存しない)で囲み、
+// 見出しに件数を出す。一覧の再読み込み(追加・削除後)は<table>の中身だけを書き換えるため、
+// 開閉状態はそのまま保たれる。null は読み込み失敗(件数を出さない)。
+function setCollapsibleCount(tableId, count) {
+  const el = document.querySelector(`.admin-collapsible-count[data-count-for="${tableId}"]`);
+  if (el) el.textContent = count === null ? "" : `(${count}件)`;
+}
+
 // ---------- 騎手名エイリアス管理(2026-08-16追加) ----------
 
 async function loadJockeyAliases() {
   const table = document.getElementById("jockey-aliases-table");
   if (!table) return;
   const res = await authedFetch("/api/admin/jockey-aliases");
-  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("jockey-aliases-table", null); return; }
   const data = await res.json();
   const items = data.items || [];
+  setCollapsibleCount("jockey-aliases-table", items.length);
   if (!items.length) {
     table.innerHTML = "<tr><td>登録済みのエイリアスはありません</td></tr>";
     return;
@@ -378,9 +389,10 @@ async function loadHorseAliases() {
   const table = document.getElementById("horse-aliases-table");
   if (!table) return;
   const res = await authedFetch("/api/admin/horse-aliases");
-  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("horse-aliases-table", null); return; }
   const data = await res.json();
   const items = data.items || [];
+  setCollapsibleCount("horse-aliases-table", items.length);
   if (!items.length) {
     table.innerHTML = "<tr><td>登録済みのエイリアスはありません</td></tr>";
     return;
@@ -598,9 +610,10 @@ async function loadGradedRaces() {
   const table = document.getElementById("graded-races-table");
   if (!table) return;
   const res = await authedFetch("/api/admin/graded-races");
-  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; return; }
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("graded-races-table", null); return; }
   const data = await res.json();
   const items = data.items || [];
+  setCollapsibleCount("graded-races-table", items.length);
   if (!items.length) {
     table.innerHTML = "<tr><td>登録済みの重賞はありません</td></tr>";
     return;

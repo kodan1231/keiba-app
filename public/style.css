@@ -3048,3 +3048,19 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
     font-size: 12px;
   }
 }
+
+/* 管理画面: 登録済み一覧(騎手名エイリアス・馬名エイリアス・重賞)の開閉(2026-10-02)。
+   初期状態は閉じる。見出しに件数(admin.js の setCollapsibleCount())。 */
+.admin-collapsible { margin-top: 12px; }
+.admin-collapsible > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  font-size: 13px;
+  font-weight: 700;
+  user-select: none;
+}
+.admin-collapsible[open] > summary { border-bottom-style: dashed; }
+.admin-collapsible-count { font-family: var(--font-mono); font-weight: 500; color: var(--ink-soft); }
+.admin-collapsible > .table-wrap { margin-top: 0; }
