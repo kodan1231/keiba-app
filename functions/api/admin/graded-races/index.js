@@ -1,4 +1,4 @@
-import { requireAdmin, gradedRaceNameKey, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, readJsonBody, jsonError } from "../../_shared.js";
 
 const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 
@@ -10,7 +10,7 @@ export async function onRequestGet(context) {
 
   const { env } = context;
   const { results } = await env.DB.prepare(
-    `SELECT id, name, name_key, grade, is_jump, track, course_type, distance, age_condition, source, created_at, updated_at
+    `SELECT id, name, name_key, grade, is_jump, track, course_type, distance, age_condition, schedule_md, source, created_at, updated_at
      FROM graded_races ORDER BY name ASC, id DESC`
   ).all();
 
@@ -32,6 +32,7 @@ export async function onRequestPost(context) {
   const courseType = data?.course_type ? String(data.course_type).trim() : null;
   const distance = data?.distance != null && data.distance !== "" ? Number(data.distance) : null;
   const ageCondition = data?.age_condition ? String(data.age_condition).trim() : null;
+  const scheduleMd = normalizeScheduleMd(data?.schedule_md);
 
   if (!name) return jsonError("レース名を入力してください", 400);
   if (name.length > 100) return jsonError("レース名が長すぎます", 400);
@@ -39,6 +40,7 @@ export async function onRequestPost(context) {
   if (distance != null && (!Number.isInteger(distance) || distance <= 0)) {
     return jsonError("距離が不正です", 400);
   }
+  if (scheduleMd === undefined) return jsonError("開催月日は「MM-DD」形式(例: 12-28)で入力してください", 400);
 
   const nameKey = gradedRaceNameKey(name);
   if (!nameKey) return jsonError("レース名が不正です", 400);
@@ -46,9 +48,9 @@ export async function onRequestPost(context) {
   try {
     const now = new Date().toISOString();
     const result = await env.DB.prepare(
-      `INSERT INTO graded_races (name, name_key, grade, is_jump, track, course_type, distance, age_condition, source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)`
-    ).bind(name, nameKey, grade, isJump ? 1 : 0, track, courseType, distance, ageCondition, now, now).run();
+      `INSERT INTO graded_races (name, name_key, grade, is_jump, track, course_type, distance, age_condition, schedule_md, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)`
+    ).bind(name, nameKey, grade, isJump ? 1 : 0, track, courseType, distance, ageCondition, scheduleMd, now, now).run();
 
     return Response.json({ ok: true, id: result.meta.last_row_id });
   } catch (e) {

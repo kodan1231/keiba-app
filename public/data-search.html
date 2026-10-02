@@ -22,6 +22,7 @@
     <nav class="stats-tabs">
       <button type="button" class="stats-tab active" data-tab="race-stats">レース成績</button>
       <button type="button" class="stats-tab" data-tab="horse-info">馬情報検索</button>
+      <button type="button" class="stats-tab" data-tab="graded-race">重賞検索</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="race-stats">
@@ -122,6 +123,45 @@
 
     </section>
 
+    <!-- 重賞検索タブ(2026-10-02追加)。仕様はdocs/design/graded-race-search.md。
+         ① 今年の出走馬一覧 ② 出走馬ごとの詳細 ③ 過去10年の成績・傾向。 -->
+    <section class="stats-section stats-panel" data-panel="graded-race" hidden>
+
+      <div class="gr-picker" id="gr-picker">
+        <label class="horse-index-search-label">重賞を絞り込む(レース名の一部)
+          <input type="search" id="gr-search" placeholder="例: 有馬記念" />
+        </label>
+        <div class="horse-index-rows gr-grade-filter" id="gr-grade-filter">
+          <button type="button" class="horse-row-btn active" data-value="all">すべて</button>
+          <button type="button" class="horse-row-btn" data-value="G1">G1</button>
+          <button type="button" class="horse-row-btn" data-value="G2">G2</button>
+          <button type="button" class="horse-row-btn" data-value="G3">G3</button>
+          <button type="button" class="horse-row-btn" data-value="jump">障害</button>
+        </div>
+        <p class="ds-status" id="gr-status" hidden></p>
+        <div id="gr-list" class="gr-list"></div>
+      </div>
+
+      <div id="gr-detail" hidden>
+        <div class="gr-detail-head">
+          <button type="button" class="ghost-btn" id="gr-back-btn">← 重賞一覧に戻る</button>
+          <h2 class="stats-heading" id="gr-title"></h2>
+          <span class="gr-detail-sub" id="gr-sub"></span>
+        </div>
+
+        <h2 class="stats-heading" id="gr-current-heading"></h2>
+        <div id="gr-current"></div>
+
+        <h2 class="stats-heading" id="gr-past-heading">過去10年の成績</h2>
+        <div id="gr-past"></div>
+
+        <h2 class="stats-heading">過去10年の傾向</h2>
+        <p class="stats-note" id="gr-trends-note"></p>
+        <div id="gr-trends"></div>
+      </div>
+
+    </section>
+
   </main>
 
 </div>
@@ -132,5 +172,6 @@
 <script src="bettypes.js"></script>
 <script src="cart.js"></script>
 <script src="data-search.js"></script>
+<script src="graded-race-search.js"></script>
 </body>
 </html>

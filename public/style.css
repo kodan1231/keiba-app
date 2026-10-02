@@ -1653,6 +1653,74 @@ body.history-selection-mode .group-detail-actions {
 .hi-edit-field input { padding: 8px; font-size: 14px; font-family: var(--font-body); color: var(--ink); }
 .hi-edit-form-actions { display: flex; gap: 10px; margin-top: 10px; }
 
+/* ---------- データ検索: 重賞検索タブ(2026-10-02追加。docs/design/graded-race-search.md) ---------- */
+.gr-grade-filter { margin: 10px 0 4px; }
+.gr-list { margin-top: 8px; }
+.gr-month { margin-bottom: 14px; }
+.gr-month-label { font-family: var(--font-display); font-size: 14px; margin: 0 0 6px; color: var(--ink-soft); }
+.gr-cand-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.gr-cand-btn { text-align: left; }
+.gr-grade {
+  display: inline-block; min-width: 2.4em; padding: 1px 6px; margin-right: 4px;
+  border-radius: 4px; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  text-align: center; color: #fff; background: var(--ink-soft); vertical-align: middle;
+}
+.gr-grade-G1 { background: #1c4e9c; }
+.gr-grade-G2 { background: #b5231c; }
+.gr-grade-G3 { background: #2f7a3d; }
+.gr-grade-J { background: #7a5a2f; }
+.gr-detail-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 8px; }
+.gr-detail-head .stats-heading { margin: 0; }
+.gr-detail-sub { font-size: 13px; color: var(--ink-soft); }
+#gr-detail > .stats-heading { margin-top: 26px; }
+.gr-unannounced { font-family: var(--font-display); font-size: 18px; padding: 14px 0; }
+.gr-entry-table td, .gr-entry-table th { white-space: nowrap; }
+.gr-entry-scratched td { color: var(--ink-soft); background: rgba(0, 0, 0, .04); }
+.gr-horse-toggle {
+  background: none; border: none; padding: 0; font: inherit; font-weight: 700;
+  color: var(--ink); text-decoration: underline dotted; cursor: pointer;
+}
+.gr-waku {
+  display: inline-block; min-width: 1.6em; padding: 1px 4px; border: 1px solid rgba(0, 0, 0, .25);
+  font-family: var(--font-mono); font-weight: 700; text-align: center;
+}
+.gr-waku.waku-1 { background: var(--waku-1); color: var(--waku-1-ink); }
+.gr-waku.waku-2 { background: var(--waku-2); color: var(--waku-2-ink); }
+.gr-waku.waku-3 { background: var(--waku-3); color: var(--waku-3-ink); }
+.gr-waku.waku-4 { background: var(--waku-4); color: var(--waku-4-ink); }
+.gr-waku.waku-5 { background: var(--waku-5); color: var(--waku-5-ink); }
+.gr-waku.waku-6 { background: var(--waku-6); color: var(--waku-6-ink); }
+.gr-waku.waku-7 { background: var(--waku-7); color: var(--waku-7-ink); }
+.gr-waku.waku-8 { background: var(--waku-8); color: var(--waku-8-ink); }
+.gr-cell-sub { font-size: 10px; color: var(--ink-soft); }
+.gr-entry-detail > td { background: var(--paper); white-space: normal; text-align: left; }
+.gr-horse-detail {
+  /* 出走馬表は横スクロールするほど幅が広いため、詳細は表示中の枠幅に固定して左端に貼り付ける
+     (--gr-wrap-w は graded-race-search.js が .table-wrap の表示幅から設定する) */
+  position: sticky; left: 8px; padding: 6px 2px 10px;
+  width: var(--gr-wrap-w, calc(100vw - 48px)); max-width: var(--gr-wrap-w, calc(100vw - 48px));
+}
+.gr-detail-heading { font-family: var(--font-display); font-size: 14px; margin: 14px 0 6px; }
+.gr-detail-heading:first-child { margin-top: 2px; }
+.gr-card-sub { font-size: 11px; color: var(--ink-soft); line-height: 1.4; }
+.gr-hh-name { text-align: left; }
+.gr-hh-note { text-align: left; white-space: normal; min-width: 8em; }
+.gr-all-runs-btn { margin-top: 8px; }
+.gr-counts-table td, .gr-counts-table th { white-space: nowrap; }
+.gr-sub-heading { margin-top: 16px; }
+.gr-year-card { background: var(--paper-raised); border: 1px solid var(--rule-strong); padding: 12px 14px; margin-bottom: 12px; }
+.gr-year-card .table-wrap { margin-top: 8px; }
+.gr-year-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.gr-year { font-family: var(--font-display); font-size: 17px; font-weight: 700; }
+.gr-differs { font-size: 11px; padding: 1px 6px; border: 1px solid var(--hanko); color: var(--hanko); }
+.gr-main-payout { font-family: var(--font-mono); font-size: 13px; margin: 8px 0 0; }
+.gr-year-more { margin-top: 8px; }
+.gr-year-more summary { cursor: pointer; font-size: 13px; }
+.gr-result-table td, .gr-result-table th { white-space: nowrap; }
+.gr-payout-cell { font-family: var(--font-mono); text-align: left; }
+.gr-trend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 22px; }
+.gr-trend-grid .stats-subheading { margin-top: 0; }
+
 /* ---------- 管理画面: 馬名エイリアスの登録馬一覧(50音行 + 検索) ---------- */
 .horse-index { margin: 10px 0 4px; }
 .horse-index-rows { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }

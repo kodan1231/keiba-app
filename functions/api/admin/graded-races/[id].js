@@ -1,4 +1,4 @@
-import { requireAdmin, gradedRaceNameKey, parsePositiveIntId, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, parsePositiveIntId, readJsonBody, jsonError } from "../../_shared.js";
 
 const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 
@@ -24,6 +24,7 @@ export async function onRequestPut(context) {
   const courseType = data?.course_type ? String(data.course_type).trim() : null;
   const distance = data?.distance != null && data.distance !== "" ? Number(data.distance) : null;
   const ageCondition = data?.age_condition ? String(data.age_condition).trim() : null;
+  const scheduleMd = normalizeScheduleMd(data?.schedule_md);
 
   if (!name) return jsonError("レース名を入力してください", 400);
   if (name.length > 100) return jsonError("レース名が長すぎます", 400);
@@ -31,6 +32,7 @@ export async function onRequestPut(context) {
   if (distance != null && (!Number.isInteger(distance) || distance <= 0)) {
     return jsonError("距離が不正です", 400);
   }
+  if (scheduleMd === undefined) return jsonError("開催月日は「MM-DD」形式(例: 12-28)で入力してください", 400);
 
   const nameKey = gradedRaceNameKey(name);
   if (!nameKey) return jsonError("レース名が不正です", 400);
@@ -39,9 +41,9 @@ export async function onRequestPut(context) {
     const now = new Date().toISOString();
     await env.DB.prepare(
       `UPDATE graded_races
-       SET name = ?, name_key = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, updated_at = ?
+       SET name = ?, name_key = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, schedule_md = ?, updated_at = ?
        WHERE id = ?`
-    ).bind(name, nameKey, grade, isJump ? 1 : 0, track, courseType, distance, ageCondition, now, id).run();
+    ).bind(name, nameKey, grade, isJump ? 1 : 0, track, courseType, distance, ageCondition, scheduleMd, now, id).run();
 
     return Response.json({ ok: true });
   } catch (e) {

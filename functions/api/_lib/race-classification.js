@@ -58,6 +58,21 @@ export function gradedRaceNameKey(rawName) {
   return s;
 }
 
+// graded_races.schedule_md(開催月日 "MM-DD")の入力値を正規化する(2026-10-02追加。
+// docs/design/graded-race-search.md 参照)。"MM-DD" / "M/D" / "M月D日" を受け付ける。
+// 空ならnull、解釈できない・存在しない月日なら undefined を返す(呼び出し側で400にする)。
+export function normalizeScheduleMd(raw) {
+  const s = String(raw ?? "").normalize("NFKC").trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\s*(?:-|\/|月)\s*(\d{1,2})\s*日?$/);
+  if (!m) return undefined;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) return undefined;
+  return `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function isConditionRace(classFlags) {
   const s = String(classFlags ?? "");
   return CONDITION_KEYWORDS.some((k) => s.includes(k));

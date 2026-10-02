@@ -287,3 +287,10 @@ CREATE TABLE IF NOT EXISTS horses (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_horses_horse_name ON horses(horse_name);
+
+-- @STEP: graded_races_schedule_md
+-- 重賞マスタに開催月日("MM-DD"。年は持たない)を追加する。データ検索画面「重賞検索」
+-- タブで候補を開催順に並べるために使う。JRA重賞一覧PDFのインポートで自動的に
+-- 埋まる(既存行は適用後にPDFを1回再インポートして埋める)。管理画面の手入力も可。
+-- 詳細は docs/design/graded-race-search.md 参照。
+ALTER TABLE graded_races ADD COLUMN schedule_md TEXT;

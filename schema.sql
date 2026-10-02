@@ -470,6 +470,9 @@ CREATE TABLE IF NOT EXISTS graded_races (
   course_type TEXT,                -- 参考情報(芝/ダート/障。任意)
   distance INTEGER,                -- 参考情報(任意)
   age_condition TEXT,              -- 参考情報(例: "3歳牝"。任意)
+  schedule_md TEXT,                -- 開催月日 "MM-DD"(年は持たない。2026-10-02追加。
+                                   -- データ検索「重賞検索」タブの候補を開催順に並べる用途。
+                                   -- docs/design/graded-race-search.md 参照)
   source TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'jra_import'
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))

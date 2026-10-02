@@ -58,6 +58,8 @@ function jraGradedRacesMatchPair(row1Text, row2Text) {
     age_condition: cols2[2] || null,
     course_type: jraGradedRacesCourseType(courseMatch[1]),
     distance: Number(courseMatch[2].replace(/,/g, "")),
+    // 開催月日 "MM-DD"(2026-10-02追加。データ検索「重賞検索」タブの並び順に使う)
+    schedule_md: `${dateMatch[1].padStart(2, "0")}-${dateMatch[2].padStart(2, "0")}`,
   };
 }
 

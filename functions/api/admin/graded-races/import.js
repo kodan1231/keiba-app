@@ -1,4 +1,4 @@
-import { requireAdmin, gradedRaceNameKey, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, readJsonBody, jsonError, runBatchInChunks } from "../../_shared.js";
 
 const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 
@@ -65,6 +65,8 @@ async function importGradedRaces(env, races) {
       courseType: r.course_type ? String(r.course_type).trim() : null,
       distance: Number.isInteger(r.distance) ? r.distance : null,
       ageCondition: r.age_condition ? String(r.age_condition).trim() : null,
+      // 解釈できない月日は捨てる(null。登録自体は止めない)
+      scheduleMd: normalizeScheduleMd(r.schedule_md) ?? null,
     });
   }
 
@@ -91,23 +93,25 @@ async function importGradedRaces(env, races) {
       stmts.push(
         env.DB.prepare(
           `UPDATE graded_races
-           SET name = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, source = 'jra_import', updated_at = ?
+           SET name = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, schedule_md = ?, source = 'jra_import', updated_at = ?
            WHERE id = ?`
-        ).bind(v.name, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, now, existingId)
+        ).bind(v.name, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, v.scheduleMd, now, existingId)
       );
       results.push({ name: v.name, status: "updated" });
     } else {
       stmts.push(
         env.DB.prepare(
-          `INSERT INTO graded_races (name, name_key, grade, is_jump, track, course_type, distance, age_condition, source, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'jra_import', ?, ?)`
-        ).bind(v.name, v.nameKey, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, now, now)
+          `INSERT INTO graded_races (name, name_key, grade, is_jump, track, course_type, distance, age_condition, schedule_md, source, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'jra_import', ?, ?)`
+        ).bind(v.name, v.nameKey, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, v.scheduleMd, now, now)
       );
       results.push({ name: v.name, status: "created" });
     }
   }
 
-  if (stmts.length) await env.DB.batch(stmts);
+  // 年間140件前後のため runBatchInChunks で分割して流す(CLAUDE.md「db.batch に積む
+  // 文の数」の不変条件。2026-10-02の schedule_md 追加時にあわせて切り替えた)。
+  if (stmts.length) await runBatchInChunks(env.DB, stmts);
 
   return Response.json({ ok: true, results });
 }

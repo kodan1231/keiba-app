@@ -4,6 +4,7 @@ import {
   horseAliasKeyOf,
   loadHorseAliasMap,
   applyHorseAliasMap,
+  buildHorseSearchKeys,
 } from "../../_shared.js";
 
 // 予想登録画面(prediction.js)で、出走各馬の「過去成績(出走履歴)」を表示するための取得API。
@@ -58,30 +59,15 @@ export async function onRequestGet(context) {
 
   const aliasMap = await loadHorseAliasMap(env.DB);
 
-  // 逆引き: 正しい馬名 -> それを指すエイリアスキー一覧(canonical_nameが同じもの同士)
-  const reverseAliasKeys = new Map();
-  for (const [aliasKey, canonicalName] of aliasMap) {
-    let list = reverseAliasKeys.get(canonicalName);
-    if (!list) { list = []; reverseAliasKeys.set(canonicalName, list); }
-    list.push(aliasKey);
-  }
-
-  // 突き合わせキー(正規化) -> レスポンスのキー(= クライアント突き合わせ用の正規化名)
-  const keyMap = new Map();
-  // race_results.horse_key が取り得る値 -> その馬のkeyMapキー(検索キー集合)
-  const searchKeyToEntryKey = new Map();
-  for (const e of entries) {
-    const raw = e?.horse_name;
-    if (raw === null || raw === undefined || raw === "") continue;
-    const canon = applyHorseAliasMap(aliasMap, raw);
-    const key = horseAliasKeyOf(canon);
-    if (!key) continue;
-    if (!keyMap.has(key)) keyMap.set(key, normalizeName(canon));
-    searchKeyToEntryKey.set(key, key);
-    for (const aliasKey of reverseAliasKeys.get(canon) || []) {
-      searchKeyToEntryKey.set(aliasKey, key);
-    }
-  }
+  // 突き合わせキー(正規化) -> レスポンスのキー(= クライアント突き合わせ用の正規化名)、
+  // race_results.horse_key が取り得る値 -> その馬のkeyMapキー(検索キー集合)。
+  // 逆引きエイリアスキーを含めた組み立ては _lib/horse-alias.js の buildHorseSearchKeys
+  // (2026-10-02に切り出し。重賞検索タブと共用)。
+  const { canonByKey, searchKeyToKey: searchKeyToEntryKey } = buildHorseSearchKeys(
+    aliasMap,
+    entries.map((e) => e?.horse_name)
+  );
+  const keyMap = new Map([...canonByKey].map(([k, canon]) => [k, normalizeName(canon)]));
   if (!keyMap.size) return Response.json({});
 
   const searchKeys = [...searchKeyToEntryKey.keys()];

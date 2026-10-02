@@ -40,6 +40,10 @@ CREATE TABLE graded_races (
 );
 ```
 
+`schedule_md`(開催月日 "MM-DD"。2026-10-02追加)は、データ検索画面「重賞検索」タブの
+候補を開催順に並べるために使う(`docs/design/graded-race-search.md` 参照)。重賞一覧PDFの
+インポートで自動的に入り、管理画面の手入力フォームでも編集できる。
+
 `track`/`course_type`/`distance`/`age_condition` は分類ロジックでは使わない参考情報
 (管理画面での確認用)。分類に使うのは `name_key` と `grade`/`is_jump` のみ。
 

@@ -619,7 +619,7 @@ async function loadGradedRaces() {
     return;
   }
   table.innerHTML = `
-    <thead><tr><th>レース名</th><th>グレード</th><th>障害</th><th>参考情報</th><th></th></tr></thead>
+    <thead><tr><th>レース名</th><th>グレード</th><th>障害</th><th>開催月日</th><th>参考情報</th><th></th></tr></thead>
     <tbody>
       ${items.map((g) => {
         const ref = [g.track, g.course_type, g.distance ? `${g.distance}m` : null, g.age_condition]
@@ -629,6 +629,7 @@ async function loadGradedRaces() {
           <td>${escapeHtml(g.name)}</td>
           <td>${escapeHtml(g.grade)}</td>
           <td>${g.is_jump ? "○" : "—"}</td>
+          <td>${escapeHtml(g.schedule_md || "—")}</td>
           <td>${escapeHtml(ref || "—")}</td>
           <td>
             <div class="row-actions">
@@ -663,8 +664,16 @@ async function loadGradedRaces() {
   });
 }
 
+// 編集中の行。手入力フォームに無い参考情報(競馬場・コース・距離・年齢条件)を
+// PUT時にそのまま送り返して保持するために使う(PUTは全項目を上書きするため、
+// 送らないとPDFインポートで入った参考情報が消える。2026-10-02に開催月日の項目を
+// 追加した際にあわせて修正)。
+let editingGradedRace = null;
+
 function prefillGradedRaceForm(item) {
+  editingGradedRace = item;
   document.getElementById("graded-race-id").value = item.id;
+  document.getElementById("graded-race-schedule").value = item.schedule_md || "";
   document.getElementById("graded-race-name").value = item.name;
   document.getElementById("graded-race-grade").value = item.grade;
   document.getElementById("graded-race-jump").checked = !!item.is_jump;
@@ -676,7 +685,9 @@ function prefillGradedRaceForm(item) {
 }
 
 function resetGradedRaceForm() {
+  editingGradedRace = null;
   document.getElementById("graded-race-id").value = "";
+  document.getElementById("graded-race-schedule").value = "";
   document.getElementById("graded-race-name").value = "";
   document.getElementById("graded-race-grade").value = "G1";
   document.getElementById("graded-race-jump").checked = false;
@@ -727,13 +738,20 @@ function setupGradedRaceForm() {
     const name = document.getElementById("graded-race-name").value.trim();
     const grade = document.getElementById("graded-race-grade").value;
     const is_jump = document.getElementById("graded-race-jump").checked;
+    const schedule_md = document.getElementById("graded-race-schedule").value.trim();
     if (!name) return;
 
     const submitBtn = form.querySelector('button[type="submit"]');
     submitBtn.disabled = true;
     messageEl.hidden = true;
 
-    const body = JSON.stringify({ name, grade, is_jump });
+    const ref = id && editingGradedRace ? {
+      track: editingGradedRace.track,
+      course_type: editingGradedRace.course_type,
+      distance: editingGradedRace.distance,
+      age_condition: editingGradedRace.age_condition,
+    } : {};
+    const body = JSON.stringify({ name, grade, is_jump, schedule_md, ...ref });
     const res = id
       ? await authedFetch(`/api/admin/graded-races/${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body })
       : await authedFetch("/api/admin/graded-races", { method: "POST", headers: { "Content-Type": "application/json" }, body });
@@ -799,10 +817,11 @@ function setupGradedRacesImport() {
       statusEl.textContent = `${parsed.records.length}件のレースを検出しました。内容を確認して登録してください。`;
       previewEl.innerHTML = `
         <div class="table-wrap"><table class="stats-table">
-          <thead><tr><th>レース名</th><th>グレード</th><th>競馬場</th><th>コース</th></tr></thead>
+          <thead><tr><th>開催</th><th>レース名</th><th>グレード</th><th>競馬場</th><th>コース</th></tr></thead>
           <tbody>
             ${parsed.records.map((r) => `
               <tr>
+                <td>${escapeHtml(r.schedule_md || "")}</td>
                 <td>${escapeHtml(r.name)}</td>
                 <td>${r.is_jump ? "J・" : ""}${escapeHtml(r.grade)}</td>
                 <td>${escapeHtml(r.track || "")}</td>

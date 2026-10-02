@@ -3,9 +3,12 @@
 // 単勝/馬連の傾向・騎手率・馬番別成績を表示する。
 // 馬情報検索タブ: GET /api/data-search/horse-search(部分一致検索)・
 // GET/PUT /api/data-search/horse-info(過去全出走履歴・血統/調教師/馬主/生産牧場)を叩く。
+// 重賞検索タブ(2026-10-02追加): graded-race-search.js(grInit)。仕様は
+// docs/design/graded-race-search.md。
 
 // ---------- タブ切り替え(stats.js と同じパターン) ----------
 let hiInitialized = false;
+let grInitialized = false;
 document.querySelectorAll(".stats-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".stats-tab").forEach((t) => t.classList.remove("active"));
@@ -17,6 +20,10 @@ document.querySelectorAll(".stats-tab").forEach((tab) => {
     if (target === "horse-info" && !hiInitialized) {
       hiInitialized = true;
       hiInit();
+    }
+    if (target === "graded-race" && !grInitialized) {
+      grInitialized = true;
+      grInit();
     }
   });
 });

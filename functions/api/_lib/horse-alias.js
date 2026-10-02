@@ -35,6 +35,40 @@ export async function loadHorseAliasMap(db) {
   return map;
 }
 
+// 複数の馬名から、race_results.horse_key を引くための検索キー集合を作る
+// (2026-10-02に races/[id]/horse-history.js から切り出し。データ検索「重賞検索」
+// タブの graded-race-horses.js と共用)。
+// 検索キーは「エイリアス適用後の馬名の正規化キー」に加えて、「horse_aliases 側で
+// その正しい馬名を指しているエイリアスキー(逆引き)」も含める。これにより、
+// race_results 側がまだ旧表記のまま(horse_key が旧表記のキー)でも一致する。
+// 戻り値:
+//   canonByKey:  Map<正規化キー, エイリアス適用後の馬名>
+//   searchKeyToKey: Map<race_results.horse_key が取り得る値, 正規化キー>
+// 呼び出し側は [...searchKeyToKey.keys()] を IN 句に渡す。件数は
+// 「馬名数 × (1 + その馬のエイリアス数)」になるため、呼び出し側で上限を確認すること。
+export function buildHorseSearchKeys(aliasMap, rawNames) {
+  const reverseAliasKeys = new Map();
+  for (const [aliasKey, canonicalName] of aliasMap) {
+    let list = reverseAliasKeys.get(canonicalName);
+    if (!list) { list = []; reverseAliasKeys.set(canonicalName, list); }
+    list.push(aliasKey);
+  }
+  const canonByKey = new Map();
+  const searchKeyToKey = new Map();
+  for (const raw of rawNames) {
+    if (raw === null || raw === undefined || raw === "") continue;
+    const canon = applyHorseAliasMap(aliasMap, raw);
+    const key = horseAliasKeyOf(canon);
+    if (!key) continue;
+    if (!canonByKey.has(key)) canonByKey.set(key, canon);
+    searchKeyToKey.set(key, key);
+    for (const aliasKey of reverseAliasKeys.get(canon) || []) {
+      searchKeyToKey.set(aliasKey, key);
+    }
+  }
+  return { canonByKey, searchKeyToKey };
+}
+
 // 馬名1件を、取得済みの Map と突き合わせて正規化する。
 // マッチするエイリアスが無ければ元の表記のまま返す(誤爆防止)。
 export function applyHorseAliasMap(aliasMap, rawName) {
