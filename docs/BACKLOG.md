@@ -10,7 +10,7 @@
 - **実機確認はユーザー側**。Claude は `node --check` と静的レビュー・シミュレーションのみ。
   着手・完了報告時に検証状況を明示する。
 
-## 🔰 次のチャットで最初に読むこと(最終更新 2026-10-02)
+## 🔰 次のチャットで最初に読むこと(最終更新 2026-10-03)
 
 - **馬情報(血統等)がほぼ全馬「不明」になっている件(2026-10-02・調査中)**: netkeiba側の
   ボット対策で弾かれている疑いが濃い。失敗理由を `fetch_error` に詳細記録する修正
@@ -21,14 +21,13 @@
   父・母・母の父・馬主・生産者が載っているかをユーザーが確認中。載っていれば結果取込と同じ
   ユーザースクリプト方式で出馬表から血統等を取り込む案(仕様未検討)。
 
-- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-10-02)**: データ検索
-  「重賞検索」タブ追加に伴い、`migration.sql` の `@STEP: graded_races_schedule_md`
-  (`graded_races.schedule_md`列追加)が本番DB `keiba-yosou-db` へ未適用。**適用前に
-  コードをデプロイすると、管理画面「重賞管理」の一覧・登録・PDFインポートと、重賞検索
-  タブの候補一覧が「no such column: schedule_md」で失敗する**。手順は①`schema_migrations`
-  で未適用を確認の上 `ALTER TABLE graded_races ADD COLUMN schedule_md TEXT;` →
-  ②デプロイ → ③管理画面「重賞管理」で今年の重賞一覧PDFを1回再インポート(開催月日を
-  埋める)。**実機確認未実施**(テスト観点は `docs/testing/graded-race-search.md`)。
+- **✅ マイグレーション適用済み(2026-10-03)**: `@STEP: graded_races_schedule_md`
+  (`graded_races.schedule_md`列追加)を本番DB `keiba-yosou-db` へ適用し、
+  `schema_migrations` に記録した。これで `migration.sql` の全ステップが適用済み
+  (未適用のマイグレーションは無い。適用済みブロックは `migration.sql` から削除済み)。
+  **残作業**: ②重賞検索タブを含むコードのデプロイ → ③管理画面「重賞管理」で今年の
+  重賞一覧PDFを1回再インポート(開催月日を埋める)。**実機確認未実施**
+  (テスト観点は `docs/testing/graded-race-search.md`)。
   過去10年分は JRA公式の過去結果ページをユーザースクリプトで取り込んで補完する運用
   (1日に取り込むのは数百レース程度まで。D1の rows_written 上限に注意)。
 
@@ -47,20 +46,11 @@
   の範囲限定」参照。**実機確認未実施**(本番デプロイ後、購入画面・予想登録画面・
   払戻入力モーダルが正常に動くこと、エラーが収まることを確認すること)。
 
-- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-24)**: `migration.sql` の
-  `@STEP: races_base_name`(`races.race_base_name`列追加)が本番DB `keiba-yosou-db`
-  へ未適用。**このマイグレーションを適用する前にコードをデプロイすると、
-  `functions/api/races/index.js`(POST)・`functions/api/races/[id].js`(PUT)・
-  `functions/api/races/entries-import.js`・`functions/api/races/results-import.js`
-  のINSERT/UPDATE文がいずれも`race_base_name`列を明示的に指定するため、
-  「no such column: race_base_name」でレース新規登録・編集・出走馬一覧PDF/結果PDFの
-  インポートが全滅する**。デプロイ手順は①`wrangler d1 execute keiba-yosou-db
-  --command "ALTER TABLE races ADD COLUMN race_base_name TEXT;"`(または
-  `schema_migrations`未適用確認の上で`@STEP: races_base_name`を適用)→ ②コードを
-  デプロイ、の順を厳守すること。適用後、管理画面「重賞管理」の「レースのベース名を
-  再計算する」ボタンを1回押して既存行をバックフィルする(押さなくてもエラーには
-  ならないが、押すまで集計画面「レース別」の表示名が`race_name`のフォールバックの
-  ままになる)。詳細は`docs/design/data-model.md`「races.race_base_name」参照。
+- **`@STEP: races_base_name` は適用済み(2026-09-24 本番適用・`schema_migrations`記録済み。
+  2026-10-03に確認)**。既存行のバックフィル(管理画面「重賞管理」の「レースのベース名を
+  再計算する」ボタン)を実行済みかは未確認。押していなければ1回押す(押すまで集計画面
+  「レース別」の表示名が`race_name`のフォールバックのままになる)。詳細は
+  `docs/design/data-model.md`「races.race_base_name」参照。
 - **🔴 本番DBが2026-09-12中、D1無料枠の日次rows_read上限(500万行/日)を使い切って
   全画面で情報が見れない状態になっている**。原因・詳細・恒久対策は下記
   「D1無料枠の日次上限に関する注意(2026-09-12発生)」参照。**UTC 0時(日本時間
@@ -71,25 +61,10 @@
 - **読む順**: `CLAUDE.md`(自動)→ 本セクション → `docs/INDEX.md` で対象ファイルを特定 →
   `docs/design/<機能>.md` を対象1ファイルだけ。過去の完了経緯は
   `archive/documents/BACKLOG_HISTORY.md`(明示的に聞かれた時のみ)。
-- **未適用のマイグレーションあり(2026-09-12)**: `migration.sql` の
-  `@STEP: prediction_notes_key_race`(`prediction_notes.is_key_race`列追加。勝負レース
-  フラグ)が本番DB `keiba-yosou-db` へ未適用。適用後はボタン操作等不要。
-- **未適用のマイグレーションあり(2026-09-13)**: `migration.sql` の
-  `@STEP: races_post_time`(`races.post_time`列追加)・`@STEP: users_api_token`
-  (`users.api_token_hash`/`api_token_created_at`列追加+ユニークインデックス)が
-  本番DB `keiba-yosou-db` へ未適用。JRAレース結果ユーザースクリプト取込み・
-  管理画面「APIトークン」を使う前に適用が必要。
-- **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-09-17)**: `migration.sql` の
-  `@STEP: tickets_structure`(`tickets.structure`列追加)が本番DB `keiba-yosou-db`
-  へ未適用。**`ALTER TABLE`自体は軽量だが、`functions/api/tickets/bulk.js`の
-  INSERT文が`structure`列を明示的に指定するようコード変更済みのため、
-  このマイグレーションを適用する前に今回の変更をデプロイすると、
-  `structure`列が存在せず`POST /api/tickets/bulk`(購入確定・カゴの「購入」ボタン)が
-  全件エラーになり新規購入ができなくなる**。デプロイ手順は
-  ①`wrangler d1 execute keiba-yosou-db --command "ALTER TABLE tickets ADD COLUMN structure TEXT;"`
-  (または`schema_migrations`未適用確認の上で`@STEP: tickets_structure`を適用)
-  → ②コードをデプロイ、の順を厳守すること。詳細は
-  `docs/design/data-model.md`「購入方式の入力構造(tickets.structure)」参照。
+- `@STEP: prediction_notes_key_race`(2026-09-12)・`races_post_time`/`users_api_token`
+  (2026-09-13)・`tickets_structure`(2026-09-17)は、いずれも本番適用済み
+  (`schema_migrations`記録済み。2026-10-03に確認。以前ここに「未適用」と書かれていたが
+  記述の更新漏れだった)。
   `race_results_horse_key`・`race_stats_cache`・`races_cache`(チャンク分割版。
   `@STEP: races_cache_chunked`)は適用済み・`schema_migrations` 記録済み(`horse_key`
   の既存行バックフィルも完了。`race_results` 14768件更新)。実ブラウザでの数値確認は
@@ -181,7 +156,7 @@
 | 🟡 未修正(要サンプルCSV確認) | CSVインポートで「的中／返還」列が「的中」を含まない行(出走取消等による返還を想定)は、`payout`が一律0円(全損)として計算されている可能性がある。返還の場合は本来ほぼ全額が払い戻される(収支への影響は±0に近いはず)ため、実データでの表記を確認したうえで対応要否を判断する必要がある | `docs/design/csv-import.md`「CSV取込の仕様」要確認 |
 | 🟡 未対応(今回対象外) | 降着・失格など、取消・除外・中止以外の着順未確定ケースは`race_results.status`で扱えない。将来`demoted`/`disqualified`等のstatus値を追加する拡張が必要 | `docs/design/race-results.md`「レース結果の詳細記録(race_results)」取消・除外・中止の扱い |
 | 🔵 実機検証未完了 | 返還(refund)処理(`tickets.refunded`列・`recomputeTicketPayoutsForRace`/`computeTicketPayout`の返還判定・`stats.js`の的中率集計除外)の実ブラウザでの挙動確認が未実施(コードレビューのみ)。`tickets.refunded`列は本番DBに適用済み | `docs/design/payout-refund.md`「返還(refund)処理」 |
-| 🔵 実機検証未完了(要マイグレーション適用) | `races.race_base_name`列追加(2026-09-24。race_nameから「第N回」等の回次・混入グレードバッジを除いたベース名を、race_name書き込みの全経路〈レース新規登録・編集・出走馬一覧PDF/結果PDFインポート〉で同時保存。集計画面「レース別」の表示名はこちらを優先〈`GET /api/tickets`・`GET /api/ticket-imports`がJOINして返す〉。既存行バックフィルは管理画面「重賞管理」の「レースのベース名を再計算する」ボタン`POST /api/admin/races/recompute-base-names`)は`node --check`とNode上での`raceBaseNameOf()`/`gradedRaceNameKey()`の入出力確認(回次のみ・バッジのみ・両方・順序違い等)のみ。**本番適用手順**: `migration.sql`の`@STEP: races_base_name`を適用→バックフィルボタンを押す(上記🔰参照)。**実ブラウザで**: レース新規登録・編集・出走馬一覧PDF/結果PDFインポート後にrace_base_nameが正しく保存されること、集計画面「レース別」で重賞のレース名が回次なしで正しく表示されること(グレードバッジ混入済みの既存データでも直ること)、バックフィルボタンを押すと既存レース全件の表示が直ること、`gradedRaceNameKey()`のリファクタリング後も「重賞のみ」フィルタの判定結果が従来と変わらないことを確認する | `docs/design/data-model.md`「races.race_base_name」 |
+| 🔵 実機検証未完了(マイグレーションは2026-09-24適用済み) | `races.race_base_name`列追加(2026-09-24。race_nameから「第N回」等の回次・混入グレードバッジを除いたベース名を、race_name書き込みの全経路〈レース新規登録・編集・出走馬一覧PDF/結果PDFインポート〉で同時保存。集計画面「レース別」の表示名はこちらを優先〈`GET /api/tickets`・`GET /api/ticket-imports`がJOINして返す〉。既存行バックフィルは管理画面「重賞管理」の「レースのベース名を再計算する」ボタン`POST /api/admin/races/recompute-base-names`)は`node --check`とNode上での`raceBaseNameOf()`/`gradedRaceNameKey()`の入出力確認(回次のみ・バッジのみ・両方・順序違い等)のみ。**本番適用手順**: `migration.sql`の`@STEP: races_base_name`を適用→バックフィルボタンを押す(上記🔰参照)。**実ブラウザで**: レース新規登録・編集・出走馬一覧PDF/結果PDFインポート後にrace_base_nameが正しく保存されること、集計画面「レース別」で重賞のレース名が回次なしで正しく表示されること(グレードバッジ混入済みの既存データでも直ること)、バックフィルボタンを押すと既存レース全件の表示が直ること、`gradedRaceNameKey()`のリファクタリング後も「重賞のみ」フィルタの判定結果が従来と変わらないことを確認する | `docs/design/data-model.md`「races.race_base_name」 |
 | 🔵 実機検証未完了 | 集計画面に「競馬場別」タブを追加(2026-09-24。`track`のみでまとめる〈コース種別・距離では分けない〉収支表。既存の「コース別」より粗い粒度。`public/stats.js`の`renderTrackTable()`。レース区分フィルタ〈重賞のみ/条件戦のみ〉は既存のコース別・騎手別と同じく無し)は`node --check`のみ。**実ブラウザで**: 「競馬場別」タブに競馬場ごとの購入/払戻/収支/回収率/的中率が表示されること、列見出しクリックでソートできること、競馬場未登録の購入が「競馬場不明」にまとまること、総合成績タブの「競馬場別 購入比率」棒グラフの金額と整合していることを確認する | `docs/design/stats-rules.md`「競馬場別収支」 |
 | 🔵 実機検証未完了 | 購入モーダルの買い目欄を要約表示＋折りたたみ一覧(個別チェックで除外可)に変更し、金額入力をかご側へ移動(2026-09-30。かご追加時は各100円、かごのグループ見出し直下に要約行と「1点あたり」欄を常時表示。一部除外/一部購入時は`structure`をnullで保存。`data-search.html`に`bettypes.js`追加)は`node --check`と`describeBetStructure()`のNode上での入出力確認のみ。**実ブラウザで**: 各券種×方式で要約行が正しいこと(特に馬単流し2着固定・三連単2頭軸の着順ラベル・枠連)、一覧展開→個別チェック外し→点数表示「n点(全m点中)」とかご追加点数が一致すること、かごの「1点あたり」入力で全点反映・個別金額変更時は空欄＋「個別設定」になること、一部除外/一部購入したグループの履歴要約が実際の買い目から推定表示されること、データ検索画面からかごを開けることを確認する | `docs/design/screens.md`「購入画面」「馬券かご機能」 |
 | 🔵 実機検証未完了 | 馬番確定前→確定後で出走馬が減った時の枠番振り直し(2026-09-27。馬番付きの出走馬一覧PDFを「確定後の完全な一覧」とみなし、取込側に無い馬番未確定の既存項目〈枠順確定までに除外になった馬〉を削除し、枠番を馬番と頭数から振り直す〈既存値も上書き〉。`mergeEntriesByHorseName`の`opts.authoritative`。出走馬一覧PDFインポートのみ)は、Nodeでのマージ検証〈木曜17頭→金曜16頭で除外馬削除・枠番1〜8枠の2頭ずつ、誤った枠番の修正、結果PDF経路が従来どおり、馬番なし取込は何も消さない〉のみ。**実ブラウザで**: 馬番確定前に取り込んだレースへ確定後のPDFを取り込み、除外馬が消えて枠番が正しく振り直されること、購入画面が購入可能になることを確認する。**注意**: 手動で編集した枠番も上書きされる | `docs/design/entries-import.md`「取消・除外の馬」 |
@@ -210,7 +185,7 @@
 | 🔵 実機検証未完了 | D1日次行読み取り上限(500万行)超過障害(2026-09-11)への対応。①`GET /api/races/:id/horse-history`:`race_results.horse_key`列+インデックスを追加し、全件スキャン→`WHERE horse_key IN (...)`の直接絞り込みに変更(あわせて馬ごと直近5走まで・`field_size`の相関サブクエリ解消)。②`GET /api/data-search/race-stats`:`race_results`とのJOIN全件スキャン→フィルタ該当`race_id`のみ`IN`(90件チャンク)取得 →(2026-09-12。ユーザー数増加を見据え)`race_stats_cache`テーブルへの事前計算キャッシュ化(`race_results`書き込み時にDBトリガーで自動無効化・次回読み取り時に自動再計算)に変更。マイグレーション適用・`horse_key`バックフィル(`race_results` 14768件)は2026-09-12に本番完了済み。`node --check`と設計上のシミュレーションのみで、**実ブラウザでの数値確認が未実施**: 予想登録画面で過去成績が(旧仕様と同じ内容で・直近5走に絞られた形で)表示されること、データ検索画面「レース成績」タブが従来と同じ数値を返すこと、結果PDFを再取込した際にレース成績タブの数値が更新されること(トリガーによる自動再計算の確認)を確認する | `docs/design/horse-aliases.md`「`race_results.horse_key`」・`docs/design/race-results.md`「予想登録画面での過去成績参照」・`docs/design/data-search.md`「サーバー処理」 |
 
 | 🔵 実機検証一部完了 | JRAレース結果ユーザースクリプト取込み(2026-09-13。JRA公式サイトの結果ページ上で動くユーザースクリプト`public/jra-result-importer.user.js`(`https://keiba-yosou-app.pages.dev/jra-result-importer.user.js`を開くだけでインストール可能)から、ページのHTML(`public/jra-result-html.js`で解析)を`POST /api/races/results-import`〈PDFインポートと同一エンドポイント〉へ送信できるようにした。認証は管理画面「APIトークン」〈`functions/api/admin/api-token.js`〉で発行する個人用アクセストークン〈`Authorization: Bearer`〉。あわせて発走時刻`races.post_time`を新規保存し、馬券購入画面のレース選択グリッドに表示するようにした。マイグレーション〈`@STEP: races_post_time`・`@STEP: users_api_token`〉は本番`keiba-yosou-db`へ適用済み)は、**iPhone Safari(Userscripts拡張)+スマホ版サイト(sp.jra.jp)で実機確認済み**(2026-09-13。2026-09-12中山12レース分を送信し成功、本番DBの`races`(race_name・post_time・course_type・distance・weight_type・class_flags・weather・track_condition・finish_order)・`race_results`(全頭分)・payouts(全式別)がJRA公式ページの表示と一致することを`wrangler d1 execute`で確認済み)。実機確認の過程で、スマホ版のHTML構造がPC版と全く異なることが判明し専用パーサー(`jraResultHtmlParseMobilePage`)を追加、重賞・特別戦でレース名が空になる不具合(`.titleRaceName`未対応)・class_flagsが年齢条件込みだと空になる不具合(正規表現の数字除外)も発見・修正済み。**未確認のまま残っている点**: ①PC版(`www.jra.go.jp`)側は`jraResultHtmlParseRaceUnit`のコードレビューのみで実機確認していない、②「12時実行なら途中まで・17時実行なら全レース」という部分確定の挙動は未確認(1回で全レース確定済みの状態でしか試していない)、③`races.post_time`が馬券購入画面のレース選択グリッドに実際に表示されることは未確認(DB上の値は確認済み) | `docs/design/results-import.md`「ユーザースクリプトによるHTML取込み」・`docs/design/auth-multiuser.md`「個人用アクセストークン」 |
-| 🔵 実機検証未完了(要マイグレーション適用) | データ検索画面「馬情報検索」タブを新規追加(2026-09-28。馬名部分一致検索→馬齢・性別・過去全出走履歴(`race_results`)+血統(父/母/母父)・調教師・馬主・生産牧場(netkeiba取得。無ければ管理者が編集可能)を表示。`horses`テーブル新設・`_lib/netkeiba.js`・`_lib/horse-master.js`・`GET/PUT /api/data-search/horse-info`・`GET /api/data-search/horse-search`。あわせて出走馬一覧PDF/結果PDF/結果HTMLが調教師名も送信するようになった)は`node --check`と設計上のレビューのみ。**本番適用手順**: `migration.sql`の`@STEP: horses_master`を適用(未適用でも`horses`関連の処理はbest-effortでcatchされるため取込・購入等の既存機能は壊れないが、新タブの検索・詳細APIは「no such table: horses」で失敗する)。**実ブラウザで**: ①馬情報検索タブで部分一致検索→候補クリックで詳細が開くこと、②未取得の馬でnetkeiba検索が実際に成功し血統・調教師・馬主・生産牧場が埋まること(`TextDecoder("euc-jp")`がCloudflare Workers実行環境で動くか自体が未確認)、③取得失敗時に「手入力できます」の案内が出て編集フォームで保存できること、④管理者の「netkeibaから再取得」ボタンが動くこと、⑤出走馬一覧PDF/結果PDFを取り込んだ際に既存の`horses`行の調教師欄が更新されること、⑥結果HTML(PC版)の`td.trainer`セレクタが実ページに存在するか(存在しない場合はnullのままで取込自体は失敗しない想定)を確認する | `docs/design/data-search.md`「馬情報検索タブ」 |
+| 🔵 実機検証未完了(マイグレーション`horses_master`は2026-09-29適用済み) | データ検索画面「馬情報検索」タブを新規追加(2026-09-28。馬名部分一致検索→馬齢・性別・過去全出走履歴(`race_results`)+血統(父/母/母父)・調教師・馬主・生産牧場(netkeiba取得。無ければ管理者が編集可能)を表示。`horses`テーブル新設・`_lib/netkeiba.js`・`_lib/horse-master.js`・`GET/PUT /api/data-search/horse-info`・`GET /api/data-search/horse-search`。あわせて出走馬一覧PDF/結果PDF/結果HTMLが調教師名も送信するようになった)は`node --check`と設計上のレビューのみ。**本番適用手順**: `migration.sql`の`@STEP: horses_master`を適用(未適用でも`horses`関連の処理はbest-effortでcatchされるため取込・購入等の既存機能は壊れないが、新タブの検索・詳細APIは「no such table: horses」で失敗する)。**実ブラウザで**: ①馬情報検索タブで部分一致検索→候補クリックで詳細が開くこと、②未取得の馬でnetkeiba検索が実際に成功し血統・調教師・馬主・生産牧場が埋まること(`TextDecoder("euc-jp")`がCloudflare Workers実行環境で動くか自体が未確認)、③取得失敗時に「手入力できます」の案内が出て編集フォームで保存できること、④管理者の「netkeibaから再取得」ボタンが動くこと、⑤出走馬一覧PDF/結果PDFを取り込んだ際に既存の`horses`行の調教師欄が更新されること、⑥結果HTML(PC版)の`td.trainer`セレクタが実ページに存在するか(存在しない場合はnullのままで取込自体は失敗しない想定)を確認する | `docs/design/data-search.md`「馬情報検索タブ」 |
 
 ## D1無料枠の日次上限に関する注意(2026-09-12発生)
 
