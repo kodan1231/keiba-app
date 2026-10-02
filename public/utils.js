@@ -131,6 +131,26 @@ function formatCourseText(courseType, distance) {
   return parts.join("");
 }
 
+// 競馬場の表示順(中央4場 → 中央ローカル6場 → 南関東4場 → その他地方。いずれも東から)。
+// buy.js の RACE_TRACK_ORDER と同じ並び(buy.js はデータ検索画面で読み込まれないため、
+// 全画面共通の utils.js にも置いた。名前の衝突を避けて別名にしている。2026-10-03)。
+const TRACK_DISPLAY_ORDER = [
+  "東京", "中山", "京都", "阪神",
+  "札幌", "函館", "福島", "新潟", "中京", "小倉",
+  "船橋", "大井", "川崎", "浦和",
+  "門別", "盛岡", "水沢", "名古屋", "笠松", "金沢", "園田", "姫路", "高知", "佐賀",
+];
+// 一覧に無い競馬場(帯広等)・競馬場不明は末尾。
+function trackDisplayOrderIndex(track) {
+  const i = TRACK_DISPLAY_ORDER.indexOf(track);
+  return i >= 0 ? i : TRACK_DISPLAY_ORDER.length + (track ? 0 : 1);
+}
+// コース種別の表示順(芝 → ダート → 障害 → 不明)。
+function courseTypeOrderIndex(courseType) {
+  const i = ["芝", "ダート", "障害"].indexOf(courseType);
+  return i >= 0 ? i : 3;
+}
+
 /**
  * races.payouts に、実際の払戻レート(式別ごとの的中組み合わせ・レートのデータ)が
  * 1件以上含まれているかどうかを判定する共通関数(2026-08-23追加)。

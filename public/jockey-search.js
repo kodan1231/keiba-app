@@ -26,6 +26,18 @@ function jsCourseLabel(row) {
   return `${row.track || "競馬場不明"} ${course || "コース不明"}`;
 }
 
+// コース別の並び順(2026-10-03): 競馬場(中央→ローカル→南関東→地方。utils.js の
+// TRACK_DISPLAY_ORDER)→ 芝/ダート/障害(芝優先)→ 距離(短い順。不明は最後)。
+// 当初はAPIが返す騎乗数の降順のまま表示していた。同じ競馬場で一覧に無いもの同士は名前順。
+function jsSortCourses(rows) {
+  return [...rows].sort((a, b) =>
+    trackDisplayOrderIndex(a.track) - trackDisplayOrderIndex(b.track) ||
+    String(a.track ?? "").localeCompare(String(b.track ?? ""), "ja") ||
+    courseTypeOrderIndex(a.course_type) - courseTypeOrderIndex(b.course_type) ||
+    (a.distance ?? Infinity) - (b.distance ?? Infinity)
+  );
+}
+
 // 通算・年度別・コース別で共通の表。labelHead が null なら先頭の見出し列を出さない(通算)。
 function jsTableHtml(labelHead, rows, labelOf) {
   const head = `
@@ -53,7 +65,7 @@ function jsRenderDetail(data) {
   jsEls.detailSub.textContent = p.from && p.to ? `対象期間 ${formatDate(p.from)} 〜 ${formatDate(p.to)}` : "";
   jsEls.totalTable.innerHTML = jsTableHtml(null, [data.total], null);
   jsEls.yearTable.innerHTML = jsTableHtml("年度", data.byYear || [], (r) => `${r.year}年`);
-  jsEls.courseTable.innerHTML = jsTableHtml("コース", data.byCourse || [], jsCourseLabel);
+  jsEls.courseTable.innerHTML = jsTableHtml("コース", jsSortCourses(data.byCourse || []), jsCourseLabel);
   jsEls.detail.hidden = false;
 }
 

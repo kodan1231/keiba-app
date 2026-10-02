@@ -364,7 +364,11 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
   対象期間(最初と最後の騎乗日)を画面に出す
 - **年度別** = `races.race_date` の年ごと(新しい年が上)
 - **コース別** = 競馬場 × コース種別(芝/ダート/障害)× 距離 ごと(例:「東京 芝1600m」)。
-  騎乗数の多い順。`course_type`/`distance` が無いレースは「コース不明」としてまとめる
+  `course_type`/`distance` が無いレースは「コース不明」としてまとめる。
+  **並び順(2026-10-03変更)**: ①競馬場(中央4場 → 中央ローカル6場 → 南関東4場 → その他地方。
+  `utils.js` の `TRACK_DISPLAY_ORDER`。`buy.js` の `RACE_TRACK_ORDER` と同じ並び。一覧に無い
+  競馬場は後ろで名前順、競馬場不明は最後)→ ②芝 → ダート → 障害 → ③距離の短い順(不明は最後)。
+  並べ替えは画面側(`jockey-search.js` の `jsSortCourses()`)で行う。当初は騎乗数の多い順だった
 
 ### 表の列
 
@@ -380,7 +384,7 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
   "total":  { "rides": 812, "first": 120, "second": 98, "third": 85, "other": 509,
               "winRate": 0.148, "quinellaRate": 0.268, "showRate": 0.373 },
   "byYear":   [ { "year": 2026, "rides": 410, ... }, ... ],          // 新しい年が先
-  "byCourse": [ { "track": "東京", "course_type": "芝", "distance": 1600, "rides": 64, ... }, ... ] // 騎乗数の降順
+  "byCourse": [ { "track": "東京", "course_type": "芝", "distance": 1600, "rides": 64, ... }, ... ] // APIは騎乗数の降順。表示は画面側で並べ替え
 }
 ```
 
