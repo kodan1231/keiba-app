@@ -25,6 +25,7 @@ import {
 //
 // レスポンス:
 //   { condition: { track, course_type, distance } | null,
+//     pedigree: { <正規化馬名>: { sire, dam } }(horses に保存済みの馬のみ。2026-10-03追加),
 //     horses: { <正規化馬名>: { all:   { time: {...} | null, last3f: {...} | null },
 //                               track: { time: {...} | null, last3f: {...} | null } } } }
 //   time / last3f は { time_text, seconds | last3f, race_date, track, race_name,
@@ -42,19 +43,32 @@ export async function onRequestGet(context) {
   ).bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
 
-  // 今回のコース種別・距離が未登録なら「同条件」を決められないため空で返す。
-  if (!race.course_type || !race.distance || !race.race_date) {
-    return Response.json({ condition: null, horses: {} });
-  }
-  const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
-
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
   const aliasMap = await loadHorseAliasMap(env.DB);
   const { canonByKey, searchKeyToKey } = buildHorseSearchKeys(aliasMap, entries.map((e) => e?.horse_name));
   const keyMap = new Map([...canonByKey].map(([k, canon]) => [k, normalizeName(canon)]));
-  if (!keyMap.size) return Response.json({ condition, horses: {} });
+  if (!keyMap.size) return Response.json({ condition: null, horses: {}, pedigree: {} });
+
+  // 父・母(馬柱の馬の列に出す。2026-10-03追加)。horses(馬情報マスタ)に保存済みの分だけを返し、
+  // netkeiba への取得はしない(未登録は画面側で「不明」)。horses.horse_key は正しい馬名の
+  // horseAliasKeyOf で、canonByKey のキーと同じ。キー数は出走頭数(最大18)で100バインド内。
+  const pedigree = {};
+  const masterKeys = [...canonByKey.keys()];
+  const { results: masterRows } = await env.DB.prepare(
+    `SELECT horse_key, sire, dam FROM horses WHERE horse_key IN (${masterKeys.map(() => "?").join(",")})`
+  ).bind(...masterKeys).all();
+  for (const r of masterRows || []) {
+    const name = keyMap.get(r.horse_key);
+    if (name) pedigree[name] = { sire: r.sire || null, dam: r.dam || null };
+  }
+
+  // 今回のコース種別・距離が未登録なら「同条件」を決められないため持ちタイムは空で返す。
+  if (!race.course_type || !race.distance || !race.race_date) {
+    return Response.json({ condition: null, horses: {}, pedigree });
+  }
+  const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
 
   const searchKeys = [...searchKeyToKey.keys()];
   const placeholders = searchKeys.map(() => "?").join(",");
@@ -101,5 +115,5 @@ export async function onRequestGet(context) {
     if (race.track && row.track === race.track) consider(horses[name].track, row, base);
   }
 
-  return Response.json({ condition, horses });
+  return Response.json({ condition, horses, pedigree });
 }

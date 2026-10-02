@@ -601,6 +601,15 @@ function ubBestBlockHtml(label, slot, showTrack) {
     </div>`;
 }
 
+// 馬の列の父・母(2026-10-03追加)。horse-best API が返す horses(馬情報マスタ)保存済みの分で、
+// 未登録は「不明」。取得中・取得失敗の間は何も出さない(「不明」と誤って見せないため)。
+function ubPedigreeHtml(name) {
+  const st = horseBest && selectedRace && horseBest.raceId === selectedRace.id ? horseBest : null;
+  if (!st || st.status !== "done" || !st.data) return "";
+  const p = (st.data.pedigree || {})[name] || {};
+  return `<small class="ub-horse-ped"><span>父 ${escapeHtml(p.sire || "不明")}</span><span>母 ${escapeHtml(p.dam || "不明")}</span></small>`;
+}
+
 function ubBestCellHtml(name) {
   const st = horseBest && selectedRace && horseBest.raceId === selectedRace.id ? horseBest : null;
   if (!st || st.status === "loading") return `<td class="ub-best ub-best-muted">読み込み中…</td>`;
@@ -683,6 +692,7 @@ function renderUmabashira() {
           </div>
           <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>
           ${meta ? `<small class="ub-horse-meta">${meta}</small>` : ""}
+          ${ubPedigreeHtml(normalizeHorseName(e.horse_name))}
         </th>
         ${ubBestCellHtml(normalizeHorseName(e.horse_name))}
         ${Array.from({ length: UB_RUNS }, (_, i) => ubRunCellHtml(runs[i])).join("")}
