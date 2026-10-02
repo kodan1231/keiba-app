@@ -6,6 +6,10 @@ let horseNotes = {};
 // selectRace() で GET /api/races/:id/horse-history からまとめて取得し、
 // renderHorses() より後の applyHorseHistory() で各行の展開パネルへ流し込む。
 let horseHistory = {};
+// 馬柱表示の「同条件の持ちタイム・上がり」(GET /api/races/:id/horse-best。2026-10-03追加)。
+// 馬柱タブを開いたときだけ取得する(出馬表しか見ない場合は通信しない)。
+// { raceId, status: "loading"|"done"|"error", data } の形で、どのレースの結果かを持つ。
+let horseBest = null;
 // 「このレースの購入馬券」欄の開閉状態(group_idごと)。app.jsの.group-card開閉パターンと
 // 同じ考え方で、開閉した状態を再描画(selectRace()のたびに呼ばれるrenderPurchasedTickets)
 // をまたいで保持する。
@@ -547,8 +551,69 @@ function setupPredictionViewTabs() {
       });
       horsesEl.hidden = predictionView !== "card";
       if (umabashiraEl) umabashiraEl.hidden = predictionView !== "umabashira";
+      if (predictionView === "umabashira") ensureHorseBest();
     });
   });
+}
+
+// 馬柱を表示している時だけ、今のレースの持ちタイムを1回取得する。取得後に馬柱を描き直す。
+function ensureHorseBest() {
+  if (!selectedRace || predictionView !== "umabashira") return;
+  const rid = selectedRace.id;
+  if (horseBest && horseBest.raceId === rid) return; // 取得済み・取得中・失敗済み
+  horseBest = { raceId: rid, status: "loading", data: null };
+  authedFetch(`/api/races/${rid}/horse-best`)
+    .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then(data => {
+      if (!horseBest || horseBest.raceId !== rid) return; // 取得中に別レースへ切り替わった
+      horseBest = { raceId: rid, status: "done", data };
+      if (selectedRace && selectedRace.id === rid) renderUmabashira();
+    })
+    .catch(() => {
+      if (!horseBest || horseBest.raceId !== rid) return;
+      horseBest = { raceId: rid, status: "error", data: null };
+      if (selectedRace && selectedRace.id === rid) renderUmabashira();
+    });
+}
+
+// 「持ちタイム」列のセル。同芝ダ・同距離で「同じ競馬場(同場)」と「全競馬場(全場)」の2段に、
+// それぞれ最速タイムと最速上がりを出す(2026-10-03。当初は全場のみ)。各段の下にタイムを出した走の
+// 「日付・(全場のみ競馬場)・馬場・着順」、上がりが別の走ならその走も「上:」付きで添える。
+function ubBestBlockHtml(label, slot, showTrack) {
+  const has = slot && (slot.time || slot.last3f);
+  const sub = (x, prefix) => {
+    if (!x) return "";
+    const parts = [formatDateMd(x.race_date), showTrack ? x.track : null, x.track_condition,
+      x.finish_position != null ? `${x.finish_position}着` : null]
+      .filter(Boolean).map(s => escapeHtml(String(s)));
+    return `<div class="ub-line ub-best-sub" title="${escapeAttr(x.race_name || "")}">${prefix}${parts.join(" ")}</div>`;
+  };
+  if (!has) {
+    return `<div class="ub-best-block"><div class="ub-best-label">${escapeHtml(label)}</div><div class="ub-best-none">走なし</div></div>`;
+  }
+  const sameRun = slot.time && slot.last3f && slot.time.race_date === slot.last3f.race_date && slot.time.race_name === slot.last3f.race_name;
+  return `
+    <div class="ub-best-block">
+      <div class="ub-best-label">${escapeHtml(label)}</div>
+      <div class="ub-best-value">${slot.time ? escapeHtml(slot.time.time_text) : "—"}<span class="ub-best-l3f">上${slot.last3f ? Number(slot.last3f.last3f).toFixed(1) : "—"}</span></div>
+      ${sub(slot.time || slot.last3f, "")}
+      ${slot.time && slot.last3f && !sameRun ? sub(slot.last3f, "上: ") : ""}
+    </div>`;
+}
+
+function ubBestCellHtml(name) {
+  const st = horseBest && selectedRace && horseBest.raceId === selectedRace.id ? horseBest : null;
+  if (!st || st.status === "loading") return `<td class="ub-best ub-best-muted">読み込み中…</td>`;
+  if (st.status === "error") return `<td class="ub-best ub-best-muted">取得失敗</td>`;
+  if (!st.data || !st.data.condition) return `<td class="ub-best ub-best-muted">—</td>`;
+  const b = (st.data.horses || {})[name];
+  if (!b) return `<td class="ub-best ub-best-muted">同条件の<br>走なし</td>`;
+  const trackLabel = st.data.condition.track ? `同場(${st.data.condition.track})` : "同場";
+  return `
+    <td class="ub-best">
+      ${ubBestBlockHtml(trackLabel, b.track, false)}
+      ${ubBestBlockHtml("全場", b.all, true)}
+    </td>`;
 }
 
 function ubRunCellHtml(r) {
@@ -619,13 +684,14 @@ function renderUmabashira() {
           <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>
           ${meta ? `<small class="ub-horse-meta">${meta}</small>` : ""}
         </th>
+        ${ubBestCellHtml(normalizeHorseName(e.horse_name))}
         ${Array.from({ length: UB_RUNS }, (_, i) => ubRunCellHtml(runs[i])).join("")}
       </tr>`;
   }).join("");
   umabashiraEl.innerHTML = `
     <div class="ub-scroll">
       <table class="ub-table">
-        <thead><tr><th class="ub-horse">馬名</th>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <thead><tr><th class="ub-horse">馬名</th><th class="ub-best-head">持ちタイム<br><small>${escapeHtml(formatCourseText(selectedRace.course_type, selectedRace.distance) || "同条件")}</small></th>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -637,6 +703,8 @@ function renderUmabashira() {
     });
   });
   applyPrediction();
+  // 馬柱を表示中なら持ちタイムを取得する(取得済み・別タブ表示中なら何もしない)。
+  ensureHorseBest();
 }
 
 // ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------

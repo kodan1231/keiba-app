@@ -3214,3 +3214,16 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
    display:none を上書きして出馬表が消えず、馬柱がその下に出ていた(2026-10-03)。明示的に打ち消す。 */
 .prediction-horses[hidden],
 .prediction-umabashira[hidden] { display: none; }
+
+/* 馬柱表示の「持ちタイム」列(馬名と前走の間。同芝ダ・同距離の最速タイム/上がり。2026-10-03) */
+.ub-table .ub-best-head small { font-weight: 500; }
+.ub-best { min-width: 84px; padding: 4px 6px; line-height: 1.3; background: #fbfaf6; }
+.ub-best-label { font-size: 9.5px; color: var(--ink-soft); }
+.ub-best-value { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+.ub-best-sub { font-size: 10px; color: var(--ink-soft); margin-bottom: 3px; }
+.ub-best-muted { color: var(--ink-soft); font-size: 10.5px; text-align: center; vertical-align: middle !important; }
+/* 持ちタイム列の「同場」「全場」2段(2026-10-03) */
+.ub-best { min-width: 96px; }
+.ub-best-block + .ub-best-block { border-top: 1px dashed rgba(0, 0, 0, .15); margin-top: 3px; padding-top: 3px; }
+.ub-best-l3f { font-size: 11px; font-weight: 600; margin-left: 4px; color: var(--ink-soft); }
+.ub-best-none { font-size: 10.5px; color: var(--ink-soft); }

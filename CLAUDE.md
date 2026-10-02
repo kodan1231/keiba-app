@@ -24,7 +24,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 馬券購入画面(UI/組み合わせ生成) | `public/buy.js`, `public/combos.js`, `public/bettypes.js`, `public/index.html` |
 | 馬券かご(カート) | `public/cart.js`, `public/buy-purchase-modal.js` |
 | 購入履歴画面 | `public/app.js`, `public/history.html` |
-| 予想登録画面(予想印・馬メモ・過去成績) | `public/prediction.js`, `public/prediction.html`, `functions/api/races/[id]/horse-history.js` |
+| 予想登録画面(予想印・馬メモ・過去成績・馬柱/持ちタイム) | `public/prediction.js`, `public/prediction.html`, `functions/api/races/[id]/horse-history.js`, `functions/api/races/[id]/horse-best.js` |
 | 購入馬券グループ表示の共通部品(履歴・予想の両画面) | `public/ticket-view.js`(`groupTicketsByGroupId` `ticketMoneyText` `ticketGroupStatus` `selectionCellHtml` 等。history/prediction のみ読込) |
 | 集計画面(総合成績/レース別に「重賞のみ/条件戦のみ」フィルタあり) | `public/stats.js`, `public/stats.html` |
 | データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/netkeiba.js`, `functions/api/_lib/horse-master.js` |
