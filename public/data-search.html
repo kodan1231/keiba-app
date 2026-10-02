@@ -23,6 +23,7 @@
       <button type="button" class="stats-tab active" data-tab="race-stats">レース成績</button>
       <button type="button" class="stats-tab" data-tab="horse-info">馬情報検索</button>
       <button type="button" class="stats-tab" data-tab="graded-race">重賞検索</button>
+      <button type="button" class="stats-tab" data-tab="jockey">騎手検索</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="race-stats">
@@ -162,6 +163,37 @@
 
     </section>
 
+    <!-- 騎手検索タブ(2026-10-03追加)。仕様はdocs/design/data-search.md「騎手検索タブ」。
+         騎手名の一部入力→候補から選択→通算・年度別・コース別の成績表。 -->
+    <section class="stats-section stats-panel" data-panel="jockey" hidden>
+
+      <label class="horse-index-search-label">騎手名で検索(部分一致)
+        <input type="search" id="js-search" placeholder="例: 戸崎" />
+      </label>
+      <p class="ticket-sub" id="js-search-status">騎手一覧を読み込み中…</p>
+      <ul class="hi-result-list" id="js-result-list" hidden></ul>
+
+      <div id="js-detail" hidden>
+        <div class="hi-detail-title">
+          <h2 class="stats-heading" id="js-detail-name"></h2>
+          <span class="hi-detail-age" id="js-detail-sub"></span>
+        </div>
+        <p class="stats-note">このアプリに取り込まれているレースでの成績です(実際の生涯成績ではありません)。
+          複勝率は出走頭数によらず一律「3着以内率」で計算しています。</p>
+
+        <h2 class="stats-heading">通算成績</h2>
+        <div class="table-wrap"><table class="stats-table js-stats-table" id="js-total-table"></table></div>
+
+        <h2 class="stats-heading">年度別成績</h2>
+        <div class="table-wrap"><table class="stats-table js-stats-table" id="js-year-table"></table></div>
+
+        <h2 class="stats-heading">コース別成績</h2>
+        <p class="stats-note">競馬場 × 芝/ダート/障害 × 距離ごと。騎乗数の多い順。</p>
+        <div class="table-wrap"><table class="stats-table js-stats-table" id="js-course-table"></table></div>
+      </div>
+
+    </section>
+
   </main>
 
 </div>
@@ -173,5 +205,6 @@
 <script src="cart.js"></script>
 <script src="data-search.js"></script>
 <script src="graded-race-search.js"></script>
+<script src="jockey-search.js"></script>
 </body>
 </html>

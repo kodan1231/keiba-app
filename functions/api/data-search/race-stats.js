@@ -1,4 +1,4 @@
-import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw } from "../_shared.js";
+import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw, buildRaceLineup } from "../_shared.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
 // レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
@@ -16,7 +16,6 @@ import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw } from "../_sh
 //     レースごとに選ぶ(手入力・CSV・PDF未取込のレースもカバーするため)。
 
 const SURFACES = new Set(["芝", "ダート"]);
-const RIDDEN_STATUSES = new Set(["finished", "stopped"]);
 const JOCKEY_MARK_RE = /^[☆▲△★◇]/;
 
 // 騎手名の名寄せキー: 先頭の見習い減量記号を除去し、空白(全角/半角)を畳み込む
@@ -53,37 +52,8 @@ function raceRateValue(payoutsObj, key) {
   return rates.length ? avg(rates) : null;
 }
 
-// レース1件について「出走した各馬の {horse_number, jockey, ran, pos}」配列を作る。
-// pos は 1/2/3(3着以内)または null(着外)。着順データが取れなければ null を返す。
-function buildRaceLineup(entries, finishOrder, rrRows) {
-  // 1) race_results が全頭ぶん揃っていれば、それを正のソースにする
-  if (Array.isArray(rrRows) && entries.length > 0 && rrRows.length >= entries.length) {
-    return rrRows.map((r) => {
-      const status = r.status || "finished";
-      const fp = r.finish_position;
-      return {
-        horse_number: r.horse_number,
-        jockey: r.jockey,
-        ran: RIDDEN_STATUSES.has(status),
-        pos: fp != null && fp >= 1 && fp <= 3 ? fp : null,
-      };
-    });
-  }
-  // 2) フォールバック: finish_order(上位3着)+ entries(全出走馬)
-  if (Array.isArray(finishOrder) && finishOrder.length && entries.length) {
-    const posOf = (hn) => {
-      const i = finishOrder.indexOf(hn);
-      return i >= 0 && i < 3 ? i + 1 : null;
-    };
-    return entries.map((e) => ({
-      horse_number: e.horse_number,
-      jockey: e.jockey,
-      ran: true, // entries からは取消馬を判別できない
-      pos: posOf(e.horse_number),
-    }));
-  }
-  return null;
-}
+// buildRaceLineup()(レース1件の出走馬・着順配列)は騎手検索タブと共用するため
+// _lib/race-lineup.js へ移した(2026-10-03)。
 
 // 率ランキング上位N(5位同率は全員含める)。
 function topByRate(entries, minRides, countKey, n) {

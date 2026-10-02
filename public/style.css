@@ -3132,3 +3132,7 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .admin-collapsible[open] > summary { border-bottom-style: dashed; }
 .admin-collapsible-count { font-family: var(--font-mono); font-weight: 500; color: var(--ink-soft); }
 .admin-collapsible > .table-wrap { margin-top: 0; }
+
+/* データ検索「騎手検索」タブ(2026-10-03)。年度・コース名の列は左寄せ・折り返さない */
+.js-stats-table td, .js-stats-table th { white-space: nowrap; text-align: right; }
+.js-stats-table .js-label-cell { text-align: left; }
