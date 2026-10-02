@@ -241,9 +241,9 @@ async function selectRace() {
   // #buy-race-btn要素を作り直すため、この再描画より前に取得したDOM参照へ
   // 後からhref/textContentを設定しても、画面上の(作り直された)要素には反映されず
   // 購入ボタンが常に初期状態(href="#"・初期文言)のまま操作不能になる不具合があった。
-  // 必ずこの再描画の後で最新の要素を取得し直す。
+  // (2026-10-03以降はボタンの状態設定を renderRaceHeader() 内で毎回行うため、
+  //  ここでDOM参照を取り直す必要は無くなった。applyBuyButtonState() 参照)
   renderRaceHeader();
-  const buyBtn = document.getElementById("buy-race-btn");
 
   horseNotes = noteRes.ok ? await noteRes.json() : {};
   applyPrediction();
@@ -256,8 +256,29 @@ async function selectRace() {
   horseHistory = {};
   applyHorseHistory();
   loadHorseHistory().catch(() => {});
+  // 購入画面への導線ボタンの状態設定は renderRaceHeader() の中(applyBuyButtonState())で
+  // 毎回行う(2026-10-03。下記参照)。
+
+  // 購入馬券セクションは独立して読み込む。ここで失敗しても、予想印の保存や
+  // 購入ページへの遷移など他の機能に影響させない。
+  loadRaceTickets()
+    .then(renderPurchasedTickets)
+    .catch(() => { ticketsEl.innerHTML = ""; ticketsEl.hidden = true; });
+}
+
+// 「投票」ボタン(#buy-race-btn)のリンク先・文言・見た目を設定する。
+// 2026-10-03: renderRaceHeader() はヘッダーを丸ごと作り直すため、ボタンも初期状態
+// (href="#"・文言「投票」)で作り直される。以前はこの設定を selectRace() の中で1回だけ
+// 行っていたため、勝負レースの切り替え(toggleKeyRace → renderRaceHeader)でヘッダーを
+// 描き直すとリンク先が消えて「投票」ボタンが効かなくなり、確定済・購入不可の表示も
+// 「投票」に戻ってしまう不具合があった(2026-09-18にも selectRace() 内の再描画で同種の
+// 不具合を修正済み)。renderRaceHeader() の末尾から毎回呼ぶことで、どの経路で
+// 描き直しても状態が揃うようにした。
+function applyBuyButtonState() {
+  const buyBtn = document.getElementById("buy-race-btn");
+  if (!buyBtn || !selectedRace) return;
   // レースの着順 or 払戻が確定済みの場合でも、購入履歴の登録し忘れに対応できるよう
-  // 購入自体は引き続きできるようにする。ボタンのラベルだけ「結果確定済」に変え、
+  // 購入自体は引き続きできるようにする。ボタンのラベルだけ「確定済」に変え、
   // 確定済みであることがひと目でわかるようにする。
   // 2026-08-16: ファイルリネーム(buy.html→index.html)に伴い、購入画面へのリンク先を
   // index.html に更新する(docs/design/screens.md「トップページ(/)の表示について」参照)。
@@ -294,12 +315,6 @@ async function selectRace() {
     buyBtn.classList.remove("is-settled");
     buyBtn.removeAttribute("title");
   }
-
-  // 購入馬券セクションは独立して読み込む。ここで失敗しても、予想印の保存や
-  // 購入ページへの遷移など他の機能に影響させない。
-  loadRaceTickets()
-    .then(renderPurchasedTickets)
-    .catch(() => { ticketsEl.innerHTML = ""; ticketsEl.hidden = true; });
 }
 
 // 予想登録画面から購入画面のカレンダーへ戻る手段がなかったため、開催日・競馬場・
@@ -387,6 +402,8 @@ function renderRaceHeader() {
     switchToRace(Number(e.target.value));
   });
   document.getElementById("key-race-toggle-btn").addEventListener("click", toggleKeyRace);
+  // ボタンは作り直されたばかりで初期状態なので、毎回ここで状態を設定し直す。
+  applyBuyButtonState();
 }
 
 // 勝負レースフラグのON/OFF切り替え(2026-09-12追加)。予想印・予想メモの保存とは
