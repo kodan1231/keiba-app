@@ -706,6 +706,7 @@ function renderHorseHistory(rows) {
         <td>${escapeHtml(kinryo)}</td>
         <td>${escapeHtml(bw)}</td>
         <td>${escapeHtml(r.time_text || "—")}</td>
+        <td>${escapeHtml(r.corner_positions || "—")}</td>
         <td>${escapeHtml(agari)}</td>
         <td>${escapeHtml(r.margin || "—")}</td>
       </tr>`;
@@ -714,7 +715,7 @@ function renderHorseHistory(rows) {
     <div class="horse-history-scroll">
       <table class="horse-history-table">
         <thead>
-          <tr><th>日付</th><th>場</th><th>レース名</th><th>コース</th><th>着順</th><th>人気</th><th>騎手</th><th>斤量</th><th>馬体重</th><th>タイム</th><th>上がり</th><th>着差</th></tr>
+          <tr><th>日付</th><th>場</th><th>レース名</th><th>コース</th><th>着順</th><th>人気</th><th>騎手</th><th>斤量</th><th>馬体重</th><th>タイム</th><th>通過</th><th>上がり</th><th>着差</th></tr>
         </thead>
         <tbody>${tbody}</tbody>
       </table>
