@@ -223,23 +223,28 @@ let hiSearchTimer = null;
 let hiCurrentName = null;
 let hiCurrentMaster = null;
 
+// 取得状況のお知らせ文。編集・再取得は管理者専用のため、操作への誘導(「編集する」
+// 「netkeibaから再取得する」)は管理者にだけ出す(2026-10-02。それまでは一般ユーザーにも
+// 「下のフォームから手入力できます」と出ており、ボタンが無いのに編集できそうに見えていた)。
 function hiFetchNoteText(master) {
   if (!master) return "";
+  const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
+  const manualHint = isAdmin ? "「編集する」から手入力できます。" : "";
   if (master.dataSource === "manual") {
     return "手動で編集済みの情報です。";
   }
   if (master.fetchError === "not_found") {
-    return "netkeibaで該当する馬が見つかりませんでした。下のフォームから手入力できます。";
+    return `netkeibaで該当する馬が見つかりませんでした。${manualHint}`;
   }
   if (master.fetchError === "encoding_unsupported") {
-    return "馬名にカタカナ以外の文字が含まれるため、netkeibaへの自動検索ができませんでした。下のフォームから手入力できます。";
+    return `馬名にカタカナ以外の文字が含まれるため、netkeibaへの自動検索ができませんでした。${manualHint}`;
   }
   if (master.fetchError) {
-    return "netkeibaからの取得に失敗しました。下のフォームから手入力できます。";
+    return `netkeibaからの取得に失敗しました。${isAdmin ? "「編集する」から手入力するか、「netkeibaから再取得する」を試してください。" : ""}`;
   }
   if (master.dataSource === "netkeiba" || master.dataSource === "import") {
     const when = master.fetchedAt ? new Date(master.fetchedAt).toLocaleString("ja-JP") : "";
-    return `netkeiba等から取得した情報です${when ? `(${when}取得)` : ""}。誤りがあれば下のフォームで修正してください。`;
+    return `netkeiba等から取得した情報です${when ? `(${when}取得)` : ""}。${isAdmin ? "誤りがあれば「編集する」から修正してください。" : ""}`;
   }
   return "";
 }
