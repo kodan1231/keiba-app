@@ -10,6 +10,7 @@ let jsJockeys = null; // [{ name, rides }](騎乗数の降順)。読み込み失
 let jsLoadToken = 0; // 別の騎手を選び直したら、進行中の取得結果を捨てるための世代番号
 
 const JS_MAX_CANDIDATES = 50;
+const JS_YEAR_TABLE_YEARS = 5; // 年度別成績に出す年数(今年を含む)
 
 // 絞り込み用の正規化: NFKC・空白除去・見習い減量記号の除去(サーバー側の名寄せと同じ考え方)。
 function jsNorm(s) {
@@ -64,7 +65,13 @@ function jsRenderDetail(data) {
   const p = data.period || {};
   jsEls.detailSub.textContent = p.from && p.to ? `対象期間 ${formatDate(p.from)} 〜 ${formatDate(p.to)}` : "";
   jsEls.totalTable.innerHTML = jsTableHtml(null, [data.total], null);
-  jsEls.yearTable.innerHTML = jsTableHtml("年度", data.byYear || [], (r) => `${r.year}年`);
+  // 年度別は今年を含む過去5年ぶんだけ出す(2026-10-03。例: 2026年なら2022〜2026年)。
+  // 通算・コース別は全期間のまま。今年は端末の日付(日本時間で使う前提)で判定する。
+  const fromYear = new Date().getFullYear() - (JS_YEAR_TABLE_YEARS - 1);
+  const years = (data.byYear || []).filter((r) => r.year >= fromYear);
+  jsEls.yearTable.innerHTML = years.length
+    ? jsTableHtml("年度", years, (r) => `${r.year}年`)
+    : `<tbody><tr><td>過去${JS_YEAR_TABLE_YEARS}年(${fromYear}年以降)の騎乗データはありません</td></tr></tbody>`;
   jsEls.courseTable.innerHTML = jsTableHtml("コース", jsSortCourses(data.byCourse || []), jsCourseLabel);
   jsEls.detail.hidden = false;
 }
