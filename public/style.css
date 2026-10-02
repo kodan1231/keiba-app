@@ -3210,3 +3210,7 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   .ub-table .ub-horse { min-width: 100px; max-width: 112px; }
   .ub-run { min-width: 118px; }
 }
+/* タブで隠す側に hidden を付けても、.prediction-horses の display:flex が hidden 属性の
+   display:none を上書きして出馬表が消えず、馬柱がその下に出ていた(2026-10-03)。明示的に打ち消す。 */
+.prediction-horses[hidden],
+.prediction-umabashira[hidden] { display: none; }
