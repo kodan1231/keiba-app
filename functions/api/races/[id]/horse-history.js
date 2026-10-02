@@ -28,8 +28,8 @@ import {
 //   バインド数は「出走馬(最大18頭程度)× (1 + その馬のエイリアス数)」で自然に
 //   100バインド上限内に収まる(CLAUDE.md の不変条件参照)。
 //   馬ごとに最大5走までは ROW_NUMBER() OVER (PARTITION BY horse_key ...) でSQL側に
-//   絞らせる(欠番なく直近5走)。field_size(出走頭数)は行ごとの相関サブクエリをやめ、
-//   対象レース(最大でも出走馬数×5走ぶん)だけの GROUP BY 1本にまとめた。
+//   絞らせる(欠番なく直近5走)。field_size(出走頭数)・勝ち馬名は行ごとの相関サブクエリをやめ、
+//   対象レース(最大でも出走馬数×5走ぶん)だけの1本の問い合わせにまとめた。
 //
 // レスポンスのキーはクライアント(prediction.js の normalizeHorseName=空白を半角1つに畳む)
 // が引ける形にする。
@@ -44,6 +44,18 @@ function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
+}
+
+// 馬柱表示の「勝ち馬/2着馬名(着差)」。netkeiba の馬柱と同じく、自分が1着なら2着馬名と
+// その着差、それ以外は勝ち馬名と自分の着差を返す。
+function rivalOf(row, top) {
+  if (!top) return null;
+  if (row.finish_position === 1) {
+    return top.second ? { horse_name: top.second.horse_name, margin: top.second.margin } : null;
+  }
+  return top.first && top.first.horse_name !== row.horse_name
+    ? { horse_name: top.first.horse_name, margin: row.margin || null }
+    : null;
 }
 
 export async function onRequestGet(context) {
@@ -79,7 +91,9 @@ export async function onRequestGet(context) {
        SELECT rr.horse_key, rr.horse_name, rr.status, rr.finish_position, rr.win_popularity,
               rr.jockey, rr.weight_carried, rr.body_weight, rr.body_weight_change,
               rr.time_text, rr.margin, rr.final_furlong_time, rr.corner_positions, rr.sex_age, rr.race_id,
+              rr.horse_number,
               r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance,
+              r.track_condition, r.weather,
               ROW_NUMBER() OVER (
                 PARTITION BY rr.horse_key
                 ORDER BY r.race_date DESC, r.race_number DESC
@@ -95,19 +109,35 @@ export async function onRequestGet(context) {
 
   const rows = rankedRows || [];
 
-  // field_size(出走頭数)は、対象レース(最大でも出走馬数×5走ぶん)だけを一括集計する。
+  // field_size(出走頭数)と、勝ち馬・2着馬(馬柱表示の「勝ち馬/2着馬名」用)を、
+  // 対象レースぶんだけ一括で引く。race_id の数は「出走馬数(最大18)× 5走」= 最大90で、
+  // 下の90件チャンクに収まる(CLAUDE.md「IN句のバインド数」)。
+  // 2026-10-03: 以前は COUNT(*) ... GROUP BY race_id で頭数だけを数えていたが、馬柱表示の
+  // 追加で勝ち馬名も要るため、同じ行(対象レースの race_results 全頭)を読んでメモリで
+  // 数える形に変えた。読む行は COUNT のときと同じ(race_id インデックスで該当レースの全頭)。
   const raceIdsNeeded = [...new Set(rows.map((r) => r.race_id))];
   const fieldSizeByRaceId = new Map();
+  const topByRaceId = new Map(); // race_id -> { first: {horse_name, margin}, second: {...} }
   for (const idsChunk of chunk(raceIdsNeeded, 90)) {
     if (!idsChunk.length) continue;
     const ph = idsChunk.map(() => "?").join(",");
     const { results } = await env.DB.prepare(
-      `SELECT race_id, COUNT(*) AS field_size
+      `SELECT race_id, status, finish_position, horse_name, margin
          FROM race_results
-        WHERE race_id IN (${ph}) AND status IN ('finished','stopped')
-        GROUP BY race_id`
+        WHERE race_id IN (${ph})`
     ).bind(...idsChunk).all();
-    for (const r of results || []) fieldSizeByRaceId.set(r.race_id, r.field_size);
+    for (const r of results || []) {
+      if (r.status === "finished" || r.status === "stopped") {
+        fieldSizeByRaceId.set(r.race_id, (fieldSizeByRaceId.get(r.race_id) || 0) + 1);
+      }
+      if (r.finish_position === 1 || r.finish_position === 2) {
+        if (!topByRaceId.has(r.race_id)) topByRaceId.set(r.race_id, {});
+        const t = topByRaceId.get(r.race_id);
+        const slot = r.finish_position === 1 ? "first" : "second";
+        // 同着で複数いる場合は先に見つかった1頭を使う。
+        if (!t[slot]) t[slot] = { horse_name: r.horse_name || null, margin: r.margin || null };
+      }
+    }
   }
 
   const out = {};
@@ -136,6 +166,13 @@ export async function onRequestGet(context) {
       final_furlong_time: row.final_furlong_time ?? null,
       // 個別コーナー通過順位(生テキスト。例 "3-3-2-1")。2026-10-03追加。
       corner_positions: row.corner_positions || null,
+      // 以下は馬柱表示(近5走)用に2026-10-03追加。
+      horse_number: row.horse_number ?? null,
+      track_condition: row.track_condition || null,
+      weather: row.weather || null,
+      // 相手馬: 自分が1着なら2着馬(着差は2着馬側の着差)、それ以外は勝ち馬(着差は自分の着差)。
+      // 勝ち馬・2着馬が取れない(race_results が不完全な)レースは null。
+      rival: rivalOf(row, topByRaceId.get(row.race_id)),
     });
   }
 

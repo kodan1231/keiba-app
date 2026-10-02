@@ -3136,3 +3136,77 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 /* データ検索「騎手検索」タブ(2026-10-03)。年度・コース名の列は左寄せ・折り返さない */
 .js-stats-table td, .js-stats-table th { white-space: nowrap; text-align: right; }
 .js-stats-table .js-label-cell { text-align: left; }
+
+/* ---------- 予想登録画面: 出馬表/馬柱タブと馬柱表示(近5走)。2026-10-03追加 ----------
+   馬柱は左端の列(馬番・印・馬名・騎手)を position: sticky で固定し、5走ぶんを横スクロール。
+   1〜3着のセルは薄く色付けする(netkeiba の馬柱と同じ考え方)。 */
+.prediction-view-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 0;
+  border-bottom: 2px solid var(--rule-strong);
+}
+.prediction-view-tab {
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-bottom: none;
+  padding: 7px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  position: relative;
+  top: 2px;
+}
+.prediction-view-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 9px; }
+
+.prediction-umabashira { padding: 8px 0; }
+.ub-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ub-table { border-collapse: separate; border-spacing: 0; font-size: 11px; background: #fff; }
+.ub-table th, .ub-table td {
+  border-right: 1px solid rgba(0, 0, 0, .12);
+  border-bottom: 1px solid rgba(0, 0, 0, .12);
+  vertical-align: top;
+  text-align: left;
+}
+.ub-table thead th {
+  background: #f1efe8;
+  font-weight: 600;
+  color: #666;
+  padding: 4px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+.ub-table .ub-horse {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fbfaf6;
+  min-width: 112px;
+  max-width: 132px;
+  padding: 5px 6px;
+  border-right: 2px solid var(--rule-strong);
+}
+.ub-table thead .ub-horse { z-index: 2; background: #f1efe8; }
+.ub-horse-top { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+.ub-horse-top .prediction-horse-number { flex: none; }
+.ub-mark-select { min-width: 52px; padding: 2px 4px; font-size: 13px; }
+.ub-horse-name { display: block; font-size: 12px; line-height: 1.3; word-break: break-all; }
+.ub-horse-meta { display: block; color: var(--ink-soft); font-size: 10px; line-height: 1.3; }
+.ub-run { min-width: 128px; max-width: 150px; padding: 4px 6px; line-height: 1.35; }
+.ub-run-empty { background: repeating-linear-gradient(135deg, #fff, #fff 6px, #f6f5f0 6px, #f6f5f0 12px); }
+.ub-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ub-run-head { color: var(--ink-soft); }
+.ub-race-name { font-weight: 600; }
+.ub-place { font-size: 15px; font-weight: 800; line-height: 1.2; margin: 1px 0; }
+.ub-rival { color: var(--ink-soft); }
+.ub-run.ub-place-1 { background: #fdf0ef; }
+.ub-run.ub-place-1 .ub-place { color: #b5231c; }
+.ub-run.ub-place-2 { background: #eef3fb; }
+.ub-run.ub-place-2 .ub-place { color: #2b5aa8; }
+.ub-run.ub-place-3 { background: #eef7ef; }
+.ub-run.ub-place-3 .ub-place { color: var(--win); }
+@media (max-width: 430px) {
+  .ub-table .ub-horse { min-width: 100px; max-width: 112px; }
+  .ub-run { min-width: 118px; }
+}

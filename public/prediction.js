@@ -498,17 +498,10 @@ function renderHorses() {
   // 枠番・馬番未確定の馬(select disabled)はそもそもchangeイベントが発火しないため対象外。
   horsesEl.querySelectorAll(".prediction-mark-select").forEach(select => {
     select.addEventListener("click", (event) => event.stopPropagation());
-    select.addEventListener("change", async () => {
+    select.addEventListener("change", () => {
       const card = select.closest(".horse-note-card");
       if (!card.dataset.horseNumber) return; // 念のための二重ガード
-      const n = Number(card.dataset.horseNumber);
-      const mark = select.value || "";
-      prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
-      if (mark) {
-        prediction.marks.push({ horse_number: n, mark });
-      }
-      applyPrediction(); // 変更直後に見た目へ反映する(保存を待たず即時反映)
-      await savePredictionMarks();
+      setHorseMark(Number(card.dataset.horseNumber), select.value || "");
     });
   });
 
@@ -519,6 +512,131 @@ function renderHorses() {
       openHorseMemo(btn.closest(".horse-note-card"));
     });
   });
+
+  // 馬柱タブも同じ出走馬で作り直す(過去走は horseHistory 取得後に applyHorseHistory() から再描画)。
+  renderUmabashira();
+}
+
+// 予想印の変更(出馬表・馬柱の両方から呼ぶ)。1頭につき1つまで。両方の表示へ即時反映してから保存する。
+async function setHorseMark(n, mark) {
+  prediction.marks = (prediction.marks || []).filter(x => Number(x.horse_number) !== n);
+  if (mark) {
+    prediction.marks.push({ horse_number: n, mark });
+  }
+  applyPrediction(); // 変更直後に見た目へ反映する(保存を待たず即時反映)
+  await savePredictionMarks();
+}
+
+// ---------- 馬柱表示(近5走。2026-10-03追加) ----------
+// netkeiba の「馬柱」に相当する表。左端の列(馬番・馬名・騎手・予想印)を固定し、
+// 前走〜5走前を横に並べる(スマホでは横スクロール)。データは出馬表の過去成績と同じ
+// horseHistory(GET /api/races/:id/horse-history。追加の通信なし)。予想印は出馬表と共有する。
+// 仕様は docs/design/screens.md「予想登録画面」の「馬柱表示」。
+const umabashiraEl = document.getElementById("prediction-umabashira");
+const UB_RUNS = 5;
+let predictionView = "card"; // "card"(出馬表)/"umabashira"(馬柱)。レースを切り替えても保つ
+
+function setupPredictionViewTabs() {
+  document.querySelectorAll(".prediction-view-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      predictionView = tab.dataset.view;
+      document.querySelectorAll(".prediction-view-tab").forEach(t => {
+        const active = t.dataset.view === predictionView;
+        t.classList.toggle("active", active);
+        t.setAttribute("aria-selected", String(active));
+      });
+      horsesEl.hidden = predictionView !== "card";
+      if (umabashiraEl) umabashiraEl.hidden = predictionView !== "umabashira";
+    });
+  });
+}
+
+function ubRunCellHtml(r) {
+  if (!r) return `<td class="ub-run ub-run-empty"></td>`;
+  const statusLabel = { scratched: "取消", excluded: "除外", stopped: "中止" }[r.status];
+  const place = statusLabel || (r.finish_position != null ? `${r.finish_position}着` : "—");
+  const placeClass = !statusLabel && r.finish_position >= 1 && r.finish_position <= 3 ? `ub-place-${r.finish_position}` : "";
+  const num = (v, suffix) => (v !== null && v !== undefined && v !== "" ? `${v}${suffix}` : null);
+  const kinryo = (r.weight_carried !== null && r.weight_carried !== undefined && !Number.isNaN(Number(r.weight_carried)))
+    ? Number(r.weight_carried).toFixed(1) : null;
+  const agari = (r.final_furlong_time !== null && r.final_furlong_time !== undefined && !Number.isNaN(Number(r.final_furlong_time)))
+    ? Number(r.final_furlong_time).toFixed(1) : null;
+  const bw = r.body_weight !== null && r.body_weight !== undefined
+    ? `${r.body_weight}${r.body_weight_change ? `(${r.body_weight_change})` : ""}` : null;
+  // 値がある項目だけを空白でつなぐ(取込経路によって欠ける項目があるため)。
+  const line = (...parts) => {
+    const s = parts.filter(Boolean).map(p => escapeHtml(String(p))).join(" ");
+    return s ? `<div class="ub-line">${s}</div>` : "";
+  };
+  const rival = r.rival && r.rival.horse_name
+    ? `<div class="ub-line ub-rival">${escapeHtml(r.rival.horse_name)}${r.rival.margin ? `(${escapeHtml(r.rival.margin)})` : ""}</div>`
+    : "";
+  return `
+    <td class="ub-run ${placeClass}" title="${escapeAttr(r.race_name || "")}">
+      <div class="ub-line ub-run-head">${escapeHtml(formatDateMdW(r.race_date))} ${escapeHtml(`${r.track || ""}${r.race_number ? `${r.race_number}R` : ""}`)}</div>
+      <div class="ub-line ub-race-name">${escapeHtml(r.race_name || "—")}</div>
+      ${line(formatCourseText(r.course_type, r.distance), r.track_condition, r.weather)}
+      <div class="ub-place">${escapeHtml(place)}</div>
+      ${line(num(r.field_size, "頭"), num(r.horse_number, "番"), num(r.win_popularity, "人"))}
+      ${line(r.jockey, kinryo)}
+      ${line(r.time_text, agari ? `上${agari}` : null)}
+      ${line(r.corner_positions, bw)}
+      ${rival}
+    </td>`;
+}
+
+function renderUmabashira() {
+  if (!umabashiraEl || !selectedRace) return;
+  const hasUnconfirmedNumbers = selectedRace.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
+  const entries = hasUnconfirmedNumbers
+    ? [...selectedRace.entries].sort((a, b) => String(a.horse_name || "").localeCompare(String(b.horse_name || ""), "ja"))
+    : [...selectedRace.entries].sort((a, b) => Number(a.horse_number) - Number(b.horse_number));
+  if (!entries.length) {
+    umabashiraEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
+    return;
+  }
+  const head = ["前走", "2走前", "3走前", "4走前", "5走前"].slice(0, UB_RUNS);
+  const rows = entries.map(e => {
+    const hasNumber = e.horse_number !== null && e.horse_number !== undefined;
+    const n = hasNumber ? Number(e.horse_number) : null;
+    const runs = horseHistory[normalizeHorseName(e.horse_name)] || [];
+    const w = e.weight_carried;
+    const meta = [
+      e.sex_age ? String(e.sex_age) : null,
+      (w !== null && w !== undefined && w !== "" && !Number.isNaN(Number(w))) ? `${Number(w).toFixed(1)}kg` : null,
+      e.jockey || null,
+    ].filter(Boolean).map(s => escapeHtml(s)).join(" ");
+    return `
+      <tr>
+        <th class="ub-horse" scope="row">
+          <div class="ub-horse-top">
+            <span class="prediction-horse-number waku-tint waku-${e.waku_number || 0}">${n !== null ? n : "-"}</span>
+            <select class="prediction-mark-select ub-mark-select" data-horse-number="${n !== null ? n : ""}" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
+              <option value="">−</option>
+              ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
+            </select>
+          </div>
+          <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+          ${meta ? `<small class="ub-horse-meta">${meta}</small>` : ""}
+        </th>
+        ${Array.from({ length: UB_RUNS }, (_, i) => ubRunCellHtml(runs[i])).join("")}
+      </tr>`;
+  }).join("");
+  umabashiraEl.innerHTML = `
+    <div class="ub-scroll">
+      <table class="ub-table">
+        <thead><tr><th class="ub-horse">馬名</th>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  umabashiraEl.querySelectorAll(".ub-mark-select").forEach(select => {
+    select.addEventListener("change", () => {
+      if (!select.dataset.horseNumber) return; // 枠番・馬番未確定(disabled)の二重ガード
+      setHorseMark(Number(select.dataset.horseNumber), select.value || "");
+    });
+  });
+  applyPrediction();
 }
 
 // ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------
@@ -630,6 +748,13 @@ function applyPrediction() {
     const select = card.querySelector(".prediction-mark-select");
     if (select) select.value = mark;
   });
+  // 馬柱タブの印セレクト(2026-10-03追加)も同じ印で揃える。
+  if (umabashiraEl) {
+    umabashiraEl.querySelectorAll(".ub-mark-select").forEach(select => {
+      if (!select.dataset.horseNumber) return;
+      select.value = map.get(Number(select.dataset.horseNumber)) || "";
+    });
+  }
 }
 
 // 馬メモ(horseNotes)の取得はrenderHorses()より後に完了するため、renderHorses()内で
@@ -671,6 +796,8 @@ function applyHorseHistory() {
     // 展開パネルは過去成績だけなので、0走の馬も空のパネルにならないよう案内を出す。
     box.innerHTML = rows.length ? renderHorseHistory(rows) : `<p class="horse-history-empty">過去成績はありません</p>`;
   });
+  // 馬柱タブ(2026-10-03追加)も過去走が揃ったので描き直す。
+  renderUmabashira();
 }
 
 // 着順セル。取消・除外・中止は着順が付かないため状態ラベルを出す。
@@ -728,4 +855,5 @@ function normalizeHorseName(str) { return String(str ?? "").replace(/[\u3000\s]+
 // (2026-09-07: ローカルの formatDate 定義を撤去。utils.js に統合し全画面で
 //  「2026/08/24(日)」表記に統一した)
 
+setupPredictionViewTabs();
 setupAuth(loadRaces);

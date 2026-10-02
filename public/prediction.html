@@ -17,8 +17,14 @@
 <section id="prediction-empty" class="empty-state" hidden></section>
 <section id="prediction-panel" class="prediction-panel" hidden>
 <div id="prediction-race-header" class="prediction-race-header"></div>
-<div class="prediction-help">予想印は馬名の横で変更できます。馬名をクリックすると過去成績(直近5走)を表示し、「メモ」ボタンでこの馬についてのメモを入力できます。印とメモは変更時に自動保存されます。</div>
+<div class="prediction-help">予想印は馬名の横で変更できます。馬名をクリックすると過去成績(直近5走)を表示し、「メモ」ボタンでこの馬についてのメモを入力できます。「馬柱(近5走)」タブでは全馬の近5走を横並びで比べながら予想印を付けられます。印とメモは変更時に自動保存されます。</div>
+<!-- 出馬表/馬柱の切り替えタブ(2026-10-03追加。docs/design/screens.md「予想登録画面」の「馬柱表示」参照) -->
+<nav class="prediction-view-tabs" role="tablist">
+  <button type="button" class="prediction-view-tab active" data-view="card" role="tab" aria-selected="true">出馬表</button>
+  <button type="button" class="prediction-view-tab" data-view="umabashira" role="tab" aria-selected="false">馬柱(近5走)</button>
+</nav>
 <div id="prediction-horses" class="prediction-horses"></div>
+<div id="prediction-umabashira" class="prediction-umabashira" hidden></div>
 <div id="prediction-tickets" class="prediction-tickets"></div>
 </section>
 </main></div>
