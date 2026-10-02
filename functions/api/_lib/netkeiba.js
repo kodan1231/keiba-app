@@ -11,6 +11,7 @@
 // パーセントエンコードする必要がある(UTF-8のままでは文字化けして0件になる)。
 // CloudflareWorkersのTextEncoderはUTF-8固定でEUC-JP出力ができないため、全角カタカナ
 // (JIS X 0208の第5行。EUC-JPでは [0xA5, コードポイント - 0x3000] の単純な線形変換になる。
+// ただし長音「ー」・中黒「・」は第1行の記号のため個別に変換する。
 // 2026-09-28に実データで確認済み)だけを手動でエンコードする。JRA登録馬名は全角カタカナ
 // (長音「ー」含む)のみという前提のため、それ以外の文字(漢字・ひらがな等)を含む場合は
 // エンコード不可としてnullを返し、呼び出し元は取得自体を諦める(手入力にフォールバック)。
@@ -19,12 +20,23 @@
 const NETKEIBA_UA =
   "Mozilla/5.0 (compatible; UmakenchoBot/1.0; personal horse-racing ledger app; contact via app admin)";
 
+// カタカナ表記の馬名に出てくる、JIS X 0208 第1行(記号)の文字
+const EUCJP_KATAKANA_SYMBOLS = new Map([
+  [0x30fc, [0xa1, 0xbc]], // ー 長音
+  [0x30fb, [0xa1, 0xa6]], // ・ 中黒
+]);
+
 function eucJpPercentEncodeKatakana(str) {
   const bytes = [];
   for (const ch of String(str || "")) {
     const cp = ch.codePointAt(0);
     if (cp <= 0x7f) { bytes.push(cp); continue; }
-    if (cp >= 0x30a0 && cp <= 0x30ff) { bytes.push(0xa5, cp - 0x3000); continue; }
+    // JIS X 0208 第5行に入るのは ァ(U+30A1)〜ヶ(U+30F6) だけ。長音「ー」・中黒「・」は
+    // 第1行(記号)にあるため個別に変換する(2026-10-02修正。それまでは U+30A0〜30FF を
+    // 一律 [0xA5, cp-0x3000] に変換しており、長音を含む馬名〈スターズオンアース等〉は
+    // 誤った検索語になって必ず not_found になっていた)。
+    if (cp >= 0x30a1 && cp <= 0x30f6) { bytes.push(0xa5, cp - 0x3000); continue; }
+    if (EUCJP_KATAKANA_SYMBOLS.has(cp)) { bytes.push(...EUCJP_KATAKANA_SYMBOLS.get(cp)); continue; }
     return null; // カタカナ以外(漢字・ひらがな等)を含む → エンコード不可
   }
   if (!bytes.length) return null;
