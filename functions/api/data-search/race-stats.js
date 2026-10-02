@@ -32,6 +32,15 @@ function avg(arr) {
   return arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : null;
 }
 
+// 中央値(件数が偶数なら真ん中2つの平均)。空なら null。
+// 2026-10-03: 単勝・馬連の代表値を平均から中央値に変更(まれな高配当に引っ張られにくくするため)。
+function median(arr) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
 function parseJson(text, fallback) {
   if (!text) return fallback;
   try {
@@ -208,14 +217,14 @@ export async function onRequestGet(context) {
     trackOptions: [...trackOptionSet],
     distanceOptions: [...distanceOptionSet].sort((a, b) => a - b),
     win: {
-      avg: avg(winValues),
+      median: median(winValues),
       raceCount: winCount,
       under300Rate: rateUnder(300),
       under500Rate: rateUnder(500),
       under1000Rate: rateUnder(1000),
     },
     umaren: {
-      avg: avg(umarenValues),
+      median: median(umarenValues),
       raceCount: umarenValues.length,
     },
     jockeys: {

@@ -77,11 +77,12 @@ function dsRenderPayout(data) {
     `(払戻が登録済みのレースのみ。騎手・馬番の集計とは母数が異なります)`;
 
   const cards = [
-    ["平均単勝金額", dsYen(win.avg)],
+    // 2026-10-03: 平均から中央値に変更(以前は「平均単勝金額」「平均馬連金額」)。
+    ["単勝金額 中央値", dsYen(win.median)],
     ["単勝 300円以下率", dsPct(win.under300Rate)],
     ["単勝 500円以下率", dsPct(win.under500Rate)],
     ["単勝 1000円以下率", dsPct(win.under1000Rate)],
-    ["平均馬連金額", dsYen(uma.avg)],
+    ["馬連金額 中央値", dsYen(uma.median)],
   ];
   dsEls.payoutGrid.innerHTML = cards
     .map(
