@@ -223,24 +223,42 @@ let hiSearchTimer = null;
 let hiCurrentName = null;
 let hiCurrentMaster = null;
 
+// horses.fetch_error(netkeiba取得の失敗理由コード)を利用者向けの文にする。
+// 重賞検索タブ(graded-race-search.js)からも使う(同じページで先に読み込まれるため)。
+// コードの意味は functions/api/_lib/netkeiba.js の fetchNetkeibaHorseInfo 参照。
+function hiFetchErrorText(code) {
+  if (!code) return "";
+  if (code === "not_found") return "netkeibaで該当する馬が見つかりませんでした。";
+  if (code === "encoding_unsupported") {
+    return "馬名にカタカナ以外の文字が含まれるため、netkeibaへの自動検索ができませんでした。";
+  }
+  let m = code.match(/^http_(\d+)$/);
+  if (m) return `netkeibaに取得を拒否されました(HTTP ${m[1]})。`;
+  if (code === "unexpected_page") {
+    return "netkeibaから想定外のページが返されました(アクセス制限・メンテナンス等の可能性があります)。";
+  }
+  m = code.match(/^pedigree_http_(\d+)$/);
+  if (m) return `血統だけ取得できませんでした(netkeibaに拒否されました。HTTP ${m[1]})。`;
+  if (code.startsWith("pedigree_")) return `血統だけ取得できませんでした(${code})。`;
+  return `netkeibaからの取得に失敗しました(${code})。`;
+}
+
 // 取得状況のお知らせ文。編集・再取得は管理者専用のため、操作への誘導(「編集する」
 // 「netkeibaから再取得する」)は管理者にだけ出す(2026-10-02。それまでは一般ユーザーにも
 // 「下のフォームから手入力できます」と出ており、ボタンが無いのに編集できそうに見えていた)。
+// 失敗理由は2026-10-02から詳細化(HTTP拒否・想定外のページ・血統のみ失敗を not_found と区別)。
 function hiFetchNoteText(master) {
   if (!master) return "";
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
-  const manualHint = isAdmin ? "「編集する」から手入力できます。" : "";
   if (master.dataSource === "manual") {
     return "手動で編集済みの情報です。";
   }
-  if (master.fetchError === "not_found") {
-    return `netkeibaで該当する馬が見つかりませんでした。${manualHint}`;
-  }
-  if (master.fetchError === "encoding_unsupported") {
-    return `馬名にカタカナ以外の文字が含まれるため、netkeibaへの自動検索ができませんでした。${manualHint}`;
-  }
   if (master.fetchError) {
-    return `netkeibaからの取得に失敗しました。${isAdmin ? "「編集する」から手入力するか、「netkeibaから再取得する」を試してください。" : ""}`;
+    const hint =
+      master.fetchError === "not_found" || master.fetchError === "encoding_unsupported"
+        ? "「編集する」から手入力できます。"
+        : "「編集する」から手入力するか、時間をおいて「netkeibaから再取得する」を試してください。";
+    return `${hiFetchErrorText(master.fetchError)}${isAdmin ? hint : ""}`;
   }
   if (master.dataSource === "netkeiba" || master.dataSource === "import") {
     const when = master.fetchedAt ? new Date(master.fetchedAt).toLocaleString("ja-JP") : "";

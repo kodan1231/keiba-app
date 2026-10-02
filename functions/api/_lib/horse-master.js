@@ -50,7 +50,7 @@ export async function getOrFetchHorseMaster(db, horseName, { expectedBirthYear }
     breeder: result.ok ? result.breeder : null,
     netkeiba_horse_id: result.ok ? result.netkeibaHorseId : null,
     data_source: "netkeiba",
-    fetch_error: result.ok ? null : result.error,
+    fetch_error: result.ok ? result.partialError || null : result.error,
     fetched_at: now,
     updated_at: now,
   };
@@ -144,7 +144,7 @@ export async function refetchHorseInfoFromNetkeiba(db, horseName, { expectedBirt
       result.ok ? result.breeder : null,
       result.ok ? result.netkeibaHorseId : null,
       "netkeiba",
-      result.ok ? null : result.error,
+      result.ok ? result.partialError || null : result.error,
       now,
       now
     )

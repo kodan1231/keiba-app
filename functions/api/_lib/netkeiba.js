@@ -86,11 +86,13 @@ function extractProfTableField(pageHtml, label) {
 async function fetchPedigreeFromAjax(netkeibaHorseId) {
   const url = `https://db.netkeiba.com/horse/ajax_horse_pedigree.html?input=UTF-8&output=json&id=${encodeURIComponent(netkeibaHorseId)}`;
   const res = await fetch(url, { headers: { "User-Agent": NETKEIBA_UA } });
-  if (!res.ok) return null;
+  // 失敗時は理由(fetch_error に残す文字列)を返す。2026-10-02以前は null を返すだけで、
+  // 血統だけ空のまま「取得成功」として保存されていた。
+  if (!res.ok) return { error: `pedigree_http_${res.status}` };
   const json = await res.json().catch(() => null);
-  if (!json || json.status !== "OK" || !json.data) return null;
+  if (!json || json.status !== "OK" || !json.data) return { error: "pedigree_unexpected_response" };
   const rows = [...String(json.data).matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
-  if (rows.length < 3) return null;
+  if (rows.length < 3) return { error: "pedigree_unexpected_response" };
   const cellsOf = (rowHtml) =>
     [...rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => firstAnchorTextOrPlain(m[1]));
   const row0 = cellsOf(rows[0]); // [父, 父父]
@@ -139,8 +141,9 @@ function parseHorseListCandidates(listHtml) {
  *   (自アプリの出走履歴から推定した生年。無ければ先頭候補を採用する)
  * @returns {Promise<
  *   { ok: true, netkeibaHorseId: string, sire: string|null, dam: string|null, damSire: string|null,
- *     trainer: string|null, owner: string|null, breeder: string|null, ambiguous?: boolean }
- *   | { ok: false, error: "encoding_unsupported"|"network_error"|"not_found"|"parse_error" }
+ *     trainer: string|null, owner: string|null, breeder: string|null, ambiguous?: boolean,
+ *     partialError?: string|null }  … 血統だけ取得できなかった理由("pedigree_http_403" 等)
+ *   | { ok: false, error: "encoding_unsupported"|"network_error"|"http_<status>"|"unexpected_page"|"not_found"|"parse_error" }
  * >}
  */
 export async function fetchNetkeibaHorseInfo(displayName, opts = {}) {
@@ -155,6 +158,9 @@ export async function fetchNetkeibaHorseInfo(displayName, opts = {}) {
   } catch {
     return { ok: false, error: "network_error" };
   }
+  // 2026-10-02: 200以外(ボット対策による403等)を not_found と区別して記録する。
+  // それまでは拒否ページの中身をそのまま解析し、表が無いため not_found になっていた。
+  if (!searchRes.ok) return { ok: false, error: `http_${searchRes.status}` };
 
   try {
     // 完全一致1件のみの場合、netkeibaは馬個別ページへ302リダイレクトする
@@ -162,9 +168,11 @@ export async function fetchNetkeibaHorseInfo(displayName, opts = {}) {
     const redirectMatch = searchRes.url.match(/\/horse\/(\d+)\/?(?:$|[?#])/);
     if (redirectMatch) {
       const netkeibaHorseId = redirectMatch[1];
-      const [pedigree] = await Promise.all([fetchPedigreeFromAjax(netkeibaHorseId)]);
+      const pedigree = await fetchPedigreeFromAjax(netkeibaHorseId).catch(() => ({ error: "pedigree_network_error" }));
       return {
         ok: true,
+        // 血統だけ取れなかった場合も、調教師等は取れているので ok のまま理由を添える
+        partialError: pedigree?.error || null,
         netkeibaHorseId,
         sire: pedigree?.sire ?? null,
         dam: pedigree?.dam ?? null,
@@ -176,6 +184,8 @@ export async function fetchNetkeibaHorseInfo(displayName, opts = {}) {
     }
 
     // リダイレクトされなかった(該当0件、または同名馬が複数存在)→ 検索結果一覧をパースする。
+    // 検索結果一覧の表自体が無いページ(拒否・メンテナンス・構造変更等)は not_found と区別する
+    if (!/horse_list_table/.test(searchText)) return { ok: false, error: "unexpected_page" };
     const candidates = parseHorseListCandidates(searchText).filter((c) => c.name === displayName);
     if (!candidates.length) return { ok: false, error: "not_found" };
 

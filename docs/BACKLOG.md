@@ -12,6 +12,15 @@
 
 ## 🔰 次のチャットで最初に読むこと(最終更新 2026-10-02)
 
+- **馬情報(血統等)がほぼ全馬「不明」になっている件(2026-10-02・調査中)**: netkeiba側の
+  ボット対策で弾かれている疑いが濃い。失敗理由を `fetch_error` に詳細記録する修正
+  (`http_403`/`unexpected_page` 等。`docs/design/data-search.md`「netkeiba連携」)を入れたので、
+  デプロイ後に管理者が数頭「netkeibaから再取得」→ `SELECT fetch_error, COUNT(*) FROM horses
+  GROUP BY fetch_error;` で原因を確定させる。**User-Agent偽装等でボット対策をすり抜ける対応は
+  しない方針**(netkeiba利用規約でスクレイピング禁止のため)。代替として、JRA公式の出馬表ページに
+  父・母・母の父・馬主・生産者が載っているかをユーザーが確認中。載っていれば結果取込と同じ
+  ユーザースクリプト方式で出馬表から血統等を取り込む案(仕様未検討)。
+
 - **🔴 未適用のマイグレーションあり・要デプロイ前適用(2026-10-02)**: データ検索
   「重賞検索」タブ追加に伴い、`migration.sql` の `@STEP: graded_races_schedule_md`
   (`graded_races.schedule_md`列追加)が本番DB `keiba-yosou-db` へ未適用。**適用前に
