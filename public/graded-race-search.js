@@ -2,8 +2,9 @@
 //   GET /api/data-search/graded-races            … 重賞の候補一覧(graded_races)
 //   GET /api/data-search/graded-race?id=         … ①今年の出走馬一覧 ③過去10年の成績・傾向
 //   GET /api/data-search/graded-race-horses?race_id= … ②出走馬ごとの詳細
-// 血統等(horses)が未取得の馬は、既存の GET /api/data-search/horse-info を1頭ずつ順に呼んで
-// netkeiba から取得する(まとめて呼ぶと Workers の外部アクセス上限に触れるため)。
+// 血統等(horses)は保存済みの分だけを表示し、このタブからは netkeiba へ取得しに行かない
+// (2026-10-04。以前は未取得の馬について horse-info を1頭ずつ順に呼んで取得していた。
+// 取得は馬情報検索タブで検索したときだけ)。
 // 過去走の表は予想登録画面の過去成績(.horse-history-table)の見た目を流用する。
 // escapeHtml / escapeAttr / formatDate / formatDateMdW / formatYen / formatCourseText は utils.js、
 // BET_TYPES は bettypes.js のものを使う。
@@ -366,7 +367,7 @@ function grRenderHorseDetail(row) {
       { label: "馬主", value: m.owner },
       { label: "生産牧場", value: m.breeder },
     ])}
-    ${!h.has_master ? `<p class="stats-note">血統等はnetkeibaから取得中、または未取得です。</p>` : m.fetch_error ? `<p class="stats-note">${escapeHtml(hiFetchErrorWithWhenText(m.fetch_error, m.fetched_at, m.fetched_now))}${window.currentUser?.isAdmin ? "馬情報検索タブから編集・再取得できます。" : ""}</p>` : ""}
+    ${!h.has_master ? `<p class="stats-note">血統等は未取得です。馬情報検索タブでこの馬を検索すると取得されます。</p>` : m.fetch_error ? `<p class="stats-note">${escapeHtml(hiFetchErrorWithWhenText(m.fetch_error, m.fetched_at, m.fetched_now))}${window.currentUser?.isAdmin ? "馬情報検索タブから編集・再取得できます。" : ""}</p>` : ""}
     <h4 class="gr-detail-heading">持ちタイム・上がり・ローテーション</h4>
     ${grCardsHtml([
       { label: "持ちタイム(同距離)", value: grBestText(h.best_time_same_distance), sub: grBestSub(h.best_time_same_distance) },
@@ -430,36 +431,10 @@ async function grLoadHorses(raceId, token) {
     }
   }
 
-  // 血統等が未取得の馬だけ、1頭ずつ順に horse-info を呼んで netkeiba から取得する
-  for (const h of data.horses || []) {
-    if (h.has_master) continue;
-    if (token !== grLoadToken) return;
-    try {
-      const res = await authedFetch(`/api/data-search/horse-info?name=${encodeURIComponent(h.horse_name)}`);
-      if (!res.ok) continue;
-      const info = await res.json();
-      if (token !== grLoadToken) return;
-      const m = info.master || {};
-      h.has_master = true;
-      h.master = {
-        sire: m.sire || null,
-        dam: m.dam || null,
-        dam_sire: m.damSire || null,
-        trainer: m.trainer || null,
-        owner: m.owner || null,
-        breeder: m.breeder || null,
-        fetch_error: m.fetchError || null,
-        fetched_at: m.fetchedAt || null,
-        fetched_now: Boolean(m.fetchedNow),
-      };
-      for (const row of grRowsForHorse(h)) {
-        grApplyMasterCells(row, h.master);
-        if (!row.nextElementSibling.hidden) grRenderHorseDetail(row);
-      }
-    } catch {
-      // 取得失敗は空欄のまま(馬情報検索タブから手動編集できる)
-    }
-  }
+  // 2026-10-04: 以前はここで、血統等が未取得の馬について1頭ずつ順に horse-info を呼び netkeiba から
+  // 取得していたが、出走馬ぶん(18頭で問い合わせ約50回)を数秒で連続取得することになり、netkeiba から
+  // 取得を拒否される(HTTP 400)一因になり得たため廃止した。重賞検索では保存済みの血統だけを表示し、
+  // 取得は馬情報検索タブで検索したときだけ行う(docs/design/graded-race-search.md)。
 }
 
 // ---------- ③ 過去10年 ----------
