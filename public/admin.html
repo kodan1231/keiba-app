@@ -50,6 +50,25 @@
         <button type="button" id="api-token-revoke-btn" class="ghost-btn" hidden>無効化する</button>
       </section>
 
+      <!-- netkeiba取得の一時停止(2026-10-04追加)。netkeibaから取得を拒否されたら、ここで設定した
+           時間はnetkeibaへ問い合わせない。詳細はdocs/design/data-search.md「netkeiba連携」参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">netkeiba取得の一時停止</h2>
+        <p class="ticket-sub">
+          馬情報検索で血統等をnetkeibaから取得する際、netkeibaから取得を拒否された(HTTP 400等)場合は、
+          ここで設定した時間だけnetkeibaへの問い合わせを止めます(制限中に問い合わせを重ねて解除を遅らせないため)。
+          変更は次に拒否されたときから使われます(今止めている期限は変わりません)。
+        </p>
+        <p id="netkeiba-pause-status" class="ticket-sub">読み込み中…</p>
+        <form id="netkeiba-pause-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+          <label style="min-width:160px">中断時間(時間)
+            <input type="number" id="netkeiba-pause-hours" min="1" max="72" step="1" required />
+          </label>
+          <button type="submit" class="stamp-btn">保存</button>
+        </form>
+        <p id="netkeiba-pause-message" class="submit-message" hidden></p>
+      </section>
+
       <!-- 騎手名エイリアス管理(2026-08-16追加)。
            同一騎手がPDFインポート・手動入力・netkeibaテキスト貼り付け等の経路で
            異なる表記(異体字・空白有無・文字欠落等)で登録され、集計画面の騎手別収支が

@@ -886,6 +886,7 @@ async function onReady() {
   setupGradedRaceForm();
   setupGradedRacesImport();
   setupRaceBaseNameRecomputeButton();
+  setupNetkeibaPauseForm();
   await Promise.all([
     loadUnregisteredRaces(),
     loadUsers(),
@@ -894,7 +895,66 @@ async function onReady() {
     setupHorseIndex(),
     loadApiTokenStatus(),
     loadGradedRaces(),
+    loadNetkeibaPause(),
   ]);
+}
+
+// ---------- netkeiba取得の一時停止(2026-10-04追加) ----------
+// netkeibaから取得を拒否されたら止める時間の設定と、今の停止状態の表示。
+// API: GET/PUT /api/admin/netkeiba-pause(functions/api/admin/netkeiba-pause.js)。
+
+function renderNetkeibaPauseStatus(s) {
+  const statusEl = document.getElementById("netkeiba-pause-status");
+  const input = document.getElementById("netkeiba-pause-hours");
+  if (!statusEl || !input) return;
+  input.min = s.min;
+  input.max = s.max;
+  input.value = s.pauseHours;
+  if (s.tableMissing) {
+    statusEl.textContent = "設定用のテーブル(external_fetch_pause)が未作成のため、一時停止は働いていません(マイグレーションの適用が必要です)。";
+    return;
+  }
+  const state = s.pausedUntil
+    ? `現在停止中です(${formatDateTime(s.pausedUntil)}まで。きっかけ: ${s.lastReason || "不明"})。`
+    : "現在は停止していません。";
+  statusEl.textContent = `${state}拒否されたときに止める時間: ${s.pauseHours}時間${s.pauseHoursIsDefault ? "(既定値)" : ""}`;
+}
+
+async function loadNetkeibaPause() {
+  const statusEl = document.getElementById("netkeiba-pause-status");
+  if (!statusEl) return;
+  const res = await authedFetch("/api/admin/netkeiba-pause");
+  if (!res.ok) { statusEl.textContent = "読み込みに失敗しました"; return; }
+  renderNetkeibaPauseStatus(await res.json());
+}
+
+function setupNetkeibaPauseForm() {
+  const form = document.getElementById("netkeiba-pause-form");
+  const messageEl = document.getElementById("netkeiba-pause-message");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pauseHours = Number(document.getElementById("netkeiba-pause-hours").value);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    messageEl.hidden = true;
+    const res = await authedFetch("/api/admin/netkeiba-pause", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pauseHours }),
+    });
+    const data = await res.json().catch(() => ({}));
+    submitBtn.disabled = false;
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `中断時間を${data.pauseHours}時間に保存しました。`;
+      renderNetkeibaPauseStatus(data);
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "保存に失敗しました。";
+    }
+  });
 }
 
 setupAuth(onReady);

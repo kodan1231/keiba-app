@@ -17,7 +17,7 @@
 -- SQLだけを --command または --file= で実行し、成功したら
 -- schema_migrations に INSERT で記録する(手順はREADME参照)。
 --
--- 2026-10-03時点: 未適用のマイグレーションは無い。過去のステップ
+-- 2026-10-04時点: 未適用は末尾の external_fetch_pause のみ。それより前の過去のステップ
 -- (legacy_v13_multiuser, course_type_distance, race_results_and_conditions,
 --  jockey_aliases, tickets_refunded, users_last_login, users_password_reset_pending)は
 --  いずれも本番DB(keiba-yosou-db)へ適用済みで、最終結果は schema.sql に統合済みのため
@@ -43,3 +43,19 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。
 
+
+-- @STEP: external_fetch_pause
+-- 外部サイト(現状 netkeiba のみ)への取得の一時停止。netkeiba から取得を拒否された
+-- (HTTP 400 等)ら、pause_hours 時間(未設定なら _lib/horse-master.js の
+-- NETKEIBA_PAUSE_HOURS_DEFAULT)問い合わせないために使う。pause_hours は管理画面から設定する。
+-- service ごとに1行(netkeiba は service='netkeiba')。行数は増えない。
+-- テーブルが無くてもアプリは「停止しない」扱いで動く(読み書きとも best-effort)ため、
+-- コードのデプロイとこのステップの適用の順序は問わない。
+-- 詳細は docs/design/data-search.md「netkeiba連携」参照。
+CREATE TABLE IF NOT EXISTS external_fetch_pause (
+  service TEXT PRIMARY KEY,
+  pause_hours INTEGER,
+  paused_until TEXT,
+  reason TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);

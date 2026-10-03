@@ -259,11 +259,22 @@ function hiFetchErrorWithWhenText(code, fetchedAt, fetchedNow) {
   const reason = hiFetchErrorText(code);
   if (!reason) return "";
   if (fetchedNow) return `今回の取得で、${reason}`;
-  const d = fetchedAt ? new Date(fetchedAt) : null;
-  const when = d && !Number.isNaN(d.getTime())
+  return `${hiDateTimeText(fetchedAt) || "以前"}の取得時に、${reason}(その後は自動で再取得していません)`;
+}
+
+// ISO日時 → 「2026/10/4 13:23」形式(不正・空なら空文字)。
+function hiDateTimeText(iso) {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime())
     ? d.toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
-    : "以前";
-  return `${when}の取得時に、${reason}(その後は自動で再取得していません)`;
+    : "";
+}
+
+// netkeiba への取得の一時停止(2026-10-04追加)の案内文。拒否された後は一定時間
+// (管理画面で設定。既定6時間)問い合わせない。
+function hiPausedText(pausedUntil) {
+  const until = hiDateTimeText(pausedUntil);
+  return `netkeibaから取得を拒否されたため、${until ? `${until}まで` : "しばらく"}netkeibaへの取得を見合わせています(制限中に問い合わせを重ねて解除を遅らせないため)。`;
 }
 
 // 取得状況のお知らせ文。編集・再取得は管理者専用のため、操作への誘導(「編集する」
@@ -276,7 +287,16 @@ function hiFetchNoteText(master) {
   if (master.dataSource === "manual") {
     return "手動で編集済みの情報です。";
   }
+  // 停止中のため問い合わせなかった(この馬はまだ一度も取得を試みていない)。停止が明けた後に
+  // この馬を開けば自動で取得される。
+  if (master.fetchError === "paused") {
+    return `${hiPausedText(master.pausedUntil)}見合わせ期間が過ぎた後にこの馬を開き直すと、自動で取得します。`;
+  }
   if (master.fetchError) {
+    // 今回の取得で拒否されて停止を始めた場合は、その旨も添える。
+    if (master.pausedUntil) {
+      return `${hiFetchErrorWithWhenText(master.fetchError, master.fetchedAt, master.fetchedNow)}${hiPausedText(master.pausedUntil)}${isAdmin ? "見合わせ期間が過ぎた後に「netkeibaから再取得する」を試すか、「編集する」から手入力してください。" : ""}`;
+    }
     const hint =
       master.fetchError === "not_found" || master.fetchError === "encoding_unsupported"
         ? "「編集する」から手入力できます。"
@@ -509,6 +529,11 @@ function setupHiEditForm() {
         hiApplyMasterUpdate(data.master);
         // 編集フォームを開いたままだった場合は、表示中の値も再取得結果に合わせる。
         if (!hiEls.editForm.hidden) hiFillEditForm(data.master);
+      } else if (res.status === 409 && data.pausedUntil) {
+        // netkeiba への取得を停止中(2026-10-04)。問い合わせはしておらず、内容も変わっていない。
+        alert(`${hiPausedText(data.pausedUntil)}\n見合わせ期間が過ぎてから、もう一度お試しください。`);
+      } else {
+        alert(data.error || "再取得に失敗しました。");
       }
     } finally {
       hiEls.refetchBtn.disabled = false;

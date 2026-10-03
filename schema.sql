@@ -518,3 +518,13 @@ CREATE TABLE IF NOT EXISTS horses (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_horses_horse_name ON horses(horse_name);
+-- 外部サイトへの取得の一時停止期限(2026-10-04追加。@STEP: external_fetch_pause)。
+-- netkeiba から取得を拒否されたら pause_hours 時間(管理画面で設定。未設定なら
+-- _lib/horse-master.js の NETKEIBA_PAUSE_HOURS_DEFAULT)問い合わせない。service ごとに1行(netkeiba は 'netkeiba')。
+CREATE TABLE IF NOT EXISTS external_fetch_pause (
+  service TEXT PRIMARY KEY,
+  pause_hours INTEGER,              -- 拒否されたときに止める時間(管理画面で設定。NULL=既定値)
+  paused_until TEXT,                -- 停止期限(ISO 8601)。NULL=停止していない
+  reason TEXT,                      -- 停止のきっかけになった取得失敗コード(http_400 等)
+  updated_at TEXT DEFAULT (datetime('now'))
+);

@@ -43,6 +43,9 @@ function toMasterJson(row) {
     // この問い合わせでnetkeibaへ取得を試みたか(false=以前の取得結果をそのまま返している)。
     // 画面で「今回失敗した」のか「以前失敗したまま」なのかを区別するため(2026-10-03)。
     fetchedNow: Boolean(row.fetched_now),
+    // netkeiba への取得を停止している期限(ISO文字列)。停止中で問い合わせなかった場合
+    // (fetchError='paused')と、今回の取得で拒否されて停止を始めた場合に入る(2026-10-04)。
+    pausedUntil: row.paused_until || null,
   };
 }
 
@@ -165,6 +168,13 @@ export async function onRequestPut(context) {
 
   if (body.action === "refetch") {
     const row = await refetchHorseInfoFromNetkeiba(env.DB, name);
+    // netkeiba への取得を停止中は問い合わせない(2026-10-04)。既存の内容はそのまま返す。
+    if (row && row.refetch_paused) {
+      return jsonError("netkeiba から取得を拒否されたため、一時的に取得を見合わせています", 409, {
+        pausedUntil: row.paused_until,
+        master: toMasterJson(row),
+      });
+    }
     return Response.json({ ok: true, master: toMasterJson(row) });
   }
 
