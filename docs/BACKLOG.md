@@ -34,10 +34,8 @@
   検索したときだけにした(`docs/design/graded-race-search.md`)。同日、10/4 1:41 に1頭だけの検索でも
   再び拒否されたため、**拒否されたら一定時間(管理画面で設定。既定6時間)netkeiba へ問い合わせない一時停止**を追加した
   (`docs/design/data-search.md`「netkeiba連携」の「取得の一時停止」)。
-  **未適用のマイグレーションあり(2026-10-04)**: `migration.sql` の `@STEP: external_fetch_pause`
-  (`external_fetch_pause` テーブル追加。netkeiba用に1行のみ)が本番 `keiba-yosou-db` へ未適用。
-  未適用でもエラーにはならず「止めない」動作になるだけなので、デプロイとの順序は問わないが、
-  適用するまで一時停止は効かない。**実機確認未実施**(モックDBで、停止開始・停止中は問い合わせない・
+  `@STEP: external_fetch_pause`(`external_fetch_pause` テーブル追加)は2026-10-04に本番 `keiba-yosou-db`
+  へ適用し `schema_migrations` に記録済み(`migration.sql` からは削除済み。未適用のマイグレーションは無い)。**実機確認未実施**(モックDBで、停止開始・停止中は問い合わせない・
   停止中の再取得拒否・期限切れ後の再取得・テーブル無しでも動くこと・設定時間が使われることのみ確認)。
 
 - **✅ マイグレーション適用済み(2026-10-03)**: `@STEP: graded_races_schedule_md`
