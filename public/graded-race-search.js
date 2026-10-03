@@ -366,7 +366,7 @@ function grRenderHorseDetail(row) {
       { label: "馬主", value: m.owner },
       { label: "生産牧場", value: m.breeder },
     ])}
-    ${!h.has_master ? `<p class="stats-note">血統等はnetkeibaから取得中、または未取得です。</p>` : m.fetch_error ? `<p class="stats-note">${escapeHtml(hiFetchErrorText(m.fetch_error))}${window.currentUser?.isAdmin ? "馬情報検索タブから編集・再取得できます。" : ""}</p>` : ""}
+    ${!h.has_master ? `<p class="stats-note">血統等はnetkeibaから取得中、または未取得です。</p>` : m.fetch_error ? `<p class="stats-note">${escapeHtml(hiFetchErrorWithWhenText(m.fetch_error, m.fetched_at, m.fetched_now))}${window.currentUser?.isAdmin ? "馬情報検索タブから編集・再取得できます。" : ""}</p>` : ""}
     <h4 class="gr-detail-heading">持ちタイム・上がり・ローテーション</h4>
     ${grCardsHtml([
       { label: "持ちタイム(同距離)", value: grBestText(h.best_time_same_distance), sub: grBestSub(h.best_time_same_distance) },
@@ -449,6 +449,8 @@ async function grLoadHorses(raceId, token) {
         owner: m.owner || null,
         breeder: m.breeder || null,
         fetch_error: m.fetchError || null,
+        fetched_at: m.fetchedAt || null,
+        fetched_now: Boolean(m.fetchedNow),
       };
       for (const row of grRowsForHorse(h)) {
         grApplyMasterCells(row, h.master);

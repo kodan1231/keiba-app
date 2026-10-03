@@ -147,7 +147,7 @@ export async function onRequestGet(context) {
     const ph = keys.map(() => "?").join(",");
     const { results } = await db
       .prepare(
-        `SELECT horse_key, sire, dam, dam_sire, trainer, owner, breeder, fetch_error
+        `SELECT horse_key, sire, dam, dam_sire, trainer, owner, breeder, fetch_error, fetched_at
            FROM horses WHERE horse_key IN (${ph})`
       )
       .bind(...keys)
@@ -256,6 +256,7 @@ export async function onRequestGet(context) {
             owner: master.owner || null,
             breeder: master.breeder || null,
             fetch_error: master.fetch_error || null,
+            fetched_at: master.fetched_at || null, // 失敗がいつの取得結果かを画面に出すため(2026-10-03)
           }
         : null,
       runs,

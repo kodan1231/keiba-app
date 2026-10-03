@@ -250,6 +250,22 @@ function hiFetchErrorText(code) {
   return `netkeibaからの取得に失敗しました(${code})。`;
 }
 
+// 失敗理由に「いつの取得結果か」を添える(2026-10-03)。fetchedNow=true はこの表示のための
+// 問い合わせでnetkeibaへ取得を試みて失敗したもの、false は以前に失敗した結果がDBに残っていて
+// それをそのまま出しているもの(失敗した馬は自動では取り直さないため)。以前は理由だけを出して
+// おり、今回失敗したのか過去の失敗のままなのかが利用者に分からなかった。
+// 重賞検索タブ(graded-race-search.js)からも使う。
+function hiFetchErrorWithWhenText(code, fetchedAt, fetchedNow) {
+  const reason = hiFetchErrorText(code);
+  if (!reason) return "";
+  if (fetchedNow) return `今回の取得で、${reason}`;
+  const d = fetchedAt ? new Date(fetchedAt) : null;
+  const when = d && !Number.isNaN(d.getTime())
+    ? d.toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "以前";
+  return `${when}の取得時に、${reason}(その後は自動で再取得していません)`;
+}
+
 // 取得状況のお知らせ文。編集・再取得は管理者専用のため、操作への誘導(「編集する」
 // 「netkeibaから再取得する」)は管理者にだけ出す(2026-10-02。それまでは一般ユーザーにも
 // 「下のフォームから手入力できます」と出ており、ボタンが無いのに編集できそうに見えていた)。
@@ -265,7 +281,7 @@ function hiFetchNoteText(master) {
       master.fetchError === "not_found" || master.fetchError === "encoding_unsupported"
         ? "「編集する」から手入力できます。"
         : "「編集する」から手入力するか、時間をおいて「netkeibaから再取得する」を試してください。";
-    return `${hiFetchErrorText(master.fetchError)}${isAdmin ? hint : ""}`;
+    return `${hiFetchErrorWithWhenText(master.fetchError, master.fetchedAt, master.fetchedNow)}${isAdmin ? hint : ""}`;
   }
   if (master.dataSource === "netkeiba" || master.dataSource === "import") {
     const when = master.fetchedAt ? new Date(master.fetchedAt).toLocaleString("ja-JP") : "";

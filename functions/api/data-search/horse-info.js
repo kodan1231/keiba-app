@@ -40,6 +40,9 @@ function toMasterJson(row) {
     dataSource: row.data_source || null,
     fetchError: row.fetch_error || null,
     fetchedAt: row.fetched_at || null,
+    // この問い合わせでnetkeibaへ取得を試みたか(false=以前の取得結果をそのまま返している)。
+    // 画面で「今回失敗した」のか「以前失敗したまま」なのかを区別するため(2026-10-03)。
+    fetchedNow: Boolean(row.fetched_now),
   };
 }
 

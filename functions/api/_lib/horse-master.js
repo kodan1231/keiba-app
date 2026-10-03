@@ -73,7 +73,9 @@ export async function getOrFetchHorseMaster(db, horseName, { expectedBirthYear }
   } catch (e) {
     console.error("horses: failed to persist fetched info (ignored)", e);
   }
-  return row;
+  // fetched_now: この呼び出しでnetkeibaへ取得を試みた行であることの目印(DBには保存しない)。
+  // 画面で「今回の取得結果」と「以前の取得結果をそのまま表示」を区別するため(2026-10-03)。
+  return { ...row, fetched_now: true };
 }
 
 // 管理者による手動編集(送られたフィールドだけ上書き。undefinedは既存値を保持)。
@@ -149,7 +151,8 @@ export async function refetchHorseInfoFromNetkeiba(db, horseName, { expectedBirt
       now
     )
     .run();
-  return getHorseMasterRow(db, horseKey);
+  const saved = await getHorseMasterRow(db, horseKey);
+  return saved ? { ...saved, fetched_now: true } : null; // 再取得はこの呼び出しで取得を試みた(fetched_now)
 }
 
 // 出走馬一覧PDF/結果PDF/結果HTMLの取込で調教師名が読み取れた場合の反映(best-effort)。
