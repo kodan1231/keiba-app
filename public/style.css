@@ -3230,3 +3230,17 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 /* 馬柱の馬の列の父・母(2026-10-03) */
 .ub-horse-ped { display: block; margin-top: 2px; color: var(--ink-soft); font-size: 10px; line-height: 1.3; }
 .ub-horse-ped span { display: block; word-break: break-all; }
+
+/* レース管理: netkeiba馬柱テキストの貼り付け取り込みの確認画面(2026-10-06) */
+.umabashira-preview { margin-top: 10px; }
+.ub-preview-table { font-size: 12px; }
+.ub-preview-table td { vertical-align: top; }
+.ub-preview-table tr.ub-status-conflict td { background: #fff6e5; }
+.ub-preview-table tr.ub-status-new td:last-child,
+.ub-preview-table tr.ub-status-fill td:last-child { color: var(--win); font-weight: 600; }
+.ub-choice { display: flex; flex-direction: row; align-items: center; gap: 4px; font-size: 12px; color: var(--ink); white-space: nowrap; }
+.ub-alias-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; }
+.ub-alias-form .ub-alias-input { width: 110px; padding: 3px 5px; font-size: 12px; }
+.ub-alias-form .ub-alias-btn { padding: 3px 8px; font-size: 11px; }
+.ub-unregistered { font-size: 10px; color: var(--hanko); }
+.ub-preview-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }

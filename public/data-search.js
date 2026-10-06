@@ -303,6 +303,10 @@ function hiFetchNoteText(master) {
         : "「編集する」から手入力するか、時間をおいて「netkeibaから再取得する」を試してください。";
     return `${hiFetchErrorWithWhenText(master.fetchError, master.fetchedAt, master.fetchedNow)}${isAdmin ? hint : ""}`;
   }
+  // 2026-10-06: レース管理画面で netkeiba の馬柱テキストを貼り付けて取り込んだ情報(docs/design/umabashira-paste.md)
+  if (master.dataSource === "paste") {
+    return `netkeibaの馬柱を貼り付けて取り込んだ情報です。${isAdmin ? "誤りがあれば「編集する」から修正してください。" : ""}`;
+  }
   if (master.dataSource === "netkeiba" || master.dataSource === "import") {
     const when = master.fetchedAt ? new Date(master.fetchedAt).toLocaleString("ja-JP") : "";
     return `netkeiba等から取得した情報です${when ? `(${when}取得)` : ""}。${isAdmin ? "誤りがあれば「編集する」から修正してください。" : ""}`;

@@ -54,8 +54,12 @@ function renderEntryRows(entries, horseCount) {
   }
   entryRows.innerHTML = rows
     .map((e, i) => {
+      // 入力欄の無い項目(性齢・斤量・調教師等。PDF取込や馬柱貼り付け由来)は行に保持し、
+      // readEntryRows() で送り返す(2026-10-06。それまでは入力欄の4項目だけを送っており、
+      // モーダルで保存するとこれらが消えていた)。
+      const { waku_number: _w, horse_number: _n, horse_name: _h, jockey: _j, ...extra } = e;
       return `
-        <div class="entry-form-row" data-row="${i}">
+        <div class="entry-form-row" data-row="${i}" data-extra="${escapeAttr(JSON.stringify(extra))}">
           <select class="e-waku">
             <option value="">枠-</option>
             ${[1,2,3,4,5,6,7,8].map((n) => `<option value="${n}" ${e.waku_number == n ? "selected" : ""}>${n}</option>`).join("")}
@@ -78,12 +82,17 @@ horseCountSelect.addEventListener("change", () => {
 });
 
 function readEntryRows() {
-  return Array.from(entryRows.querySelectorAll(".entry-form-row")).map((row) => ({
-    waku_number: row.querySelector(".e-waku").value ? Number(row.querySelector(".e-waku").value) : null,
-    horse_number: Number(row.querySelector(".e-horse-number").value),
-    horse_name: row.querySelector(".e-horse-name").value,
-    jockey: row.querySelector(".e-jockey").value || null,
-  }));
+  return Array.from(entryRows.querySelectorAll(".entry-form-row")).map((row) => {
+    let extra = {};
+    try { extra = JSON.parse(row.dataset.extra || "{}") || {}; } catch { extra = {}; }
+    return {
+      ...extra,
+      waku_number: row.querySelector(".e-waku").value ? Number(row.querySelector(".e-waku").value) : null,
+      horse_number: Number(row.querySelector(".e-horse-number").value),
+      horse_name: row.querySelector(".e-horse-name").value,
+      jockey: row.querySelector(".e-jockey").value || null,
+    };
+  });
 }
 
 // ---------- テキスト貼り付けで出走馬を一括入力(出走馬表モーダル) ----------
@@ -94,6 +103,12 @@ document.getElementById("toggle-paste-btn").addEventListener("click", () => {
 
 document.getElementById("apply-paste-btn").addEventListener("click", () => {
   const text = document.getElementById("entries-paste").value;
+  // netkeiba馬柱ページのテキストなら、確認画面を出してから反映する(2026-10-06追加)
+  const umabashira = parseNetkeibaUmabashira(text);
+  if (umabashira.length > 0) {
+    startUmabashiraPreview(umabashira);
+    return;
+  }
   const parsed = parseEntries(text);
   if (parsed.length === 0) {
     alert("読み取れる行が見つかりませんでした。書式をご確認のうえ、直接入力欄で修正してください。");
@@ -119,6 +134,7 @@ function openEntriesModal(race, prefill) {
   entriesForm.reset();
   document.getElementById("paste-area").hidden = true;
   document.getElementById("entries-paste").value = "";
+  resetUmabashiraPreview();
   document.getElementById("entries-race-id").value = race ? race.id : "";
   entriesModalTitle.textContent = race
     ? (race.entries.length > 0 ? "出走馬表を編集" : "出走馬表を登録")
@@ -196,3 +212,252 @@ entriesForm.addEventListener("submit", async (e) => {
   closeEntriesModal();
   loadRaces();
 });
+
+// ---------- netkeiba馬柱テキストの貼り付け取り込み(2026-10-06追加) ----------
+// 仕様は docs/design/umabashira-paste.md。貼り付けた馬柱ページのテキストから、出走馬表の入力欄
+// (枠・馬番・馬名・斤量・性齢。騎手は空欄のときだけ)と、馬情報マスタ(父・母・母父・調教師・毛色・所属)を
+// 確認画面を経て反映する。アプリから netkeiba へは問い合わせない。
+// API: POST /api/admin/horses/paste-import(preview / apply)、エイリアス登録は既存の
+// POST /api/admin/jockey-aliases と POST /api/admin/trainer-aliases。
+
+const umabashiraPreviewEl = document.getElementById("umabashira-preview");
+let umabashiraParsed = [];     // parseNetkeibaUmabashira() の結果
+let umabashiraPreview = null;  // preview API の結果(馬ごと)
+let umabashiraJockeyMap = new Map(); // 騎手エイリアス: 突き合わせキー → 正しい騎手名
+
+const UB_FIELD_LABELS = { sire: "父", dam: "母", dam_sire: "母父" };
+const UB_STATUS_LABELS = {
+  new: "新規登録",
+  fill: "空欄を埋める",
+  same: "変更なし",
+  conflict: "保存済みと不一致",
+  manual: "手入力済みのため変更なし",
+};
+
+// 騎手名の突き合わせキー(サーバーの jockeyAliasKeyOf と同じ: 見習い記号を除き全空白除去)
+function ubJockeyKey(name) {
+  return String(name || "").replace(/^[☆▲△★◇]/, "").replace(/[　\s]+/g, "");
+}
+function ubNameKey(name) {
+  return String(name || "").normalize("NFKC").replace(/[　\s]+/g, "");
+}
+
+function resetUmabashiraPreview() {
+  umabashiraParsed = [];
+  umabashiraPreview = null;
+  if (umabashiraPreviewEl) {
+    umabashiraPreviewEl.hidden = true;
+    umabashiraPreviewEl.innerHTML = "";
+  }
+}
+
+async function loadJockeyAliasMapForPaste() {
+  const map = new Map();
+  try {
+    const res = await authedFetch("/api/admin/jockey-aliases");
+    if (res.ok) {
+      const data = await res.json();
+      for (const a of data.items || []) map.set(a.alias_key, a.canonical_name);
+    }
+  } catch { /* 取得できなくても略称のまま進める */ }
+  return map;
+}
+
+// 騎手の略称 → 正しい騎手名(エイリアス未登録なら null)と候補(同じ馬の過去走に出た騎手名で略称で始まるもの)
+function ubJockeyInfo(p) {
+  const abbr = p.jockey_abbr || "";
+  const resolved = abbr ? umabashiraJockeyMap.get(ubJockeyKey(abbr)) || null : null;
+  const a = ubJockeyKey(abbr);
+  const candidates = !resolved && a
+    ? (p.past_jockeys || []).filter((j) => ubJockeyKey(j) !== a && ubJockeyKey(j).startsWith(a))
+    : [];
+  return { abbr, resolved, candidates };
+}
+
+function ubPayloadHorses() {
+  return umabashiraParsed.map((p) => ({
+    horse_name: p.horse_name,
+    sire: p.sire,
+    dam: p.dam,
+    dam_sire: p.dam_sire,
+    trainer_abbr: p.trainer_abbr,
+    affiliation: p.affiliation,
+    coat_color: p.coat_color,
+  }));
+}
+
+async function startUmabashiraPreview(parsed) {
+  umabashiraParsed = parsed;
+  umabashiraPreviewEl.hidden = false;
+  umabashiraPreviewEl.innerHTML = `<p class="picker-hint">${parsed.length}頭を読み取りました。保存済みの馬情報と照合しています…</p>`;
+  const [map, res] = await Promise.all([
+    loadJockeyAliasMapForPaste(),
+    authedFetch("/api/admin/horses/paste-import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "preview", horses: ubPayloadHorses() }),
+    }),
+  ]);
+  umabashiraJockeyMap = map;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    umabashiraPreviewEl.innerHTML = `<p class="submit-message error">${escapeHtml(data.error || "照合に失敗しました")}</p>`;
+    return;
+  }
+  umabashiraPreview = data.horses || [];
+  renderUmabashiraPreview();
+}
+
+// 未登録の略称の行: 候補を入れた入力欄+「エイリアス登録」ボタン
+function ubAliasFormHtml(kind, abbr, candidates) {
+  const list = (candidates || []).map((c) => `<option value="${escapeAttr(c)}"></option>`).join("");
+  const listId = `ub-${kind}-cands-${ubNameKey(abbr)}`;
+  return `
+    <span class="ub-alias-form" data-kind="${kind}" data-abbr="${escapeAttr(abbr)}">
+      <span class="ub-unregistered">未登録の略称</span>
+      <input type="text" class="ub-alias-input" list="${escapeAttr(listId)}" value="${escapeAttr((candidates || [])[0] || "")}" placeholder="正しい${kind === "jockey" ? "騎手" : "調教師"}名" />
+      <datalist id="${escapeAttr(listId)}">${list}</datalist>
+      <button type="button" class="ghost-btn ub-alias-btn">エイリアス登録</button>
+    </span>`;
+}
+
+function renderUmabashiraPreview() {
+  const byInputName = new Map((umabashiraPreview || []).map((h) => [h.input_name, h]));
+  const rows = umabashiraParsed
+    .slice()
+    .sort((a, b) => a.horse_number - b.horse_number)
+    .map((p) => {
+      const h = byInputName.get(p.horse_name) || {};
+      const pasted = h.pasted || {};
+      const existing = h.existing || {};
+      const conflicts = new Set(h.conflicts || []);
+      const pedigreeCell = (f) => {
+        if (!conflicts.has(f)) {
+          const v = (h.status === "new" || !existing[f]) ? pasted[f] : existing[f];
+          return escapeHtml(v || "—");
+        }
+        // 不一致: 保存済み / 貼り付け を選ぶ(初期は保存済み)
+        const name = `ub-choice-${ubNameKey(p.horse_name)}-${f}`;
+        return `
+          <label class="ub-choice"><input type="radio" name="${escapeAttr(name)}" value="existing" data-horse="${escapeAttr(p.horse_name)}" data-field="${f}" checked> 保存済み: ${escapeHtml(existing[f] || "—")}</label>
+          <label class="ub-choice"><input type="radio" name="${escapeAttr(name)}" value="pasted" data-horse="${escapeAttr(p.horse_name)}" data-field="${f}"> 貼り付け: ${escapeHtml(pasted[f] || "—")}</label>`;
+      };
+      const t = h.trainer || {};
+      const trainerCell = existing.trainer
+        ? `${escapeHtml(existing.trainer)}<br><small>(保存済み。上書きしない)</small>`
+        : t.resolved
+          ? escapeHtml(t.resolved)
+          : t.abbr ? `${escapeHtml(t.abbr)}${ubAliasFormHtml("trainer", t.abbr, t.candidates)}` : "—";
+      const j = ubJockeyInfo(p);
+      const jockeyCell = j.resolved
+        ? escapeHtml(j.resolved)
+        : j.abbr ? `${escapeHtml(j.abbr)}${ubAliasFormHtml("jockey", j.abbr, j.candidates)}` : "—";
+      const manualNote = (h.manual_diffs || []).length
+        ? `<br><small>${(h.manual_diffs || []).map((f) => UB_FIELD_LABELS[f]).join("・")}が保存済みと異なります(手入力済みのため変更しません)</small>`
+        : "";
+      return `
+        <tr class="ub-status-${escapeAttr(h.status || "")}">
+          <td>${p.horse_number}</td>
+          <td>${escapeHtml(h.horse_name || p.horse_name)}</td>
+          <td>${pedigreeCell("sire")}</td>
+          <td>${pedigreeCell("dam")}</td>
+          <td>${pedigreeCell("dam_sire")}</td>
+          <td>${trainerCell}</td>
+          <td>${jockeyCell}</td>
+          <td>${escapeHtml(UB_STATUS_LABELS[h.status] || "—")}${manualNote}</td>
+        </tr>`;
+    })
+    .join("");
+  const conflictCount = (umabashiraPreview || []).filter((h) => h.status === "conflict").length;
+  umabashiraPreviewEl.innerHTML = `
+    <p class="picker-hint">${umabashiraParsed.length}頭を読み取りました。内容を確認して「反映する」を押してください。
+      ${conflictCount ? `<b>${conflictCount}頭で保存済みの血統と不一致があります。項目ごとに正とする方を選んでください。</b>` : ""}
+      騎手・調教師は略称のため、既に値がある場合は上書きしません。</p>
+    <div class="table-wrap">
+      <table class="stats-table ub-preview-table">
+        <thead><tr><th>馬番</th><th>馬名</th><th>父</th><th>母</th><th>母父</th><th>調教師</th><th>騎手</th><th>状態</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="ub-preview-actions">
+      <button type="button" class="ghost-btn" id="ub-cancel-btn">取り込みをやめる</button>
+      <button type="button" class="stamp-btn" id="ub-apply-btn">反映する</button>
+    </div>
+    <p id="ub-message" class="submit-message" hidden></p>`;
+
+  umabashiraPreviewEl.querySelectorAll(".ub-alias-btn").forEach((btn) => {
+    btn.addEventListener("click", () => registerUmabashiraAlias(btn.closest(".ub-alias-form")));
+  });
+  document.getElementById("ub-cancel-btn").addEventListener("click", resetUmabashiraPreview);
+  document.getElementById("ub-apply-btn").addEventListener("click", applyUmabashira);
+}
+
+async function registerUmabashiraAlias(formEl) {
+  const kind = formEl.dataset.kind;
+  const abbr = formEl.dataset.abbr;
+  const canonical = formEl.querySelector(".ub-alias-input").value.trim();
+  if (!canonical) { alert("正しい名前を入力してください"); return; }
+  const url = kind === "jockey" ? "/api/admin/jockey-aliases" : "/api/admin/trainer-aliases";
+  const res = await authedFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alias_display: abbr, canonical_name: canonical }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || "エイリアスの登録に失敗しました"); return; }
+  // 登録した変換を反映して照合し直す(他の馬の同じ略称にも効く)
+  await startUmabashiraPreview(umabashiraParsed);
+}
+
+async function applyUmabashira() {
+  const choices = {};
+  umabashiraPreviewEl.querySelectorAll('.ub-choice input[type="radio"]:checked').forEach((r) => {
+    if (!choices[r.dataset.horse]) choices[r.dataset.horse] = {};
+    choices[r.dataset.horse][r.dataset.field] = r.value;
+  });
+  const btn = document.getElementById("ub-apply-btn");
+  const msg = document.getElementById("ub-message");
+  btn.disabled = true;
+  const res = await authedFetch("/api/admin/horses/paste-import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "apply", horses: ubPayloadHorses(), choices }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    btn.disabled = false;
+    msg.hidden = false;
+    msg.className = "submit-message error";
+    msg.textContent = data.error || "馬情報の反映に失敗しました(出走馬表の入力欄はまだ変えていません)";
+    return;
+  }
+
+  // 出走馬表の入力欄へ反映(保存は従来どおり「保存する」)。騎手は同じ馬の既存の行に値があれば残す。
+  const currentByName = new Map(readEntryRows().filter((e) => e.horse_name).map((e) => [ubNameKey(e.horse_name), e]));
+  const entries = umabashiraParsed
+    .slice()
+    .sort((a, b) => a.horse_number - b.horse_number)
+    .map((p) => {
+      const cur = currentByName.get(ubNameKey(p.horse_name)) || {};
+      const j = ubJockeyInfo(p);
+      return {
+        ...cur,
+        waku_number: p.waku_number,
+        horse_number: p.horse_number,
+        horse_name: p.horse_name,
+        jockey: cur.jockey || j.resolved || j.abbr || null,
+        sex_age: p.sex_age || cur.sex_age || null,
+        weight_carried: p.weight_carried ?? cur.weight_carried ?? null,
+      };
+    });
+  const count = Math.max(entries.length, ...entries.map((e) => e.horse_number || 0), 5);
+  horseCountSelect.value = count;
+  renderEntryRows(entries, count);
+
+  const applied = data.horses || [];
+  const n = (k) => applied.filter((h) => h.applied === k).length;
+  msg.hidden = false;
+  msg.className = "submit-message success";
+  msg.textContent = `馬情報: 新規${n("inserted")}頭・更新${n("updated")}頭・変更なし${n("unchanged")}頭。出走馬表の入力欄にも反映しました(「保存する」で出走馬表を保存してください)。`;
+  // 反映済み(二重送信しない)。やり直す場合は貼り付け直して「読み込む」から
+}

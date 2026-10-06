@@ -33,6 +33,7 @@
 | `docs/testing/jockey-aliases.md` | 12 騎手名エイリアス管理(セットアップ・登録/削除・自動正規化・一括補正・見習い減量記号) |
 | `docs/testing/graded-race-search.md` | 13 データ検索「重賞検索」タブ(重賞の選択・今年の出走馬・出走馬詳細・過去10年・管理画面の開催月日) |
 | `docs/testing/jockey-search.md` | 14 データ検索「騎手検索」タブ(候補の絞り込み・通算/年度別/コース別成績・名寄せ) |
+| `docs/testing/umabashira-paste.md` | 15 netkeiba馬柱テキストの貼り付け取り込み(読み取り・確認画面・不一致の選択・エイリアス登録・出走馬表への反映) |
 
 アプリ概要は`README.md`、仕様の詳細は`docs/DESIGN.md`(索引)→`docs/design/<機能>.md`、
 より詳しい索引は`docs/INDEX.md`を参照。

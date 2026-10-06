@@ -887,6 +887,7 @@ async function onReady() {
   setupGradedRacesImport();
   setupRaceBaseNameRecomputeButton();
   setupNetkeibaPauseForm();
+  setupTrainerAliasForm();
   await Promise.all([
     loadUnregisteredRaces(),
     loadUsers(),
@@ -896,7 +897,89 @@ async function onReady() {
     loadApiTokenStatus(),
     loadGradedRaces(),
     loadNetkeibaPause(),
+    loadTrainerAliases(),
   ]);
+}
+
+// ---------- 調教師名エイリアス管理(2026-10-06追加) ----------
+// netkeiba馬柱テキストの貼り付け取り込みで、調教師の略称を正しい調教師名に変換するため。
+// 騎手名エイリアス管理(loadJockeyAliases/setupJockeyAliasForm)と同じ形。
+// API: GET/POST /api/admin/trainer-aliases、DELETE /api/admin/trainer-aliases/:id。
+
+async function loadTrainerAliases() {
+  const table = document.getElementById("trainer-aliases-table");
+  if (!table) return;
+  const res = await authedFetch("/api/admin/trainer-aliases");
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("trainer-aliases-table", null); return; }
+  const data = await res.json();
+  const items = data.items || [];
+  setCollapsibleCount("trainer-aliases-table", items.length);
+  if (!items.length) {
+    table.innerHTML = "<tr><td>登録済みのエイリアスはありません</td></tr>";
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr><th>表記ゆれ側</th><th>正しい表記</th><th>登録日時</th><th></th></tr></thead>
+    <tbody>
+      ${items.map((a) => `
+        <tr data-id="${a.id}">
+          <td>${escapeHtml(a.alias_display)}</td>
+          <td>${escapeHtml(a.canonical_name)}</td>
+          <td>${formatDateTime(a.created_at)}</td>
+          <td><button type="button" class="icon-btn delete trainer-alias-delete-btn" title="削除">×</button></td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+  table.querySelectorAll(".trainer-alias-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.closest("tr")?.dataset.id;
+      if (!id) return;
+      if (!confirm("このエイリアスを削除しますか？")) return;
+      const res2 = await authedFetch(`/api/admin/trainer-aliases/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res2.ok) {
+        const data2 = await res2.json().catch(() => ({}));
+        alert(data2.error || "削除に失敗しました。");
+        return;
+      }
+      await loadTrainerAliases();
+    });
+  });
+}
+
+function setupTrainerAliasForm() {
+  const form = document.getElementById("trainer-alias-form");
+  const messageEl = document.getElementById("trainer-alias-form-message");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const displayInput = document.getElementById("trainer-alias-display");
+    const canonicalInput = document.getElementById("trainer-alias-canonical");
+    const alias_display = displayInput.value.trim();
+    const canonical_name = canonicalInput.value.trim();
+    if (!alias_display || !canonical_name) return;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    messageEl.hidden = true;
+    const res = await authedFetch("/api/admin/trainer-aliases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias_display, canonical_name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    submitBtn.disabled = false;
+    messageEl.hidden = false;
+    if (res.ok) {
+      messageEl.className = "submit-message success";
+      messageEl.textContent = `「${alias_display}」→「${canonical_name}」を登録しました。`;
+      displayInput.value = "";
+      canonicalInput.value = "";
+      await loadTrainerAliases();
+    } else {
+      messageEl.className = "submit-message error";
+      messageEl.textContent = data.error || "登録に失敗しました。";
+    }
+  });
 }
 
 // ---------- netkeiba取得の一時停止(2026-10-04追加) ----------

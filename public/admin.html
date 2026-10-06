@@ -106,6 +106,29 @@
         </div>
       </section>
 
+      <!-- 調教師名エイリアス管理(2026-10-06追加)。netkeiba馬柱テキストの貼り付け取り込みで、
+           「橋口」「手塚久」等の調教師の略称を正しい調教師名に変換するため。
+           詳細はdocs/design/umabashira-paste.md「略称のエイリアス」参照。 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">調教師名エイリアス管理</h2>
+        <p class="ticket-sub">
+          レース管理画面でnetkeibaの馬柱を貼り付けて取り込む際、調教師は「手塚久」のような略称で入ってきます。
+          「表記ゆれ側」に略称、「正しい表記」にフルネームを登録すると、取り込み時にフルネームへ変換されます
+          (取り込みの確認画面からも登録できます)。空白の有無・全角/半角の違いは同じものとして扱います。
+        </p>
+        <form id="trainer-alias-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+          <label style="flex:1;min-width:160px">表記ゆれ側(例: 手塚久)
+            <input type="text" id="trainer-alias-display" placeholder="略称・表記ゆれ側の調教師名" required />
+          </label>
+          <label style="flex:1;min-width:160px">正しい表記(例: 手塚貴久)
+            <input type="text" id="trainer-alias-canonical" placeholder="正しい調教師名" required />
+          </label>
+          <button type="submit" class="stamp-btn">エイリアスを追加</button>
+        </form>
+        <p id="trainer-alias-form-message" class="submit-message" hidden></p>
+        <details class="admin-collapsible"><summary>登録済みのエイリアス <span class="admin-collapsible-count" data-count-for="trainer-aliases-table"></span></summary><div class="table-wrap"><table class="stats-table" id="trainer-aliases-table"></table></div></details>
+      </section>
+
       <!-- 馬名エイリアス管理(2026-09-11追加)。
            同じ馬がJRAレース結果PDF(race_results)と出走馬一覧PDF/手動入力(races.entries)で
            表記ゆれ(半角/全角カナ・空白有無・異体字等)を起こし、予想登録画面の

@@ -17,7 +17,7 @@
 -- SQLだけを --command または --file= で実行し、成功したら
 -- schema_migrations に INSERT で記録する(手順はREADME参照)。
 --
--- 2026-10-04時点: 未適用のマイグレーションは無い。過去のステップ
+-- 2026-10-06時点: 未適用のマイグレーションは無い。過去のステップ
 -- (legacy_v13_multiuser, course_type_distance, race_results_and_conditions,
 --  jockey_aliases, tickets_refunded, users_last_login, users_password_reset_pending)は
 --  いずれも本番DB(keiba-yosou-db)へ適用済みで、最終結果は schema.sql に統合済みのため
@@ -31,6 +31,7 @@
 --  (schema_migrations に記録済み)で、内容が schema.sql に反映済みであることを確認して
 --  削除した。内容が必要な場合は git 履歴(c51b812 時点の migration.sql)を参照。
 -- 2026-10-04: external_fetch_pause(netkeiba取得の一時停止)も本番適用済み・schema.sql 反映済みのため削除した。
+-- 2026-10-06: umabashira_paste(trainer_aliases・horses.coat_color/affiliation)も本番適用済み・schema.sql 反映済みのため削除した。
 
 PRAGMA foreign_keys=ON;
 

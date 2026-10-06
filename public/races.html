@@ -74,9 +74,12 @@
           <button type="submit" class="stamp-btn">保存する</button>
         </div>
         <div id="paste-area" hidden>
-          <p class="picker-hint">netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けてください(改行区切り、うまく読み取れない場合は下の欄で直接修正できます)。</p>
+          <p class="picker-hint">netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けてください(改行区切り、うまく読み取れない場合は下の欄で直接修正できます)。
+            netkeibaの馬柱ページ(5走表示)をコピーして貼り付けると、血統(父・母・母父)・調教師なども確認のうえ馬情報に取り込めます。</p>
           <textarea id="entries-paste" rows="6" placeholder="例:&#10;1　サンプルホース　田中太郎&#10;2　サンプルホース2　鈴木次郎"></textarea>
           <button type="button" id="apply-paste-btn" class="stamp-btn">読み込む</button>
+          <!-- netkeiba馬柱テキストの確認画面(2026-10-06追加。docs/design/umabashira-paste.md) -->
+          <div id="umabashira-preview" class="umabashira-preview" hidden></div>
         </div>
       </div>
 

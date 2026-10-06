@@ -507,8 +507,10 @@ CREATE TABLE IF NOT EXISTS horses (
   trainer TEXT,                      -- 調教師(最新)
   owner TEXT,                        -- 馬主
   breeder TEXT,                      -- 生産牧場
+  coat_color TEXT,                   -- 毛色(netkeiba馬柱の貼り付けから。2026-10-06追加)
+  affiliation TEXT,                  -- 所属(美浦/栗東 等。netkeiba馬柱の貼り付けから。2026-10-06追加)
   netkeiba_horse_id TEXT,            -- netkeibaの馬ID(db.netkeiba.com/horse/<id>/)
-  data_source TEXT NOT NULL DEFAULT 'netkeiba', -- 'netkeiba' | 'import' | 'manual'
+  data_source TEXT NOT NULL DEFAULT 'netkeiba', -- 'netkeiba' | 'import' | 'manual' | 'paste'(馬柱テキストの貼り付け)
                                       -- 'manual'の行は、管理者の明示的な「netkeibaから再取得」
                                       -- 操作以外では自動上書きしない(取込側のtrainer反映も対象外)。
   fetch_error TEXT,                  -- 直近のnetkeiba取得が失敗/未ヒットだった理由。成功時はNULL
@@ -527,4 +529,14 @@ CREATE TABLE IF NOT EXISTS external_fetch_pause (
   paused_until TEXT,                -- 停止期限(ISO 8601)。NULL=停止していない
   reason TEXT,                      -- 停止のきっかけになった取得失敗コード(http_400 等)
   updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 調教師名エイリアス(2026-10-06追加。@STEP: umabashira_paste)。netkeiba馬柱テキストの貼り付けで
+-- 「橋口」「手塚久」等の略称を正しい調教師名に変換する(docs/design/umabashira-paste.md)。
+CREATE TABLE IF NOT EXISTS trainer_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_key TEXT NOT NULL UNIQUE,   -- 突き合わせキー: NFKC正規化 + 全空白除去
+  alias_display TEXT NOT NULL,      -- 表記ゆれ側(略称)の元の見た目
+  canonical_name TEXT NOT NULL,     -- 正しい調教師名
+  created_at TEXT DEFAULT (datetime('now'))
 );

@@ -42,6 +42,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
+| netkeiba馬柱テキストの貼り付け取り込み(血統・調教師等)・調教師名エイリアス | `public/parse.js`(`parseNetkeibaUmabashira`), `public/races-entries-modal.js`, `functions/api/admin/horses/paste-import.js`, `functions/api/admin/trainer-aliases/*`, `functions/api/_lib/trainer-alias.js` |
 | 馬名エイリアス(管理API・登録馬一覧) | `functions/api/admin/horse-aliases/*`, `functions/api/admin/horses/index.js` |
 | 馬名エイリアス(正規化本体) | `functions/api/_lib/horse-alias.js` |
 | 出走馬entriesマージ・バックフィル・枠番自動計算 | `functions/api/_lib/entries-merge.js` |
@@ -68,6 +69,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/graded-race-search.js` | `runningStyleOf` `dominantRunningStyle` `timeTextToSeconds` `addPlacing` `fieldSizeOf` `findRacesByGradedKey` `raceSummaryOf` `gradedJockeyKey` `jstYear`(重賞検索タブ用。DB不使用。2026-10-02追加) |
 | `_lib/netkeiba.js` | `fetchNetkeibaHorseInfo`(netkeiba〈db.netkeiba.com〉から血統/調教師/馬主/生産牧場を取得・パースするのみ。DB不使用。2026-09-28追加) |
 | `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) `getNetkeibaPausedUntil` `getNetkeibaPauseSettings` `setNetkeibaPauseHours`(netkeibaに拒否されたら管理画面で設定した時間〈既定6時間〉取得を止める。2026-10-04追加) |
+| `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(races_cache・race_stats_cacheから全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
