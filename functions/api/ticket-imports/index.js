@@ -421,6 +421,7 @@ export async function onRequestGet(context){
       distance:r.distance,
       category:classifyRace(gradedMap,{race_name:r.race_name,class_flags:r.class_flags}).category,
       race_base_name:r.race_base_name,
+      race_name:r.race_name,
     });
     const itemsByGroup=new Map();
     for(const idsChunk of chunk([...groupIds],90)){
@@ -433,7 +434,11 @@ export async function onRequestGet(context){
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
       const rc=raceCourseById.get(g.race_id)||null;
-      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:g.race_name,race_base_name:rc?rc.race_base_name:null,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,race_category:rc?rc.category:"other",bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
+      // race_name は、レースと紐付いていればレース情報(races)の今のレース名を優先する(2026-10-06)。
+      // imported_ticket_groups.race_name は取込時点のスナップショットで、レース登録前にCSVを取り込むと
+      // 空(またはCSV上の名前)のまま残る。後からレースを登録して race_id が紐付いても
+      // (linkUnregisteredImportsToRace は race_id しか更新しない)、購入履歴画面でレース名が出なかった。
+      for(const item of items){ represented.add(Number(g.source_row_id)); out.push({id:`import-${item.id}`,imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:(rc&&rc.race_name)||g.race_name,race_base_name:rc?rc.race_base_name:null,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,race_category:rc?rc.category:"other",bet_type:g.bet_type,method:g.method,selections:JSON.parse(item.selections||'[]'),amount:item.amount,payout:item.payout,is_hit:Boolean(item.is_hit),result_inferred:Boolean(item.result_inferred),source:g.source,total_group_amount:g.total_amount}); }
     }
     // v10以前に取り込まれたレガシー行(未正規化)も、履歴APIで後方互換表示する。
     // 2026-08-14〜: Club JRA-Net購入履歴CSVは既に決着済みという方針統一に合わせ、
