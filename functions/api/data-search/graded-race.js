@@ -300,12 +300,20 @@ export async function onRequestGet(context) {
     }
   }
 
+  // 払戻の代表値は中央値(件数が偶数なら真ん中2つの平均)。2026-10-06に平均から変更
+  // (まれな高配当に引っ張られにくくするため。データ検索「レース成績」タブと同じ考え方)。
+  const medianOf = (arr) => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
   const payoutStats = TREND_PAYOUT_KEYS.map((key) => {
     const values = past.map((p) => racePayoutValue(p.payouts, key)).filter((v) => v != null);
     return {
       key,
       years: values.length,
-      avg: values.length ? values.reduce((s, n) => s + n, 0) / values.length : null,
+      median: medianOf(values),
       max: values.length ? Math.max(...values) : null,
       min: values.length ? Math.min(...values) : null,
     };

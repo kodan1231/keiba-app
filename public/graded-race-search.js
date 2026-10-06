@@ -550,7 +550,7 @@ function grRenderTrends(data) {
     .map((p) => {
       const label = (typeof BET_TYPES !== "undefined" && BET_TYPES[p.key]?.label) || p.key;
       const yen = (v) => (v == null ? "—" : formatYen(Math.round(v)));
-      return `<tr><td class="table-name">${escapeHtml(label)}</td><td>${p.years}</td><td>${yen(p.avg)}</td><td>${yen(p.max)}</td><td>${yen(p.min)}</td></tr>`;
+      return `<tr><td class="table-name">${escapeHtml(label)}</td><td>${p.years}</td><td>${yen(p.median)}</td><td>${yen(p.max)}</td><td>${yen(p.min)}</td></tr>`;
     })
     .join("");
   grEls.trends.innerHTML = `
@@ -563,7 +563,7 @@ function grRenderTrends(data) {
       <div>
         <h3 class="stats-subheading">払戻</h3>
         <div class="table-wrap"><table class="stats-table">
-          <tr><th>式別</th><th>年数</th><th>平均</th><th>最高</th><th>最低</th></tr>${payoutRows}
+          <tr><th>式別</th><th>年数</th><th>中央値</th><th>最高</th><th>最低</th></tr>${payoutRows}
         </table></div>
         <h3 class="stats-subheading gr-sub-heading">勝ちタイム・上がり</h3>
         ${grCardsHtml([
