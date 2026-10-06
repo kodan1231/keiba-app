@@ -42,20 +42,67 @@ export function raceBaseNameOf(rawName) {
   return s || null;
 }
 
+// PDFのテキスト抽出で、通常の漢字の代わりに「CJK部首補助」の字形(見た目は同じ別の文字)が
+// 入ることがある(例: 「テレビ⻄日本賞」の ⻄ U+2EC4、「⻘葉賞」の ⻘ U+2EC9)。NFKC では
+// 通常の漢字にならないため、重賞名の突き合わせ用に個別に置き換える(2026-10-06)。
+const CJK_RADICAL_VARIANTS = new Map([
+  ["⻄", "西"], ["⻉", "青"], ["⻑", "長"], ["⻝", "食"], ["⻤", "鬼"],
+  ["⻩", "黄"], ["⻨", "麦"], ["⻆", "角"], ["⻏", "邑"], ["⻘", "青"],
+]);
+function normalizeCjkRadicals(s) {
+  return s.replace(/[⺀-⻿]/g, (c) => CJK_RADICAL_VARIANTS.get(c) || c);
+}
+
+// 結果・出走馬PDFの正式名 → 重賞一覧(JRA公式の略称)の名前(2026-10-06)。
+// 末尾の略記化や冠の除去では吸収できない、名前そのものが異なるもの。
+const GRADED_NAME_SYNONYMS = new Map([
+  ["東京優駿", "日本ダービー"],
+  ["優駿牝馬", "オークス"],
+  ["弥生賞ディープインパクト記念", "弥生賞"],
+]);
+
 // races.race_name → graded_races.name_key と同じ形へ正規化する。
 //   1. raceBaseNameOf() で回次・混入グレードバッジを除去
-//   2. 残りの全角/半角空白を除去
-//   3. 末尾の「ステークス/カップ/トロフィー」を「S/C/T」に統一する
-//      (重賞一覧ページのレース名は略記、結果・出走馬PDFのレース名は正式表記のため)
+//   2. CJK部首補助の字形を通常の漢字に置き換え(2026-10-06追加)、全角/半角空白を除去
+//   3. 末尾の「ステークス/カップ/トロフィー/ハンデキャップ」を「S/C/T/H」に統一する
+//      (重賞一覧ページのレース名は略記、結果・出走馬PDFのレース名は正式表記のため。
+//      ハンデキャップ→H は2026-10-06追加。「京成杯オータムハンデキャップ」→「京成杯オータムH」)
+//   4. 正式名と通称の対応(GRADED_NAME_SYNONYMS)を当てる(2026-10-06追加)
+// 冠(スポンサー名。「産経賞」「読売」等)は、ここでは除去しない(冠と重賞名の区別が名前だけでは
+// つかないため)。冠付きの名前は resolveGradedKey() で重賞一覧のキーと照らして判定する。
 export function gradedRaceNameKey(rawName) {
   const base = raceBaseNameOf(rawName);
   if (!base) return "";
-  let s = base.replace(/[　\s]+/g, "");
+  let s = normalizeCjkRadicals(base).replace(/[　\s]+/g, "");
   s = s
     .replace(/ステークス$/, "S")
     .replace(/カップ$/, "C")
-    .replace(/トロフィー$/, "T");
-  return s;
+    .replace(/トロフィー$/, "T")
+    .replace(/ハンデキャップ$/, "H");
+  return GRADED_NAME_SYNONYMS.get(s) || s;
+}
+
+// 冠(スポンサー名)として先頭から外してよい部分の形。「◯◯賞」「◯◯杯」「◯◯賞典」、または「読売」。
+// 例: 産経賞セントウルS / サンケイスポーツ杯阪神牝馬S / 農林水産省賞典新潟記念 / 読売マイラーズC
+const SPONSOR_PREFIX_RE = /(?:賞|杯|賞典|読売)$/;
+
+// レース名のキー(gradedRaceNameKey の結果)を、重賞一覧のキーへ解決する(2026-10-06追加)。
+//   1. そのまま一覧にあればそのキー
+//   2. 無ければ、先頭の冠(SPONSOR_PREFIX_RE で終わる部分)を外した残りが一覧にあればそのキー
+//      (外す部分が短いものから試す=残りが長い一覧のキーを優先する)
+// 単純な後方一致にしないのは、リステッド「白富士S」が重賞「富士S」に誤って一致しないようにするため
+// (冠の形で終わる部分を外したときだけ一致とみなす)。
+// hasKey: (key) => boolean(重賞一覧にそのキーがあるか)。一致しなければ null。
+export function resolveGradedKey(raceKey, hasKey) {
+  if (!raceKey) return null;
+  if (hasKey(raceKey)) return raceKey;
+  for (let i = 2; i <= raceKey.length - 2; i++) {
+    const prefix = raceKey.slice(0, i);
+    if (!SPONSOR_PREFIX_RE.test(prefix)) continue;
+    const rest = GRADED_NAME_SYNONYMS.get(raceKey.slice(i)) || raceKey.slice(i);
+    if (hasKey(rest)) return rest;
+  }
+  return null;
 }
 
 // graded_races.schedule_md(開催月日 "MM-DD")の入力値を正規化する(2026-10-02追加。
@@ -83,17 +130,24 @@ export function isConditionRace(classFlags) {
 // 戻り値: { category: "condition"|"graded"|"other", grade: "G1"|"G2"|"G3"|null }
 export function classifyRace(gradedMap, race) {
   if (isConditionRace(race?.class_flags)) return { category: "condition", grade: null };
-  const key = gradedRaceNameKey(race?.race_name);
-  const hit = key && gradedMap ? gradedMap.get(key) : null;
+  // 冠(スポンサー名)付きのレース名も重賞一覧のキーへ解決する(2026-10-06。resolveGradedKey 参照)
+  const key = gradedMap ? resolveGradedKey(gradedRaceNameKey(race?.race_name), (k) => gradedMap.has(k)) : null;
+  const hit = key ? gradedMap.get(key) : null;
   if (hit) return { category: "graded", grade: hit.grade };
   return { category: "other", grade: null };
 }
 
+// 重賞一覧を Map<キー, { grade, is_jump }> で返す。キーは保存済みの name_key に加え、名前から
+// 今の gradedRaceNameKey() で計算し直したものも入れる(2026-10-06。正規化ルールを変えた後も、
+// 保存済みの name_key の計算し直しを待たずに一致させるため)。
 export async function loadGradedRaceMap(db) {
-  const { results } = await db.prepare("SELECT name_key, grade, is_jump FROM graded_races").all();
+  const { results } = await db.prepare("SELECT name, name_key, grade, is_jump FROM graded_races").all();
   const map = new Map();
   for (const r of results || []) {
-    map.set(r.name_key, { grade: r.grade, is_jump: !!r.is_jump });
+    const v = { grade: r.grade, is_jump: !!r.is_jump };
+    map.set(r.name_key, v);
+    const fresh = gradedRaceNameKey(r.name);
+    if (fresh && !map.has(fresh)) map.set(fresh, v);
   }
   return map;
 }

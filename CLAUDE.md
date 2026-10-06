@@ -65,7 +65,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/horse-alias.js` | `horseAliasKeyOf`(NFKC+空白除去) `loadHorseAliasMap` `applyHorseAliasMap` `buildHorseSearchKeys`(複数馬名→race_results.horse_key検索キー集合〈逆引きエイリアス込み〉。2026-10-02切り出し) `applyHorseAliasesToEntries` `normalizeExistingHorseNames` |
 | `_lib/race-results.js` | `upsertRaceResults` `upsertRaceResultsBulk` |
 | `_lib/ticket-payout.js` | `recomputeTicketPayoutsForRace` `recomputeTicketPayoutsForRaces` `findStoredRateServer`(非export・内部) |
-| `_lib/race-classification.js` | `gradedRaceNameKey` `isConditionRace` `classifyRace` `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) `normalizeScheduleMd`(重賞の開催月日"MM-DD"。2026-10-02追加) |
+| `_lib/race-classification.js` | `gradedRaceNameKey` `resolveGradedKey`(冠付きのレース名を重賞一覧のキーへ解決。2026-10-06追加) `isConditionRace` `classifyRace` `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) `normalizeScheduleMd`(重賞の開催月日"MM-DD"。2026-10-02追加) |
 | `_lib/graded-race-search.js` | `runningStyleOf` `dominantRunningStyle` `timeTextToSeconds` `addPlacing` `fieldSizeOf` `findRacesByGradedKey` `raceSummaryOf` `gradedJockeyKey` `jstYear`(重賞検索タブ用。DB不使用。2026-10-02追加) |
 | `_lib/netkeiba.js` | `fetchNetkeibaHorseInfo`(netkeiba〈db.netkeiba.com〉から血統/調教師/馬主/生産牧場を取得・パースするのみ。DB不使用。2026-09-28追加) |
 | `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) `getNetkeibaPausedUntil` `getNetkeibaPauseSettings` `setNetkeibaPauseHours`(netkeibaに拒否されたら管理画面で設定した時間〈既定6時間〉取得を止める。2026-10-04追加) |

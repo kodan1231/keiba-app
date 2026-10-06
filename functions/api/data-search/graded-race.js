@@ -11,6 +11,7 @@ import {
   addPlacing,
   timeTextToSeconds,
   RAN_STATUSES,
+  gradedRaceNameKey,
 } from "../_shared.js";
 
 // データ検索画面「重賞検索」タブ: 重賞1つぶんの
@@ -165,7 +166,8 @@ export async function onRequestGet(context) {
   if (!master) return jsonError("重賞が見つかりません", 404);
 
   const allRaces = await getAllRacesRaw(db);
-  const matches = findRacesByGradedKey(allRaces, master.name_key);
+  // 保存済みの name_key と、名前から今の正規化で計算し直したキーの両方で拾う(2026-10-06)
+  const matches = findRacesByGradedKey(allRaces, new Set([master.name_key, gradedRaceNameKey(master.name)].filter(Boolean)));
 
   // 年ごとに1レース(同じ年に同名レースが複数ある異常データは、最も新しい日付を採用)
   const byYear = new Map();

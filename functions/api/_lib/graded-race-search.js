@@ -2,7 +2,7 @@
 // 向けの共通ロジック。DBアクセスは持たない(呼び出し側が races_cache / race_stats_cache /
 // race_results から読んだものを渡す)。仕様は docs/design/graded-race-search.md。
 
-import { gradedRaceNameKey } from "./race-classification.js";
+import { gradedRaceNameKey, resolveGradedKey } from "./race-classification.js";
 
 // 着別度数・走数として数えるステータス(取消・除外は数えない。中止は「着外」)
 export const RAN_STATUSES = new Set(["finished", "stopped"]);
@@ -108,10 +108,16 @@ export function parseJsonSafe(text, fallback) {
   }
 }
 
-// races_cache の全レースから、重賞マスタの name_key に一致するレースを抜き出す。
-export function findRacesByGradedKey(allRaces, nameKey) {
-  if (!nameKey) return [];
-  return allRaces.filter((r) => r.race_name && gradedRaceNameKey(r.race_name) === nameKey);
+// races_cache の全レースから、重賞マスタのキーに一致するレースを抜き出す。
+// nameKeys: キー1つ(文字列)またはキーの集合(保存済み name_key と、名前から計算し直したキー)。
+// 冠(スポンサー名)付きのレース名(例「産経賞セントウルステークス」)も resolveGradedKey で一致させる
+// (2026-10-06。それまでは gradedRaceNameKey の完全一致だけで、冠付き・ハンデキャップ表記の重賞が
+// 拾えなかった)。
+export function findRacesByGradedKey(allRaces, nameKeys) {
+  const keys = nameKeys instanceof Set ? nameKeys : new Set([nameKeys].filter(Boolean));
+  if (!keys.size) return [];
+  const hasKey = (k) => keys.has(k);
+  return allRaces.filter((r) => r.race_name && resolveGradedKey(gradedRaceNameKey(r.race_name), hasKey));
 }
 
 // 画面表示用のレース概要

@@ -10,6 +10,7 @@ import {
   loadGradedRaceMap,
   classifyRace,
   gradedRaceNameKey,
+  resolveGradedKey,
   parseJsonSafe,
   raceSummaryOf,
   runningStyleOf,
@@ -157,7 +158,9 @@ export async function onRequestGet(context) {
 
   const statsByRace = await getRaceResultsGroupedByRaceId(db);
   const gradedMap = await loadGradedRaceMap(db);
-  const targetNameKey = gradedRaceNameKey(target.race_name);
+  // 冠付きの名前も重賞一覧のキーへ解決してから比べる(2026-10-06。年によって冠が付く・外れるレースがあるため)
+  const resolveKey = (name) => { const k = gradedRaceNameKey(name); return resolveGradedKey(k, (x) => gradedMap.has(x)) || k; };
+  const targetNameKey = resolveKey(target.race_name);
 
   // 騎手の今回コース(場・芝ダ・距離)での成績。対象レースより前の開催分を
   // races_cache × race_stats_cache でメモリ集計する(race_results のあるレースのみ)
@@ -218,7 +221,7 @@ export async function onRequestGet(context) {
           sex_age: row.sex_age || null,
           running_style: runningStyleOf(row.corner_positions, fieldSize),
           grade: classifyRace(gradedMap, race).grade,
-          is_this_race: !!targetNameKey && gradedRaceNameKey(race.race_name) === targetNameKey,
+          is_this_race: !!targetNameKey && resolveKey(race.race_name) === targetNameKey,
         };
       })
       .filter((r) => r && String(r.race_date) < String(target.race_date))

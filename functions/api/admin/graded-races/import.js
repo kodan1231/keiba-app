@@ -9,15 +9,10 @@ const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 // 方針。docs/design/graded-races.md 参照)。
 //
 // レース数は年間150件程度で自然にバウンドされるため、db.batch()でのUPDATE/INSERT
-// 自体は1回で収まる(サブリクエスト数上限には該当しない)。ただし既存行の突き合わせ用
-// SELECTのIN句は、年間の重賞レース数(140件前後)がD1の「1クエリ100バインドパラメータ」
-// 上限を超えるため、90件ずつチャンク分割する(CLAUDE.md参照。2026-09-19に実際に
-// この上限超過で登録に失敗する障害が発生した)。
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
+// 自体は1回で収まる(サブリクエスト数上限には該当しない)。既存行の突き合わせ用SELECTは、
+// 以前はIN句(年間140件前後のため90件ずつチャンク分割。2026-09-19にバインド数上限超過で
+// 登録に失敗する障害があった)だったが、2026-10-06からIN句を使わず全件(140件前後)を読む形にした
+// (下記「既存行を取得し」参照)。
 
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
@@ -72,17 +67,18 @@ async function importGradedRaces(env, races) {
 
   if (!valid.length) return Response.json({ ok: true, results });
 
-  // 既存行をname_keyでまとめて取得し、UPDATE/INSERTを振り分ける(90件ずつチャンク分割)。
-  const nameKeys = valid.map((v) => v.nameKey);
+  // 既存行を取得し、UPDATE/INSERTを振り分ける。
+  // 2026-10-06: 以前は name_key IN (...) で引いていたが、正規化ルール(gradedRaceNameKey)を変えると
+  // 保存済みの name_key と今のキーがずれ(例: 「⻘葉賞」〈部首補助の字形〉の保存済みキー ⻘葉賞 と
+  // 今のキー 青葉賞)、同じ重賞を別物として重複登録してしまう。重賞一覧は年間140件前後の小さい表のため
+  // 全件を読み、保存済みの name_key と、名前から今のルールで計算し直したキーの両方で照合する。
+  // UPDATE 時は name_key も今のキーに揃える。
   const existingIdByKey = new Map();
-  for (const keysChunk of chunk(nameKeys, 90)) {
-    if (!keysChunk.length) continue;
-    const placeholders = keysChunk.map(() => "?").join(",");
-    const { results: existingRows } = await env.DB
-      .prepare(`SELECT id, name_key FROM graded_races WHERE name_key IN (${placeholders})`)
-      .bind(...keysChunk)
-      .all();
-    for (const r of existingRows || []) existingIdByKey.set(r.name_key, r.id);
+  const { results: existingRows } = await env.DB.prepare("SELECT id, name, name_key FROM graded_races").all();
+  for (const r of existingRows || []) {
+    existingIdByKey.set(r.name_key, r.id);
+    const fresh = gradedRaceNameKey(r.name);
+    if (fresh && !existingIdByKey.has(fresh)) existingIdByKey.set(fresh, r.id);
   }
 
   const now = new Date().toISOString();
@@ -93,9 +89,9 @@ async function importGradedRaces(env, races) {
       stmts.push(
         env.DB.prepare(
           `UPDATE graded_races
-           SET name = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, schedule_md = ?, source = 'jra_import', updated_at = ?
+           SET name = ?, name_key = ?, grade = ?, is_jump = ?, track = ?, course_type = ?, distance = ?, age_condition = ?, schedule_md = ?, source = 'jra_import', updated_at = ?
            WHERE id = ?`
-        ).bind(v.name, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, v.scheduleMd, now, existingId)
+        ).bind(v.name, v.nameKey, v.grade, v.isJump ? 1 : 0, v.track, v.courseType, v.distance, v.ageCondition, v.scheduleMd, now, existingId)
       );
       results.push({ name: v.name, status: "updated" });
     } else {
