@@ -1,4 +1,4 @@
-import { jsonError, loadHorseAliasMap, applyHorseAliasMap, horseAliasKeyOf } from "../_shared.js";
+import { jsonError, loadHorseAliasMapCached, applyHorseAliasMap, horseAliasKeyOf } from "../_shared.js";
 
 // データ検索画面「馬情報検索」タブの検索候補一覧API(部分一致)。
 // races.entries は全ユーザー共有データのため requireAdmin しない
@@ -41,7 +41,7 @@ export async function onRequestGet(context) {
           WHERE json_valid(r.entries)
        ) WHERE name LIKE ? ESCAPE '\\' GROUP BY name`
     ).bind(like).all(),
-    loadHorseAliasMap(db),
+    loadHorseAliasMapCached(db),
   ]);
 
   const byKey = new Map();

@@ -13,6 +13,7 @@
 // 「表記ゆれ側 → 正しい馬名」を明示登録して対応する(jockey_aliases と同じ運用)。
 
 import { runBatchInChunks } from "./http.js";
+import { memoized, MEMO_HORSE_ALIASES } from "./memo-cache.js";
 
 export function horseAliasKeyOf(name) {
   if (!name) return "";
@@ -33,6 +34,13 @@ export async function loadHorseAliasMap(db) {
     if (r.alias_key) map.set(r.alias_key, r.canonical_name);
   }
   return map;
+}
+
+// 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
+// DBへ書き込む処理では使わないこと(古いエイリアスで正規化した値を保存しないため)。
+// 戻り値の Map は共有物なので変更しないこと。
+export function loadHorseAliasMapCached(db) {
+  return memoized(MEMO_HORSE_ALIASES, () => loadHorseAliasMap(db));
 }
 
 // 複数の馬名から、race_results.horse_key を引くための検索キー集合を作る

@@ -166,6 +166,10 @@ CREATE INDEX IF NOT EXISTS idx_tickets_race_date ON tickets(race_date);
 CREATE INDEX IF NOT EXISTS idx_tickets_race_id ON tickets(race_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_track ON tickets(track);
 CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
+-- 2026-10-07追加(@STEP: perf_indexes_ticket_views): 予想登録画面(1レース分)・馬券購入画面(直近分)の絞り込み用。
+-- user_id だけのインデックスでは、そのユーザーの全購入を読んでから絞っていた。
+CREATE INDEX IF NOT EXISTS idx_tickets_user_race ON tickets(user_id, race_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_user_date ON tickets(user_id, race_date);
 
 -- ============================================================
 -- 4. 予想(予想印・予想メモ)
@@ -221,6 +225,8 @@ CREATE TABLE IF NOT EXISTS horse_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_horse_notes_horse_name ON horse_notes(horse_name);
+-- 2026-10-07追加(@STEP: perf_indexes_ticket_views): 自分の馬メモ一覧用(UNIQUE(horse_name, user_id) は user_id だけでは使えない)。
+CREATE INDEX IF NOT EXISTS idx_horse_notes_user ON horse_notes(user_id);
 
 -- ============================================================
 -- 6. CSV取込 原本
@@ -293,6 +299,11 @@ CREATE TABLE IF NOT EXISTS imported_ticket_groups (
 -- 複数のアプリユーザーが共有する想定をしていないため(docs/DESIGN.md「CSV取込の仕様」参照)。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_imported_group_source_key ON imported_ticket_groups(source, group_key);
 CREATE INDEX IF NOT EXISTS idx_imported_groups_user_id ON imported_ticket_groups(user_id);
+-- 2026-10-07追加(@STEP: perf_indexes_ticket_views): 1レース分・直近分の絞り込みと、未登録レースへの紐付け
+-- (linkUnregisteredImportsToRace・未登録レース一覧。race_id IS NULL の行だけを持つ部分インデックス)用。
+CREATE INDEX IF NOT EXISTS idx_imported_groups_user_race ON imported_ticket_groups(user_id, race_id);
+CREATE INDEX IF NOT EXISTS idx_imported_groups_user_date ON imported_ticket_groups(user_id, race_date);
+CREATE INDEX IF NOT EXISTS idx_imported_groups_unlinked ON imported_ticket_groups(race_date, track, race_number) WHERE race_id IS NULL;
 
 -- CSV個別買い目: imported_ticket_groups の組み合わせを個別買い目へ分解したもの。
 CREATE TABLE IF NOT EXISTS imported_ticket_items (
@@ -348,52 +359,12 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
 );
 
 -- ============================================================
--- 10. データ検索画面「レース成績」タブ用キャッシュ(race_stats_cache)
+-- 10. (廃止)データ検索画面「レース成績」タブ用キャッシュ(race_stats_cache)
 -- ============================================================
 
--- GET /api/data-search/race-stats が毎回 race_results を読み直すのを避けるための
--- 事前計算キャッシュ。race_results を race_id でグルーピングしたものをJSONで持つ
--- (races 側は 11. races_cache を参照)。
---
--- 2026-09-19修正: 当初は races_cache 導入前の races_cache と同じく「1行固定」だったが、
--- race_results が26,000行規模まで育った結果、1行のJSON(約2.3MB)がD1の
--- 「1行(1カラム値)あたり2,000,000バイト」の上限を超えてUPDATEが失敗し、
--- GET /api/data-search/race-stats が500になる(データ検索画面「集計の取得に
--- 失敗しました」)障害が発生した。races_cache が2026-09-12に同種の障害を経て
--- チャンク分割方式へ変更されたのと同じ理由・同じ対処を、当時この
--- race_stats_cache には反映し忘れていた。races_cache と同様、累積バイト数が
--- CHUNK_MAX_BYTESを超えたら新しい行(チャンク)に切り替える方式にする。
--- 無効化はDB側のトリガー(migration.sql の @STEP: race_stats_cache_chunked 参照)で
--- 行う。race_results への INSERT/DELETE、および集計に使う列(horse_number/jockey/
--- status/finish_position)の UPDATE があると race_stats_cache の全行が削除される
--- (incident_note のみの編集では発火しない)。読み取り側(_lib/race-stats-cache.js)は
--- 行が無ければその場で再計算して保存する(次回以降は保存済みの行を読むだけで済む)。
--- 保存(db.batch)の失敗は必ずbest-effortで握りつぶし、読み取れた結果はそのまま返す
--- (races_cache の recomputeRacesCache() と同じ考え方。CLAUDE.md「絶対に破っては
--- いけない不変条件」参照)。詳細・経緯は docs/design/data-search.md 参照。
-CREATE TABLE IF NOT EXISTS race_stats_cache (
-  chunk_index INTEGER PRIMARY KEY,
-  payload TEXT,         -- JSON: { race_id: [{horse_number,jockey,status,finish_position}, ...], ... } の一部
-  updated_at TEXT
-);
-
-CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_ins
-AFTER INSERT ON race_results
-BEGIN
-  DELETE FROM race_stats_cache;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_del
-AFTER DELETE ON race_results
-BEGIN
-  DELETE FROM race_stats_cache;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_race_stats_cache_invalidate_upd
-AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
-BEGIN
-  DELETE FROM race_stats_cache;
-END;
+-- race_stats_cache〈レース成績タブ用キャッシュ〉は、2026-10-07 に race_lineup_cache
+--  〈下の「集計用の小さいキャッシュ」〉へ置き換えて使われなくなったため、@STEP: perf_indexes_ticket_views でトリガーごと削除した。
+--  経緯は docs/design/data-search.md 参照
 
 -- ============================================================
 -- 11. races 全件取得用キャッシュ(races_cache)
@@ -594,3 +565,38 @@ CREATE TABLE IF NOT EXISTS trainer_aliases (
   canonical_name TEXT NOT NULL,     -- 正しい調教師名
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- ============================================================
+-- 14. 購入履歴の版数(data_versions)
+-- ============================================================
+
+-- 2026-10-07追加(@STEP: perf_indexes_ticket_views)。購入履歴の読み取りAPI(GET /api/tickets・
+-- GET /api/ticket-imports)が、前回から何も変わっていなければ重い問い合わせをせずに「変更なし(304)」を
+-- 返すための版数(_lib/ticket-view-version.js)。購入履歴の表示に関わる表のどれかが変わるたびに、
+-- 下のトリガーで ticket_views 行の version を +1 する(全ユーザー共通の1行。誰かの変更で全員の
+-- 保存分が無効になるが、利用者が少ないため単純さを優先)。
+-- トリガーは1行の変更ごとに1行の書き込みを足す(一括補正などで多くの行を書き換えると、その行数分増える)。
+-- races は購入履歴の表示に使う列の UPDATE だけで数える(出走馬だけの更新では数えない)。
+CREATE TABLE IF NOT EXISTS data_versions (
+  name TEXT PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO data_versions (name, version) VALUES ('ticket_views', 1);
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_tickets_ins AFTER INSERT ON tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_tickets_upd AFTER UPDATE ON tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_tickets_del AFTER DELETE ON tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_igroups_ins AFTER INSERT ON imported_ticket_groups BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_igroups_upd AFTER UPDATE ON imported_ticket_groups BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_igroups_del AFTER DELETE ON imported_ticket_groups BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_iitems_ins AFTER INSERT ON imported_ticket_items BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_iitems_upd AFTER UPDATE ON imported_ticket_items BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_iitems_del AFTER DELETE ON imported_ticket_items BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_itickets_ins AFTER INSERT ON imported_tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_itickets_upd AFTER UPDATE ON imported_tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_itickets_del AFTER DELETE ON imported_tickets BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_races_ins AFTER INSERT ON races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_races_upd AFTER UPDATE OF finish_order, payouts, course_type, distance, race_name, class_flags, race_base_name ON races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_races_del AFTER DELETE ON races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_ins AFTER INSERT ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;

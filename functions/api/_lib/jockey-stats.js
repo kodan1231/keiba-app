@@ -5,7 +5,7 @@
 // race_results / races を直接全件SELECTしない
 // (CLAUDE.md「レース単位のループで1件ずつ DB へ問い合わせない」「races全件を都度SELECTしない」)。
 import { getRaceLineups } from "./race-lineup-cache.js";
-import { loadJockeyAliasMap, applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
+import { loadJockeyAliasMapCached, applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 import { jockeyDisplayName } from "./race-lineup.js";
 
 // 全レースの「騎乗1回」ごとに fn({ key, display, race, pos }) を呼ぶ。
@@ -19,7 +19,7 @@ import { jockeyDisplayName } from "./race-lineup.js";
 // buildRaceLineup() で組み立てており、CPU時間上限超過(exceededResources)の恐れがあったため、
 // 出走馬の一覧を作り直し時に確定済みの集計用キャッシュ(_lib/race-lineup-cache.js)から読む形にした。
 export async function forEachJockeyRide(db, fn) {
-  const [races, aliasMap] = await Promise.all([getRaceLineups(db), loadJockeyAliasMap(db)]);
+  const [races, aliasMap] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db)]);
   // 同じ騎手名の変換は1回だけ行う(CPU時間の節約。騎手名は数百種類)
   const resolved = new Map(); // 生の騎手名 -> { key, display } | null
   const resolveJockey = (raw) => {

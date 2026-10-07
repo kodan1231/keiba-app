@@ -3,11 +3,11 @@ import {
   parsePositiveIntId,
   getRaceIndex,
   getRaceLineups,
-  loadHorseAliasMap,
+  loadHorseAliasMapCached,
   applyHorseAliasMap,
   horseAliasKeyOf,
   buildHorseSearchKeys,
-  loadGradedRaceMap,
+  loadGradedRaceMapCached,
   classifyRace,
   gradedRaceNameKey,
   resolveGradedKey,
@@ -116,7 +116,7 @@ export async function onRequestGet(context) {
   const entries = (parseJsonSafe(target.entries, []) || []).filter((e) => e && e.horse_name);
   if (!entries.length) return Response.json({ race: raceSummaryOf(target), horses: [] });
 
-  const aliasMap = await loadHorseAliasMap(db);
+  const aliasMap = await loadHorseAliasMapCached(db);
   const { canonByKey, searchKeyToKey } = buildHorseSearchKeys(
     aliasMap,
     entries.map((e) => e.horse_name)
@@ -161,7 +161,7 @@ export async function onRequestGet(context) {
     for (const r of results || []) masterByKey.set(r.horse_key, r);
   }
 
-  const gradedMap = await loadGradedRaceMap(db);
+  const gradedMap = await loadGradedRaceMapCached(db);
   // 冠付きの名前も重賞一覧のキーへ解決してから比べる(2026-10-06。年によって冠が付く・外れるレースがあるため)
   const resolveKey = (name) => { const k = gradedRaceNameKey(name); return resolveGradedKey(k, (x) => gradedMap.has(x)) || k; };
   const targetNameKey = resolveKey(target.race_name);

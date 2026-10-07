@@ -10,6 +10,7 @@
 // すべて除去した文字列を突き合わせキー(alias_key)とする。これにより「戸崎 圭太」
 // 「戸崎圭太」は同一キーとして扱われる(要件: スペース有無は同一人物とみなす)。
 import { runBatchInChunks } from "./http.js";
+import { memoized, MEMO_JOCKEY_ALIASES } from "./memo-cache.js";
 
 const JOCKEY_MARK_RE = /^([☆▲△★◇])/;
 
@@ -38,6 +39,13 @@ export async function loadJockeyAliasMap(db) {
     if (r.alias_key) map.set(r.alias_key, r.canonical_name);
   }
   return map;
+}
+
+// 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
+// DBへ書き込む処理では使わないこと(古いエイリアスで正規化した値を保存しないため)。
+// 戻り値の Map は共有物なので変更しないこと。
+export function loadJockeyAliasMapCached(db) {
+  return memoized(MEMO_JOCKEY_ALIASES, () => loadJockeyAliasMap(db));
 }
 
 // 騎手名1件を、事前に取得済みのエイリアスMapと突き合わせて正規化する。

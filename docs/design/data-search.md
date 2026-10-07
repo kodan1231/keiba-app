@@ -125,7 +125,10 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
    - ③④⑤ は「③④⑤ 共通」のルールで、レースごとに `race_results`(下記キャッシュを
      `race_id` でグルーピングしたもの)か `finish_order`+`entries` を選んで集計する
    - `entries` / `payouts` 列を全件取得する。数千〜1万行程度なら許容範囲
-2. **`race_results`(`race_stats_cache` テーブルの事前計算キャッシュから読む)**:
+2. **`race_results`(`race_stats_cache` テーブルの事前計算キャッシュから読む)**
+   (**2026-10-07廃止**: 下記「集計用の小さいキャッシュ」へ置き換えた後、どのコードからも使われなく
+   なったため、`_lib/race-stats-cache.js`・テーブル・無効化トリガーを `@STEP: perf_indexes_ticket_views` で
+   削除した。以下は経緯として残す):
    `_lib/race-stats-cache.js` の `getRaceResultsGroupedByRaceId(db)` が
    `SELECT payload FROM race_stats_cache ORDER BY chunk_index`(複数行read)の結果を
    マージして返す。各行の `payload` は

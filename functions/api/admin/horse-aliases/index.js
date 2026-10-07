@@ -1,4 +1,4 @@
-import { requireAdmin, horseAliasKeyOf, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, horseAliasKeyOf, readJsonBody, jsonError, invalidateMemo, MEMO_HORSE_ALIASES } from "../../_shared.js";
 
 // 管理者向け: 馬名エイリアス(表記ゆれ→正しい馬名)の一覧取得・追加。
 // 詳細な設計方針は docs/design/horse-aliases.md 参照。jockey_aliases と同じ構図。
@@ -18,6 +18,7 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
+  invalidateMemo(MEMO_HORSE_ALIASES); // この実行環境で使い回している分を捨てる(2026-10-07。_lib/memo-cache.js)
 
   const { request, env } = context;
   const { data, error } = await readJsonBody(request);

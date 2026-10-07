@@ -5,7 +5,7 @@ import {
   addRide,
   finalizeRideCounts,
   jockeyAliasKeyOf,
-  loadJockeyAliasMap,
+  loadJockeyAliasMapCached,
   applyJockeyAliasMap,
 } from "../_shared.js";
 
@@ -22,7 +22,7 @@ export async function onRequestGet(context) {
   if (name.length > 40) return jsonError("騎手名が長すぎます", 400);
 
   // 指定された名前もエイリアス適用後のキーで突き合わせる(一覧APIと同じ名寄せ)。
-  const aliasMap = await loadJockeyAliasMap(env.DB);
+  const aliasMap = await loadJockeyAliasMapCached(env.DB);
   const targetKey = jockeyAliasKeyOf(applyJockeyAliasMap(aliasMap, name));
   if (!targetKey) return jsonError("騎手名が不正です", 400);
 

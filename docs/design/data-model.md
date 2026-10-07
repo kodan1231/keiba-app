@@ -239,6 +239,53 @@ D1無料枠の日次上限に関する注意〈上記〉とは別の障害)。
   集計画面(`stats.js`)は全期間の集計が前提のため、いずれも対象外(パラメータ
   なしで全件取得を維持)。
 
+(2026-10-07: 上の `?race_id=` / `?since=` の絞り込みは、`user_id` 単独のインデックスで
+そのユーザーの全購入を読んでから絞っていた。下記「読み取りを減らすためのインデックスと仕組み」で
+組み合わせインデックスを追加した。)
+
+### 読み取りを減らすためのインデックスと仕組み(2026-10-07〜)
+
+`wrangler d1 insights --time-period 7d` で、読み取り行数の多い問い合わせを洗い出して対策した
+(`@STEP: perf_indexes_ticket_views`)。
+
+1. **組み合わせインデックス**: 以下はいずれも、1回あたり数百〜数千行を読んで数件を返していた。
+   - `tickets(user_id, race_id)` / `tickets(user_id, race_date)`: `GET /api/tickets?race_id=` / `?since=`
+   - `imported_ticket_groups(user_id, race_id)` / `(user_id, race_date)`: `GET /api/ticket-imports?race_id=` / `?since=`
+   - `imported_ticket_groups(race_date, track, race_number) WHERE race_id IS NULL`(部分インデックス):
+     未登録レースへの紐付け(`linkUnregisteredImportsToRace`・PDF取込時の一括紐付け)と未登録レース一覧。
+     以前はテーブル全件を読んでいた
+   - `horse_notes(user_id)`: 自分の馬メモ一覧(`UNIQUE(horse_name, user_id)` は先頭が馬名のため使えなかった)
+   - 作成時に対象テーブルの行数分(2026-10-07時点で合計約2万行)の書き込みが1回だけ発生する。
+2. **小さな設定表を同じ実行環境で短時間使い回す**(`_lib/memo-cache.js`): 騎手名・馬名エイリアスと
+   重賞一覧は、ほぼすべての読み取りAPIが毎回全件を読み直していた。画面表示用の読み取りAPIは
+   `loadJockeyAliasMapCached` / `loadHorseAliasMapCached` / `loadGradedRaceMapCached` を使い、
+   同じ実行環境(isolate)の中で2分間(`MEMO_TTL_MS`)だけ結果を使い回す。
+   - **DBへ書き込む処理(PDF/CSV取込・出走馬編集・馬メモ保存・一括補正・馬情報検索の馬情報保存)と
+     管理画面の登録馬一覧は、従来どおり毎回読み直す**(古いエイリアスで正規化した値を保存しないため)。
+   - 管理画面でエイリアス・重賞を変えると、その実行環境の分はすぐ捨てる(`invalidateMemo`)。
+     別の実行環境では最大2分、変更前の内容で表示されることがある。
+3. **購入履歴の「変更なし(304)」**(`_lib/ticket-view-version.js`): 購入履歴画面・集計画面は
+   開くたびに全購入履歴を読み直しており、読み取り行数・CPU時間・利用者の通信量の大半を占めていた。
+   - `data_versions` テーブルの `ticket_views` 行の版数を、購入履歴の表示に関わる表(`tickets` /
+     `imported_ticket_groups` / `imported_ticket_items` / `imported_tickets` / `races`〈表示に使う列の
+     UPDATEのみ〉/ `graded_races`)が変わるたびにDBトリガーで +1 する。
+   - `GET /api/tickets` / `GET /api/ticket-imports` は ETag(ユーザーID+版数+`TICKET_VIEW_SHAPE`)と
+     `Cache-Control: private, no-cache` を付けて返す。ブラウザが次回 `If-None-Match` で同じ値を
+     送ってきたら、重い問い合わせをせずに 304 を返す(読むのは版数の1行だけ)。画面側の変更は不要
+     (ブラウザが保存済みの中身をそのまま使う)。
+   - 版数は全ユーザー共通の1行(誰かの変更で全員の保存分が無効になる。利用者が少ないため単純さを優先)。
+   - トリガーは1行の変更ごとに1行の書き込みを足す(一括補正などで多くの行を書き換えると、その行数分増える)。
+   - **応答の作り方(返す項目・重賞判定のルール等)を変えたら `TICKET_VIEW_SHAPE` を変えること**
+     (変えないと、データに変更が無い利用者には古い形の応答が使われ続ける)。
+   - `data_versions` が無い・読めない場合は ETag を付けず、従来どおり毎回返す。
+4. **CSV取込の買い目の取得を1回に**: `GET /api/ticket-imports` は `group_id` を90件ずつ `IN (...)` に
+   渡しており、全履歴では1回の表示で約29回の問い合わせになっていた。`imported_ticket_groups` と結合して
+   1回で取る。
+5. **管理画面の登録馬一覧**(`GET /api/admin/horses`): `races.entries` を全件 JSON 解析していたのをやめ、
+   馬名ごとのレース数を SQL(`json_each` + `GROUP BY`)で数える(CPU時間対策。読み取り行数は変わらない)。
+6. 使われなくなった `race_stats_cache`(テーブル・トリガー・`_lib/race-stats-cache.js`)を削除した
+   (docs/design/data-search.md 参照)。
+
 ### レース情報のコース種別・距離
 
 `races`テーブルは`course_type`(TEXT)・`distance`(INTEGER)を持つ。

@@ -4,6 +4,7 @@ import {
   jsonError,
   horseAliasKeyOf,
   loadHorseAliasMap,
+  loadHorseAliasMapCached,
   applyHorseAliasMap,
 } from "../_shared.js";
 
@@ -13,7 +14,8 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const userId = context.data.userId;
   const url = new URL(request.url);
-  const aliasMap = await loadHorseAliasMap(env.DB);
+  // 表示用の読み取りなので短時間使い回す版(2026-10-07。_lib/memo-cache.js)。保存(POST)側は毎回読む版のまま。
+  const aliasMap = await loadHorseAliasMapCached(env.DB);
 
   // race_id を指定しないリクエストは、購入画面のレース一覧(buy.js)が
   // 「メモ登録済みの馬が出走しているか」をまとめて判定するための一覧取得モード。

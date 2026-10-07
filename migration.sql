@@ -34,6 +34,8 @@
 -- 2026-10-06: umabashira_paste(trainer_aliases・horses.coat_color/affiliation)も本番適用済み・schema.sql 反映済みのため削除した。
 -- 2026-10-07: race_lineup_cache(集計用の小さいキャッシュ+トリガー6つ)も本番適用済み・schema.sql 反映済みのため削除した。
 -- 2026-10-07: races_index_cache(レース一覧用の軽いキャッシュ+トリガー3つ)も本番適用済み・schema.sql 反映済みのため削除した。
+-- 2026-10-07: perf_indexes_ticket_views(組み合わせインデックス6つ・data_versions+トリガー18個・race_stats_cache の削除)も
+--  本番適用済み・schema.sql 反映済みのため削除した(インデックス作成の書き込みは計約1.9万行だった)。
 
 PRAGMA foreign_keys=ON;
 
@@ -46,4 +48,3 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。
-

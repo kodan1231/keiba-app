@@ -1,4 +1,4 @@
-import { loadGradedRaceMap, classifyRace } from "../_shared.js";
+import { loadGradedRaceMapCached, classifyRace, ticketViewEtag, notModifiedResponse, jsonWithEtag } from "../_shared.js";
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -26,6 +26,12 @@ export async function onRequestGet(context) {
   // (`GET /api/races?since=`と同じ考え方。docs/design/data-model.md
   // 「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。未指定時は
   // 従来通り全件を返す(購入履歴画面・集計画面は無変更で動く)。
+  // 前回から購入履歴に関わるデータが何も変わっていなければ、重い問い合わせをせず 304 を返す
+  // (2026-10-07。_lib/ticket-view-version.js 参照)。
+  const etag = await ticketViewEtag(env.DB, userId);
+  const notModified = notModifiedResponse(request, etag);
+  if (notModified) return notModified;
+
   const whereParts = ["t.user_id = ?"];
   const binds = [userId];
   if (raceId) { whereParts.push("t.race_id = ?"); binds.push(raceId); }
@@ -41,7 +47,7 @@ export async function onRequestGet(context) {
      ORDER BY t.race_date DESC, t.track ASC, t.race_number ASC, t.created_at ASC`
   ).bind(...binds).all();
 
-  const gradedMap = await loadGradedRaceMap(env.DB);
+  const gradedMap = await loadGradedRaceMapCached(env.DB);
 
   const items = results.map((row) => {
     const { race_race_name, race_class_flags, ...rest } = row;
@@ -54,5 +60,5 @@ export async function onRequestGet(context) {
     };
   });
 
-  return Response.json(items);
+  return jsonWithEtag(items, etag);
 }

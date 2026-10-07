@@ -1,4 +1,4 @@
-import { getRaceIndex, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace, runBatchInChunks } from "../_shared.js";
+import { getRaceIndex, backfillHorseNamesForRace, loadGradedRaceMapCached, classifyRace, runBatchInChunks, ticketViewEtag, notModifiedResponse, jsonWithEtag } from "../_shared.js";
 
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -19,8 +19,6 @@ const clean=v=>String(v??"").replace(/^\uFEFF/,'').trim();
 const normalizeHeader=v=>clean(v).replace(/\s+/g,'').replace(/[（）()]/g,'');
 const findColumn=(headers,candidates)=>{const hs=headers.map(normalizeHeader);for(const c of candidates){const i=hs.indexOf(normalizeHeader(c));if(i>=0)return i;}return -1;};
 const toInt=v=>{const n=Number(String(v??'').replace(/[,\s円]/g,''));return Number.isFinite(n)?Math.trunc(n):0;};
-// D1の「1クエリ100バインドパラメータ」上限に備えたチャンク分割(CLAUDE.md参照)。
-function chunk(arr,size){const out=[];for(let i=0;i<arr.length;i+=size)out.push(arr.slice(i,i+size));return out;}
 // BOX/ながし等の購入金額列は「単価／合計」の複合表記になることがある(例: "200／3600")。
 // この場合は合計(末尾の値)を購入金額として採用する。
 const parseAmount=v=>{const s=clean(v); if(!s) return 0; if(s.includes('／')||s.includes('/')){const parts=s.split(/[／\/]/).map(toInt); return parts[parts.length-1]||0;} return toInt(s);};
@@ -379,6 +377,11 @@ export async function onRequestGet(context){
     // (直近分)は全履歴が不要なため、範囲を絞れるようにした
     // (docs/design/data-model.md「GET /api/tickets・GET /api/ticket-imports の
     // 範囲限定」参照)。未指定時は従来通り全件(購入履歴画面・集計画面はこちら)。
+    // 前回から購入履歴に関わるデータが何も変わっていなければ、重い問い合わせをせず 304 を返す
+    // (2026-10-07。_lib/ticket-view-version.js 参照)。
+    const etag=await ticketViewEtag(db,userId);
+    const notModified=notModifiedResponse(context.request,etag);
+    if(notModified) return notModified;
     const url=new URL(context.request.url);
     const raceIdFilter=url.searchParams.get("race_id");
     const sinceFilter=url.searchParams.get("since");
@@ -391,10 +394,9 @@ export async function onRequestGet(context){
     // imported_ticket_itemsを毎回全件SELECTする方式は、このテーブルが育つにつれて
     // D1の日次行読み取り上限を圧迫する(2026-09-12。このGETが1日で137回呼ばれ
     // 768,707行読み取りに達し上限の75%を占めていた)。
-    // (imported_ticket_itemsにはuser_idを持たせていないため、まず自分のgroup_idの集合を
-    //  作り、`WHERE group_id IN (...)` で自分の分だけを取得する。1クエリ100バインド
-    //  上限に備え90件ずつチャンク分割する)
-    const groupIds=new Set(groups.map(g=>g.id));
+    // (imported_ticket_itemsにはuser_idを持たせていないため、imported_ticket_groups と結合して
+    //  グループと同じ条件で自分の分だけを1回で取得する。2026-10-07までは group_id を90件ずつ
+    //  IN (...) に渡しており、全履歴では1回の表示で約29回の問い合わせになっていた)
     // 集計画面「コース別収支」用に、各グループのレースのコース種別・距離を引く。
     // race_id を IN (...) で渡すと、取込グループが参照するレース数が D1 の
     // 「1クエリ100バインドパラメータ」上限を超えて GET 全体が失敗する
@@ -409,7 +411,7 @@ export async function onRequestGet(context){
     // imported_ticket_groups.race_name は取込時点のスナップショットのため、後から
     // レース名が修正されても追随しない。集計画面「レース別」の表示はこちら
     // (常に最新のraces.race_base_name)を優先する(2026-09-24追加)。
-    const gradedMap=await loadGradedRaceMap(db);
+    const gradedMap=await loadGradedRaceMapCached(db);
     const raceCourseById=new Map();
     // race_id指定時は対象レースが最大1件なので、races_cache経由の全件取得ではなく
     // そのレースだけを直接SELECTする(2026-09-29追加。範囲限定の一環)。
@@ -424,11 +426,9 @@ export async function onRequestGet(context){
       race_name:r.race_name,
     });
     const itemsByGroup=new Map();
-    for(const idsChunk of chunk([...groupIds],90)){
-      if(!idsChunk.length) continue;
-      const placeholders=idsChunk.map(()=>'?').join(',');
-      const rows=(await db.prepare(`SELECT * FROM imported_ticket_items WHERE group_id IN (${placeholders}) ORDER BY group_id, id`).bind(...idsChunk).all()).results||[];
-      for(const item of rows){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
+    if(groups.length){
+      const itemRows=(await db.prepare(`SELECT i.* FROM imported_ticket_items i JOIN imported_ticket_groups g ON g.id=i.group_id WHERE ${groupWhere.map(c=>`g.${c}`).join(" AND ")} ORDER BY i.group_id, i.id`).bind(...groupBinds).all()).results||[];
+      for(const item of itemRows){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     }
     const represented=new Set();
     for(const g of groups){
@@ -451,6 +451,6 @@ export async function onRequestGet(context){
     // (2026-09-29追加。範囲限定の一環)。
     const legacy=(raceIdFilter||sinceFilter)?[]:(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_base_name:null,race_course_type:null,race_distance:null,race_category:"other",bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
-    return Response.json({ok:true,items:out});
+    return jsonWithEtag({ok:true,items:out},etag);
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }

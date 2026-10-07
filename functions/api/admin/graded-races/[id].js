@@ -1,4 +1,4 @@
-import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, parsePositiveIntId, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, parsePositiveIntId, readJsonBody, jsonError, invalidateMemo, MEMO_GRADED_RACES } from "../../_shared.js";
 
 const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 
@@ -6,6 +6,7 @@ const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 export async function onRequestPut(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
+  invalidateMemo(MEMO_GRADED_RACES); // この実行環境で使い回している分を捨てる(2026-10-07。_lib/memo-cache.js)
 
   const { request, env, params } = context;
   const { id, error: idError } = parsePositiveIntId(params.id);
@@ -58,6 +59,7 @@ export async function onRequestPut(context) {
 export async function onRequestDelete(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
+  invalidateMemo(MEMO_GRADED_RACES); // この実行環境で使い回している分を捨てる(2026-10-07。_lib/memo-cache.js)
 
   const { env, params } = context;
   const { id, error } = parsePositiveIntId(params.id);

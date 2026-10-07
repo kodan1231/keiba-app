@@ -73,7 +73,9 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
 | `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加) |
 | `_lib/race-lineup-cache.js` | `getRaceLineups` `recomputeRaceLineupCache`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加) |
-| `_lib/jockey-stats.js` | `forEachJockeyRide`(races_cache・race_stats_cacheから全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
+| `_lib/memo-cache.js` | `memoized` `invalidateMemo`(小さな設定表を同じ実行環境で2分間使い回す。2026-10-07追加)。**画面表示用の読み取りAPIは `loadJockeyAliasMapCached` `loadHorseAliasMapCached` `loadGradedRaceMapCached` を使い、DBへ書き込む処理は毎回読む版を使う**。エイリアス・重賞を変える管理APIは `invalidateMemo` を呼ぶ |
+| `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
+| `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
 ## 絶対に破ってはいけない不変条件
 

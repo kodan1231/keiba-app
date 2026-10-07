@@ -1,7 +1,7 @@
 import {
   parsePositiveIntId,
   jsonError,
-  loadHorseAliasMap,
+  loadHorseAliasMapCached,
   buildHorseSearchKeys,
   timeTextToSeconds,
 } from "../../_shared.js";
@@ -46,7 +46,7 @@ export async function onRequestGet(context) {
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
-  const aliasMap = await loadHorseAliasMap(env.DB);
+  const aliasMap = await loadHorseAliasMapCached(env.DB);
   const { canonByKey, searchKeyToKey } = buildHorseSearchKeys(aliasMap, entries.map((e) => e?.horse_name));
   const keyMap = new Map([...canonByKey].map(([k, canon]) => [k, normalizeName(canon)]));
   if (!keyMap.size) return Response.json({ condition: null, horses: {}, pedigree: {} });

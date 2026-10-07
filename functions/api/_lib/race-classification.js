@@ -13,6 +13,7 @@
 //     「すべて」にのみ表示される(「重賞のみ」「条件戦のみ」には出てこない)。
 
 import { runBatchInChunks } from "./http.js";
+import { memoized, MEMO_GRADED_RACES } from "./memo-cache.js";
 
 const CONDITION_KEYWORDS = ["新馬", "未勝利", "1勝クラス"];
 
@@ -154,6 +155,12 @@ export async function loadGradedRaceMap(db) {
     if (fresh && !map.has(fresh)) map.set(fresh, v);
   }
   return map;
+}
+
+// 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
+// 戻り値の Map は共有物なので変更しないこと。
+export function loadGradedRaceMapCached(db) {
+  return memoized(MEMO_GRADED_RACES, () => loadGradedRaceMap(db));
 }
 
 // races全件のrace_base_nameを再計算する一括補正(管理画面「重賞管理」の

@@ -45,9 +45,17 @@ export async function onRequestGet(context) {
 
   const aliasMap = await loadHorseAliasMap(env.DB);
 
+  // 2026-10-07: 以前は races.entries を全件 JSON 解析し、race_results も (レース, 馬名) の組を全件受け取って
+  // JS 側でレース数を数えていた(CPU時間上限超過の恐れ)。馬名ごとのレース数は SQL 側で数える。
+  // 同じ馬の別表記が同じレースに並ぶことは無い前提で、表記ごとのレース数を足し合わせる。
   const [racesRes, rrRes, notesRes] = await Promise.all([
-    env.DB.prepare("SELECT id, entries FROM races").all(),
-    env.DB.prepare("SELECT DISTINCT race_id, horse_name FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> ''").all(),
+    env.DB.prepare(
+      `SELECT json_extract(e.value, '$.horse_name') AS horse_name, COUNT(DISTINCT r.id) AS n
+         FROM races r, json_each(r.entries) e
+        WHERE json_valid(r.entries)
+        GROUP BY horse_name`
+    ).all(),
+    env.DB.prepare("SELECT horse_name, COUNT(DISTINCT race_id) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> '' GROUP BY horse_name").all(),
     env.DB.prepare("SELECT horse_name FROM horse_notes WHERE user_id = ? AND memo IS NOT NULL AND memo <> ''").bind(userId).all(),
   ]);
 
@@ -60,7 +68,7 @@ export async function onRequestGet(context) {
     if (!key) return null;
     let o = byKey.get(key);
     if (!o) {
-      o = { key, display: canon, variants: new Set(), entryRaceIds: new Set(), resultRaceIds: new Set(), hasNote: false };
+      o = { key, display: canon, variants: new Set(), entryRaceCount: 0, resultRaceCount: 0, hasNote: false };
       byKey.set(key, o);
     }
     o.variants.add(rawName);
@@ -70,17 +78,12 @@ export async function onRequestGet(context) {
   };
 
   for (const r of racesRes.results || []) {
-    let entries;
-    try { entries = JSON.parse(r.entries || "[]"); } catch { continue; }
-    if (!Array.isArray(entries)) continue;
-    for (const e of entries) {
-      const o = touch(e?.horse_name);
-      if (o) o.entryRaceIds.add(r.id);
-    }
+    const o = touch(r.horse_name);
+    if (o) o.entryRaceCount += Number(r.n) || 0;
   }
   for (const rr of rrRes.results || []) {
     const o = touch(rr.horse_name);
-    if (o) o.resultRaceIds.add(rr.race_id);
+    if (o) o.resultRaceCount += Number(rr.n) || 0;
   }
   for (const n of notesRes.results || []) {
     const o = touch(n.horse_name);
@@ -102,8 +105,8 @@ export async function onRequestGet(context) {
       })
       .map((o) => ({
         name: o.display,
-        entryRaceCount: o.entryRaceIds.size,
-        resultRaceCount: o.resultRaceIds.size,
+        entryRaceCount: o.entryRaceCount,
+        resultRaceCount: o.resultRaceCount,
         hasNote: o.hasNote,
         variants: [...o.variants],
         mismatch: o.variants.size > 1,

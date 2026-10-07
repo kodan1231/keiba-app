@@ -2,7 +2,7 @@ import {
   parsePositiveIntId,
   jsonError,
   horseAliasKeyOf,
-  loadHorseAliasMap,
+  loadHorseAliasMapCached,
   applyHorseAliasMap,
   buildHorseSearchKeys,
 } from "../../_shared.js";
@@ -69,7 +69,7 @@ export async function onRequestGet(context) {
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
-  const aliasMap = await loadHorseAliasMap(env.DB);
+  const aliasMap = await loadHorseAliasMapCached(env.DB);
 
   // 突き合わせキー(正規化) -> レスポンスのキー(= クライアント突き合わせ用の正規化名)、
   // race_results.horse_key が取り得る値 -> その馬のkeyMapキー(検索キー集合)。

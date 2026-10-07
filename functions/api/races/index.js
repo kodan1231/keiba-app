@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // races は「全画面共通の入口」として非常に頻繁に呼ばれるため、races_cache
@@ -42,8 +42,8 @@ export async function onRequestGet(context) {
   // あるため、読み取り時にもエイリアス(jockey_aliases / horse_aliases)で正規化して返す。
   // (races/index.js の GET は全画面が使う共通の入口。ここで揃えておくと予想画面の
   //  過去成績突き合わせ・集計などが一律に恩恵を受ける)。
-  const jockeyMap = await loadJockeyAliasMap(env.DB);
-  const horseMap = await loadHorseAliasMap(env.DB);
+  // 表示用の読み取りなので、エイリアスは短時間使い回す版で読む(2026-10-07。_lib/memo-cache.js)
+  const [jockeyMap, horseMap] = await Promise.all([loadJockeyAliasMapCached(env.DB), loadHorseAliasMapCached(env.DB)]);
 
   const items = results.map((row) => {
     let entries = JSON.parse(row.entries);

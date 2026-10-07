@@ -1,4 +1,4 @@
-import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, readJsonBody, jsonError, runBatchInChunks } from "../../_shared.js";
+import { requireAdmin, gradedRaceNameKey, normalizeScheduleMd, readJsonBody, jsonError, runBatchInChunks, invalidateMemo, MEMO_GRADED_RACES } from "../../_shared.js";
 
 const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 
@@ -17,6 +17,7 @@ const VALID_GRADES = new Set(["G1", "G2", "G3"]);
 export async function onRequestPost(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
+  invalidateMemo(MEMO_GRADED_RACES); // この実行環境で使い回している分を捨てる(2026-10-07。_lib/memo-cache.js)
 
   const { request, env } = context;
   const { data, error } = await readJsonBody(request);
