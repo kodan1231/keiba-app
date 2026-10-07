@@ -2394,6 +2394,12 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   margin-bottom:12px;
 }
 .race-calendar-toolbar strong{min-width:130px;text-align:center}
+/* レース管理画面: 年月ラベルを押すと年・月を選んで移動できる(2026-10-08) */
+.calendar-month-jump-btn{min-width:130px;text-align:center;font:inherit;font-weight:700;background:none;border:none;border-bottom:1px dashed currentColor;color:inherit;cursor:pointer;padding:2px 4px}
+.race-calendar-jump{display:flex;gap:8px;justify-content:center;margin:0 0 10px}
+.race-calendar-jump[hidden]{display:none}
+/* 重賞検索タブ: 過去の年のレースをレース管理画面で開くリンク(管理者のみ。2026-10-08) */
+.gr-edit-link{margin-left:auto;font-size:12px;white-space:nowrap}
 .calendar-grid{
   display:grid;
   grid-template-columns:repeat(7,minmax(34px,1fr));

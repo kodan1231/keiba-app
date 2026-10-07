@@ -39,10 +39,17 @@ async function loadRaces() {
   renderRaceList();
 
   // app.js の「払戻を編集(レース管理へ)」リンク(?edit=)は払戻モーダルを直接開く。
-  const editId = new URLSearchParams(window.location.search).get("edit");
-  if (editId) {
-    const target = races.find((r) => r.id === Number(editId));
-    if (target && window.currentUser && window.currentUser.isAdmin) openWithRaceDetail(target.id, openPayoutModal);
+  // データ検索「重賞検索」タブの「レース管理で開く」リンク(?entries=。2026-10-08)は出走馬表の編集を開く。
+  // いずれもカレンダーをそのレースの日へ移し、その日の一覧を表示してから開く(過去のレースも探さずに直せる)。
+  const linkParams = new URLSearchParams(window.location.search);
+  const editId = linkParams.get("edit");
+  const entriesId = linkParams.get("entries");
+  if (editId || entriesId) {
+    const target = races.find((r) => r.id === Number(editId || entriesId));
+    if (target) showRaceDate(target.race_date);
+    if (target && window.currentUser && window.currentUser.isAdmin) {
+      openWithRaceDetail(target.id, editId ? openPayoutModal : openEntriesModal);
+    }
     history.replaceState(null, "", "races.html");
     return;
   }
@@ -78,6 +85,7 @@ function renderRaceCalendar() {
   const year = racesCalendarMonth.getFullYear();
   const month = racesCalendarMonth.getMonth();
   racesCalendarMonthLabel.textContent = `${year}年${month + 1}月`;
+  if (racesMonthJump && !racesMonthJump.hidden) syncMonthJump();
 
   const byDate = new Map();
   races.forEach((r) => {
@@ -112,6 +120,55 @@ function renderRaceCalendar() {
     });
   });
 }
+
+// 指定日の月へカレンダーを移し、その日に絞り込んで表示する(リンクから開いたとき・年月指定で移動したとき用)。
+function showRaceDate(dateKey) {
+  const [y, m] = String(dateKey).split("-").map(Number);
+  if (!y || !m) return;
+  racesCalendarMonth = new Date(y, m - 1, 1);
+  selectedRaceDate = dateKey;
+  expandedDates.add(dateKey);
+  renderRaceCalendar();
+  renderRaceList();
+}
+
+// ---------- 年・月を選んで移動(2026-10-08) ----------
+// 年月ラベルを押すと年・月の選択欄が開き、選ぶとその月へ移動する(過去のレースを‹›で何十回も
+// 送らずに開けるようにするため)。年の選択肢は登録済みレースの最古の年〜今年+1年。
+const racesMonthJump = document.getElementById("races-month-jump");
+const racesJumpYear = document.getElementById("races-jump-year");
+const racesJumpMonth = document.getElementById("races-jump-month");
+
+function syncMonthJump() {
+  if (!racesJumpYear || !racesJumpMonth) return;
+  const thisYear = new Date().getFullYear();
+  const years = races.map((r) => Number(String(r.race_date).slice(0, 4))).filter(Boolean);
+  const minYear = Math.min(thisYear, racesCalendarMonth.getFullYear(), ...years);
+  const maxYear = Math.max(thisYear + 1, racesCalendarMonth.getFullYear());
+  let yearHtml = "";
+  for (let y = maxYear; y >= minYear; y--) yearHtml += `<option value="${y}">${y}年</option>`;
+  racesJumpYear.innerHTML = yearHtml;
+  if (!racesJumpMonth.options.length) {
+    racesJumpMonth.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i}">${i + 1}月</option>`).join("");
+  }
+  racesJumpYear.value = String(racesCalendarMonth.getFullYear());
+  racesJumpMonth.value = String(racesCalendarMonth.getMonth());
+}
+
+racesCalendarMonthLabel?.addEventListener("click", () => {
+  if (!racesMonthJump) return;
+  racesMonthJump.hidden = !racesMonthJump.hidden;
+  racesCalendarMonthLabel.setAttribute("aria-expanded", String(!racesMonthJump.hidden));
+  if (!racesMonthJump.hidden) syncMonthJump();
+});
+const onJumpChange = () => {
+  racesCalendarMonth = new Date(Number(racesJumpYear.value), Number(racesJumpMonth.value), 1);
+  selectedRaceDate = null;
+  renderRaceCalendar();
+  renderRaceList();
+};
+racesJumpYear?.addEventListener("change", onJumpChange);
+racesJumpMonth?.addEventListener("change", onJumpChange);
 
 document.getElementById("races-prev-month-btn")?.addEventListener("click", () => {
   racesCalendarMonth.setMonth(racesCalendarMonth.getMonth() - 1);

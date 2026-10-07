@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -27,6 +27,32 @@ export async function onRequestGet(context) {
 }
 
 // PUT(編集)・DELETE(削除)ともに管理者のみ実行可能。
+// 出走馬表を手で直したとき、レース結果(race_results)の騎手が空欄の馬にだけ、出走馬表の騎手を
+// 書き込む(2026-10-08)。データ検索の騎手成績・重賞検索の過去成績・馬柱は race_results の騎手を使うため、
+// 出走馬表だけ直しても反映されなかった。結果側に騎手が入っている馬は書き換えない(結果の取込で入った
+// 乗り替わり後の正しい騎手を、古い出走馬表の騎手で上書きしないため)。
+// 馬の突き合わせは馬名(horseAliasKeyOf)。対象は1レース分(最大18頭程度)なので1回のSELECTとbatchで足りる。
+async function fillBlankResultJockeys(db, raceId, entries) {
+  const jockeyByKey = new Map();
+  for (const e of entries || []) {
+    const key = horseAliasKeyOf(e?.horse_name);
+    const jockey = String(e?.jockey ?? "").trim();
+    if (key && jockey) jockeyByKey.set(key, jockey);
+  }
+  if (!jockeyByKey.size) return;
+  const { results } = await db
+    .prepare("SELECT id, horse_name FROM race_results WHERE race_id = ? AND (jockey IS NULL OR jockey = '')")
+    .bind(raceId)
+    .all();
+  const now = new Date().toISOString();
+  const stmts = [];
+  for (const r of results || []) {
+    const jockey = jockeyByKey.get(horseAliasKeyOf(r.horse_name));
+    if (jockey) stmts.push(db.prepare("UPDATE race_results SET jockey = ?, updated_at = ? WHERE id = ?").bind(jockey, now, r.id));
+  }
+  if (stmts.length) await db.batch(stmts);
+}
+
 export async function onRequestPut(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -92,7 +118,11 @@ export async function onRequestPut(context) {
   // 購入履歴のうち、馬番だけで馬名・騎手が空になっているものへ反映(バックフィル)する。
   if ("entries" in data) {
     const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(params.id).first();
-    if (race) await backfillHorseNamesForRace(env.DB, Number(params.id), JSON.parse(race.entries || "[]"));
+    if (race) {
+      const savedEntries = JSON.parse(race.entries || "[]");
+      await backfillHorseNamesForRace(env.DB, Number(params.id), savedEntries);
+      await fillBlankResultJockeys(env.DB, Number(params.id), savedEntries);
+    }
   }
   // 日付・競馬場・レース番号のいずれかが変わった(または初めて確定した)可能性があるため、
   // 未紐付けのCSV取込データが無いか毎回確認して紐付ける。

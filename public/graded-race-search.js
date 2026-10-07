@@ -503,6 +503,13 @@ function grResultTableHtml(rows, { full }) {
   return `<div class="table-wrap"><table class="stats-table gr-result-table">${head}${body}</table></div>`;
 }
 
+// 管理者向け: そのレースをレース管理画面で開いて出走馬表(騎手等)を直すリンク(2026-10-08)。
+// 別タブで開く(重賞検索の表示を残したまま直し、戻って再表示できるように)。
+function grEditLinkHtml(race) {
+  if (!window.currentUser?.isAdmin || !race?.id) return "";
+  return `<a class="gr-edit-link" href="races.html?entries=${encodeURIComponent(race.id)}" target="_blank" rel="noopener">レース管理で開く</a>`;
+}
+
 function grRenderPast(data) {
   grEls.pastHeading.textContent = `過去${data.past_years}年の成績(${data.current_year - data.past_years}〜${data.current_year - 1}年)`;
   if (!data.past.length) {
@@ -518,6 +525,7 @@ function grRenderPast(data) {
           <span class="gr-year">${p.year}年</span>
           <span class="ticket-sub">${escapeHtml(grRaceMetaText(p.race, p.field_size))}</span>
           ${p.differs_from_reference ? `<span class="gr-differs">今年と開催条件が異なる</span>` : ""}
+          ${grEditLinkHtml(p.race)}
         </div>
         ${grResultTableHtml(top3, { full: false })}
         <p class="gr-main-payout">${escapeHtml(grMainPayoutText(p.payouts) || "払戻の登録なし")}</p>

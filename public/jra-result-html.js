@@ -89,7 +89,10 @@ function jraResultHtmlParseRow(tr) {
   const jockeyEl = tr.querySelector("td.jockey a");
   const wakuImg = tr.querySelector("td.waku img");
   const horseName = horseNameEl ? jraResultHtmlText(horseNameEl) : null;
-  const jockey = jockeyEl ? jraResultHtmlText(jockeyEl) : null;
+  // 短期免許の外国人騎手など、JRAに騎手ページが無い騎手はリンク無しの文字だけで載る
+  // (2026-10-08判明。2019年スワンSの1着ダイアトニック等、過去重賞の取込で騎手が空欄になっていた)。
+  // リンクが無ければ td.jockey の文字をそのまま使う。
+  const jockey = jockeyEl ? jraResultHtmlText(jockeyEl) : jraResultHtmlText(tr.querySelector("td.jockey")) || null;
   const sexAge = jraResultHtmlText(tr.querySelector("td.age")) || null;
   const weightCarriedNum = Number(jraResultHtmlText(tr.querySelector("td.weight")));
   const weightCarried = Number.isFinite(weightCarriedNum) ? weightCarriedNum : null;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         馬券帳 - JRAレース結果インポート
 // @namespace    keiba-yosou-app
-// @version      1.0.0
+// @version      1.0.1
 // @description  JRAレース結果ページを開いたら、ボタン1つで馬券帳へ結果を送信する(印刷してPDF保存してアプリへアップロードする手間を省く)。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
 // @match        https://sp.jra.jp/JRADB/accessS.html*

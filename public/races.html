@@ -24,9 +24,13 @@
   <div id="races-calendar" class="race-calendar">
     <div class="race-calendar-toolbar">
       <button type="button" id="races-prev-month-btn" class="ghost-btn">‹</button>
-      <strong id="races-calendar-month-label"></strong>
+      <button type="button" id="races-calendar-month-label" class="calendar-month-jump-btn" aria-expanded="false" title="年・月を選んで移動"></button>
       <button type="button" id="races-next-month-btn" class="ghost-btn">›</button>
       <button type="button" id="races-today-btn" class="ghost-btn">今日</button>
+    </div>
+    <div id="races-month-jump" class="race-calendar-jump" hidden>
+      <select id="races-jump-year" aria-label="年"></select>
+      <select id="races-jump-month" aria-label="月"></select>
     </div>
     <div id="races-calendar-grid" class="calendar-grid"></div>
   </div>
