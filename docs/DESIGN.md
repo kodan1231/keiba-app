@@ -38,6 +38,7 @@
 | `docs/design/stats-rules.md` | 集計ルール(収支・回収率・的中率の考え方) |
 | `docs/design/data-search.md` | データ検索画面(レース成績集計)・`race_results`/`payouts` 横断集計・検索ハブ構成・API仕様 |
 | `docs/design/umabashira-paste.md` | netkeiba馬柱テキストの貼り付け取り込み(出走馬表・血統/調教師/毛色/所属)・不一致の比較選択・調教師名エイリアス |
+| `docs/design/netkeiba-bookmarklet.md` | netkeibaページ(馬柱5走・結果、中央/地方)をPCのChromeのブックマークレットでレース管理画面へ渡して取り込む |
 | `docs/design/graded-races.md` | 重賞マスタ(`graded_races`)・レース分類(重賞/条件戦/その他)判定ロジック・突き合わせキー・管理画面「重賞管理」・JRA重賞一覧PDFインポート・集計画面のフィルタ連携 |
 | `docs/design/graded-race-search.md` | データ検索画面「重賞検索」タブ・今年の出走馬一覧/未発表判定・出走馬詳細(過去5走・持ちタイム・着別度数・脚質・騎手成績)・過去10年の成績と傾向・`graded_races.schedule_md` |
 | `docs/design/ops.md` | CSSキャッシュ対策・DBマイグレーションの運用・DBファイルの役割 |

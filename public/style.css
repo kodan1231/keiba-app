@@ -2400,6 +2400,9 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .race-calendar-jump[hidden]{display:none}
 /* 重賞検索タブ: 過去の年のレースをレース管理画面で開くリンク(管理者のみ。2026-10-08) */
 .gr-edit-link{margin-left:auto;font-size:12px;white-space:nowrap}
+/* レース管理画面: netkeibaのページの受け取り(2026-10-08。races-netkeiba-import.js) */
+.nk-receive-panel{margin:0 16px 12px;padding:10px 12px;border:1px dashed currentColor;border-radius:8px}
+.nk-receive-panel textarea{width:100%;box-sizing:border-box;margin:6px 0}
 .calendar-grid{
   display:grid;
   grid-template-columns:repeat(7,minmax(34px,1fr));

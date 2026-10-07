@@ -204,6 +204,29 @@ function openResetPasswordModal(userId, username) {
 // ---------- APIトークン(2026-09-13追加) ----------
 // docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 
+// netkeiba取込ブックマークレット(2026-10-08。docs/design/netkeiba-bookmarklet.md)。
+// 開いている netkeiba のページの HTML を、馬券帳のレース管理画面(?nk=1)へ postMessage で渡す。
+// 受け取り側(races-netkeiba-import.js)が準備できたら "nk-ready" を送ってくるので、それを待ってから送る。
+// 自動で渡せなかったときのため、同じ内容をクリップボードにもコピーする。
+function setupNetkeibaBookmarklet() {
+  const link = document.getElementById("netkeiba-bookmarklet-link");
+  if (!link) return;
+  const origin = window.location.origin;
+  const code = `(()=>{const o=${JSON.stringify(origin)};` +
+    `const ok=["race.netkeiba.com","nar.netkeiba.com"].includes(location.hostname)&&["/race/shutuba_past.html","/race/result.html"].includes(location.pathname);` +
+    `if(!ok){alert("netkeibaの馬柱(5走)または結果・払戻のページで押してください");return;}` +
+    `const d={type:"nk-page",url:location.href,html:document.documentElement.outerHTML};` +
+    `try{navigator.clipboard.writeText(JSON.stringify(d)).catch(()=>{});}catch(e){}` +
+    `const w=window.open(o+"/races.html?nk=1","_blank");` +
+    `const h=e=>{if(e.origin===o&&e.data==="nk-ready"&&w){w.postMessage(d,o);removeEventListener("message",h);}};` +
+    `addEventListener("message",h);})()`;
+  link.href = "javascript:" + encodeURIComponent(code);
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    alert("このリンクはブックマークバーへドラッグして登録してください(ここで押しても動きません)。");
+  });
+}
+
 async function loadApiTokenStatus() {
   const statusEl = document.getElementById("api-token-status");
   const issueBtn = document.getElementById("api-token-issue-btn");
@@ -883,6 +906,7 @@ async function onReady() {
   setupHorseAliasForm();
   setupHorseAliasNormalizeButton();
   setupApiTokenButtons();
+  setupNetkeibaBookmarklet();
   setupGradedRaceForm();
   setupGradedRacesImport();
   setupRaceBaseNameRecomputeButton();

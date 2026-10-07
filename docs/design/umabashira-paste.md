@@ -14,6 +14,9 @@
 netkeiba へは一切問い合わせない)。馬柱ページは1ページで1レース全頭の父・母・母父を含むため、
 1レース1回の貼り付けで済む。
 
+**2026-10-08**: PC の Chrome では、コピー&貼り付けの代わりにブックマークレットでページを渡せるようにした
+(同じ確認画面に入る。地方の馬柱ページにも対応。`docs/design/netkeiba-bookmarklet.md`)。
+
 - 画面: `public/races.html`(出走馬表モーダル)/ `public/races-entries-modal.js` / `public/parse.js`
   (`parseNetkeibaUmabashira`)。**管理者のみ**(レース管理画面自体が管理者専用)
 - API: `POST /api/admin/horses/paste-import`(`functions/api/admin/horses/paste-import.js`。管理者専用)

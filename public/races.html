@@ -35,6 +35,16 @@
     <div id="races-calendar-grid" class="calendar-grid"></div>
   </div>
 
+  <!-- netkeibaのページをブックマークレットから受け取る(?nk=1 で開いたときだけ表示。2026-10-08) -->
+  <section id="nk-receive-panel" class="nk-receive-panel" hidden>
+    <p id="nk-receive-status" class="picker-hint">netkeibaのページを受け取っています…</p>
+    <div id="nk-paste-area" hidden>
+      <p class="picker-hint">自動で受け取れませんでした。ブックマークレットがページの内容をクリップボードにコピーしているので、下の欄に貼り付けて「読み込む」を押してください。</p>
+      <textarea id="nk-paste-text" rows="3" placeholder="ここに貼り付け(Ctrl+V)"></textarea>
+      <button type="button" id="nk-paste-btn" class="stamp-btn">読み込む</button>
+    </div>
+  </section>
+
   <main class="races-main" id="races-main"></main>
 
 </div>
@@ -185,6 +195,20 @@
   </div>
 </div>
 
+<!-- netkeibaの結果ページの取り込み確認(2026-10-08。docs/design/netkeiba-bookmarklet.md) -->
+<div id="nk-result-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2>netkeibaの結果を取り込む</h2>
+    <p id="nk-result-race" class="picker-hint"></p>
+    <div id="nk-result-preview"></div>
+    <div class="modal-actions">
+      <button type="button" id="nk-result-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="nk-result-submit-btn" class="stamp-btn">反映する</button>
+    </div>
+    <p id="nk-result-message" class="submit-message" hidden></p>
+  </div>
+</div>
+
 <!-- JRAレース結果PDFインポートモーダル -->
 <div id="jra-result-import-modal" class="modal-overlay" hidden>
   <div class="modal">
@@ -221,5 +245,7 @@
 <script src="races-entries-modal.js"></script>
 <script src="payout-paste-parser.js"></script>
 <script src="races-payout-modal.js"></script>
+<script src="netkeiba-html.js"></script>
+<script src="races-netkeiba-import.js"></script>
 </body>
 </html>

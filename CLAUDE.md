@@ -43,6 +43,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
 | netkeiba馬柱テキストの貼り付け取り込み(血統・調教師等)・調教師名エイリアス | `public/parse.js`(`parseNetkeibaUmabashira`), `public/races-entries-modal.js`, `functions/api/admin/horses/paste-import.js`, `functions/api/admin/trainer-aliases/*`, `functions/api/_lib/trainer-alias.js` |
+| netkeibaページのブックマークレット取り込み(馬柱5走・結果、中央/地方。PCのChrome) | `public/netkeiba-html.js`(読み取り), `public/races-netkeiba-import.js`(受け取り・結果の確認画面), `public/races.html`, `public/admin.js`(`setupNetkeibaBookmarklet`) |
 | 馬名エイリアス(管理API・登録馬一覧) | `functions/api/admin/horse-aliases/*`, `functions/api/admin/horses/index.js` |
 | 馬名エイリアス(正規化本体) | `functions/api/_lib/horse-alias.js` |
 | 出走馬entriesマージ・バックフィル・枠番自動計算 | `functions/api/_lib/entries-merge.js` |

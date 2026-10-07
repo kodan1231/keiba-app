@@ -38,6 +38,9 @@ async function loadRaces() {
   renderRaceCalendar();
   renderRaceList();
 
+  // netkeibaのブックマークレットから開かれた場合(?nk=1。races-netkeiba-import.js)は、ページの受け取りを始める
+  if (typeof nkOnRacesLoaded === "function") nkOnRacesLoaded();
+
   // app.js の「払戻を編集(レース管理へ)」リンク(?edit=)は払戻モーダルを直接開く。
   // データ検索「重賞検索」タブの「レース管理で開く」リンク(?entries=。2026-10-08)は出走馬表の編集を開く。
   // いずれもカレンダーをそのレースの日へ移し、その日の一覧を表示してから開く(過去のレースも探さずに直せる)。
