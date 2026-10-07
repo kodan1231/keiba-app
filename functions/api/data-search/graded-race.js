@@ -1,7 +1,7 @@
 import {
   jsonError,
   parsePositiveIntId,
-  getAllRacesRaw,
+  getRaceIndex,
   jstYear,
   findRacesByGradedKey,
   raceSummaryOf,
@@ -21,8 +21,9 @@ import {
 // 全ユーザー共有データの閲覧のため requireAdmin しない。仕様は docs/design/graded-race-search.md。
 //
 // D1の読み取り対策:
-//   - races は直接SELECTせず races_cache(getAllRacesRaw)をメモリ上で走査し、
-//     gradedRaceNameKey(race_name) === graded_races.name_key のレースを拾う
+//   - races は直接全件SELECTせず、一覧用の軽いキャッシュ(getRaceIndex。2026-10-07〜。以前は
+//     races_cache〈getAllRacesRaw〉)をメモリ上で走査して重賞一覧のキーに一致するレースを拾い、
+//     選んだレース(最大11件)だけ全列を id IN (...) で読む
 //   - race_results は対象レース(1年1レースに絞るため、今年1+過去10年=最大11件)だけを
 //     IN句で取得する(11件 ≪ 100バインド上限。CLAUDE.md の不変条件)
 //   - 書き込みは一切しない
@@ -165,7 +166,10 @@ export async function onRequestGet(context) {
     .first();
   if (!master) return jsonError("重賞が見つかりません", 404);
 
-  const allRaces = await getAllRacesRaw(db);
+  // 2026-10-07: 対象レース探しは一覧用の軽いキャッシュ(races_index_cache)で行い、選んだレース
+  // (今年+過去10年=最大11件)だけ出走馬・着順・払戻を含む全列を読む。以前は races_cache(約10MB)を
+  // 丸ごと解析しておりCPU時間上限超過の恐れがあった(docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
+  const allRaces = await getRaceIndex(db);
   // 保存済みの name_key と、名前から今の正規化で計算し直したキーの両方で拾う(2026-10-06)
   const matches = findRacesByGradedKey(allRaces, new Set([master.name_key, gradedRaceNameKey(master.name)].filter(Boolean)));
 
@@ -179,10 +183,24 @@ export async function onRequestGet(context) {
   }
 
   const currentYear = jstYear();
-  const currentRace = byYear.get(currentYear) || null;
+  const selectedIds = [];
+  for (let y = currentYear; y >= currentYear - PAST_YEARS; y--) if (byYear.has(y)) selectedIds.push(byYear.get(y).id);
+  // 選んだレースの全列(最大 1 + PAST_YEARS = 11件。100バインド上限に届かない)
+  const fullById = new Map();
+  if (selectedIds.length) {
+    const { results } = await db
+      .prepare(`SELECT * FROM races WHERE id IN (${selectedIds.map(() => "?").join(",")})`)
+      .bind(...selectedIds)
+      .all();
+    for (const r of results || []) fullById.set(r.id, r);
+  }
+  const fullOf = (r) => (r ? fullById.get(r.id) || null : null);
+
+  const currentRace = fullOf(byYear.get(currentYear));
   const pastRaces = [];
   for (let y = currentYear - 1; y >= currentYear - PAST_YEARS; y--) {
-    if (byYear.has(y)) pastRaces.push({ year: y, race: byYear.get(y) });
+    const race = fullOf(byYear.get(y));
+    if (race) pastRaces.push({ year: y, race });
   }
 
   // 対象レースの race_results をまとめて取得(最大 1 + PAST_YEARS = 11件。100バインド上限に届かない)

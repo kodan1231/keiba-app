@@ -165,6 +165,39 @@ D1無料枠の日次上限そのものの詳細・注意点は`CLAUDE.md`「絶�
   任意の過去月へカレンダーで移動して編集する用途のため同様に対象外。
   データ検索画面「レース成績」タブ・CSV取込一覧の内部呼び出し
   (`getAllRacesRaw()`直接呼び出し)も対象外。
+  **(2026-10-07追記)** 上記の予想登録画面・レース管理画面の全件取得は、下記「レース一覧用の軽いキャッシュ」
+  (`?index=1`)+ 1件取得(`GET /api/races/:id`)に置き換えた。
+
+### レース一覧用の軽いキャッシュ(races_index_cache。2026-10-07〜)
+
+**経緯**: `races_cache`(races の全カラム。2026-10-07時点で3,739レース・約10MB)を丸ごと解析する処理が
+Cloudflare Workers のCPU時間上限を超えるようになった(`exceededResources`)。また予想登録画面・レース管理画面は
+`GET /api/races`(全件)で全レース・全出走馬を丸ごと画面に送っており、開くたびに約1,000万文字(圧縮後でも数MB)の
+通信が発生していた。一覧に要るのは日付・競馬場・R・レース名等だけのため、それだけを持つ軽いキャッシュを設けた。
+
+- 実装: `functions/api/_lib/races-index-cache.js`(`getRaceIndexRows` / `getRaceIndex` / `RACE_INDEX_FIELDS`)
+- 中身: `id, race_date, track, race_number, race_name, race_base_name, course_type, distance, class_flags,
+  weight_type, weather, track_condition, post_time` と、印 `has_finish_order`(着順あり)・`has_payout_rates`
+  (返還以外の払戻レートあり。`hasSettledPayoutRates()` と同じ判定)・`entry_count`(出走表の頭数)・
+  `has_unconfirmed_numbers`(馬番未確定の馬がいる)。出走馬・着順・払戻の中身は持たない
+- 保存: 行の配列を `chunk_index` ごとの複数行に分割(`races_cache` と同じ方式。2026-10-07時点で約39万バイト・1行)。
+  作り直しは DB から必要な列だけを読み、印は SQL(`json_each` 等)で計算する。保存の失敗は握りつぶす(best-effort)
+- 無効化: DBトリガー(`@STEP: races_index_cache`)。races の INSERT/UPDATE/DELETE で全行削除
+- API: `GET /api/races?index=1` → `{ fields: [...列名], rows: [[...], ...] }`(列名を行ごとに繰り返さない表形式。
+  画面側は `utils.js` の `fetchRaceIndex()` でオブジェクトの配列にする)。2026-10-07時点で約39万文字
+  (旧 `GET /api/races` 全件は約1,010万文字)
+- 使う側:
+  - **予想登録画面**: 日付・競馬場・R のセレクトは一覧から、開いたレースの出走馬・着順・払戻は
+    `GET /api/races/:id` で1件ぶん取る(切り替えのたびに1件。取得中に別レースへ切り替えたら古い結果は捨てる)
+  - **レース管理画面**: 一覧・カレンダーの「結果確定」「出走馬◯頭」「枠番未確定」は印から判定し、
+    出走馬表・払戻の編集モーダルを開くときに `GET /api/races/:id` で1件ぶん取る(`openWithRaceDetail()`)
+  - **購入履歴・集計(CSV取込分のコース情報付与)**: `GET /api/ticket-imports` が使う(コース・距離・条件・レース名)
+  - **重賞検索**: 対象レース探し(`graded-race.js`)は一覧で行い、選んだ最大11件だけ全列を `id IN (...)` で読む。
+    出走馬詳細(`graded-race-horses.js`)は対象レースだけ全列、過去走のレース情報は一覧から
+- 本番データでの確認(2026-10-07): 印は旧画面の判定(パース後の entries / finish_order / payouts)と3,739件すべて一致。
+  重賞検索は140重賞すべてで旧方式と出力が一致(CPU 平均約33ms→約9ms)
+- `races_cache`(全カラム)は `GET /api/races`(`?index` も `?since` も無い全件取得)だけが使う。画面からの全件取得は
+  無くなったが、API としては残している
 
 ### GET /api/tickets・GET /api/ticket-imports の範囲限定(?since / ?race_id)(2026-09-29〜)
 

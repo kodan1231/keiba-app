@@ -1,8 +1,8 @@
 import {
   jsonError,
   parsePositiveIntId,
-  getAllRacesRaw,
-  getRaceResultsGroupedByRaceId,
+  getRaceIndex,
+  getRaceLineups,
   loadHorseAliasMap,
   applyHorseAliasMap,
   horseAliasKeyOf,
@@ -15,7 +15,6 @@ import {
   raceSummaryOf,
   runningStyleOf,
   dominantRunningStyle,
-  fieldSizeOf,
   addPlacing,
   timeTextToSeconds,
   gradedJockeyKey,
@@ -30,8 +29,9 @@ import {
 // 全ユーザー共有データの閲覧のため requireAdmin しない。仕様は docs/design/graded-race-search.md。
 //
 // D1の読み取り対策:
-//   - races は races_cache(getAllRacesRaw)、各レースの頭数・騎手成績は race_stats_cache
-//     (getRaceResultsGroupedByRaceId)からメモリ上で引く(races / race_results の全件走査をしない)
+//   - 対象レースは1件だけ全列を読み、過去走のレース情報は一覧用の軽いキャッシュ(getRaceIndex)、各レースの頭数・
+//     騎手成績は集計用の小さいキャッシュ(getRaceLineups)から引く(2026-10-07〜。以前は races_cache・race_stats_cache)
+//     (races / race_results の全件走査をしない)
 //   - race_results は出走各馬の horse_key だけを IN 句で直接引く。キー数は
 //     「出走頭数(最大18)×(1 + その馬のエイリアス数)」で実質20〜30件程度。
 //     エイリアスが多い馬がいても上限を超えないよう、90件ずつチャンク分割する(CLAUDE.md)
@@ -103,10 +103,15 @@ export async function onRequestGet(context) {
   const { id: raceId, error } = parsePositiveIntId(url.searchParams.get("race_id"), "レースID");
   if (error) return error;
 
-  const allRaces = await getAllRacesRaw(db);
-  const target = allRaces.find((r) => Number(r.id) === raceId);
+  // 2026-10-07: 以前は races_cache(約10MB)と race_stats_cache(約3.8MB)を丸ごと解析しており、
+  // CPU時間上限超過の恐れがあった。対象レースは1件だけ全列を読み、過去走のレース情報は一覧用の軽い
+  // キャッシュ(getRaceIndex)、出走頭数と騎手のコース成績は集計用の小さいキャッシュ(getRaceLineups)から引く
+  // (docs/design/data-model.md「レース一覧用の軽いキャッシュ」・data-search.md「集計用の小さいキャッシュ」)。
+  const target = await db.prepare("SELECT * FROM races WHERE id = ?").bind(raceId).first();
   if (!target) return jsonError("レースが見つかりません", 404);
-  const raceById = new Map(allRaces.map((r) => [Number(r.id), r]));
+  const [raceIndex, lineups] = await Promise.all([getRaceIndex(db), getRaceLineups(db)]);
+  const raceById = new Map(raceIndex.map((r) => [Number(r.id), r]));
+  const lineupById = new Map(lineups.map((r) => [Number(r.id), r]));
 
   const entries = (parseJsonSafe(target.entries, []) || []).filter((e) => e && e.horse_name);
   if (!entries.length) return Response.json({ race: raceSummaryOf(target), horses: [] });
@@ -156,29 +161,32 @@ export async function onRequestGet(context) {
     for (const r of results || []) masterByKey.set(r.horse_key, r);
   }
 
-  const statsByRace = await getRaceResultsGroupedByRaceId(db);
   const gradedMap = await loadGradedRaceMap(db);
   // 冠付きの名前も重賞一覧のキーへ解決してから比べる(2026-10-06。年によって冠が付く・外れるレースがあるため)
   const resolveKey = (name) => { const k = gradedRaceNameKey(name); return resolveGradedKey(k, (x) => gradedMap.has(x)) || k; };
   const targetNameKey = resolveKey(target.race_name);
 
-  // 騎手の今回コース(場・芝ダ・距離)での成績。対象レースより前の開催分を
-  // races_cache × race_stats_cache でメモリ集計する(race_results のあるレースのみ)
+  // 騎手の今回コース(場・芝ダ・距離)での成績。対象レースより前の開催分を、集計用の小さいキャッシュの
+  // 出走馬一覧([馬番, 騎手, 着順]。出走した馬だけ)でメモリ集計する。
+  // 2026-10-07: 以前は race_results のあるレースだけを race_stats_cache で数えていたが、キャッシュ切り替えに
+  // 伴い、騎手検索タブと同じ規則(race_results が全頭そろわないレースは entries+finish_order で補う)になった。
+  // 着順は1〜3着以外をすべて着外として数える(以前は着順が空の完走馬を数えていなかった)。
   const entryJockeyKeys = new Set(entries.map((e) => gradedJockeyKey(e.jockey)).filter(Boolean));
   const jockeyCourse = new Map();
-  for (const r of allRaces) {
+  for (const r of lineups) {
     if (
+      !r.lineup ||
       Number(r.id) === raceId ||
       !(String(r.race_date) < String(target.race_date)) ||
       r.track !== target.track ||
       r.course_type !== target.course_type ||
       Number(r.distance) !== Number(target.distance)
     ) continue;
-    for (const row of statsByRace[r.id] || statsByRace[String(r.id)] || []) {
-      const jk = gradedJockeyKey(row.jockey);
+    for (const [, jockey, pos] of r.lineup) {
+      const jk = gradedJockeyKey(jockey);
       if (!entryJockeyKeys.has(jk)) continue;
       if (!jockeyCourse.has(jk)) jockeyCourse.set(jk, [0, 0, 0, 0]);
-      addPlacing(jockeyCourse.get(jk), row.status, row.finish_position);
+      addPlacing(jockeyCourse.get(jk), "finished", pos || 4); // pos 0(着外)は4着扱いで着外に数える
     }
   }
 
@@ -189,10 +197,9 @@ export async function onRequestGet(context) {
       .map((row) => {
         const race = raceById.get(Number(row.race_id));
         if (!race) return null;
-        const fieldSize = fieldSizeOf(
-          statsByRace[race.id] || statsByRace[String(race.id)],
-          (parseJsonSafe(race.entries, []) || []).length || null
-        );
+        // 出走頭数: 集計用キャッシュの出走馬一覧(出走した馬だけ)の頭数。無ければ出走表の頭数(2026-10-07〜)
+        const lu = lineupById.get(Number(race.id));
+        const fieldSize = lu && lu.lineup && lu.lineup.length ? lu.lineup.length : Number(race.entry_count) || null;
         return {
           race_id: race.id,
           race_date: race.race_date,

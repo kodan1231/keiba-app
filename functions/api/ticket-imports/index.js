@@ -1,4 +1,4 @@
-import { getAllRacesRaw, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace, runBatchInChunks } from "../_shared.js";
+import { getRaceIndex, backfillHorseNamesForRace, loadGradedRaceMap, classifyRace, runBatchInChunks } from "../_shared.js";
 
 function decodeCsv(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -415,7 +415,7 @@ export async function onRequestGet(context){
     // そのレースだけを直接SELECTする(2026-09-29追加。範囲限定の一環)。
     const racesForEnrichment=raceIdFilter
       ? [await db.prepare('SELECT * FROM races WHERE id=?').bind(raceIdFilter).first()].filter(Boolean)
-      : await getAllRacesRaw(db);
+      : await getRaceIndex(db); // 2026-10-07: races_cache(約10MB)ではなく一覧用の軽いキャッシュ(使うのはコース・距離・条件・レース名だけ)
     for(const r of racesForEnrichment) raceCourseById.set(r.id,{
       course_type:r.course_type,
       distance:r.distance,

@@ -131,6 +131,22 @@ function formatCourseText(courseType, distance) {
   return parts.join("");
 }
 
+// GET /api/races?index=1(レース一覧用の軽いキャッシュ。2026-10-07追加)の表形式
+// { fields: [...], rows: [[...], ...] } をオブジェクトの配列にする。出走馬・払戻は含まれない
+// (has_finish_order / has_payout_rates / entry_count / has_unconfirmed_numbers の印だけ)。
+// 出走馬等が要るときはレース1件ぶんを GET /api/races/:id で取る。
+async function fetchRaceIndex() {
+  const res = await authedFetch("/api/races?index=1");
+  if (!res.ok) return null;
+  const data = await res.json();
+  const fields = data.fields || [];
+  return (data.rows || []).map((row) => {
+    const o = {};
+    fields.forEach((f, i) => { o[f] = row[i]; });
+    return o;
+  });
+}
+
 // 競馬場の表示順(中央4場 → 中央ローカル6場 → 南関東4場 → その他地方。いずれも東から)。
 // buy.js の RACE_TRACK_ORDER と同じ並び(buy.js はデータ検索画面で読み込まれないため、
 // 全画面共通の utils.js にも置いた。名前の衝突を避けて別名にしている。2026-10-03)。

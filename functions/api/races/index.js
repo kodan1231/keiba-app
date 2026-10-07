@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // races は「全画面共通の入口」として非常に頻繁に呼ばれるため、races_cache
@@ -14,7 +14,18 @@ import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin,
 // docs/design/data-model.md「GET /api/races の範囲限定」参照。
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const since = new URL(request.url).searchParams.get("since");
+  const params = new URL(request.url).searchParams;
+  const since = params.get("since");
+
+  // ?index=1(2026-10-07追加): 一覧用の軽いキャッシュ(races_index_cache)から、出走馬・払戻を除いた
+  // 一覧だけを { fields: [...列名], rows: [[...], ...] } の表形式で返す(列名を行ごとに繰り返さず
+  // 通信量を抑える)。予想登録画面・レース管理画面のレース選択用。出走馬等はレース1件ぶんだけ
+  // GET /api/races/:id で取る。races_cache(約10MB)の解析・全出走馬の送信をやめるため
+  // (CPU時間上限超過と利用者の通信量の対策。docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
+  if (params.get("index") === "1") {
+    const rows = await getRaceIndexRows(env.DB);
+    return Response.json({ fields: RACE_INDEX_FIELDS, rows });
+  }
 
   let results;
   if (since) {

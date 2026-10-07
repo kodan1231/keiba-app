@@ -202,7 +202,9 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 - 画面: `public/data-search.html`(`data-panel="horse-info"`)/ `public/data-search.js`(`hi*`)
 - API:
   - `GET /api/data-search/horse-search?q=`(`functions/api/data-search/horse-search.js`)
-    … 検索候補一覧(部分一致・最大50件)。`races` は `races_cache` 経由(全件スキャンしない)。
+    … 検索候補一覧(部分一致・最大50件)。**2026-10-07からは入力文字を含む馬名だけを SQL(`json_each` + `LIKE`)で
+    取り出し、出走回数も SQL で数える**(以前は `races_cache`〈約10MB〉を丸ごと解析しておりCPU時間上限超過の恐れがあった。
+    読み取りは races 全件〈約3,700行〉/回。本番データで旧方式と結果が一致)。
     **`q` は2文字未満だと400**(1文字だと該当馬が多すぎて絞り込みの意味が薄いうえ、
     races全件スキャンのコストに見合わないため。クライアント側(`data-search.js`の
     `HI_SEARCH_MIN_LENGTH`)でも2文字未満は送信しない)

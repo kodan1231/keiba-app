@@ -31,3 +31,4 @@ export * from "./_lib/race-lineup.js";
 export * from "./_lib/jockey-stats.js";
 export * from "./_lib/trainer-alias.js";
 export * from "./_lib/race-lineup-cache.js";
+export * from "./_lib/races-index-cache.js";

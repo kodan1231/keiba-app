@@ -33,6 +33,7 @@
 -- 2026-10-04: external_fetch_pause(netkeiba取得の一時停止)も本番適用済み・schema.sql 反映済みのため削除した。
 -- 2026-10-06: umabashira_paste(trainer_aliases・horses.coat_color/affiliation)も本番適用済み・schema.sql 反映済みのため削除した。
 -- 2026-10-07: race_lineup_cache(集計用の小さいキャッシュ+トリガー6つ)も本番適用済み・schema.sql 反映済みのため削除した。
+-- 2026-10-07: races_index_cache(レース一覧用の軽いキャッシュ+トリガー3つ)も本番適用済み・schema.sql 反映済みのため削除した。
 
 PRAGMA foreign_keys=ON;
 

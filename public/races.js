@@ -27,10 +27,14 @@ const racesCalendarMonthLabel = document.getElementById("races-calendar-month-la
 // (races-entries-modal.js・races-payout-modal.js から参照する)。
 const HORSE_COUNT_OPTIONS = Array.from({ length: 14 }, (_, i) => i + 5).map((n) => `<option value="${n}">${n}頭</option>`).join("");
 
+// 2026-10-07: 一覧は軽い一覧(GET /api/races?index=1。出走馬・払戻を含まない)を取り、
+// 出走馬表・払戻の編集モーダルを開くときにそのレース1件ぶんを GET /api/races/:id で取る。
+// 以前は GET /api/races で全レース・全出走馬を丸ごと取得しており、通信量とサーバーのCPU時間が
+// 大きかった(docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
 async function loadRaces() {
-  const res = await authedFetch("/api/races");
-  if (!res.ok) return;
-  races = await res.json();
+  const list = await fetchRaceIndex();
+  if (!list) return;
+  races = list;
   renderRaceCalendar();
   renderRaceList();
 
@@ -38,7 +42,7 @@ async function loadRaces() {
   const editId = new URLSearchParams(window.location.search).get("edit");
   if (editId) {
     const target = races.find((r) => r.id === Number(editId));
-    if (target && window.currentUser && window.currentUser.isAdmin) openPayoutModal(target);
+    if (target && window.currentUser && window.currentUser.isAdmin) openWithRaceDetail(target.id, openPayoutModal);
     history.replaceState(null, "", "races.html");
     return;
   }
@@ -55,6 +59,16 @@ async function loadRaces() {
     });
     history.replaceState(null, "", "races.html");
   }
+}
+
+// レース1件ぶんの完全な情報(出走馬・着順・払戻)を取ってからモーダルを開く(2026-10-07)。
+async function openWithRaceDetail(raceId, openFn) {
+  const res = await authedFetch(`/api/races/${encodeURIComponent(raceId)}`);
+  if (!res.ok) {
+    alert("レース情報の取得に失敗しました");
+    return;
+  }
+  openFn(await res.json());
 }
 
 // ---------- カレンダーから日付を選ぶ ----------
@@ -81,7 +95,7 @@ function renderRaceCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const dateRaces = byDate.get(key);
-    const settledCount = dateRaces ? dateRaces.filter((r) => r.finish_order).length : 0;
+    const settledCount = dateRaces ? dateRaces.filter((r) => r.has_finish_order).length : 0;
     html += `<button type="button" class="calendar-day ${key === selectedRaceDate ? "selected" : ""} ${dateRaces ? "has-race" : ""}" data-date="${key}">
       <span>${d}</span>
       ${dateRaces ? `<span class="calendar-day-count">${settledCount}/${dateRaces.length}</span>` : ""}
@@ -153,7 +167,7 @@ function renderRaceList() {
 
   for (const date of dates) {
     const dateRaces = byDate.get(date);
-    const settledCount = dateRaces.filter((r) => r.finish_order).length;
+    const settledCount = dateRaces.filter((r) => r.has_finish_order).length;
     const dateExpanded = expandedDates.has(date);
 
     const dateWrap = document.createElement("div");
@@ -182,7 +196,7 @@ function renderRaceList() {
     columnsWrap.className = "race-columns";
 
     for (const [track, trackRaces] of byTrack) {
-      const trackSettled = trackRaces.filter((r) => r.finish_order).length;
+      const trackSettled = trackRaces.filter((r) => r.has_finish_order).length;
       const byNumber = new Map(trackRaces.map((r) => [r.race_number, r]));
 
       const col = document.createElement("section");
@@ -229,18 +243,20 @@ function renderRaceList() {
 // races.jsより先に読み込むため、そのまま参照できる)。
 
 function renderRaceRow(r) {
-  const settled = !!r.finish_order;
-  const hasEntries = r.entries.length > 0;
+  // 2026-10-07: 一覧は軽い一覧(GET /api/races?index=1)の印から判定する(出走馬そのものは持たない)。
+  const settled = !!r.has_finish_order;
+  const entryCount = Number(r.entry_count) || 0;
+  const hasEntries = entryCount > 0;
   // 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が未確定(null)の
   // 馬が混在するケースが発生するため、一覧上でも分かるようにする
   // (詳細はdocs/design/entries-import.md「出走馬一覧PDFインポート」参照)。
-  const hasUnconfirmedNumbers = hasEntries && r.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
+  const hasUnconfirmedNumbers = hasEntries && !!r.has_unconfirmed_numbers;
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
   const courseText = formatCourseText(r.course_type, r.distance);
 
   // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる。
   const unconfirmedSuffix = hasUnconfirmedNumbers ? "・枠番未確定" : "";
-  const entriesLabel = hasEntries ? `出走馬表を編集(${r.entries.length}頭${unconfirmedSuffix})` : "出走馬表を登録";
+  const entriesLabel = hasEntries ? `出走馬表を編集(${entryCount}頭${unconfirmedSuffix})` : "出走馬表を登録";
   const settledLabel = settled ? "払戻を編集" : "払戻を登録";
 
   const row = document.createElement("div");
@@ -251,7 +267,7 @@ function renderRaceRow(r) {
     ${courseText ? `<span class="meta course-meta">${escapeHtml(courseText)}</span>` : ""}
     ${isAdmin
       ? `<button type="button" class="entries-badge ${hasEntries ? "done" : ""}" data-id="${r.id}">${entriesLabel}</button>`
-      : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${r.entries.length}頭${unconfirmedSuffix})` : "出走馬未登録"}</span>`}
+      : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${entryCount}頭${unconfirmedSuffix})` : "出走馬未登録"}</span>`}
     ${isAdmin
       ? `<button type="button" class="settled-badge ${settled ? "done" : ""}" data-id="${r.id}">${settledLabel}</button>`
       : `<span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>`}
@@ -262,11 +278,11 @@ function renderRaceRow(r) {
   if (isAdmin) {
     row.querySelector(".entries-badge").addEventListener("click", (e) => {
       e.stopPropagation();
-      openEntriesModal(races.find((x) => x.id === r.id));
+      openWithRaceDetail(r.id, openEntriesModal);
     });
     row.querySelector(".settled-badge").addEventListener("click", (e) => {
       e.stopPropagation();
-      openPayoutModal(races.find((x) => x.id === r.id));
+      openWithRaceDetail(r.id, openPayoutModal);
     });
     row.querySelector(".delete-race-btn").addEventListener("click", (e) => {
       e.stopPropagation();

@@ -24,23 +24,39 @@ const horsesEl = document.getElementById("prediction-horses");
 const ticketsEl = document.getElementById("prediction-tickets");
 const MARKS = ["◎", "○", "▲", "△", "☆", "消"];
 
+// 2026-10-07: レース一覧は軽い一覧(GET /api/races?index=1。日付・競馬場・R等だけ)を取り、
+// 出走馬・着順・払戻は開いたレース1件ぶんだけ GET /api/races/:id で取る。以前は GET /api/races で
+// 全レース・全出走馬を丸ごと取得しており、開くたびに数MBの通信と、サーバー側でCPU時間上限超過の
+// 恐れがあった(docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
+// races の要素は一覧の項目だけ(entries 等は無い)。selectedRace は1件ぶんの完全なレース情報。
+let raceLoadToken = 0; // 別のレースへ切り替えたら、取得中の古いレースの結果を捨てるための世代番号
+
+async function fetchRaceDetail(raceId) {
+  const res = await authedFetch(`/api/races/${encodeURIComponent(raceId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function loadRaces() {
-  const res = await authedFetch("/api/races");
-  if (!res.ok) {
+  const list = await fetchRaceIndex();
+  if (!list) {
     showEmpty("レース情報の取得に失敗しました。");
     return;
   }
-  races = await res.json();
+  races = list;
   const raceId = Number(new URLSearchParams(location.search).get("race"));
   if (!Number.isInteger(raceId) || raceId <= 0) {
     showEmpty("レースが指定されていません。レース一覧から対象レースを選択してください。");
     return;
   }
-  selectedRace = races.find(r => Number(r.id) === raceId);
-  if (!selectedRace) {
+  const token = ++raceLoadToken;
+  const detail = races.some(r => Number(r.id) === raceId) ? await fetchRaceDetail(raceId) : null;
+  if (token !== raceLoadToken) return;
+  if (!detail) {
     showEmpty("指定されたレースが見つかりません。");
     return;
   }
+  selectedRace = detail;
   await selectRace();
 }
 
@@ -327,10 +343,12 @@ function racesOnSameDate() {
   return races.filter(r => r.race_date === selectedRace.race_date);
 }
 
-function switchToRace(raceId) {
-  const target = races.find(r => Number(r.id) === Number(raceId));
-  if (!target) return;
-  selectedRace = target;
+async function switchToRace(raceId) {
+  if (!races.some(r => Number(r.id) === Number(raceId))) return;
+  const token = ++raceLoadToken;
+  const detail = await fetchRaceDetail(raceId); // 出走馬等は切り替え先の1件ぶんだけ取る(2026-10-07)
+  if (token !== raceLoadToken || !detail) return;
+  selectedRace = detail;
   history.replaceState(null, "", `prediction.html?race=${encodeURIComponent(raceId)}`);
   selectRace();
 }

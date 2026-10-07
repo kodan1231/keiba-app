@@ -475,6 +475,27 @@ BEGIN
   DELETE FROM race_lineup_cache;
 END;
 
+-- レース一覧用の軽いキャッシュ(2026-10-07追加。@STEP: races_index_cache)。races の一覧に要る列と印だけを持つ
+-- (_lib/races-index-cache.js)。races の更新でトリガーが全行削除し、次の読み取りで作り直す
+-- (docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
+CREATE TABLE IF NOT EXISTS races_index_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_ins AFTER INSERT ON races
+BEGIN
+  DELETE FROM races_index_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_upd AFTER UPDATE ON races
+BEGIN
+  DELETE FROM races_index_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_del AFTER DELETE ON races
+BEGIN
+  DELETE FROM races_index_cache;
+END;
+
 -- ============================================================
 -- 12. 重賞マスタ(graded_races)
 -- ============================================================
