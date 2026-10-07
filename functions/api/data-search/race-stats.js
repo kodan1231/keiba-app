@@ -1,4 +1,4 @@
-import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw, buildRaceLineup } from "../_shared.js";
+import { jsonError, getRaceLineups } from "../_shared.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
 // レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
@@ -6,11 +6,10 @@ import { jsonError, getRaceResultsGroupedByRaceId, getAllRacesRaw, buildRaceLine
 // データのため requireAdmin しない(GET /api/races/:id/horse-history と同じ扱い)。
 //
 // 仕様の詳細は docs/design/data-search.md。実装方針の要点:
-//   - レース単位のループで1件ずつ問い合わせない。races は毎回全件ライブ取得(1本。
-//     元々軽いテーブル)。race_results 側は毎回読み直さず、race_stats_cache(事前計算
-//     キャッシュ。_lib/race-stats-cache.js)から1行読むだけにする(2026-09-12。
-//     経緯は docs/design/data-search.md 参照)。
-//   - ① 平均単勝金額・○円以下率 / ② 平均馬連金額 は races.payouts。
+//   - レース単位のループで1件ずつ問い合わせない。データは集計用の小さいキャッシュ
+//     (race_lineup_cache。_lib/race-lineup-cache.js。2026-10-07)から全レース分を読み、メモリで集計する
+//     (それ以前は races_cache + race_stats_cache を丸ごと解析しておりCPU時間上限を超えた)。
+//   - ① 単勝金額の中央値・○円以下率 / ② 馬連金額の中央値 は races.payouts 由来。
 //   - ③④⑤(騎手率・馬番別成績)の着順ソースは「race_results が全頭ぶん揃っていれば
 //     race_results(最も正)、そうでなければ finish_order(上位3着)+ entries」を
 //     レースごとに選ぶ(手入力・CSV・PDF未取込のレースもカバーするため)。
@@ -28,10 +27,6 @@ function jockeyDisplay(name) {
   return String(name ?? "").replace(JOCKEY_MARK_RE, "").replace(/[　\s]+/g, " ").trim();
 }
 
-function avg(arr) {
-  return arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : null;
-}
-
 // 中央値(件数が偶数なら真ん中2つの平均)。空なら null。
 // 2026-10-03: 単勝・馬連の代表値を平均から中央値に変更(まれな高配当に引っ張られにくくするため)。
 function median(arr) {
@@ -41,28 +36,8 @@ function median(arr) {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-function parseJson(text, fallback) {
-  if (!text) return fallback;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return fallback;
-  }
-}
-
-// payouts JSON の 1 式別(tan / umaren)の rate 群から「そのレースの1値」を返す。
-// 同着で複数エントリがある場合は平均。有効な rate が無ければ null。
-function raceRateValue(payoutsObj, key) {
-  const list = payoutsObj && Array.isArray(payoutsObj[key]) ? payoutsObj[key] : null;
-  if (!list) return null;
-  const rates = list
-    .map((x) => Number(x && x.rate))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  return rates.length ? avg(rates) : null;
-}
-
-// buildRaceLineup()(レース1件の出走馬・着順配列)は騎手検索タブと共用するため
-// _lib/race-lineup.js へ移した(2026-10-03)。
+// 払戻の1値化(同着は平均)と出走馬の一覧(buildRaceLineup と同じ規則)は、
+// 集計用の小さいキャッシュの作り直し時に済ませている(_lib/race-lineup-cache.js。2026-10-07)。
 
 // 率ランキング上位N(5位同率は全員含める)。
 function topByRate(entries, minRides, countKey, n) {
@@ -99,21 +74,17 @@ export async function onRequestGet(context) {
     }
   }
 
-  // --- クエリ1: races 全件(track/course_type/distance フィルタはメモリ側で適用) ---
-  // races_cache(_lib/races-cache.js。2026-09-12追加)から読む。以前は毎回全件
-  // SELECTしており、races が育つにつれてD1読み取り上限逼迫リスクがあった。
-  const raceRows = await getAllRacesRaw(env.DB);
-
-  // --- race_results は race_stats_cache(事前計算キャッシュ)から読む ---
-  // 以前は races と JOIN して WHERE で絞っていたが、JOIN条件が races 側のカラムのため
-  // race_results 側の絞り込みが効かず、フィルタの有無によらず race_results をほぼ全件
-  // スキャンしてしまい、D1の日次行読み取り上限超過の一因になっていた(2026-09-11)。
-  // その後 race_id IN (...) チャンク分割方式に変更したが、フィルタ無しの初期表示では
-  // 結局ほぼ全件読むことになるため、2026-09-12に「race_results を race_id でグルーピング
-  // したものを1行のJSONとして事前計算・キャッシュする」方式へ変更した。無効化は
-  // race_results 側のDBトリガーで自動的に行われる(_lib/race-stats-cache.js 参照)。
+  // --- 集計用の小さいキャッシュ(race_lineup_cache)から全レースを読む ---
+  // 2026-10-07: 以前は races_cache(約10MB)と race_stats_cache(約3.8MB)を丸ごと解析しており、
+  // CPU時間上限超過(exceededResources)で「集計の取得に失敗しました」になった。各レースの
+  // 日付・競馬場・コース・距離・単勝/馬連の値・出走馬[馬番,騎手,着順]だけを持つ専用キャッシュに切り替えた
+  // (docs/design/data-search.md「集計用の小さいキャッシュ」)。出走馬の一覧の規則(race_results 全頭
+  // → 無ければ entries+finish_order)は作り直し時に適用済み。
+  // (それ以前の経緯: races と race_results を JOIN して WHERE で絞っていた時期は race_results を
+  //  ほぼ全件スキャンし D1日次読み取り上限超過の一因になった〈2026-09-11〉ため、2026-09-12に
+  //  事前計算キャッシュ方式へ変更していた)
   const surfaceOk = (ct) => (surface ? ct === surface : ct == null || SURFACES.has(ct));
-  const rrByRace = await getRaceResultsGroupedByRaceId(env.DB);
+  const raceRows = await getRaceLineups(env.DB);
 
   const trackOptionSet = new Set();
   const distanceOptionSet = new Set();
@@ -143,24 +114,16 @@ export async function onRequestGet(context) {
     if (!surfaceOk(ct)) continue;
     if (distance != null && race.distance !== distance) continue;
 
-    // ①② 払戻
-    const payoutsObj = parseJson(race.payouts, null);
-    if (payoutsObj) {
-      const tanVal = raceRateValue(payoutsObj, "tan");
-      if (tanVal != null) winValues.push(tanVal);
-      const umaVal = raceRateValue(payoutsObj, "umaren");
-      if (umaVal != null) umarenValues.push(umaVal);
-    }
+    // ①② 払戻(同着は平均した1値。キャッシュ作り直し時に計算済み)
+    if (race.tan != null) winValues.push(race.tan);
+    if (race.umaren != null) umarenValues.push(race.umaren);
 
-    // ③④⑤ 着順集計
-    const entries = parseJson(race.entries, []) || [];
-    const finishOrder = parseJson(race.finish_order, null);
-    const lineup = buildRaceLineup(entries, finishOrder, rrByRace[race.id]);
-    if (!lineup) continue;
+    // ③④⑤ 着順集計(lineup は出走した馬だけの [馬番, 騎手, 着順])
+    if (!race.lineup) continue;
 
     resultRaceCount++;
-    for (const h of lineup) {
-      if (!h.ran) continue;
+    for (const [horse_number, jockey, pos] of race.lineup) {
+      const h = { horse_number, jockey, pos };
 
       const rawJockey = h.jockey;
       if (rawJockey && String(rawJockey).trim()) {

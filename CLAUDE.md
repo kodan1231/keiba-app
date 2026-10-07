@@ -71,6 +71,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) `getNetkeibaPausedUntil` `getNetkeibaPauseSettings` `setNetkeibaPauseHours`(netkeibaに拒否されたら管理画面で設定した時間〈既定6時間〉取得を止める。2026-10-04追加) |
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
+| `_lib/race-lineup-cache.js` | `getRaceLineups` `recomputeRaceLineupCache`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(races_cache・race_stats_cacheから全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
 ## 絶対に破ってはいけない不変条件

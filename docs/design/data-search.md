@@ -369,6 +369,46 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 `entries-import.js` / `results-import.js` それぞれの取込処理の最後で1回だけ呼ぶ
 (1回の取込に含まれるユニーク馬の horse_key は90件ずつチャンク分割してIN句に渡す)。
 
+## 集計用の小さいキャッシュ(`race_lineup_cache`。2026-10-07追加)
+
+**経緯**: レース成績タブ・騎手検索タブは、表示のたびに `races_cache`(約10MB。3,739レース×全出走馬)と
+`race_stats_cache`(約3.8MB。race_results 49,536行)を丸ごと読み込んで集計していた。データの増加で
+1リクエストのCPU時間が150〜280ms(本番データでの計測。うちJSON解析だけで約50ms)に達し、2026-10-07に
+Cloudflare Workers のCPU時間上限超過(`exceededResources`。当日23件、CPU中央値128ms)で
+「集計の取得に失敗しました」になった。集計に要るのは各レースのごく一部の項目だけのため、それだけを
+詰めて持つ専用キャッシュを設けた(通信量は増やさない。サーバー側の処理だけを軽くする)。
+
+- 対象: `GET /api/data-search/race-stats`(レース成績)、`GET /api/data-search/jockeys`・`jockey-stats`(騎手検索)
+- 実装: `functions/api/_lib/race-lineup-cache.js`(`getRaceLineups`)
+- 中身(レースごと): 日付・競馬場・コース種別・距離・単勝の値・馬連の値(いずれも同着は平均。
+  レース成績タブの①②と同じ1値化)・**出走した各馬の[馬番, 騎手, 着順(1〜3、着外は0)]**。
+  出走馬の一覧は「③④⑤ 共通: 着順データの取り方」と同じ規則(race_results が全頭そろっていれば
+  それ、無ければ entries + finish_order。取消・除外は含めない)で、作り直し時に確定させておく。
+  騎手名はチャンクごとの辞書(配列)に入れ、各馬は辞書の番号で持つ。騎手名エイリアスの適用は
+  従来どおり読み取り側で行う(エイリアスを登録・削除してもキャッシュの作り直しは不要)
+- 保存: `races_cache` と同じく `chunk_index` ごとの複数行(`CHUNK_MAX_BYTES` 超過で次の行)。
+  保存の失敗は握りつぶす(best-effort)
+- **作り直しは他のキャッシュに依存しない**: `races_cache`・`race_stats_cache` は読まず、DB から
+  必要な列だけを読む。
+  - races: `id, race_date, track, course_type, distance, finish_order` と、`payouts` の `tan`・`umaren`
+    部分(`json_extract`)、出走頭数(`json_array_length(entries)`)。`entries` 本体は読まない
+    (不正なJSONでSQL全体が失敗しないよう `json_valid` で守る)
+  - race_results: `race_id` ごとに `group_concat` で1行にまとめた文字列(区切りは制御文字)
+  - `entries` 本体は、race_results が全頭そろっていないレースの分だけ `id IN (...)` で読む(90件ずつ)
+  - 読み取り行数は races 全件+race_results 全件(2026-10-07時点で約5.3万行)/回。CPU時間は
+    大きなJSONの解析をしないため小さい
+  - 他のキャッシュを使わないのは、作り直しが重いと「CPU時間切れで保存前に打ち切られ、次の
+    リクエストでまた作り直す」を繰り返す恐れがあるため(2026-09-12の `races_cache` 障害と同じ構図を避ける)
+- 無効化: DBトリガー(`@STEP: race_lineup_cache`)。races の INSERT/UPDATE/DELETE、
+  race_results の INSERT/DELETE と `horse_number`/`jockey`/`status`/`finish_position` の UPDATE で全行削除
+- 単勝・馬連の値(同着は平均、rate > 0 のみ)は SQL 側(`json_each` + `AVG`)で計算する。作り直しは
+  1回の走査で詰めた形を作り、チャンクの切り替えはレースを処理する前に行う(途中で切り替えると、
+  そのレースの騎手番号が前のチャンクの辞書を指したままになる。実装中に本番データとの比較で見つけた)
+- **計測(2026-10-07。本番データ・手元のNode)**: キャッシュは約57万バイト(2行)。旧方式と出力が完全一致
+  (レース成績の絞り込み3通り・騎手一覧412人・騎手成績)。CPU時間は、レース成績(絞り込みなし)約312ms→約79ms、
+  騎手一覧 約172ms→約31ms、騎手成績 約219ms→約32ms。作り直しは約47〜94ms(races / race_results の
+  更新後の最初の1回だけ)。
+
 ## 騎手検索タブ(2026-10-03追加)
 
 騎手名の一部を入力して候補から騎手を選び、**通算成績・年度別成績・コース別成績**を表で出すタブ。

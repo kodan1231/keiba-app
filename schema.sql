@@ -442,6 +442,39 @@ BEGIN
   DELETE FROM races_cache;
 END;
 
+-- 集計用の小さいキャッシュ(2026-10-07追加。@STEP: race_lineup_cache)。データ検索のレース成績タブ・騎手検索タブ用に、
+-- 各レースの日付・競馬場・コース・距離・単勝/馬連の値・出走馬[馬番,騎手,着順]だけを詰めて持つ(_lib/race-lineup-cache.js)。
+-- races / race_results の更新でトリガーが全行削除し、次の読み取りで作り直す(docs/design/data-search.md「集計用の小さいキャッシュ」)。
+CREATE TABLE IF NOT EXISTS race_lineup_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_ins AFTER INSERT ON races
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_upd AFTER UPDATE ON races
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_del AFTER DELETE ON races
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_ins AFTER INSERT ON race_results
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_del AFTER DELETE ON race_results
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_upd AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
+BEGIN
+  DELETE FROM race_lineup_cache;
+END;
+
 -- ============================================================
 -- 12. 重賞マスタ(graded_races)
 -- ============================================================
