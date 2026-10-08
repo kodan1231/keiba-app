@@ -197,9 +197,34 @@ async function loadRaces() {
   }
 }
 
+// 選んだ日に開催される重賞の一覧(カレンダーと競馬場ごとの一覧の間。2026-10-08)。
+// 重賞の判定はサーバー側(GET /api/races の graded。重賞一覧と照合)。押すとデータ検索「重賞検索」で
+// その重賞(今年の出走馬・過去10年の成績)を別タブで開く。
+function renderGradedDayList(day) {
+  const el = document.getElementById("graded-day-list");
+  if (!el) return;
+  const graded = day
+    .filter(r => r.graded)
+    .sort((a, b) => trackSortIndex(a.track) - trackSortIndex(b.track) || Number(a.race_number) - Number(b.race_number));
+  el.hidden = graded.length === 0;
+  if (!graded.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <span class="graded-day-title">開催予定の重賞</span>
+    ${graded.map(r => {
+      const g = r.graded;
+      const grade = `${g.is_jump ? "J" : ""}${g.grade || ""}`;
+      return `<a class="graded-day-item" href="data-search.html?graded=${encodeURIComponent(g.id)}" target="_blank" rel="noopener" title="データ検索「重賞検索」で過去10年の成績を別タブで開きます">
+        <span class="graded-day-grade">${escapeHtml(grade)}</span>
+        <span class="graded-day-name">${escapeHtml(g.name)}</span>
+        <span class="graded-day-where">${escapeHtml(r.track)}${r.race_number}R</span>
+      </a>`;
+    }).join("")}`;
+}
+
 function renderGrid() {
   const date = dateInput.value;
   const day = races.filter(r => r.race_date === date);
+  renderGradedDayList(day);
   const tracks = sortTracksForDisplay([...new Set(day.map(r => r.track))]);
   noRaceHint.hidden = tracks.length > 0;
 

@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -13,7 +13,9 @@ export async function onRequestGet(context) {
   if (!row) return jsonError("レースが見つかりません", 404);
 
   // 表示用の読み取りなので、エイリアスは短時間使い回す版で読む(2026-10-07。_lib/memo-cache.js)
-  const [jockeyMap, horseMap] = await Promise.all([loadJockeyAliasMapCached(env.DB), loadHorseAliasMapCached(env.DB)]);
+  const [jockeyMap, horseMap, gradedMap] = await Promise.all([
+    loadJockeyAliasMapCached(env.DB), loadHorseAliasMapCached(env.DB), loadGradedRaceMapCached(env.DB),
+  ]);
   let entries = JSON.parse(row.entries);
   entries = applyJockeyAliasesToEntries(jockeyMap, entries);
   entries = applyHorseAliasesToEntries(horseMap, entries);
@@ -23,6 +25,8 @@ export async function onRequestGet(context) {
     entries,
     finish_order: row.finish_order ? JSON.parse(row.finish_order) : null,
     payouts: row.payouts ? JSON.parse(row.payouts) : null,
+    // 当たる重賞(予想登録画面の「過去のデータ」ボタン用。2026-10-08)。無ければ null
+    graded: gradedRaceOf(gradedMap, row),
   });
 }
 

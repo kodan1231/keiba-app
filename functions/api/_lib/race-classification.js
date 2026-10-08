@@ -142,14 +142,24 @@ export function classifyRace(gradedMap, race) {
   return { category: "other", grade: null };
 }
 
-// 重賞一覧を Map<キー, { grade, is_jump }> で返す。キーは保存済みの name_key に加え、名前から
+// レースが当たる重賞一覧の行(graded_races の id・name・grade)を返す。当たらなければ null。
+// 判定は classifyRace と同じ(条件戦は対象外、冠付きのレース名も解決する)。予想登録画面の「過去のデータ」ボタン・
+// 馬券購入画面の「開催予定の重賞」から、データ検索「重賞検索」を開くために使う(2026-10-08)。
+export function gradedRaceOf(gradedMap, race) {
+  if (!gradedMap || isConditionRace(race?.class_flags)) return null;
+  const key = resolveGradedKey(gradedRaceNameKey(race?.race_name), (k) => gradedMap.has(k));
+  const hit = key ? gradedMap.get(key) : null;
+  return hit ? { id: hit.id, name: hit.name, grade: hit.grade, is_jump: hit.is_jump } : null;
+}
+
+// 重賞一覧を Map<キー, { id, name, grade, is_jump }> で返す(id・name は2026-10-08追加。gradedRaceOf 用)。キーは保存済みの name_key に加え、名前から
 // 今の gradedRaceNameKey() で計算し直したものも入れる(2026-10-06。正規化ルールを変えた後も、
 // 保存済みの name_key の計算し直しを待たずに一致させるため)。
 export async function loadGradedRaceMap(db) {
-  const { results } = await db.prepare("SELECT name, name_key, grade, is_jump FROM graded_races").all();
+  const { results } = await db.prepare("SELECT id, name, name_key, grade, is_jump FROM graded_races").all();
   const map = new Map();
   for (const r of results || []) {
-    const v = { grade: r.grade, is_jump: !!r.is_jump };
+    const v = { id: r.id, name: r.name, grade: r.grade, is_jump: !!r.is_jump };
     map.set(r.name_key, v);
     const fresh = gradedRaceNameKey(r.name);
     if (fresh && !map.has(fresh)) map.set(fresh, v);

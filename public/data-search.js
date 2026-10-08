@@ -10,6 +10,10 @@
 let hiInitialized = false;
 let grInitialized = false;
 let jsInitialized = false;
+// ?graded=<graded_races.id>(2026-10-08): 予想登録画面の「過去のデータ」・馬券購入画面の「開催予定の重賞」から、
+// 重賞検索タブでその重賞を開いた状態で表示する。このときレース成績タブの集計は、タブを開くまで読み込まない。
+const dsGradedLinkId = new URLSearchParams(window.location.search).get("graded");
+let dsRaceStatsDeferred = false;
 document.querySelectorAll(".stats-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".stats-tab").forEach((t) => t.classList.remove("active"));
@@ -18,6 +22,10 @@ document.querySelectorAll(".stats-tab").forEach((tab) => {
     document.querySelectorAll(".stats-panel").forEach((panel) => {
       panel.hidden = panel.dataset.panel !== target;
     });
+    if (target === "race-stats" && dsRaceStatsDeferred) {
+      dsRaceStatsDeferred = false;
+      dsLoad();
+    }
     if (target === "horse-info" && !hiInitialized) {
       hiInitialized = true;
       hiInit();
@@ -219,6 +227,12 @@ function dsInit() {
   });
   dsEls.distance.addEventListener("change", dsLoad);
 
+  if (/^\d+$/.test(dsGradedLinkId || "")) {
+    dsRaceStatsDeferred = true;
+    document.querySelector('.stats-tab[data-tab="graded-race"]')?.click(); // 重賞検索タブを開く(grInit)
+    grLoadDetail(dsGradedLinkId);
+    return;
+  }
   dsLoad();
 }
 

@@ -2400,6 +2400,16 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .race-calendar-jump[hidden]{display:none}
 /* 重賞検索タブ: 過去の年のレースをレース管理画面で開くリンク(管理者のみ。2026-10-08) */
 .gr-edit-link{margin-left:auto;font-size:12px;white-space:nowrap}
+/* 馬券購入画面: 選んだ日に開催される重賞(2026-10-08。buy.js の renderGradedDayList) */
+.graded-day-list{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 12px}
+.graded-day-list[hidden]{display:none}
+.graded-day-title{font-size:13px;font-weight:700;margin-right:4px}
+.graded-day-item{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid currentColor;border-radius:999px;font-size:13px;text-decoration:none;color:inherit}
+.graded-day-grade{font-weight:700;font-size:12px}
+.graded-day-where{font-size:12px;opacity:.75}
+/* 予想登録画面: 重賞の「過去のデータ」(データ検索「重賞検索」を別タブで開く) */
+.graded-past-link{text-decoration:none;cursor:pointer}
+
 /* レース管理画面: netkeibaのページの受け取り(2026-10-08。races-netkeiba-import.js) */
 .nk-receive-panel{margin:0 16px 12px;padding:10px 12px;border:1px dashed currentColor;border-radius:8px}
 .nk-receive-panel textarea{width:100%;box-sizing:border-box;margin:6px 0}
