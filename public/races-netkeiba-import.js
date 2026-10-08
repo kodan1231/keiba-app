@@ -182,7 +182,13 @@ async function nkOpenResult(record) {
     if (res.ok) nkResultExisting = await res.json();
   }
   nkJockeyAliasMap = await loadJockeyAliasMapForPaste(); // races-entries-modal.js
-  if (nkKnownJockeys === null) {
+  // 既知の騎手名の一覧(候補用)は、エイリアス・出走馬表の騎手で決まらない名前があるときだけ取る
+  // (2026-10-08。一覧は全レースの騎乗から作るため、レースを直した直後は集計用キャッシュの作り直しが起きる)
+  const unresolved = record.race_results.some((h) => {
+    const j = nkJockeyInfo(h);
+    return j.raw && !j.resolved && j.source !== "known";
+  });
+  if (unresolved && nkKnownJockeys === null) {
     try {
       const res = await authedFetch("/api/data-search/jockeys");
       nkKnownJockeys = res.ok ? (await res.json()).jockeys || [] : [];

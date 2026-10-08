@@ -72,8 +72,9 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) `getNetkeibaPausedUntil` `getNetkeibaPauseSettings` `setNetkeibaPauseHours`(netkeibaに拒否されたら管理画面で設定した時間〈既定6時間〉取得を止める。2026-10-04追加) |
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
-| `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加) |
-| `_lib/race-lineup-cache.js` | `getRaceLineups` `recomputeRaceLineupCache`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加) |
+| `_lib/range-chunk-cache.js` | `loadRangeChunks` `rangeCondition` `rangeIndexOf` `RANGE_SIZE`(races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直すキャッシュの共通処理。2026-10-08追加) |
+| `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加。2026-10-08から範囲ごと) |
+| `_lib/race-lineup-cache.js` | `getRaceLineups`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/memo-cache.js` | `memoized` `invalidateMemo`(小さな設定表を同じ実行環境で2分間使い回す。2026-10-07追加)。**画面表示用の読み取りAPIは `loadJockeyAliasMapCached` `loadHorseAliasMapCached` `loadGradedRaceMapCached` を使い、DBへ書き込む処理は毎回読む版を使う**。エイリアス・重賞を変える管理APIは `invalidateMemo` を呼ぶ |
 | `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
@@ -136,6 +137,11 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   1,500,000程度)超過で行を分割する実装をそのまま踏襲すること。「今は小さいから1行で
   十分」という判断は禁止(`races`も`race_results`も導入当初は「元々軽いテーブル」という
   前提で1行固定にされ、後から育って破綻した)。
+  **さらに、キャッシュの無効化を「表を丸ごと消す」にしない**。1件の変更で全件を作り直すと、編集・取込の多い日に
+  作り直しが数十回起き、2026-10-08 に D1 の1日の読み取り上限の92%に達した。races を元にするキャッシュは
+  `_lib/range-chunk-cache.js`(races.id の範囲ごとの行+変わった範囲だけ消すトリガー)を使うこと。
+  また **`json_each` で展開した要素も D1 の読み取り行数に数えられる**。全レース分の `json_each` を画面操作の
+  たびに走らせない。
 - **大きな一括処理(複数ファイルのCSV/PDFインポート、管理画面の「一括補正」
   `normalizeExistingHorseNames`/`normalizeExistingJockeyNames`等)は、対象行数分の
   rows_written/rows_readを一度に消費する**(例: `race_results`全件へのNFKC一括補正で

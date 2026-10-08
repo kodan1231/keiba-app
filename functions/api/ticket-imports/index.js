@@ -427,7 +427,9 @@ export async function onRequestGet(context){
     });
     const itemsByGroup=new Map();
     if(groups.length){
-      const itemRows=(await db.prepare(`SELECT i.* FROM imported_ticket_items i JOIN imported_ticket_groups g ON g.id=i.group_id WHERE ${groupWhere.map(c=>`g.${c}`).join(" AND ")} ORDER BY i.group_id, i.id`).bind(...groupBinds).all()).results||[];
+      // 2026-10-08: JOIN の形だと D1 では「直近分」でも買い目の表のほぼ全行(1回約6,700行)を読んでいたため、
+      // 「自分のグループの id」の副問い合わせで買い目を group_id のインデックスから引く形にした
+      const itemRows=(await db.prepare(`SELECT * FROM imported_ticket_items WHERE group_id IN (SELECT id FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")}) ORDER BY group_id, id`).bind(...groupBinds).all()).results||[];
       for(const item of itemRows){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     }
     const represented=new Set();

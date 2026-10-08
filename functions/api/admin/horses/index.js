@@ -3,6 +3,7 @@ import {
   horseAliasKeyOf,
   loadHorseAliasMap,
   applyHorseAliasMap,
+  memoized,
 } from "../../_shared.js";
 
 // 管理者向け: 登録馬名の一覧。races.entries ∪ race_results ∪ horse_notes(自分)∪ horse_aliases
@@ -33,6 +34,36 @@ function gojuonRow(name) {
   return "その他";
 }
 
+// 表記ごとの「出走表に載ったレース数」「結果に載ったレース数」を数える。
+// 2026-10-08: 前日に出走表側を SQL の json_each で数える形に変えたところ、展開した出走馬1頭ずつが D1 の読み取り行数に
+// 数えられ、1回約10万行(以前は races 約3,700行)に増えた。50音の行を押すたびに走るため、同日に D1 の1日の読み取り上限の
+// 92%に達する原因の一つになった。races を読んで JS で数える以前の形に戻し、結果を10分使い回す。
+// race_results 側は結果の全行(約5万行)を読む(馬名ごとのレース数を数えるため)。
+const NAME_COUNTS_TTL_MS = 10 * 60 * 1000;
+
+async function loadHorseNameCounts(db) {
+  const [racesRes, rrRes] = await Promise.all([
+    db.prepare("SELECT id, entries FROM races").all(),
+    db.prepare("SELECT horse_name, COUNT(DISTINCT race_id) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> '' GROUP BY horse_name").all(),
+  ]);
+  const entries = new Map();
+  for (const r of racesRes.results || []) {
+    let list;
+    try { list = JSON.parse(r.entries || "[]"); } catch { continue; }
+    if (!Array.isArray(list)) continue;
+    const seen = new Set(); // 同じレースに同じ表記が重複していても1レースと数える
+    for (const e of list) {
+      const name = e?.horse_name;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      entries.set(name, (entries.get(name) || 0) + 1);
+    }
+  }
+  const results = new Map();
+  for (const r of rrRes.results || []) if (r.horse_name) results.set(r.horse_name, Number(r.n) || 0);
+  return { entries, results };
+}
+
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -43,19 +74,10 @@ export async function onRequestGet(context) {
   const row = url.searchParams.get("row") || "";
   const q = (url.searchParams.get("q") || "").normalize("NFKC").trim();
 
-  const aliasMap = await loadHorseAliasMap(env.DB);
-
-  // 2026-10-07: 以前は races.entries を全件 JSON 解析し、race_results も (レース, 馬名) の組を全件受け取って
-  // JS 側でレース数を数えていた(CPU時間上限超過の恐れ)。馬名ごとのレース数は SQL 側で数える。
-  // 同じ馬の別表記が同じレースに並ぶことは無い前提で、表記ごとのレース数を足し合わせる。
-  const [racesRes, rrRes, notesRes] = await Promise.all([
-    env.DB.prepare(
-      `SELECT json_extract(e.value, '$.horse_name') AS horse_name, COUNT(DISTINCT r.id) AS n
-         FROM races r, json_each(r.entries) e
-        WHERE json_valid(r.entries)
-        GROUP BY horse_name`
-    ).all(),
-    env.DB.prepare("SELECT horse_name, COUNT(DISTINCT race_id) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> '' GROUP BY horse_name").all(),
+  const [aliasMap, counts, notesRes] = await Promise.all([
+    loadHorseAliasMap(env.DB),
+    // 表記ごとのレース数(全ユーザー共通)。50音の行を切り替えるたびに読み直さないよう、同じ実行環境で10分使い回す
+    memoized("admin_horse_name_counts", () => loadHorseNameCounts(env.DB), NAME_COUNTS_TTL_MS),
     env.DB.prepare("SELECT horse_name FROM horse_notes WHERE user_id = ? AND memo IS NOT NULL AND memo <> ''").bind(userId).all(),
   ]);
 
@@ -77,13 +99,14 @@ export async function onRequestGet(context) {
     return o;
   };
 
-  for (const r of racesRes.results || []) {
-    const o = touch(r.horse_name);
-    if (o) o.entryRaceCount += Number(r.n) || 0;
+  // 同じ馬の別表記が同じレースに並ぶことは無い前提で、表記ごとのレース数を足し合わせる
+  for (const [name, n] of counts.entries) {
+    const o = touch(name);
+    if (o) o.entryRaceCount += n;
   }
-  for (const rr of rrRes.results || []) {
-    const o = touch(rr.horse_name);
-    if (o) o.resultRaceCount += Number(rr.n) || 0;
+  for (const [name, n] of counts.results) {
+    const o = touch(name);
+    if (o) o.resultRaceCount += n;
   }
   for (const n of notesRes.results || []) {
     const o = touch(n.horse_name);

@@ -413,6 +413,8 @@ BEGIN
   DELETE FROM races_cache;
 END;
 
+-- 2026-10-08(@STEP: range_chunk_caches): 下の2つのキャッシュは races.id の範囲(200件)ごとの行で持ち、トリガーは
+-- 変わったレースの範囲の行だけ消す(chunk_index = races.id / 200。_lib/range-chunk-cache.js)。以前は表を丸ごと消していた。
 -- 集計用の小さいキャッシュ(2026-10-07追加。@STEP: race_lineup_cache)。データ検索のレース成績タブ・騎手検索タブ用に、
 -- 各レースの日付・競馬場・コース・距離・単勝/馬連の値・出走馬[馬番,騎手,着順]だけを詰めて持つ(_lib/race-lineup-cache.js)。
 -- races / race_results の更新でトリガーが全行削除し、次の読み取りで作り直す(docs/design/data-search.md「集計用の小さいキャッシュ」)。
@@ -423,31 +425,31 @@ CREATE TABLE IF NOT EXISTS race_lineup_cache (
 );
 CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_ins AFTER INSERT ON races
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index = NEW.id / 200;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_upd AFTER UPDATE ON races
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index IN (OLD.id / 200, NEW.id / 200);
 END;
 CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_races_del AFTER DELETE ON races
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index = OLD.id / 200;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_ins AFTER INSERT ON race_results
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index = NEW.race_id / 200;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_del AFTER DELETE ON race_results
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index = OLD.race_id / 200;
 END;
-CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_upd AFTER UPDATE OF horse_number, jockey, status, finish_position ON race_results
+CREATE TRIGGER IF NOT EXISTS trg_race_lineup_cache_rr_upd AFTER UPDATE OF race_id, horse_number, jockey, status, finish_position ON race_results
 BEGIN
-  DELETE FROM race_lineup_cache;
+  DELETE FROM race_lineup_cache WHERE chunk_index IN (OLD.race_id / 200, NEW.race_id / 200);
 END;
 
 -- レース一覧用の軽いキャッシュ(2026-10-07追加。@STEP: races_index_cache)。races の一覧に要る列と印だけを持つ
--- (_lib/races-index-cache.js)。races の更新でトリガーが全行削除し、次の読み取りで作り直す
+-- (_lib/races-index-cache.js)。races の更新でトリガーがそのレースの範囲の行を消し、次の読み取りでその範囲だけ作り直す
 -- (docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
 CREATE TABLE IF NOT EXISTS races_index_cache (
   chunk_index INTEGER PRIMARY KEY,
@@ -456,15 +458,15 @@ CREATE TABLE IF NOT EXISTS races_index_cache (
 );
 CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_ins AFTER INSERT ON races
 BEGIN
-  DELETE FROM races_index_cache;
+  DELETE FROM races_index_cache WHERE chunk_index = NEW.id / 200;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_upd AFTER UPDATE ON races
 BEGIN
-  DELETE FROM races_index_cache;
+  DELETE FROM races_index_cache WHERE chunk_index IN (OLD.id / 200, NEW.id / 200);
 END;
 CREATE TRIGGER IF NOT EXISTS trg_races_index_cache_del AFTER DELETE ON races
 BEGIN
-  DELETE FROM races_index_cache;
+  DELETE FROM races_index_cache WHERE chunk_index = OLD.id / 200;
 END;
 
 -- ============================================================
