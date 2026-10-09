@@ -39,6 +39,10 @@ export async function onRequestGet(context) {
   if (raceId && !/^\d+$/.test(raceId)) return Response.json([]);
   if (raceId) { whereParts.push("t.race_id = ?"); binds.push(Number(raceId)); }
   else if (since) { whereParts.push("t.race_date >= ?"); binds.push(since); }
+  // 1レース分のときは並び順の race_date に「+」を付け、並びのためにインデックスを選ばせない(2026-10-10)。
+  // 付けないと本番 D1 は ORDER BY race_date を満たすため (user_id, race_date) のインデックスでその利用者の全購入を
+  // 読み(1回約2,900行)、(user_id, race_id) で引けば1行で済むところを大きく読んでいた。並び順の結果は同じ。
+  const dateOrder = raceId ? "+t.race_date" : "t.race_date";
   const { results } = await env.DB.prepare(
     `SELECT t.*, r.finish_order AS race_finish_order, r.payouts AS race_payouts,
             r.course_type AS race_course_type, r.distance AS race_distance,
@@ -47,7 +51,7 @@ export async function onRequestGet(context) {
      FROM tickets t
      LEFT JOIN races r ON r.id = t.race_id
      WHERE ${whereParts.join(" AND ")}
-     ORDER BY t.race_date DESC, t.track ASC, t.race_number ASC, t.created_at ASC`
+     ORDER BY ${dateOrder} DESC, t.track ASC, t.race_number ASC, t.created_at ASC`
   ).bind(...binds).all();
 
   const gradedMap = await loadGradedRaceMapCached(env.DB);

@@ -390,7 +390,9 @@ export async function onRequestGet(context){
     if(raceIdFilter&&!/^\d+$/.test(raceIdFilter)) return Response.json({ok:true,items:[]});
     if(raceIdFilter){ groupWhere.push("race_id=?"); groupBinds.push(Number(raceIdFilter)); }
     else if(sinceFilter){ groupWhere.push("race_date>=?"); groupBinds.push(sinceFilter); }
-    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} ORDER BY race_date DESC,id DESC`).bind(...groupBinds).all()).results||[];
+    // 1レース分のときは並び順の race_date に「+」を付け、並びのためにインデックスを選ばせない(2026-10-10。
+    // 付けないと本番 D1 は (user_id, race_date) のインデックスでその利用者の全グループ〈1回約2,600行〉を読んでいた)
+    const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} ORDER BY ${raceIdFilter?"+race_date":"race_date"} DESC,id DESC`).bind(...groupBinds).all()).results||[];
     // グループ毎にimported_ticket_itemsを個別クエリすると、取込件数が増えるほど
     // Cloudflare Workersのサブリクエスト数上限に抵触しうる。かといって全ユーザー分の
     // imported_ticket_itemsを毎回全件SELECTする方式は、このテーブルが育つにつれて
