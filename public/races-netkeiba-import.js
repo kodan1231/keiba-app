@@ -248,9 +248,21 @@ function nkRenderResult() {
     </div>
     <p class="picker-hint">${payoutText || "払戻を読み取れませんでした"}</p>`;
 
-  document.querySelectorAll("#nk-result-preview .ub-alias-btn").forEach((btn) => {
+  const previewEl = document.getElementById("nk-result-preview");
+  previewEl.querySelectorAll(".ub-alias-btn").forEach((btn) => {
     btn.addEventListener("click", () => nkRegisterJockeyAlias(btn.closest(".ub-alias-form")));
   });
+  // 候補が1つに決まる略称のまとめて登録(2026-10-08。races-entries-modal.js の registerUniqueAliases)
+  const bulkHtml = ubBulkAliasButtonHtml(previewEl);
+  if (bulkHtml) {
+    previewEl.insertAdjacentHTML("afterbegin", `<p>${bulkHtml}</p>`);
+    previewEl.querySelector(".ub-bulk-alias-btn").addEventListener("click", async () => {
+      if (await registerUniqueAliases(previewEl)) {
+        nkJockeyAliasMap = await loadJockeyAliasMapForPaste();
+        nkRenderResult();
+      }
+    });
+  }
 }
 
 async function nkRegisterJockeyAlias(formEl) {

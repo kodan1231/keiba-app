@@ -244,82 +244,23 @@ let hiSearchTimer = null;
 let hiCurrentName = null;
 let hiCurrentMaster = null;
 
-// horses.fetch_error(netkeiba取得の失敗理由コード)を利用者向けの文にする。
-// 重賞検索タブ(graded-race-search.js)からも使う(同じページで先に読み込まれるため)。
-// コードの意味は functions/api/_lib/netkeiba.js の fetchNetkeibaHorseInfo 参照。
-function hiFetchErrorText(code) {
-  if (!code) return "";
-  if (code === "not_found") return "netkeibaで該当する馬が見つかりませんでした。";
-  if (code === "encoding_unsupported") {
-    return "馬名にカタカナ以外の文字が含まれるため、netkeibaへの自動検索ができませんでした。";
-  }
-  let m = code.match(/^http_(\d+)$/);
-  if (m) return `netkeibaに取得を拒否されました(HTTP ${m[1]})。`;
-  if (code === "unexpected_page") {
-    return "netkeibaから想定外のページが返されました(アクセス制限・メンテナンス等の可能性があります)。";
-  }
-  m = code.match(/^pedigree_http_(\d+)$/);
-  if (m) return `血統だけ取得できませんでした(netkeibaに拒否されました。HTTP ${m[1]})。`;
-  if (code.startsWith("pedigree_")) return `血統だけ取得できませんでした(${code})。`;
-  return `netkeibaからの取得に失敗しました(${code})。`;
-}
-
-// 失敗理由に「いつの取得結果か」を添える(2026-10-03)。fetchedNow=true はこの表示のための
-// 問い合わせでnetkeibaへ取得を試みて失敗したもの、false は以前に失敗した結果がDBに残っていて
-// それをそのまま出しているもの(失敗した馬は自動では取り直さないため)。以前は理由だけを出して
-// おり、今回失敗したのか過去の失敗のままなのかが利用者に分からなかった。
-// 重賞検索タブ(graded-race-search.js)からも使う。
-function hiFetchErrorWithWhenText(code, fetchedAt, fetchedNow) {
-  const reason = hiFetchErrorText(code);
-  if (!reason) return "";
-  if (fetchedNow) return `今回の取得で、${reason}`;
-  return `${hiDateTimeText(fetchedAt) || "以前"}の取得時に、${reason}(その後は自動で再取得していません)`;
-}
-
-// ISO日時 → 「2026/10/4 13:23」形式(不正・空なら空文字)。
-function hiDateTimeText(iso) {
-  const d = iso ? new Date(iso) : null;
-  return d && !Number.isNaN(d.getTime())
-    ? d.toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
-    : "";
-}
-
-// netkeiba への取得の一時停止(2026-10-04追加)の案内文。拒否された後は一定時間
-// (管理画面で設定。既定6時間)問い合わせない。
-function hiPausedText(pausedUntil) {
-  const until = hiDateTimeText(pausedUntil);
-  return `netkeibaから取得を拒否されたため、${until ? `${until}まで` : "しばらく"}netkeibaへの取得を見合わせています(制限中に問い合わせを重ねて解除を遅らせないため)。`;
-}
-
-// 取得状況のお知らせ文。編集・再取得は管理者専用のため、操作への誘導(「編集する」
-// 「netkeibaから再取得する」)は管理者にだけ出す(2026-10-02。それまでは一般ユーザーにも
-// 「下のフォームから手入力できます」と出ており、ボタンが無いのに編集できそうに見えていた)。
-// 失敗理由は2026-10-02から詳細化(HTTP拒否・想定外のページ・血統のみ失敗を not_found と区別)。
-function hiFetchNoteText(master) {
-  if (!master) return "";
+// 血統等が未登録の馬の案内文(2026-10-08)。netkeiba への自動取得は廃止し、レース管理画面で馬柱(5走)を取り込むと
+// 登録される(docs/design/netkeiba-bookmarklet.md)。重賞検索タブ(graded-race-search.js)からも使う。
+// 以前の取得失敗の記録(horses.fetch_error)が残っている馬も、同じく未登録として扱う。
+function hiMissingMasterText() {
   const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
-  if (master.dataSource === "manual") {
-    return "手動で編集済みの情報です。";
-  }
-  // 停止中のため問い合わせなかった(この馬はまだ一度も取得を試みていない)。停止が明けた後に
-  // この馬を開けば自動で取得される。
-  if (master.fetchError === "paused") {
-    return `${hiPausedText(master.pausedUntil)}見合わせ期間が過ぎた後にこの馬を開き直すと、自動で取得します。`;
-  }
-  if (master.fetchError) {
-    // 今回の取得で拒否されて停止を始めた場合は、その旨も添える。
-    if (master.pausedUntil) {
-      return `${hiFetchErrorWithWhenText(master.fetchError, master.fetchedAt, master.fetchedNow)}${hiPausedText(master.pausedUntil)}${isAdmin ? "見合わせ期間が過ぎた後に「netkeibaから再取得する」を試すか、「編集する」から手入力してください。" : ""}`;
-    }
-    const hint =
-      master.fetchError === "not_found" || master.fetchError === "encoding_unsupported"
-        ? "「編集する」から手入力できます。"
-        : "「編集する」から手入力するか、時間をおいて「netkeibaから再取得する」を試してください。";
-    return `${hiFetchErrorWithWhenText(master.fetchError, master.fetchedAt, master.fetchedNow)}${isAdmin ? hint : ""}`;
-  }
-  // 2026-10-06: レース管理画面で netkeiba の馬柱テキストを貼り付けて取り込んだ情報(docs/design/umabashira-paste.md)
+  return `血統等は未登録です。${isAdmin ? "レース管理画面でこの馬が出走するレースの馬柱(5走)を取り込むと登録されます。「編集する」から手入力もできます。" : ""}`;
+}
+
+// 馬情報の出どころのお知らせ文。編集は管理者専用のため、操作への誘導は管理者にだけ出す。
+function hiFetchNoteText(master) {
+  const isAdmin = Boolean(window.currentUser && window.currentUser.isAdmin);
+  const hasPedigree = master && (master.sire || master.dam || master.damSire);
+  if (!master || (!hasPedigree && master.dataSource !== "manual")) return hiMissingMasterText();
+  if (master.dataSource === "manual") return "手動で編集済みの情報です。";
+  // 2026-10-06〜: レース管理画面で netkeiba の馬柱を取り込んだ情報(貼り付け・ブックマークレット)
   if (master.dataSource === "paste") {
-    return `netkeibaの馬柱を貼り付けて取り込んだ情報です。${isAdmin ? "誤りがあれば「編集する」から修正してください。" : ""}`;
+    return `netkeibaの馬柱から取り込んだ情報です。${isAdmin ? "誤りがあれば「編集する」から修正してください。" : ""}`;
   }
   if (master.dataSource === "netkeiba" || master.dataSource === "import") {
     const when = master.fetchedAt ? new Date(master.fetchedAt).toLocaleString("ja-JP") : "";
@@ -530,33 +471,6 @@ function setupHiEditForm() {
     submitBtn.disabled = false;
   });
 
-  hiEls.refetchBtn.addEventListener("click", async () => {
-    if (!hiCurrentName) return;
-    if (!confirm(`「${hiCurrentName}」の情報をnetkeibaから再取得します。手動編集済みの内容も上書きされますが、よろしいですか?`)) {
-      return;
-    }
-    hiEls.refetchBtn.disabled = true;
-    try {
-      const res = await authedFetch("/api/data-search/horse-info", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: hiCurrentName, action: "refetch" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        hiApplyMasterUpdate(data.master);
-        // 編集フォームを開いたままだった場合は、表示中の値も再取得結果に合わせる。
-        if (!hiEls.editForm.hidden) hiFillEditForm(data.master);
-      } else if (res.status === 409 && data.pausedUntil) {
-        // netkeiba への取得を停止中(2026-10-04)。問い合わせはしておらず、内容も変わっていない。
-        alert(`${hiPausedText(data.pausedUntil)}\n見合わせ期間が過ぎてから、もう一度お試しください。`);
-      } else {
-        alert(data.error || "再取得に失敗しました。");
-      }
-    } finally {
-      hiEls.refetchBtn.disabled = false;
-    }
-  });
 }
 
 function hiInit() {
@@ -579,7 +493,6 @@ function hiInit() {
   hiEls.editOwner = document.getElementById("hi-edit-owner");
   hiEls.editBreeder = document.getElementById("hi-edit-breeder");
   hiEls.editMessage = document.getElementById("hi-edit-message");
-  hiEls.refetchBtn = document.getElementById("hi-refetch-btn");
   hiEls.historyTable = document.getElementById("hi-history-table");
 
   hiEls.search.addEventListener("input", () => {

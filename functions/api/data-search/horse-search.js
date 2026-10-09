@@ -1,11 +1,11 @@
-import { jsonError, loadHorseAliasMapCached, applyHorseAliasMap, horseAliasKeyOf } from "../_shared.js";
+import { jsonError, loadHorseAliasMapCached, applyHorseAliasMap, horseAliasKeyOf, getHorseNameCounts } from "../_shared.js";
 
 // データ検索画面「馬情報検索」タブの検索候補一覧API(部分一致)。
 // races.entries は全ユーザー共有データのため requireAdmin しない
 // (GET /api/data-search/race-stats と同じ扱い)。
 //
-// races.entries の馬名は、入力文字を含むものだけを SQL(json_each + LIKE)で取り出す(2026-10-07〜。
-// 以前は races_cache〈_lib/races-cache.js〉を丸ごと解析していた。下記 onRequestGet 内の注記参照)。race_results
+// races.entries の馬名は、馬名ごとのレース数のキャッシュ(_lib/horse-names-cache.js)から入力文字を含むものを探す
+// (2026-10-08〜。それ以前の経緯は下記 onRequestGet 内の注記参照)。race_results
 // までは見に行かない(出走馬一覧PDF/結果PDFいずれの経路でも races.entries は
 // 共通マージルールで埋まる前提のため、entries だけで実用上の検索網羅性は足りる。
 // 詳細な出走履歴・調教師/血統等の情報は詳細API側〈GET /api/data-search/horse-info〉で
@@ -27,25 +27,20 @@ export async function onRequestGet(context) {
   if (q.length > 40) return jsonError("検索キーワードが長すぎます", 400);
 
   const db = env.DB;
-  // 2026-10-07: 以前は races_cache(約10MB)を丸ごと解析して全出走馬の馬名を集めており、CPU時間上限超過の
-  // 恐れがあった。入力文字を含む馬名だけを SQL(json_each + LIKE)で取り出し、馬名ごとの出走回数も
-  // SQL 側で数える(読み取りは races 全件=2026-10-07時点で約3,700行/回。JS側の処理は該当馬名の分だけ)。
+  // 2026-10-08: 前日に「全レースの出走表を SQL の json_each で展開し LIKE で探す」形にしたところ、展開した出走馬1頭ずつが
+  // D1 の読み取り行数に数えられ、検索1回で約10万行になっていた(入力のたびに走る)。馬名ごとのレース数のキャッシュ
+  // (_lib/horse-names-cache.js。races.id の範囲ごと。変わった範囲だけ作り直す)を読み、メモリ上で部分一致を探す形にした
+  // (読み取りは1回 約20行)。部分一致は以前の LIKE と同じく、英字の大文字・小文字を区別しない。
   // 出走表の馬名は取込・編集時に馬名エイリアスで正規化済みのため、元の表記での部分一致で足りる。
-  // LIKE の特殊文字(% _ \)は入力側でエスケープする。
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const [{ results: nameRows }, aliasMap] = await Promise.all([
-    db.prepare(
-      `SELECT name, COUNT(*) AS n FROM (
-         SELECT json_extract(e.value, '$.horse_name') AS name
-           FROM races r, json_each(r.entries) e
-          WHERE json_valid(r.entries)
-       ) WHERE name LIKE ? ESCAPE '\\' GROUP BY name`
-    ).bind(like).all(),
-    loadHorseAliasMapCached(db),
-  ]);
+  const [counts, aliasMap] = await Promise.all([getHorseNameCounts(db), loadHorseAliasMapCached(db)]);
+  const qLower = q.toLowerCase();
+  const nameRows = [];
+  for (const [name, n] of counts.entries) {
+    if (String(name).toLowerCase().includes(qLower)) nameRows.push({ name, n });
+  }
 
   const byKey = new Map();
-  for (const row of nameRows || []) {
+  for (const row of nameRows) {
     const raw = row.name;
     if (!raw) continue;
     const canon = applyHorseAliasMap(aliasMap, String(raw));

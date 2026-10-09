@@ -313,7 +313,7 @@ function ubAliasFormHtml(kind, abbr, candidates) {
   const list = (candidates || []).map((c) => `<option value="${escapeAttr(c)}"></option>`).join("");
   const listId = `ub-${kind}-cands-${ubNameKey(abbr)}`;
   return `
-    <span class="ub-alias-form" data-kind="${kind}" data-abbr="${escapeAttr(abbr)}">
+    <span class="ub-alias-form" data-kind="${kind}" data-abbr="${escapeAttr(abbr)}" data-unique="${(candidates || []).length === 1 ? "1" : ""}">
       <span class="ub-unregistered">未登録の略称</span>
       <input type="text" class="ub-alias-input" list="${escapeAttr(listId)}" value="${escapeAttr((candidates || [])[0] || "")}" placeholder="正しい${kind === "jockey" ? "騎手" : "調教師"}名" />
       <datalist id="${escapeAttr(listId)}">${list}</datalist>
@@ -380,6 +380,7 @@ function renderUmabashiraPreview() {
       </table>
     </div>
     <div class="ub-preview-actions">
+      <span id="ub-bulk-alias-slot"></span>
       <button type="button" class="ghost-btn" id="ub-cancel-btn">取り込みをやめる</button>
       <button type="button" class="stamp-btn" id="ub-apply-btn">反映する</button>
     </div>
@@ -388,8 +389,50 @@ function renderUmabashiraPreview() {
   umabashiraPreviewEl.querySelectorAll(".ub-alias-btn").forEach((btn) => {
     btn.addEventListener("click", () => registerUmabashiraAlias(btn.closest(".ub-alias-form")));
   });
+  const bulkSlot = document.getElementById("ub-bulk-alias-slot");
+  bulkSlot.innerHTML = ubBulkAliasButtonHtml(umabashiraPreviewEl);
+  bulkSlot.querySelector(".ub-bulk-alias-btn")?.addEventListener("click", async () => {
+    if (await registerUniqueAliases(umabashiraPreviewEl)) await startUmabashiraPreview(umabashiraParsed);
+  });
   document.getElementById("ub-cancel-btn").addEventListener("click", resetUmabashiraPreview);
   document.getElementById("ub-apply-btn").addEventListener("click", applyUmabashira);
+}
+
+// 候補が1つに決まる未登録の略称(例「幸」→ 過去走が全部「幸英明」)を、入力欄の名前でまとめてエイリアス登録する
+// (2026-10-08)。同じ略称が複数の馬に出ていても1回だけ登録する。候補が複数・無いものは対象外(1件ずつ確認して登録)。
+// 戻り値: 登録した件数。馬柱の確認画面(このファイル)と netkeiba 結果の確認画面(races-netkeiba-import.js)で共用。
+function ubUniqueAliasForms(containerEl) {
+  const seen = new Set();
+  return [...containerEl.querySelectorAll('.ub-alias-form[data-unique="1"]')].filter((f) => {
+    const key = `${f.dataset.kind}|${f.dataset.abbr}`;
+    if (seen.has(key) || !f.querySelector(".ub-alias-input").value.trim()) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function ubBulkAliasButtonHtml(containerEl) {
+  const n = ubUniqueAliasForms(containerEl).length;
+  return n ? `<button type="button" class="ghost-btn ub-bulk-alias-btn">候補が1つの略称をまとめて登録(${n}件)</button>` : "";
+}
+
+async function registerUniqueAliases(containerEl) {
+  const forms = ubUniqueAliasForms(containerEl);
+  if (!forms.length) return 0;
+  const lines = forms.map((f) => `${f.dataset.kind === "jockey" ? "騎手" : "調教師"}: ${f.dataset.abbr} → ${f.querySelector(".ub-alias-input").value.trim()}`);
+  if (!confirm(`次のエイリアスを登録します。\n\n${lines.join("\n")}`)) return 0;
+  let done = 0;
+  for (const f of forms) {
+    const url = f.dataset.kind === "jockey" ? "/api/admin/jockey-aliases" : "/api/admin/trainer-aliases";
+    const res = await authedFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias_display: f.dataset.abbr, canonical_name: f.querySelector(".ub-alias-input").value.trim() }),
+    });
+    if (res.ok) done++;
+  }
+  if (done < forms.length) alert(`${forms.length - done}件の登録に失敗しました(既に登録済み等)。`);
+  return done;
 }
 
 async function registerUmabashiraAlias(formEl) {

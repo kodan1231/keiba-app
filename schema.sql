@@ -367,51 +367,11 @@ CREATE TABLE IF NOT EXISTS horse_aliases (
 --  経緯は docs/design/data-search.md 参照
 
 -- ============================================================
--- 11. races 全件取得用キャッシュ(races_cache)
+-- 11. (廃止)races 全件取得用キャッシュ(races_cache)
 -- ============================================================
 
--- GET /api/races(全画面共通の入口)・データ検索画面・購入履歴画面のCSV取込一覧
--- (コース種別・距離の付与)など、races を無条件に全件SELECTする箇所が毎回読み直すのを
--- 避けるための事前計算キャッシュ。races の全カラムをJSON配列で持つ。
--- races は「元々軽いテーブル」という前提で許容されてきたが、開催が積み重なるほど
--- 育ち続けるテーブルであり、2026-09-12に imported_ticket_items で実際に発生した
--- 障害(全ユーザー・全件SELECTをテーブルが育つ前提の無い設計のまま放置し、D1日次行
--- 読み取り上限の75%を1エンドポイントだけで消費した)と同じ構造のリスクがあったため、
--- 先回りで導入した。
---
--- 導入当初(2026-09-12)は1行固定でraces全件を1つのJSONにまとめていたが、同日中に
--- 結果CSV18ファイルの一括インポートで累積JSONがD1の「1行(1カラム値)あたり
--- 2,000,000バイト」の上限を超えてUPDATEが失敗し、GET /api/races に依存する
--- 馬券購入画面・データ検索画面・レース管理画面が軒並み500になる障害が発生したため、
--- 複数行(チャンク)に分割して保持する方式に変更した。races は今後も無制限に育ち
--- 続けるため、1行固定では件数を絞っても遅かれ早かれ再発する。詳細・経緯は
--- docs/design/data-model.md 参照。
-CREATE TABLE IF NOT EXISTS races_cache (
-  chunk_index INTEGER PRIMARY KEY,
-  payload TEXT,         -- JSON配列: races の一部の行(chunk_index順に連結するとSELECT * FROM racesと同じ形)
-  updated_at TEXT
-);
--- 無効化: races_cache の全行を削除する(空 = 要再計算)。_lib/races-cache.js の
--- getAllRacesRaw() が行を読んで再計算・チャンク分割・保存し直す。races は全カラムを
--- キャッシュしているため、race_stats_cache と異なり列を限定せず全ての
--- INSERT/UPDATE/DELETE で無効化する。
-CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_ins
-AFTER INSERT ON races
-BEGIN
-  DELETE FROM races_cache;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_upd
-AFTER UPDATE ON races
-BEGIN
-  DELETE FROM races_cache;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_races_cache_invalidate_del
-AFTER DELETE ON races
-BEGIN
-  DELETE FROM races_cache;
-END;
+-- races 全カラムの事前計算キャッシュ(2026-09-12〜)。全件取得の GET /api/races が廃止されどこからも使われなくなったため、
+-- 2026-10-08(@STEP: cleanup_unused_tables)にテーブル・トリガーごと削除した。経緯は docs/design/data-model.md 参照。
 
 -- 2026-10-08(@STEP: range_chunk_caches): 下の2つのキャッシュは races.id の範囲(200件)ごとの行で持ち、トリガーは
 -- 変わったレースの範囲の行だけ消す(chunk_index = races.id / 200。_lib/range-chunk-cache.js)。以前は表を丸ごと消していた。
@@ -547,16 +507,8 @@ CREATE TABLE IF NOT EXISTS horses (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_horses_horse_name ON horses(horse_name);
--- 外部サイトへの取得の一時停止期限(2026-10-04追加。@STEP: external_fetch_pause)。
--- netkeiba から取得を拒否されたら pause_hours 時間(管理画面で設定。未設定なら
--- _lib/horse-master.js の NETKEIBA_PAUSE_HOURS_DEFAULT)問い合わせない。service ごとに1行(netkeiba は 'netkeiba')。
-CREATE TABLE IF NOT EXISTS external_fetch_pause (
-  service TEXT PRIMARY KEY,
-  pause_hours INTEGER,              -- 拒否されたときに止める時間(管理画面で設定。NULL=既定値)
-  paused_until TEXT,                -- 停止期限(ISO 8601)。NULL=停止していない
-  reason TEXT,                      -- 停止のきっかけになった取得失敗コード(http_400 等)
-  updated_at TEXT DEFAULT (datetime('now'))
-);
+-- (外部サイトへの取得の一時停止期限 external_fetch_pause〈2026-10-04〜〉は、netkeiba への自動取得の廃止に伴い
+--  2026-10-08〈@STEP: cleanup_unused_tables〉に削除した)
 
 -- 調教師名エイリアス(2026-10-06追加。@STEP: umabashira_paste)。netkeiba馬柱テキストの貼り付けで
 -- 「橋口」「手塚久」等の略称を正しい調教師名に変換する(docs/design/umabashira-paste.md)。
@@ -602,3 +554,34 @@ CREATE TRIGGER IF NOT EXISTS trg_ticket_views_races_del AFTER DELETE ON races BE
 CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_ins AFTER INSERT ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
 CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
 CREATE TRIGGER IF NOT EXISTS trg_ticket_views_graded_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'ticket_views'; END;
+
+-- ============================================================
+-- 15. 馬名ごとのレース数のキャッシュ(horse_names_cache)
+-- ============================================================
+
+-- 2026-10-08追加(@STEP: range_chunk_caches)。データ検索「馬情報検索」の候補・管理画面の登録馬一覧用(_lib/horse-names-cache.js)。
+-- races.id の範囲(200件)ごとの行で、表記ごとの「出走表に載ったレース数」「結果に載ったレース数」を持つ。トリガーは変わった範囲の行だけ消す
+-- (docs/design/data-model.md「キャッシュを範囲ごとに作り直す」)。
+CREATE TABLE IF NOT EXISTS horse_names_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_races_ins AFTER INSERT ON races BEGIN DELETE FROM horse_names_cache WHERE chunk_index = NEW.id / 200; END;
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_races_upd AFTER UPDATE OF entries ON races BEGIN DELETE FROM horse_names_cache WHERE chunk_index IN (OLD.id / 200, NEW.id / 200); END;
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_races_del AFTER DELETE ON races BEGIN DELETE FROM horse_names_cache WHERE chunk_index = OLD.id / 200; END;
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_rr_ins AFTER INSERT ON race_results BEGIN DELETE FROM horse_names_cache WHERE chunk_index = NEW.race_id / 200; END;
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_rr_del AFTER DELETE ON race_results BEGIN DELETE FROM horse_names_cache WHERE chunk_index = OLD.race_id / 200; END;
+CREATE TRIGGER IF NOT EXISTS trg_horse_names_cache_rr_upd AFTER UPDATE OF race_id, horse_name ON race_results BEGIN DELETE FROM horse_names_cache WHERE chunk_index IN (OLD.race_id / 200, NEW.race_id / 200); END;
+
+-- ============================================================
+-- 16. アプリの設定(app_settings)
+-- ============================================================
+
+-- 2026-10-08追加(@STEP: service_guard)。キーと JSON の値。key='service_guard' は重い機能の自動一時停止の設定
+-- (_lib/service-guard.js。docs/design/ops.md「重い機能の自動一時停止」)。
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT
+);

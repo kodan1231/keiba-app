@@ -21,7 +21,7 @@
 // Cloudflare Pagesの標準挙動(「/」には index.html を返す)がそのまま働き、
 // 追加のリダイレクト処理は一切不要になった。詳細はdocs/DESIGN.md
 // 「トップページ(/)の表示について」参照。
-import { verifySessionToken, isAdminUsername, verifyApiToken } from "./api/_shared.js";
+import { verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse } from "./api/_shared.js";
 
 export async function onRequest(context) {
   const { request, env, next } = context;
@@ -66,6 +66,15 @@ export async function onRequest(context) {
     context.data.userId = session.userId;
     context.data.username = session.username;
     context.data.isAdmin = isAdminUsername(env, session.username);
+
+    // D1 の使用量が増えたときの重い機能の自動一時停止(2026-10-08。_lib/service-guard.js)。
+    // 止める対象の機能へのリクエストのときだけ判定する(それ以外の操作には影響しない)。判定に失敗したら止めない。
+    try {
+      const guarded = await serviceGuardResponse(context);
+      if (guarded) return guarded;
+    } catch (e) {
+      console.error("service guard failed (ignored)", e);
+    }
   }
 
   return next();

@@ -6,7 +6,7 @@
 <title>データ検索 - 馬券帳</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body data-page="data-search">
@@ -73,7 +73,7 @@
 
     <!-- 馬情報検索タブ(2026-09-28追加)。仕様はdocs/design/data-search.md「馬情報検索タブ」参照。
          馬齢・性別・過去全出走履歴は自アプリのrace_resultsから、血統・調教師・馬主・生産牧場は
-         netkeiba(db.netkeiba.com)から取得してhorsesテーブルにキャッシュしたものを表示する。 -->
+         horsesテーブルに登録済みの分を表示する(2026-10-08〜 netkeibaへの自動取得は廃止。馬柱の取り込みで登録)。 -->
     <section class="stats-section stats-panel" data-panel="horse-info" hidden>
 
       <label class="horse-index-search-label">馬名で検索(部分一致)
@@ -99,7 +99,6 @@
         <div data-admin-only hidden class="hi-admin-panel">
           <div class="hi-admin-actions">
             <button type="button" class="ghost-btn" id="hi-edit-toggle-btn">編集する</button>
-            <button type="button" class="ghost-btn" id="hi-refetch-btn">netkeibaから再取得する</button>
           </div>
           <form id="hi-edit-form" class="hi-edit-form" hidden>
             <div class="overall-grid hi-master-grid">

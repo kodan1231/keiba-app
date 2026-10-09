@@ -386,7 +386,9 @@ export async function onRequestGet(context){
     const raceIdFilter=url.searchParams.get("race_id");
     const sinceFilter=url.searchParams.get("since");
     const groupWhere=["user_id=?"]; const groupBinds=[userId];
-    if(raceIdFilter){ groupWhere.push("race_id=?"); groupBinds.push(raceIdFilter); }
+    // race_id は数値にして渡す(2026-10-08。文字列のままだと (user_id, race_id) のインデックスが使われなかった)
+    if(raceIdFilter&&!/^\d+$/.test(raceIdFilter)) return Response.json({ok:true,items:[]});
+    if(raceIdFilter){ groupWhere.push("race_id=?"); groupBinds.push(Number(raceIdFilter)); }
     else if(sinceFilter){ groupWhere.push("race_date>=?"); groupBinds.push(sinceFilter); }
     const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} ORDER BY race_date DESC,id DESC`).bind(...groupBinds).all()).results||[];
     // グループ毎にimported_ticket_itemsを個別クエリすると、取込件数が増えるほど

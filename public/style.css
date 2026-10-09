@@ -21,7 +21,9 @@
   --waku-8: #e893b8; --waku-8-ink: #1c1b18;
 
   --font-display: "Shippori Mincho", serif;
-  --font-body: "Noto Sans JP", sans-serif;
+  /* 2026-10-08: 本文は端末に入っている日本語フォントを使う(以前は Web フォント Noto Sans JP を4太さ読み込んでおり、
+     日本語フォントは容量が大きく初回表示・通信量の負担になっていた)。iPhone/Mac はヒラギノ、Windows は游ゴシック/メイリオ */
+  --font-body: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
   --font-mono: "Roboto Mono", monospace;
 }
 
@@ -2409,6 +2411,19 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .graded-day-where{font-size:12px;opacity:.75}
 /* 予想登録画面: 重賞の「過去のデータ」(データ検索「重賞検索」を別タブで開く) */
 .graded-past-link{text-decoration:none;cursor:pointer}
+
+/* 管理画面: D1の使用量(2026-10-08) */
+.d1-meter{margin:6px 0 10px}
+.d1-meter-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.d1-meter-bar{height:10px;border-radius:5px;background:rgba(127,127,127,.2);overflow:hidden}
+.d1-meter-bar span{display:block;height:100%;background:#3a8a5c}
+.d1-warn .d1-meter-bar span{background:#d39b1f}
+.d1-danger .d1-meter-bar span{background:#c0392b}
+.d1-danger .d1-meter-head b{color:#c0392b}
+.d1-top-queries{margin-top:8px}
+/* 重い機能の自動一時停止で止められたときのお知らせ(auth.js の showServiceGuardNotice) */
+.service-guard-notice{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100% - 32px);padding:10px 14px;border-radius:8px;background:rgba(40,40,40,.92);color:#fff;font-size:13px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.d1-query-text{font-family:var(--font-mono);font-size:11px;word-break:break-all;min-width:240px}
 
 /* レース管理画面: netkeibaのページの受け取り(2026-10-08。races-netkeiba-import.js) */
 .nk-receive-panel{margin:0 16px 12px;padding:10px 12px;border:1px dashed currentColor;border-radius:8px}

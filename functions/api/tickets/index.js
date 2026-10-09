@@ -34,7 +34,10 @@ export async function onRequestGet(context) {
 
   const whereParts = ["t.user_id = ?"];
   const binds = [userId];
-  if (raceId) { whereParts.push("t.race_id = ?"); binds.push(raceId); }
+  // race_id は数値にして渡す(2026-10-08。URLの文字列のまま渡すと D1 で (user_id, race_id) のインデックスが使われず、
+  // その利用者の全購入〈1回約2,700行〉を読んでいた)
+  if (raceId && !/^\d+$/.test(raceId)) return Response.json([]);
+  if (raceId) { whereParts.push("t.race_id = ?"); binds.push(Number(raceId)); }
   else if (since) { whereParts.push("t.race_date >= ?"); binds.push(since); }
   const { results } = await env.DB.prepare(
     `SELECT t.*, r.finish_order AS race_finish_order, r.payouts AS race_payouts,

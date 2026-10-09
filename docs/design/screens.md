@@ -6,6 +6,10 @@
 
 ### 全画面共通シェル(`public/shell.js`)
 
+- **フォント(2026-10-08〜)**: 本文は端末に入っている日本語フォント(iPhone/Mac はヒラギノ、Windows は游ゴシック/メイリオ。
+  `--font-body`)を使う。以前は Web フォント Noto Sans JP を読み込んでおり、容量が大きく初回表示・通信量の負担になっていた。
+  見出し(Shippori Mincho)・数字(Roboto Mono)は Web フォントのまま。購入履歴画面で使われていなかった DotGothic16 の読み込みも削除
+
 6つのHTML(`index.html`・`history.html`・`prediction.html`・`stats.html`・`races.html`・
 `admin.html`)に共通する **ログイン画面(`#login-screen`)** と **ヘッダー(`header.masthead`。
 タイトル・ナビ・ユーザー名・かごバッジ・退場ボタン)** のマークアップは、`public/shell.js` が

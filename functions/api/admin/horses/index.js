@@ -3,7 +3,7 @@ import {
   horseAliasKeyOf,
   loadHorseAliasMap,
   applyHorseAliasMap,
-  memoized,
+  getHorseNameCounts,
 } from "../../_shared.js";
 
 // 管理者向け: 登録馬名の一覧。races.entries ∪ race_results ∪ horse_notes(自分)∪ horse_aliases
@@ -34,35 +34,10 @@ function gojuonRow(name) {
   return "その他";
 }
 
-// 表記ごとの「出走表に載ったレース数」「結果に載ったレース数」を数える。
+// 表記ごとの「出走表に載ったレース数」「結果に載ったレース数」は馬名のキャッシュ(_lib/horse-names-cache.js)から読む。
 // 2026-10-08: 前日に出走表側を SQL の json_each で数える形に変えたところ、展開した出走馬1頭ずつが D1 の読み取り行数に
-// 数えられ、1回約10万行(以前は races 約3,700行)に増えた。50音の行を押すたびに走るため、同日に D1 の1日の読み取り上限の
-// 92%に達する原因の一つになった。races を読んで JS で数える以前の形に戻し、結果を10分使い回す。
-// race_results 側は結果の全行(約5万行)を読む(馬名ごとのレース数を数えるため)。
-const NAME_COUNTS_TTL_MS = 10 * 60 * 1000;
-
-async function loadHorseNameCounts(db) {
-  const [racesRes, rrRes] = await Promise.all([
-    db.prepare("SELECT id, entries FROM races").all(),
-    db.prepare("SELECT horse_name, COUNT(DISTINCT race_id) AS n FROM race_results WHERE horse_name IS NOT NULL AND horse_name <> '' GROUP BY horse_name").all(),
-  ]);
-  const entries = new Map();
-  for (const r of racesRes.results || []) {
-    let list;
-    try { list = JSON.parse(r.entries || "[]"); } catch { continue; }
-    if (!Array.isArray(list)) continue;
-    const seen = new Set(); // 同じレースに同じ表記が重複していても1レースと数える
-    for (const e of list) {
-      const name = e?.horse_name;
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      entries.set(name, (entries.get(name) || 0) + 1);
-    }
-  }
-  const results = new Map();
-  for (const r of rrRes.results || []) if (r.horse_name) results.set(r.horse_name, Number(r.n) || 0);
-  return { entries, results };
-}
+// 数えられ、1回約10万行(結果側も約5万行)になった。50音の行を押すたびに走り、同日に D1 の1日の読み取り上限を超える
+// 原因の一つになった。キャッシュ(races.id の範囲ごと。変わった範囲だけ作り直す)を読む形にした(1回 約20行)。
 
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
@@ -76,8 +51,7 @@ export async function onRequestGet(context) {
 
   const [aliasMap, counts, notesRes] = await Promise.all([
     loadHorseAliasMap(env.DB),
-    // 表記ごとのレース数(全ユーザー共通)。50音の行を切り替えるたびに読み直さないよう、同じ実行環境で10分使い回す
-    memoized("admin_horse_name_counts", () => loadHorseNameCounts(env.DB), NAME_COUNTS_TTL_MS),
+    getHorseNameCounts(env.DB), // 表記ごとのレース数(全ユーザー共通)
     env.DB.prepare("SELECT horse_name FROM horse_notes WHERE user_id = ? AND memo IS NOT NULL AND memo <> ''").bind(userId).all(),
   ]);
 

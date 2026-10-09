@@ -272,6 +272,14 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
 
 ### netkeiba連携
 
+**2026-10-08 廃止**: アプリ(サーバー)から netkeiba への自動取得(馬情報検索で初めて開いた馬の取得・管理者の
+「netkeibaから再取得する」・拒否されたときの取得の一時停止と管理画面の設定)をすべてやめた。血統・調教師・毛色・所属は、
+レース管理画面で netkeiba の馬柱(5走)をブックマークレット/貼り付けで取り込んだとき(docs/design/netkeiba-bookmarklet.md・
+docs/design/umabashira-paste.md)と、管理者の手入力で登録する。馬情報検索・重賞検索・馬柱では登録済みの分だけを表示し、
+未登録なら「血統等は未登録です」と出す(管理者には取り込み・手入力の案内)。以前の取得失敗の記録(`horses.fetch_error`)は
+表示に使わない。`_lib/netkeiba.js`・`functions/api/admin/netkeiba-pause.js`・`external_fetch_pause` テーブルは削除した
+(`@STEP: cleanup_unused_tables`)。以下はそれ以前の仕様(経緯として残す)。
+
 `_lib/netkeiba.js`(取得・パースのみ。DB不使用)/ `_lib/horse-master.js`(DB連携)。
 
 - **取得元**: netkeiba(db.netkeiba.com)。個人の馬券帳アプリからオンデマンド(検索された

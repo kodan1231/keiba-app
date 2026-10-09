@@ -160,7 +160,21 @@ async function authedFetch(url, options) {
     document.getElementById("login-screen").hidden = false;
     document.getElementById("app-screen").hidden = true;
   }
+  // 重い機能の自動一時停止(2026-10-08。functions/api/_lib/service-guard.js)で止められた場合は、控えめなお知らせを出す
+  if (res.status === 503 && res.headers.get("X-Service-Guard") === "1") showServiceGuardNotice();
   return res;
+}
+
+// 画面下に数秒だけ出すお知らせ(同じページで何度止められても1つだけ)。不安を与えないよう短い文にする。
+function showServiceGuardNotice() {
+  if (document.getElementById("service-guard-notice")) return;
+  const el = document.createElement("div");
+  el.id = "service-guard-notice";
+  el.className = "service-guard-notice";
+  el.setAttribute("role", "status");
+  el.textContent = "ただいま混雑のため、この機能を一時的に停止しています。時間をおいてお試しください。";
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 8000);
 }
 
 // ---------- 管理者リセット通知バナー(全画面共通) ----------

@@ -4,7 +4,7 @@
 //   GET /api/data-search/graded-race-horses?race_id= … ②出走馬ごとの詳細
 // 血統等(horses)は保存済みの分だけを表示し、このタブからは netkeiba へ取得しに行かない
 // (2026-10-04。以前は未取得の馬について horse-info を1頭ずつ順に呼んで取得していた。
-// 取得は馬情報検索タブで検索したときだけ)。
+// 2026-10-08〜 netkeiba への自動取得は全面廃止。血統等はレース管理画面で馬柱〈5走〉を取り込むと登録される)。
 // 過去走の表は予想登録画面の過去成績(.horse-history-table)の見た目を流用する。
 // escapeHtml / escapeAttr / formatDate / formatDateMdW / formatYen / formatCourseText は utils.js、
 // BET_TYPES は bettypes.js のものを使う。
@@ -367,7 +367,7 @@ function grRenderHorseDetail(row) {
       { label: "馬主", value: m.owner },
       { label: "生産牧場", value: m.breeder },
     ])}
-    ${!h.has_master ? `<p class="stats-note">血統等は未取得です。馬情報検索タブでこの馬を検索すると取得されます。</p>` : m.fetch_error ? `<p class="stats-note">${escapeHtml(hiFetchErrorWithWhenText(m.fetch_error, m.fetched_at, m.fetched_now))}${window.currentUser?.isAdmin ? "馬情報検索タブから編集・再取得できます。" : ""}</p>` : ""}
+    ${!h.has_master || !(m.sire || m.dam || m.dam_sire) ? `<p class="stats-note">${escapeHtml(hiMissingMasterText())}</p>` : ""}
     <h4 class="gr-detail-heading">持ちタイム・上がり・ローテーション</h4>
     ${grCardsHtml([
       { label: "持ちタイム(同距離)", value: grBestText(h.best_time_same_distance), sub: grBestSub(h.best_time_same_distance) },

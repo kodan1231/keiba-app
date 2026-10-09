@@ -5,17 +5,16 @@ import {
   horseAliasKeyOf,
   loadHorseAliasMap,
   applyHorseAliasMap,
-  getOrFetchHorseMaster,
+  getHorseMasterRow,
   saveManualHorseInfo,
-  refetchHorseInfoFromNetkeiba,
 } from "../_shared.js";
 
 // データ検索画面「馬情報検索」タブの詳細API。
-//   GET  ?name=<馬名>  … 過去全出走履歴(race_results)+ 馬情報マスタ(horses。無ければ
-//                        netkeiba取得を試みて保存する)を返す。全ユーザー共有データの
-//                        閲覧のため requireAdmin しない。
-//   PUT  { name, ...editable fields } または { name, action: "refetch" } … 管理者専用。
-//        前者は手動編集(data_source='manual')、後者はnetkeibaからの強制再取得。
+//   GET  ?name=<馬名>  … 過去全出走履歴(race_results)+ 馬情報マスタ(horses。登録済みの分だけ)を返す。
+//                        全ユーザー共有データの閲覧のため requireAdmin しない。
+//   PUT  { name, ...editable fields } … 管理者専用。手動編集(data_source='manual')。
+// 2026-10-08: netkeiba への自動取得(無ければ取得して保存)と、管理者の「netkeibaから再取得」(action: "refetch")を廃止した。
+// 血統等は馬柱(5走)の取り込みで登録する(_lib/horse-master.js 冒頭の注記)。
 //
 // 馬名の突き合わせ・read側の設計は GET /api/races/:id/horse-history と同じ考え方
 // (horse_key + horse_aliasesの逆引きキー集合をIN句で直接引く。対象は1頭ぶんの
@@ -38,14 +37,8 @@ function toMasterJson(row) {
     owner: row.owner || null,
     breeder: row.breeder || null,
     dataSource: row.data_source || null,
-    fetchError: row.fetch_error || null,
     fetchedAt: row.fetched_at || null,
-    // この問い合わせでnetkeibaへ取得を試みたか(false=以前の取得結果をそのまま返している)。
-    // 画面で「今回失敗した」のか「以前失敗したまま」なのかを区別するため(2026-10-03)。
-    fetchedNow: Boolean(row.fetched_now),
-    // netkeiba への取得を停止している期限(ISO文字列)。停止中で問い合わせなかった場合
-    // (fetchError='paused')と、今回の取得で拒否されて停止を始めた場合に入る(2026-10-04)。
-    pausedUntil: row.paused_until || null,
+    updatedAt: row.updated_at || null,
   };
 }
 
@@ -111,19 +104,16 @@ export async function onRequestGet(context) {
   // ため、常に最新のレースを正とする。docs/design/data-search.md参照)。
   let sex = null;
   let age = null;
-  let expectedBirthYear;
   const latest = history[0];
   if (latest?.sex_age) {
     const m = String(latest.sex_age).match(/^(牡|牝|せん|セ|騸)(\d+)$/);
     if (m) {
       sex = m[1];
       age = Number(m[2]);
-      const raceYear = Number(String(latest.race_date || "").slice(0, 4));
-      if (Number.isInteger(age) && Number.isInteger(raceYear)) expectedBirthYear = raceYear - age + 1;
     }
   }
 
-  const master = await getOrFetchHorseMaster(db, canonicalName, { expectedBirthYear });
+  const master = await getHorseMasterRow(db, horseAliasKeyOf(canonicalName));
 
   return Response.json({
     name: canonicalName,
@@ -167,15 +157,7 @@ export async function onRequestPut(context) {
   if (!name) return jsonError("馬名を指定してください", 400);
 
   if (body.action === "refetch") {
-    const row = await refetchHorseInfoFromNetkeiba(env.DB, name);
-    // netkeiba への取得を停止中は問い合わせない(2026-10-04)。既存の内容はそのまま返す。
-    if (row && row.refetch_paused) {
-      return jsonError("netkeiba から取得を拒否されたため、一時的に取得を見合わせています", 409, {
-        pausedUntil: row.paused_until,
-        master: toMasterJson(row),
-      });
-    }
-    return Response.json({ ok: true, master: toMasterJson(row) });
+    return jsonError("netkeibaからの再取得は廃止しました。馬柱(5走)の取り込みで登録してください", 410);
   }
 
   const fields = {};

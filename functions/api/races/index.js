@@ -1,16 +1,14 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, getAllRacesRaw, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
-// races は「全画面共通の入口」として非常に頻繁に呼ばれるため、races_cache
-// (_lib/races-cache.js。2026-09-12追加)から読む。races への書き込みがあれば
-// DBトリガーで自動的に無効化・次回読み取り時に自動再計算される。
+// (以前は全件を races_cache〈2026-09-12追加〉から返していたが、2026-10-08に全件取得とともに廃止した)
 //
 // ?since=YYYY-MM-DD(2026-09-13追加): 指定時は races_cache を経由せず
 // `WHERE race_date >= ?`(idx_races_date使用)を直接実行する。買い目画面・
 // 履歴画面のように「直近1ヶ月+未来レース全部」だけで足りる画面が、育ち続ける
 // races全件のJSON直列化・エイリアス適用・転送を毎回抱える必要はないため
 // (自然にバウンドされる範囲の直接SELECTはCLAUDE.mdの不変条件上も許容される)。
-// 未指定時は従来通り全件(races_cache経由)を返す。詳細は
+// 未指定時の全件取得(races_cache経由)は2026-10-08に廃止(400を返す)。詳細は
 // docs/design/data-model.md「GET /api/races の範囲限定」参照。
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -24,19 +22,25 @@ export async function onRequestGet(context) {
   // (CPU時間上限超過と利用者の通信量の対策。docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
   if (params.get("index") === "1") {
     const rows = await getRaceIndexRows(env.DB);
-    return Response.json({ fields: RACE_INDEX_FIELDS, rows });
+    // 内容のハッシュを ETag にし、ブラウザが前回と同じ値を送ってきたら 304(本文なし)を返す(2026-10-08)。
+    // 一覧は約39万文字あり、開くたびに送り直していた。読み取りはキャッシュ約20行のままで変わらない。
+    const body = JSON.stringify({ fields: RACE_INDEX_FIELDS, rows });
+    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(body));
+    const etag = `W/"ri-${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")}"`;
+    const headers = { "Cache-Control": "private, no-cache", ETag: etag };
+    const sent = request.headers.get("If-None-Match") || "";
+    if (sent.split(",").some((v) => v.trim() === etag)) return new Response(null, { status: 304, headers });
+    return new Response(body, { headers: { ...headers, "Content-Type": "application/json" } });
   }
 
-  let results;
-  if (since) {
-    const { results: rows } = await env.DB
-      .prepare("SELECT * FROM races WHERE race_date >= ? ORDER BY race_date DESC, track ASC, race_number ASC")
-      .bind(since)
-      .all();
-    results = rows || [];
-  } else {
-    results = await getAllRacesRaw(env.DB);
-  }
+  // 2026-10-08: 範囲を指定しない全件取得(races_cache 経由。全レース・全出走馬 約7,000行の読み取り・約10MB)は廃止した。
+  // どの画面からも使われなくなっており、誤って呼ばれると D1 の読み取り・CPU時間・通信量を大きく消費するため。
+  if (!since) return jsonError("?since=YYYY-MM-DD または ?index=1 を指定してください", 400);
+  const { results: rows } = await env.DB
+    .prepare("SELECT * FROM races WHERE race_date >= ? ORDER BY race_date DESC, track ASC, race_number ASC")
+    .bind(since)
+    .all();
+  const results = rows || [];
 
   // entries[].jockey / entries[].horse_name は保存済みの表記ゆれをそのまま持つことが
   // あるため、読み取り時にもエイリアス(jockey_aliases / horse_aliases)で正規化して返す。

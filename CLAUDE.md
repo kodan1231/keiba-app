@@ -27,7 +27,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 予想登録画面(予想印・馬メモ・過去成績・馬柱/持ちタイム) | `public/prediction.js`, `public/prediction.html`, `functions/api/races/[id]/horse-history.js`, `functions/api/races/[id]/horse-best.js` |
 | 購入馬券グループ表示の共通部品(履歴・予想の両画面) | `public/ticket-view.js`(`groupTicketsByGroupId` `ticketMoneyText` `ticketGroupStatus` `selectionCellHtml` 等。history/prediction のみ読込) |
 | 集計画面(総合成績/レース別に「重賞のみ/条件戦のみ」フィルタあり) | `public/stats.js`, `public/stats.html` |
-| データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/netkeiba.js`, `functions/api/_lib/horse-master.js` |
+| データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/horse-master.js`(netkeibaへの自動取得は2026-10-08廃止) |
 | データ検索画面「騎手検索」タブ(通算・年度別・コース別成績) | `public/jockey-search.js`, `public/data-search.html`, `functions/api/data-search/jockeys.js`, `functions/api/data-search/jockey-stats.js`, `functions/api/_lib/jockey-stats.js`, `functions/api/_lib/race-lineup.js` |
 | データ検索「重賞検索」タブ(今年の出走馬・過去10年成績) | `public/graded-race-search.js`, `public/data-search.html`, `functions/api/data-search/graded-races.js`, `functions/api/data-search/graded-race.js`, `functions/api/data-search/graded-race-horses.js`, `functions/api/_lib/graded-race-search.js` |
 | 重賞管理(管理画面)・レース分類(重賞/条件戦/その他) | `public/jra-graded-races-pdf.js`, `functions/api/admin/graded-races/*`, `functions/api/_lib/race-classification.js` |
@@ -48,7 +48,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 馬名エイリアス(正規化本体) | `functions/api/_lib/horse-alias.js` |
 | 出走馬entriesマージ・バックフィル・枠番自動計算 | `functions/api/_lib/entries-merge.js` |
 | race_results 詳細記録 | `functions/api/_lib/race-results.js` |
-| 管理画面 | `public/admin.js`, `public/admin.html`, `functions/api/admin/*` |
+| 管理画面(先頭に「D1の使用量(今日)」。`functions/api/admin/d1-usage.js`。秘密情報 `CF_ANALYTICS_TOKEN` が必要) | `public/admin.js`, `public/admin.html`, `functions/api/admin/*` |
 | DBスキーマ変更 | `schema.sql`, `migration.sql`(`archive/migrations` は不要) |
 
 ## 共有ヘルパーの構成(重要)
@@ -68,15 +68,17 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/ticket-payout.js` | `recomputeTicketPayoutsForRace` `recomputeTicketPayoutsForRaces` `findStoredRateServer`(非export・内部) |
 | `_lib/race-classification.js` | `gradedRaceNameKey` `resolveGradedKey`(冠付きのレース名を重賞一覧のキーへ解決。2026-10-06追加) `isConditionRace` `classifyRace` `gradedRaceOf`(当たる重賞の id・name・grade。2026-10-08) `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) `normalizeScheduleMd`(重賞の開催月日"MM-DD"。2026-10-02追加) |
 | `_lib/graded-race-search.js` | `runningStyleOf` `dominantRunningStyle` `timeTextToSeconds` `addPlacing` `fieldSizeOf` `findRacesByGradedKey` `raceSummaryOf` `gradedJockeyKey` `jstYear`(重賞検索タブ用。DB不使用。2026-10-02追加) |
-| `_lib/netkeiba.js` | `fetchNetkeibaHorseInfo`(netkeiba〈db.netkeiba.com〉から血統/調教師/馬主/生産牧場を取得・パースするのみ。DB不使用。2026-09-28追加) |
-| `_lib/horse-master.js` | `getOrFetchHorseMaster` `saveManualHorseInfo` `refetchHorseInfoFromNetkeiba` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加) `getNetkeibaPausedUntil` `getNetkeibaPauseSettings` `setNetkeibaPauseHours`(netkeibaに拒否されたら管理画面で設定した時間〈既定6時間〉取得を止める。2026-10-04追加) |
+| `_lib/horse-master.js` | `getHorseMasterRow` `saveManualHorseInfo` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加。netkeibaへの自動取得〈getOrFetchHorseMaster等〉は2026-10-08廃止。血統等は馬柱の取り込みで登録) |
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
 | `_lib/range-chunk-cache.js` | `loadRangeChunks` `rangeCondition` `rangeIndexOf` `RANGE_SIZE`(races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直すキャッシュの共通処理。2026-10-08追加) |
+| `_lib/horse-names-cache.js` | `getHorseNameCounts`(馬名ごとのレース数のキャッシュ horse_names_cache。馬情報検索の候補・登録馬一覧用。範囲ごと。2026-10-08追加) |
 | `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/race-lineup-cache.js` | `getRaceLineups`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/memo-cache.js` | `memoized` `invalidateMemo`(小さな設定表を同じ実行環境で2分間使い回す。2026-10-07追加)。**画面表示用の読み取りAPIは `loadJockeyAliasMapCached` `loadHorseAliasMapCached` `loadGradedRaceMapCached` を使い、DBへ書き込む処理は毎回読む版を使う**。エイリアス・重賞を変える管理APIは `invalidateMemo` を呼ぶ |
 | `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
+| `_lib/d1-usage.js` | `getD1Usage` `loadD1Usage` `d1UsageRatio`(今日の D1 使用量を Cloudflare の分析APIで取る。秘密情報 `CF_ANALYTICS_TOKEN`。2026-10-08追加) |
+| `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
 ## 絶対に破ってはいけない不変条件
@@ -132,9 +134,9 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   races全件)・`race_stats_cache`(2026-09-19。race_results全件のrace_id別グルーピング)の
   **2つとも同一パターンで同じ障害(該当画面が軒並み500)を起こしており、片方を1行固定→
   チャンク化で直した際にもう片方への横展開を怠ったために再発した**。新しく同種の
-  キャッシュ(テーブル全件走査を避けるための事前計算)を追加する際は、`_lib/races-cache.js`
-  の `chunk_index INTEGER PRIMARY KEY` + バイト数(`CHUNK_MAX_BYTES`。安全マージンとして
-  1,500,000程度)超過で行を分割する実装をそのまま踏襲すること。「今は小さいから1行で
+  キャッシュ(テーブル全件走査を避けるための事前計算)を追加する際は、`_lib/range-chunk-cache.js`
+  (races.id の範囲ごとの行。1行は最大200レース分で上限に届かない)をそのまま使うこと(2026-10-08〜。
+  以前の手本だった `_lib/races-cache.js` は廃止・削除済み)。「今は小さいから1行で
   十分」という判断は禁止(`races`も`race_results`も導入当初は「元々軽いテーブル」という
   前提で1行固定にされ、後から育って破綻した)。
   **さらに、キャッシュの無効化を「表を丸ごと消す」にしない**。1件の変更で全件を作り直すと、編集・取込の多い日に
@@ -155,6 +157,25 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
   (適用済みのステップを誤って再実行すると、`CREATE INDEX IF NOT EXISTS` のような
   本来無害なはずの文でも対象テーブルの全行数分のrows_written/readを消費することが
   観測されている。)
+
+## D1の問い合わせを足す・変えるときの必須チェック(2026-10-08〜)
+
+2026-10-08 に、前日に入れた変更が原因で D1 の1日の読み取り上限(500万行)を超え、翌朝9時まで全画面が止まった。
+原因はいずれも「読み取り行数を見積もらずに問い合わせを書いた」こと(json_each で展開した要素が行数に数えられる・
+URLの文字列のIDを渡してインデックスが使われない・キャッシュを1件の変更で丸ごと作り直す)。
+**問い合わせ(SQL)を新しく書く・形を変えるときは、実装と同じ作業の中で必ず次を行い、報告に結果を書く**。
+
+1. **読み取り行数を見積もる**: 1回あたり何行読むか(テーブルの行数・インデックスで絞れる行数)と、1日に何回呼ばれうるか
+   (画面を開くたび・入力のたび・取込のたび)を書き出し、掛け算で1日あたりの行数を出す。D1 は次も読み取り行数に数える:
+   - `json_each` / `json_tree` で展開した要素(全レースの entries を展開すると1回で約10万行)
+   - JOIN で引いた相手の表の行、インデックスの走査、`COUNT(*)` 等の集計で走査した行
+   1日あたり数十万行を超えうるなら、キャッシュ(`_lib/range-chunk-cache.js`)・事前計算・使い回し(`_lib/memo-cache.js`)を検討する。
+2. **インデックスが効くか確かめる**: 手元の SQLite(`node:sqlite` に `schema.sql` を流したもの)で `EXPLAIN QUERY PLAN` を見て、
+   `SCAN <表>`(全件走査)になっていないこと、狙ったインデックスで `SEARCH` していることを確認する。
+   **URL・JSON から来たIDは必ず数値にしてから渡す**(文字列のままだと複合インデックスが使われないことがある)。
+3. **画面操作のたびに走る処理で、表の全件を読まない**(入力のたびに走る検索、画面を開くたびの一覧など)。
+4. **キャッシュの無効化は「変わった範囲だけ」**(上記「絶対に破ってはいけない不変条件」)。
+5. 本番に出した後は、管理画面「D1の使用量(今日)」の「重い問い合わせ」で、想定どおりの行数になっているか確認する。
 
 ## 進め方
 

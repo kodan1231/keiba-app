@@ -227,6 +227,161 @@ function setupNetkeibaBookmarklet() {
   });
 }
 
+// ---------- D1の使用量(2026-10-08) ----------
+// GET /api/admin/d1-usage(Cloudflare の分析API。D1 の読み取りには数えられない)。管理画面だけに出す
+// (一般の利用者に不安を与えないため)。一括補正などの重い操作の前にも確認を出す(confirmHeavyOperation)。
+const D1_WARN_RATIO = 0.5;
+const D1_DANGER_RATIO = 0.8;
+
+async function fetchD1Usage(fresh) {
+  try {
+    const res = await authedFetch(`/api/admin/d1-usage${fresh ? "?fresh=1" : ""}`);
+    return res.ok ? await res.json() : null;
+  } catch { return null; }
+}
+
+function d1UsageLevel(ratio) {
+  return ratio >= D1_DANGER_RATIO ? "danger" : ratio >= D1_WARN_RATIO ? "warn" : "ok";
+}
+
+function renderD1Usage(u) {
+  const el = document.getElementById("d1-usage");
+  if (!el) return;
+  if (!u) { el.innerHTML = `<p class="submit-message error">使用量を取得できませんでした。</p>`; return; }
+  if (!u.configured) {
+    el.innerHTML = `<p class="ticket-sub">未設定です。Cloudflare で API トークン(権限「Account Analytics: Read」と「D1: Read」)を作り、Pages の秘密情報 <code>CF_ANALYTICS_TOKEN</code> に登録してください(手順は docs/design/ops.md「D1の使用量の確認」)。</p>`;
+    return;
+  }
+  if (!u.ok) { el.innerHTML = `<p class="submit-message error">${escapeHtml(u.error || "取得に失敗しました")}</p>`; return; }
+  const meter = (label, used, limit) => {
+    const ratio = limit ? used / limit : 0;
+    const pct = Math.min(100, ratio * 100);
+    return `<div class="d1-meter d1-${d1UsageLevel(ratio)}">
+      <div class="d1-meter-head"><span>${label}</span><b>${pct.toFixed(1)}%</b><span class="ticket-sub">${used.toLocaleString()} / ${limit.toLocaleString()}行</span></div>
+      <div class="d1-meter-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+    </div>`;
+  };
+  const rows = (u.databases || []).map((d) => `<tr>
+      <td>${escapeHtml(d.name)}${d.isThisApp ? "(このアプリ)" : ""}</td>
+      <td class="num">${d.rowsRead.toLocaleString()}</td><td class="num">${d.rowsWritten.toLocaleString()}</td></tr>`).join("");
+  el.innerHTML = `
+    ${meter("読み取り", u.total.rowsRead, u.limits.rowsRead)}
+    ${meter("書き込み", u.total.rowsWritten, u.limits.rowsWritten)}
+    <p class="ticket-sub">リセット: ${escapeHtml(formatDateTime(u.resetAt))}(日本時間) / 取得: ${escapeHtml(formatDateTime(u.fetchedAt))}</p>
+    ${rows ? `<div class="table-wrap"><table class="stats-table"><thead><tr><th>データベース</th><th>読み取り</th><th>書き込み</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+    ${d1TopQueriesHtml(u.topQueries)}`;
+}
+
+// 今日の重い問い合わせ(このアプリのDB。読み取り行数の多い順に10件)。1回あたりの行数が大きいものは要注意。
+function d1TopQueriesHtml(list) {
+  if (!Array.isArray(list) || !list.length) return "";
+  const rows = list.map((q) => `<tr>
+      <td class="num">${q.rowsRead.toLocaleString()}</td>
+      <td class="num">${q.count.toLocaleString()}</td>
+      <td class="num">${Math.round(q.rowsRead / Math.max(1, q.count)).toLocaleString()}</td>
+      <td class="d1-query-text">${escapeHtml(q.query)}</td></tr>`).join("");
+  return `<details class="d1-top-queries"><summary>重い問い合わせ(今日・読み取り行数の多い順に10件)</summary>
+    <div class="table-wrap"><table class="stats-table"><thead><tr><th>読み取り</th><th>回数</th><th>1回あたり</th><th>問い合わせ</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </details>`;
+}
+
+async function loadD1Usage(fresh) {
+  renderD1Usage(await fetchD1Usage(fresh));
+}
+
+function setupD1UsageButton() {
+  document.getElementById("d1-usage-refresh-btn")?.addEventListener("click", () => loadD1Usage(true));
+}
+
+// 一括補正など、D1 の読み取り・書き込みを大きく消費する操作の前の確認。今日の使用量を添え、
+// 半分を超えていれば明日(日本時間9時以降)に回すよう促す。使用量が取れなくても確認だけは出す。
+async function confirmHeavyOperation(message) {
+  const u = await fetchD1Usage(true);
+  let usageText = "";
+  if (u && u.configured && u.ok) {
+    renderD1Usage(u);
+    const r = u.total.rowsRead / u.limits.rowsRead;
+    const w = u.total.rowsWritten / u.limits.rowsWritten;
+    usageText = `\n\n今日のD1使用量: 読み取り ${(r * 100).toFixed(1)}% / 書き込み ${(w * 100).toFixed(1)}%`;
+    if (Math.max(r, w) >= D1_WARN_RATIO) {
+      usageText += "\n※ 既に半分を超えています。上限を超えると翌朝9時まで全画面が止まるため、日本時間9時以降に回すことをおすすめします。";
+    }
+  }
+  return confirm(message + usageText);
+}
+
+// ---------- 重い機能の自動一時停止(2026-10-08) ----------
+// API: GET/PUT /api/admin/service-guard(functions/api/admin/service-guard.js)。仕様は docs/design/ops.md「重い機能の自動一時停止」。
+function renderServiceGuard(d) {
+  const statusEl = document.getElementById("guard-status");
+  if (!statusEl) return;
+  if (!d || !d.settings) { statusEl.textContent = "設定を読み込めませんでした。"; return; }
+  const s = d.settings;
+  const pct = d.state.ratio === null || d.state.ratio === undefined ? null : (d.state.ratio * 100).toFixed(1);
+  const overriding = s.overrideUntil && Date.parse(s.overrideUntil) > Date.now();
+  let text;
+  if (d.state.active && d.state.reason === "manual") text = "現在: 手動で一時停止中です。";
+  else if (d.state.active) text = `現在: 一時停止中です(使用量 ${pct}% がしきい値 ${s.thresholdPercent}% 以上)。`;
+  else if (overriding) text = `現在: 解除中です(${formatDateTime(s.overrideUntil)}まで自動では止めません)。`;
+  else if (!s.enabled) text = "現在: 自動一時停止は使っていません。";
+  else text = `現在: 動作中です${pct !== null ? `(使用量 ${pct}%)` : ""}。`;
+  if (!d.tokenConfigured) text += " ※ CF_ANALYTICS_TOKEN が未設定のため、使用量による自動停止は働きません(手動停止は使えます)。";
+  statusEl.textContent = text;
+  document.getElementById("guard-enabled").checked = s.enabled;
+  document.getElementById("guard-threshold").value = s.thresholdPercent;
+  document.getElementById("guard-manual").checked = s.manualPause;
+  document.getElementById("guard-targets").innerHTML = d.features.map((f) => `
+    <label style="display:block"><input type="checkbox" name="guard-target" value="${escapeAttr(f.key)}" ${s.targets.includes(f.key) ? "checked" : ""}/> ${escapeHtml(f.label)}</label>`).join("");
+  document.getElementById("guard-clear-override-btn").hidden = !overriding;
+}
+
+async function loadServiceGuard() {
+  try {
+    const res = await authedFetch("/api/admin/service-guard");
+    renderServiceGuard(res.ok ? await res.json() : null);
+  } catch { renderServiceGuard(null); }
+}
+
+async function putServiceGuard(body, okText) {
+  const msg = document.getElementById("guard-message");
+  const res = await authedFetch("/api/admin/service-guard", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  msg.hidden = false;
+  if (res.ok) {
+    msg.className = "submit-message success";
+    msg.textContent = okText;
+    renderServiceGuard(data);
+  } else {
+    msg.className = "submit-message error";
+    msg.textContent = data.error || "保存に失敗しました。";
+  }
+}
+
+function setupServiceGuardForm() {
+  const form = document.getElementById("guard-form");
+  if (!form) return;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    putServiceGuard({
+      enabled: document.getElementById("guard-enabled").checked,
+      thresholdPercent: Number(document.getElementById("guard-threshold").value),
+      targets: [...form.querySelectorAll('input[name="guard-target"]:checked')].map((i) => i.value),
+      manualPause: document.getElementById("guard-manual").checked,
+    }, "保存しました(反映まで最大1分かかります)。");
+  });
+  document.getElementById("guard-override-btn").addEventListener("click", () => {
+    if (!confirm("今日のリセット(日本時間9時)まで、使用量による自動一時停止をしません。使用量が上限を超えると全画面が止まるおそれがあります。解除しますか?")) return;
+    putServiceGuard({ action: "override" }, "解除しました(反映まで最大1分かかります)。");
+  });
+  document.getElementById("guard-clear-override-btn").addEventListener("click", () => {
+    putServiceGuard({ action: "clear_override" }, "解除をやめました(自動一時停止が有効です)。");
+  });
+}
+
 async function loadApiTokenStatus() {
   const statusEl = document.getElementById("api-token-status");
   const issueBtn = document.getElementById("api-token-issue-btn");
@@ -385,7 +540,7 @@ function setupJockeyAliasNormalizeButton() {
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    if (!confirm("登録済みのエイリアスと一致する騎手名を、既存の出走馬表・レース結果・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？")) return;
+    if (!(await confirmHeavyOperation("登録済みのエイリアスと一致する騎手名を、既存の出走馬表・レース結果・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？"))) return;
 
     btn.disabled = true;
     messageEl.hidden = true;
@@ -602,7 +757,7 @@ function setupHorseAliasNormalizeButton() {
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    if (!confirm("登録済みのエイリアスと一致する馬名を、既存の出走馬表・レース結果・馬メモ・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？")) return;
+    if (!(await confirmHeavyOperation("登録済みのエイリアスと一致する馬名を、既存の出走馬表・レース結果・馬メモ・購入履歴・CSV取込履歴からまとめて書き換えます。実行しますか？"))) return;
 
     btn.disabled = true;
     messageEl.hidden = true;
@@ -729,6 +884,7 @@ function setupRaceBaseNameRecomputeButton() {
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
+    if (!(await confirmHeavyOperation("全レースのベース名を再計算します(全レースを読み、変わったレースを書き換えます)。実行しますか？"))) return;
     btn.disabled = true;
     messageEl.hidden = true;
 
@@ -907,12 +1063,15 @@ async function onReady() {
   setupHorseAliasNormalizeButton();
   setupApiTokenButtons();
   setupNetkeibaBookmarklet();
+  setupD1UsageButton();
+  setupServiceGuardForm();
   setupGradedRaceForm();
   setupGradedRacesImport();
   setupRaceBaseNameRecomputeButton();
-  setupNetkeibaPauseForm();
   setupTrainerAliasForm();
   await Promise.all([
+    loadD1Usage(false),
+    loadServiceGuard(),
     loadUnregisteredRaces(),
     loadUsers(),
     loadJockeyAliases(),
@@ -920,7 +1079,6 @@ async function onReady() {
     setupHorseIndex(),
     loadApiTokenStatus(),
     loadGradedRaces(),
-    loadNetkeibaPause(),
     loadTrainerAliases(),
   ]);
 }
@@ -1002,64 +1160,6 @@ function setupTrainerAliasForm() {
     } else {
       messageEl.className = "submit-message error";
       messageEl.textContent = data.error || "登録に失敗しました。";
-    }
-  });
-}
-
-// ---------- netkeiba取得の一時停止(2026-10-04追加) ----------
-// netkeibaから取得を拒否されたら止める時間の設定と、今の停止状態の表示。
-// API: GET/PUT /api/admin/netkeiba-pause(functions/api/admin/netkeiba-pause.js)。
-
-function renderNetkeibaPauseStatus(s) {
-  const statusEl = document.getElementById("netkeiba-pause-status");
-  const input = document.getElementById("netkeiba-pause-hours");
-  if (!statusEl || !input) return;
-  input.min = s.min;
-  input.max = s.max;
-  input.value = s.pauseHours;
-  if (s.tableMissing) {
-    statusEl.textContent = "設定用のテーブル(external_fetch_pause)が未作成のため、一時停止は働いていません(マイグレーションの適用が必要です)。";
-    return;
-  }
-  const state = s.pausedUntil
-    ? `現在停止中です(${formatDateTime(s.pausedUntil)}まで。きっかけ: ${s.lastReason || "不明"})。`
-    : "現在は停止していません。";
-  statusEl.textContent = `${state}拒否されたときに止める時間: ${s.pauseHours}時間${s.pauseHoursIsDefault ? "(既定値)" : ""}`;
-}
-
-async function loadNetkeibaPause() {
-  const statusEl = document.getElementById("netkeiba-pause-status");
-  if (!statusEl) return;
-  const res = await authedFetch("/api/admin/netkeiba-pause");
-  if (!res.ok) { statusEl.textContent = "読み込みに失敗しました"; return; }
-  renderNetkeibaPauseStatus(await res.json());
-}
-
-function setupNetkeibaPauseForm() {
-  const form = document.getElementById("netkeiba-pause-form");
-  const messageEl = document.getElementById("netkeiba-pause-message");
-  if (!form) return;
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const pauseHours = Number(document.getElementById("netkeiba-pause-hours").value);
-    const submitBtn = form.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    messageEl.hidden = true;
-    const res = await authedFetch("/api/admin/netkeiba-pause", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pauseHours }),
-    });
-    const data = await res.json().catch(() => ({}));
-    submitBtn.disabled = false;
-    messageEl.hidden = false;
-    if (res.ok) {
-      messageEl.className = "submit-message success";
-      messageEl.textContent = `中断時間を${data.pauseHours}時間に保存しました。`;
-      renderNetkeibaPauseStatus(data);
-    } else {
-      messageEl.className = "submit-message error";
-      messageEl.textContent = data.error || "保存に失敗しました。";
     }
   });
 }

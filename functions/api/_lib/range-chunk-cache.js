@@ -21,6 +21,24 @@ const PAYLOAD_VERSION = 2;
 // 足りない範囲がこれより多いときは、範囲を指定せず全件を読む(IN/BETWEEN の条件が長くなりすぎないように)
 const MAX_RANGES_PER_QUERY = 20;
 
+// 保存に失敗したときの予備(2026-10-08)。D1 の書き込み上限・一時的な不調等でキャッシュを保存できないと、
+// 画面を開くたびに同じ範囲を作り直し、読み取りが膨らんで読み取り上限まで超える(2026-09-12 の races_cache 障害と
+// 同じ構図)。保存できなかった範囲は、作り直した内容をこの実行環境のメモリに FALLBACK_TTL_MS だけ持ち、
+// その間は作り直さずに使う(その間にデータが変わっても反映が最大この時間遅れる)。
+const FALLBACK_TTL_MS = 5 * 60 * 1000;
+const fallback = new Map(); // table -> Map<chunk_index, { at, payload }>
+
+function fallbackGet(table, i) {
+  const f = fallback.get(table)?.get(i);
+  return f && Date.now() - f.at < FALLBACK_TTL_MS ? f.payload : null;
+}
+function fallbackPut(table, entries) {
+  if (!fallback.has(table)) fallback.set(table, new Map());
+  const m = fallback.get(table);
+  const at = Date.now();
+  for (const [i, payload] of entries) m.set(i, { at, payload });
+}
+
 export function rangeIndexOf(id) {
   return Math.floor(Number(id) / RANGE_SIZE);
 }
@@ -65,6 +83,12 @@ export async function loadRangeChunks(db, table, build) {
   }
   if (legacy) have.clear();
 
+  // 保存できずにメモリに持っている範囲があれば、作り直さずにそれを使う
+  for (let i = 0; i <= maxIndex; i++) {
+    if (have.has(i)) continue;
+    const f = fallbackGet(table, i);
+    if (f) have.set(i, f);
+  }
   const missing = [];
   for (let i = 0; i <= maxIndex; i++) if (!have.has(i)) missing.push(i);
 
@@ -73,12 +97,14 @@ export async function loadRangeChunks(db, table, build) {
     const built = await build(db, full ? null : missing);
     const now = new Date().toISOString();
     const stmts = [];
+    const builtEntries = [];
     if (legacy || !cacheRes) stmts.push(db.prepare(`DELETE FROM ${table}`));
     // 末尾のレースが消えて範囲が減った場合の残りも消す
     stmts.push(db.prepare(`DELETE FROM ${table} WHERE chunk_index > ?`).bind(maxIndex));
     for (const i of missing) {
       const p = { v: PAYLOAD_VERSION, ...(built.get(i) || {}) };
       have.set(i, p);
+      builtEntries.push([i, p]);
       const text = JSON.stringify(p);
       if (text.length * 3 > CHUNK_MAX_BYTES) {
         console.error(`${table}: chunk ${i} too large, not saved`);
@@ -89,8 +115,10 @@ export async function loadRangeChunks(db, table, build) {
     try {
       // 1回に積む文は「足りない範囲の数+2」。全範囲でも races 4,000件で約20、10万件でも約500件なので分割して送る
       for (let k = 0; k < stmts.length; k += 100) await db.batch(stmts.slice(k, k + 100));
+      if (!cacheRes) fallbackPut(table, builtEntries); // 表が読めなかった(無い等)ときも次回の作り直しを避ける
     } catch (e) {
       console.error(`${table}: failed to persist (ignored)`, e);
+      fallbackPut(table, builtEntries);
     }
   }
 

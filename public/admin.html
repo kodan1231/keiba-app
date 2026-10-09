@@ -6,7 +6,7 @@
 <title>管理 - 馬券帳</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body data-page="admin">
@@ -21,6 +21,38 @@
     <p id="admin-denied-notice" class="error-text" hidden>この画面は管理者のみ利用できます。</p>
 
     <div id="admin-content">
+      <!-- D1の使用量(2026-10-08。管理者のみ。docs/design/ops.md「D1の使用量の確認」) -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">D1の使用量(今日)</h2>
+        <p class="ticket-sub">1日の上限はアカウント全体(このアカウントの全データベースの合計)にかかり、どちらか一方でも超えると日本時間の翌朝9時まで全画面が使えなくなります。数字は数分遅れます。</p>
+        <div id="d1-usage"><p class="ticket-sub">読み込み中…</p></div>
+        <button type="button" id="d1-usage-refresh-btn" class="ghost-btn">最新にする</button>
+      </section>
+
+      <!-- 重い機能の自動一時停止(2026-10-08。docs/design/ops.md「重い機能の自動一時停止」) -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">重い機能の自動一時停止</h2>
+        <p class="ticket-sub">D1の使用量がしきい値を超えたら、選んだ機能だけを一時停止します(購入・履歴・予想などの普段の操作は止めません)。止めた画面には「混雑のため一時停止中」とだけ表示されます。日本時間の朝9時に使用量がリセットされると自動で再開します。</p>
+        <p id="guard-status" class="ticket-sub">読み込み中…</p>
+        <form id="guard-form" class="hi-edit-form">
+          <label><input type="checkbox" id="guard-enabled" /> 自動一時停止を使う</label>
+          <label style="display:block;margin:6px 0">しきい値(使用量 %)
+            <input type="number" id="guard-threshold" min="10" max="99" step="1" style="width:5em" />%以上で停止
+          </label>
+          <fieldset style="border:none;padding:0;margin:6px 0">
+            <legend class="ticket-sub">止める機能</legend>
+            <div id="guard-targets"></div>
+          </fieldset>
+          <label><input type="checkbox" id="guard-manual" /> 使用量に関係なく今すぐ止める(緊急用。上で選んだ機能を止めます)</label>
+          <div style="margin-top:8px"><button type="submit" class="stamp-btn">保存</button></div>
+        </form>
+        <div style="margin-top:8px">
+          <button type="button" id="guard-override-btn" class="ghost-btn">一時停止を解除(今日のリセットまで)</button>
+          <button type="button" id="guard-clear-override-btn" class="ghost-btn" hidden>解除をやめる</button>
+        </div>
+        <p id="guard-message" class="submit-message" hidden></p>
+      </section>
+
       <section class="stats-section">
         <h2 class="stats-section-title">未登録レース一覧</h2>
         <p class="ticket-sub">CSVインポートで参照されたものの、まだレース登録されていない日付・競馬場・レース番号です。「登録する」から、その内容を引き継いでレース登録画面を開けます。</p>
@@ -48,25 +80,6 @@
         <p id="api-token-value" class="ticket-sub" hidden></p>
         <button type="button" id="api-token-issue-btn" class="ghost-btn">トークンを発行する</button>
         <button type="button" id="api-token-revoke-btn" class="ghost-btn" hidden>無効化する</button>
-      </section>
-
-      <!-- netkeiba取得の一時停止(2026-10-04追加)。netkeibaから取得を拒否されたら、ここで設定した
-           時間はnetkeibaへ問い合わせない。詳細はdocs/design/data-search.md「netkeiba連携」参照。 -->
-      <section class="stats-section">
-        <h2 class="stats-section-title">netkeiba取得の一時停止</h2>
-        <p class="ticket-sub">
-          馬情報検索で血統等をnetkeibaから取得する際、netkeibaから取得を拒否された(HTTP 400等)場合は、
-          ここで設定した時間だけnetkeibaへの問い合わせを止めます(制限中に問い合わせを重ねて解除を遅らせないため)。
-          変更は次に拒否されたときから使われます(今止めている期限は変わりません)。
-        </p>
-        <p id="netkeiba-pause-status" class="ticket-sub">読み込み中…</p>
-        <form id="netkeiba-pause-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
-          <label style="min-width:160px">中断時間(時間)
-            <input type="number" id="netkeiba-pause-hours" min="1" max="72" step="1" required />
-          </label>
-          <button type="submit" class="stamp-btn">保存</button>
-        </form>
-        <p id="netkeiba-pause-message" class="submit-message" hidden></p>
       </section>
 
       <!-- netkeibaのページを取り込むブックマークレット(2026-10-08。docs/design/netkeiba-bookmarklet.md) -->
