@@ -208,13 +208,15 @@ function openResetPasswordModal(userId, username) {
 // 開いている netkeiba のページの HTML を、馬券帳のレース管理画面(?nk=1)へ postMessage で渡す。
 // 受け取り側(races-netkeiba-import.js)が準備できたら "nk-ready" を送ってくるので、それを待ってから送る。
 // 自動で渡せなかったときのため、同じ内容をクリップボードにもコピーする。
+// 2026-10-10: JRA公式(PC版 www.jra.go.jp/JRADB/…)の出走馬一覧・結果ページも対象にした(URL は共通のため、
+// どのページかは受け取り側が中身で判定する)。対象を変えたので、登録済みのブックマークは登録し直す必要がある。
 function setupNetkeibaBookmarklet() {
   const link = document.getElementById("netkeiba-bookmarklet-link");
   if (!link) return;
   const origin = window.location.origin;
   const code = `(()=>{const o=${JSON.stringify(origin)};` +
-    `const ok=["race.netkeiba.com","nar.netkeiba.com"].includes(location.hostname)&&["/race/shutuba_past.html","/race/result.html"].includes(location.pathname);` +
-    `if(!ok){alert("netkeibaの馬柱(5走)または結果・払戻のページで押してください");return;}` +
+    `const ok=(["race.netkeiba.com","nar.netkeiba.com"].includes(location.hostname)&&["/race/shutuba_past.html","/race/result.html"].includes(location.pathname))||(location.hostname==="www.jra.go.jp"&&location.pathname.startsWith("/JRADB/"));` +
+    `if(!ok){alert("netkeibaの馬柱(5走)・結果のページ、またはJRAの出走馬一覧・レース結果のページで押してください");return;}` +
     `const d={type:"nk-page",url:location.href,html:document.documentElement.outerHTML};` +
     `try{navigator.clipboard.writeText(JSON.stringify(d)).catch(()=>{});}catch(e){}` +
     `const w=window.open(o+"/races.html?nk=1","_blank");` +

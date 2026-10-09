@@ -9,7 +9,9 @@
 // 受け取れない場合(netkeiba 側の設定で opener が切れている等)は、ブックマークレットがクリップボードへ
 // コピーした内容を貼り付けて読み込む。アプリから netkeiba へは問い合わせない。
 
-const NK_ORIGINS = ["https://race.netkeiba.com", "https://nar.netkeiba.com"];
+// 2026-10-10: JRA公式(PC版)の出走馬一覧・結果ページも受け取る(docs/design/netkeiba-bookmarklet.md「JRA公式ページ」)
+const NK_ORIGINS = ["https://race.netkeiba.com", "https://nar.netkeiba.com", "https://www.jra.go.jp"];
+const JRA_ORIGIN = "https://www.jra.go.jp";
 const NK_RECEIVE_TIMEOUT_MS = 5000;
 
 const nkWanted = new URLSearchParams(window.location.search).get("nk") === "1";
@@ -77,6 +79,13 @@ function nkFinishReceive(message) {
 
 function nkHandlePage(data) {
   if (nkHandled) return;
+  // JRA公式のページは URL が共通(/JRADB/accessD.html 等)のため、中身で出走馬一覧か結果かを判定する
+  let origin = "";
+  try { origin = new URL(data.url).origin; } catch { /* 下で案内 */ }
+  if (origin === JRA_ORIGIN) {
+    nkHandleJraPage(new DOMParser().parseFromString(data.html, "text/html"));
+    return;
+  }
   const kind = nkPageKind(data.url);
   if (!kind) {
     alert("netkeibaの馬柱(5走)または結果・払戻のページではありません。");
@@ -112,6 +121,97 @@ function nkHandlePage(data) {
     nkOpenResult(record);
   }
 }
+
+// ---------- JRA公式の出走馬一覧・結果ページ(2026-10-10) ----------
+// 出走馬一覧(public/jra-entries-html.js)は出走馬一覧の取込API、結果(public/jra-result-html.js)は結果取込APIへ、
+// 1開催日・1競馬場の全レースをまとめて送る(PDFインポート・ユーザースクリプトと同じAPI。サーバー側の変更は無い)。
+let nkBatch = null; // { kind: "entries" | "result", records }
+
+function nkHandleJraPage(doc) {
+  let kind = null;
+  let records = [];
+  let errors = [];
+  if (jraEntriesHtmlIsPage(doc)) {
+    kind = "entries";
+    ({ records, errors } = jraEntriesHtmlParsePage(doc));
+  } else if (doc.querySelector(".race_result_unit")) {
+    kind = "result";
+    const parsed = jraResultHtmlParsePage(doc);
+    records = parsed.records || [];
+    errors = parsed.diagnostics?.errors || [];
+  } else {
+    alert("JRAの出走馬一覧(出馬表)またはレース結果のページではありません。");
+    return;
+  }
+  if (!records.length) {
+    alert(`ページからレースを読み取れませんでした。${errors.length ? "\n" + errors.join("\n") : ""}`);
+    return;
+  }
+  const first = records[0];
+  nkFinishReceive(`JRAの${kind === "entries" ? "出走馬一覧" : "レース結果"}を受け取りました: ${first.race_date} ${first.track}(${records.length}レース)`);
+  showRaceDate(first.race_date);
+  nkBatch = { kind, records };
+  nkRenderBatch(errors);
+}
+
+function nkRenderBatch(errors) {
+  const { kind, records } = nkBatch;
+  const existingCount = records.filter((r) => nkFindRace(r)).length;
+  document.getElementById("nk-batch-title").textContent = kind === "entries" ? "JRAの出走馬一覧を取り込む" : "JRAのレース結果を取り込む";
+  document.getElementById("nk-batch-summary").textContent =
+    `${records[0].race_date} ${records[0].track} ${records.length}レース(登録済み ${existingCount}・新規 ${records.length - existingCount})。` +
+    (kind === "entries"
+      ? "出走馬一覧PDFの取り込みと同じ扱いで、出走馬表を登録・更新します(馬名で突き合わせ、手で直した騎手等は取り込みの規則どおり)。"
+      : "着順・払戻は取り込んだ内容で置き換え、全着順の記録も登録します(JRA結果の取り込みと同じ)。");
+  const rows = records.map((r) => {
+    const course = [r.course_type, r.distance ? `${r.distance}m` : ""].filter(Boolean).join("");
+    const detail = kind === "entries"
+      ? `${r.entries.length}頭 / 馬番${r.entries.some((e) => e.horse_number) ? "あり" : "なし(枠順確定前)"}`
+      : `${r.race_results.length}頭 / 1〜3着 ${(r.finish_order || []).join("-") || "—"} / 払戻 ${Object.keys(r.payouts || {}).length}種`;
+    return `<tr><td>${r.race_number}R</td><td>${escapeHtml(r.race_name || "")}</td><td>${escapeHtml(course)}</td><td>${escapeHtml(detail)}</td><td>${nkFindRace(r) ? "更新" : "新規"}</td></tr>`;
+  }).join("");
+  document.getElementById("nk-batch-preview").innerHTML = `
+    ${errors.length ? `<p class="submit-message error">${errors.map((e) => escapeHtml(e)).join("<br>")}</p>` : ""}
+    <div class="table-wrap"><table class="stats-table ub-preview-table">
+      <thead><tr><th>R</th><th>レース名</th><th>コース</th><th>内容</th><th>状態</th></tr></thead><tbody>${rows}</tbody>
+    </table></div>`;
+  document.getElementById("nk-batch-message").hidden = true;
+  document.getElementById("nk-batch-submit-btn").disabled = false;
+  document.getElementById("nk-batch-modal").hidden = false;
+}
+
+const nkBatchModal = document.getElementById("nk-batch-modal");
+document.getElementById("nk-batch-cancel-btn")?.addEventListener("click", () => { nkBatchModal.hidden = true; });
+nkBatchModal?.addEventListener("click", (e) => { if (e.target === nkBatchModal) nkBatchModal.hidden = true; });
+if (nkBatchModal) registerEscToClose(nkBatchModal, () => { nkBatchModal.hidden = true; });
+
+document.getElementById("nk-batch-submit-btn")?.addEventListener("click", async () => {
+  if (!nkBatch) return;
+  const btn = document.getElementById("nk-batch-submit-btn");
+  const msg = document.getElementById("nk-batch-message");
+  btn.disabled = true;
+  const isEntries = nkBatch.kind === "entries";
+  const res = await authedFetch(isEntries ? "/api/races/entries-import" : "/api/races/results-import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(isEntries ? { races: nkBatch.records } : { races: nkBatch.records, mode: "overwrite" }),
+  });
+  const data = await res.json().catch(() => ({}));
+  msg.hidden = false;
+  if (!res.ok || data.ok === false) {
+    btn.disabled = false;
+    msg.className = "submit-message error";
+    msg.textContent = data.error || "登録に失敗しました";
+    return;
+  }
+  const results = data.results || [];
+  const count = (st) => results.filter((r) => r.status === st).length;
+  const failed = results.filter((r) => !["created", "updated", "skipped"].includes(r.status));
+  msg.className = failed.length ? "submit-message error" : "submit-message success";
+  msg.textContent = `新規 ${count("created")}件・更新 ${count("updated")}件${failed.length ? `・失敗 ${failed.length}件(${failed.map((r) => r.key || "").join(" / ")})` : ""}で登録しました。`;
+  await loadRaces();
+  showRaceDate(nkBatch.records[0].race_date);
+});
 
 function nkFindRace(meta) {
   return races.find((r) => r.race_date === meta.race_date && r.track === meta.track && Number(r.race_number) === meta.race_number) || null;

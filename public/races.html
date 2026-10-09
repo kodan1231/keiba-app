@@ -209,6 +209,20 @@
   </div>
 </div>
 
+<!-- JRA公式の出走馬一覧・結果ページの取り込み確認(2026-10-10。docs/design/netkeiba-bookmarklet.md「JRA公式ページ」) -->
+<div id="nk-batch-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="nk-batch-title">JRA公式ページを取り込む</h2>
+    <p id="nk-batch-summary" class="picker-hint"></p>
+    <div id="nk-batch-preview"></div>
+    <div class="modal-actions">
+      <button type="button" id="nk-batch-cancel-btn" class="ghost-btn">キャンセル</button>
+      <button type="button" id="nk-batch-submit-btn" class="stamp-btn">登録する</button>
+    </div>
+    <p id="nk-batch-message" class="submit-message" hidden></p>
+  </div>
+</div>
+
 <!-- JRAレース結果PDFインポートモーダル -->
 <div id="jra-result-import-modal" class="modal-overlay" hidden>
   <div class="modal">
@@ -246,6 +260,8 @@
 <script src="payout-paste-parser.js"></script>
 <script src="races-payout-modal.js"></script>
 <script src="netkeiba-html.js"></script>
+<script src="jra-result-html.js"></script>
+<script src="jra-entries-html.js"></script>
 <script src="races-netkeiba-import.js"></script>
 </body>
 </html>

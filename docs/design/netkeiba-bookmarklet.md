@@ -80,9 +80,32 @@ netkeiba が Cloudflare からのアクセスを拒否しており(`docs/design/
 **調教師**: 中央(`race.netkeiba.com`)の結果ページの調教師は略称のため送らない(送ると
 `applyImportedTrainerNames` で馬情報マスタの調教師〈フルネーム〉が略称で上書きされる)。地方は送る。
 
+## JRA公式ページ(2026-10-10追加)
+
+同じブックマークレットで、JRA公式サイト(PC版 `www.jra.go.jp/JRADB/…`)の次のページも取り込める。いずれも
+1ページに1開催日・1競馬場の全レースが入っており、1回押すだけでまとめて取り込める(出走馬一覧PDF・結果の取り込みの代わり)。
+
+| 種類 | 読み取り | 送り先(既存のAPI。サーバー側の変更は無い) |
+|---|---|---|
+| 出走馬一覧(出馬表。`accessD.html`) | `public/jra-entries-html.js`(`jraEntriesHtmlParsePage`) | `POST /api/races/entries-import`(出走馬一覧PDFと同じ) |
+| レース結果(`accessS.html`) | `public/jra-result-html.js`(`jraResultHtmlParsePage`。ユーザースクリプトと同じ) | `POST /api/races/results-import`(`mode: "overwrite"`) |
+
+- JRA のページは URL が共通(`/JRADB/accessD.html` 等。画面遷移は POST)のため、ブックマークレットは
+  ホスト名とパス(`/JRADB/` で始まる)だけで受け付け、どのページかは受け取り側が中身で判定する
+  (出走馬一覧は `li[id^="syutsuba_"]`、結果は `.race_result_unit`)。どちらでもなければ案内を出す
+- 確認画面(`#nk-batch-modal`)に開催日・競馬場・レースごとの内容(出走馬一覧は頭数と馬番の有無、結果は頭数・1〜3着・
+  払戻の種類数)と「登録済み/新規」を出し、「登録する」で送る。送った後はレース一覧を読み直してその日を表示する
+- **出走馬一覧**: 枠・馬番・馬名・性齢・負担重量・騎手・調教師、レース名・条件(年齢・クラス・混合/指定)・重量種別・
+  コース・発走時刻。騎手・調教師は**フルネーム**(netkeiba と違い略称ではない)。見習いの減量記号(☆▲△◇★)は
+  騎手名の先頭に残す(出走馬一覧PDFと同じ表記)。**枠順確定前のページ**は枠・馬番が空のため null で送る
+  (PDFと同じ扱い。確定後のページを取り込むと馬番が入る)。取消・除外の表示は実物を未確認(2026-10-10時点)
+- **結果**: 既存の結果ページ用の読み取り(`docs/design/results-import.md`「ユーザースクリプトによるHTML取込み」)を
+  そのまま使う。調教師はフルネームのため馬情報マスタへも反映される(`applyImportedTrainerNames`)
+- 2026-10-10 にブックマークレットの対象判定を変えたため、それ以前に登録したブックマークは登録し直す必要がある
+
 ## 関連ファイル
 
-- `public/netkeiba-html.js`(読み取り)、`public/races-netkeiba-import.js`(受け取り・確認画面)、
+- `public/netkeiba-html.js`(netkeiba の読み取り)、`public/jra-entries-html.js`(JRA出走馬一覧の読み取り)、`public/jra-result-html.js`(JRA結果の読み取り。既存)、`public/races-netkeiba-import.js`(受け取り・確認画面)、
   `public/races.html`(受け取り欄・結果の確認モーダル)、`public/races.js`(`loadRaces()` から `nkOnRacesLoaded()`)
 - `public/admin.html` / `public/admin.js`(ブックマークレットの配布)
 - サーバー側の変更は無い(既存の `POST /api/admin/horses/paste-import`・`POST /api/races/results-import`・
