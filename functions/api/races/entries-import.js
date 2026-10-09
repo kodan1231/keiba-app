@@ -103,6 +103,8 @@ export async function onRequestPost(context) {
       weight_type: item.weight_type || null,
       class_flags: item.class_flags || null,
       course_direction: item.course_direction || null,
+      // 発走時刻("HH:MM")。出走馬一覧PDFには無く、JRA公式の出走馬一覧ページ(ブックマークレット。2026-10-10〜)から入る
+      post_time: /^\d{2}:\d{2}$/.test(String(item.post_time || "")) ? item.post_time : null,
     });
   }
 
@@ -150,8 +152,8 @@ export async function onRequestPost(context) {
       db
         .prepare(
           `INSERT INTO races (race_date, track, race_number, race_name, race_base_name, course_type, distance,
-            weight_type, class_flags, course_direction, entries)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            weight_type, class_flags, course_direction, post_time, entries)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           it.raceDate,
@@ -164,6 +166,7 @@ export async function onRequestPost(context) {
           it.weight_type,
           it.class_flags,
           it.course_direction,
+          it.post_time,
           JSON.stringify(it.entries)
         )
     );
@@ -205,6 +208,11 @@ export async function onRequestPost(context) {
       if (!it.existing.course_direction && it.course_direction) {
         fields.push("course_direction = ?");
         values.push(it.course_direction);
+      }
+      // 発走時刻は公式ページの値を正とする(繰り下げ等で変わることがあるため、違えば置き換える。2026-10-10)
+      if (it.post_time && it.existing.post_time !== it.post_time) {
+        fields.push("post_time = ?");
+        values.push(it.post_time);
       }
       values.push(it.existing.id);
       return db.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values);
