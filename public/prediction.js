@@ -749,7 +749,8 @@ function renderUmabashira() {
 // ---------- 展開・時計タブ(2026-10-12追加。docs/design/screens.md「予想登録画面」の「展開・時計」) ----------
 // ① 前走の脚質: horseHistory(追加の通信なし)の前走の最初のコーナー通過順位 ÷ 頭数で判定し、
 //    脚質ごとに前にいた順で並べる。判定の基準は重賞検索タブ(_lib/graded-race-search.js の runningStyleOf)と同じ。
-// ② 持ちタイム順位: horseBest(馬柱と共用)の同場(同じ競馬場・芝ダ・距離)の最速タイムを速い順に並べる。
+// ② 持ちタイム順位: 同場・同距離の順位表は2026-10-12に廃止(補正タイム順位〈⑤。全場の走を今回の競馬場に換算〉に含まれるため)。
+//    同場の値(horseBest の track)は推奨馬の「展開が有利な馬」で引き続き使う。
 const PACE_STYLES = ["逃げ", "先行", "差し", "追込"];
 
 // 前走 = このレースより前で、取消・除外を除いた一番新しい走(取消・除外は走っていないため)。
@@ -805,54 +806,6 @@ function paceStyleSectionHtml(entries) {
   return `
     <h3 class="pace-heading">前走の脚質<small>前走の最初のコーナーの位置(位置/頭数)で判定。脚質ごとに前にいた順</small></h3>
     <div class="pace-style-list">${rows}</div>`;
-}
-
-function paceTimeSectionHtml(entries) {
-  const cond = [selectedRace.track, formatCourseText(selectedRace.course_type, selectedRace.distance)].filter(Boolean).join(" ");
-  const heading = `<h3 class="pace-heading">${escapeHtml(cond || "同条件")} の持ちタイム順位<small>同じ競馬場・芝ダート・距離での最速タイム(このレースより前の走)</small></h3>`;
-  const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
-  if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
-  if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
-  if (!st.data.condition) return `${heading}<p class="pace-none">このレースのコース・距離が未登録のため出せません</p>`;
-
-  const ranked = [];
-  const none = [];
-  for (const e of entries) {
-    const best = (st.data.horses || {})[normalizeHorseName(e.horse_name)];
-    const t = best && best.track && best.track.time;
-    if (t) ranked.push({ e, t });
-    else none.push(e);
-  }
-  ranked.sort((a, b) => a.t.seconds - b.t.seconds || String(a.t.race_date).localeCompare(String(b.t.race_date)));
-  none.sort((a, b) => paceNumberOf(a) - paceNumberOf(b));
-  const top = ranked.length ? ranked[0].t.seconds : 0;
-  let rank = 0;
-  const rows = ranked.map((x, i) => {
-    if (i === 0 || x.t.seconds !== ranked[i - 1].t.seconds) rank = i + 1; // 同タイムは同順位
-    const diff = x.t.seconds - top;
-    const sub = [formatDateMd(x.t.race_date), x.t.finish_position != null ? `${x.t.finish_position}着` : null].filter(Boolean).join(" ");
-    return `
-      <tr>
-        <td>${rank}</td>
-        <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
-        <td><strong>${escapeHtml(x.t.time_text)}</strong></td>
-        <td>${i === 0 ? "—" : `+${diff.toFixed(1)}`}</td>
-        <td>${x.t.run_last3f != null ? Number(x.t.run_last3f).toFixed(1) : "—"}</td>
-        <td>${x.t.weight_carried != null ? Number(x.t.weight_carried).toFixed(1) : "—"}</td>
-        <td>${escapeHtml(x.t.jockey || "—")}</td>
-        <td>${escapeHtml(x.t.track_condition || "—")}</td>
-        <td title="${escapeAttr(x.t.race_name || "")}">${escapeHtml(sub)}</td>
-      </tr>`;
-  }).join("");
-  return `${heading}
-    ${ranked.length ? `
-      <div class="table-wrap">
-        <table class="horse-history-table pace-time-table">
-          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>上がり3F</th><th>斤量</th><th>騎手</th><th>馬場</th><th>その走</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>` : `<p class="pace-none">この条件を走ったことのある馬はいません</p>`}
-    ${none.length ? `<p class="pace-time-none"><span>走なし</span>${none.map(e => `<span class="pace-chip">${paceHorseLabelHtml(e)}</span>`).join("")}</p>` : ""}`;
 }
 
 // ③ 騎手の同コース成績(2026-10-12追加): GET /api/data-search/jockey-course。展開・時計タブを開いたときに
@@ -1129,7 +1082,7 @@ function renderPace() {
     paceEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
     return;
   }
-  paceEl.innerHTML = paceRecommendSectionHtml(entries) + paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries) + paceCorrectedSectionHtml(entries) + paceJockeySectionHtml();
+  paceEl.innerHTML = paceRecommendSectionHtml(entries) + paceStyleSectionHtml(entries) + paceCorrectedSectionHtml(entries) + paceJockeySectionHtml();
   paceEl.querySelectorAll(".pace-sort-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       paceJockeySort = btn.dataset.sort;
