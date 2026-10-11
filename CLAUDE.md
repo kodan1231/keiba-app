@@ -29,6 +29,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 集計画面(総合成績/レース別に「重賞のみ/条件戦のみ」フィルタあり) | `public/stats.js`, `public/stats.html` |
 | データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/horse-master.js`(netkeibaへの自動取得は2026-10-08廃止) |
 | データ検索画面「騎手検索」タブ(通算・年度別・コース別成績) | `public/jockey-search.js`, `public/data-search.html`, `functions/api/data-search/jockeys.js`, `functions/api/data-search/jockey-stats.js`, `functions/api/_lib/jockey-stats.js`, `functions/api/_lib/race-lineup.js` |
+| データ検索「競馬場傾向」タブ(芝ダ・距離ごとの競馬場別・馬場別の勝ちタイム平均と補正値。予想登録画面の補正タイムにも使う) | `public/track-trends.js`, `public/data-search.html`, `functions/api/data-search/track-trends.js`, `functions/api/_lib/track-trends.js`, `functions/api/_lib/race-lineup-cache.js`(勝ちタイム・馬場・クラスを持つ) |
 | データ検索「重賞検索」タブ(今年の出走馬・過去10年成績) | `public/graded-race-search.js`, `public/data-search.html`, `functions/api/data-search/graded-races.js`, `functions/api/data-search/graded-race.js`, `functions/api/data-search/graded-race-horses.js`, `functions/api/_lib/graded-race-search.js` |
 | 重賞メモ(重賞×年ごと・自分だけ。重賞検索タブと予想登録画面) | `public/graded-race-notes.js`(入力欄の共通部品), `functions/api/graded-race-notes/index.js`, `public/graded-race-search.js`, `public/prediction.js` |
 | 重賞管理(管理画面)・レース分類(重賞/条件戦/その他) | `public/jra-graded-races-pdf.js`, `functions/api/admin/graded-races/*`, `functions/api/_lib/race-classification.js` |
@@ -80,6 +81,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
 | `_lib/d1-usage.js` | `getD1Usage` `loadD1Usage` `d1UsageRatio`(今日の D1 使用量を Cloudflare の分析APIで取る。秘密情報 `CF_ANALYTICS_TOKEN`。2026-10-08追加) |
 | `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |
+| `_lib/track-trends.js` | `buildTrackTrends` `trendDistanceOptions` `trackTimeOffsets` `correctRunTime` `TREND_MIN_RACES`(競馬場傾向タブ・補正タイム。DB不使用。2026-10-12追加。クラス判定は `_lib/race-classification.js` の `raceClassOf`) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
 ## 絶対に破ってはいけない不変条件

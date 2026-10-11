@@ -14,6 +14,7 @@
 //     トリガーが古い(表を丸ごと消す)ままでも、全部の行を作り直すだけで正しく動く。
 //   - 読むときは全行を読み、足りない範囲(消えた行)だけを DB から読み直して保存する(best-effort)。
 //   - payload は {"v":2, ...}。v が無い行(以前の、バイト数で区切っていた形式)があれば全部作り直す。
+//     中身の形を変えた表は、呼び出し側で version を上げる(2026-10-12〜。その表だけ全部作り直す)。
 
 export const RANGE_SIZE = 200;
 const CHUNK_MAX_BYTES = 1_500_000;
@@ -62,8 +63,9 @@ export function rangeCondition(column, indices) {
 
 // table: キャッシュの表名。build(db, indices|null) → Map<chunk_index, payloadオブジェクト(v は付けなくてよい)>。
 // indices が null のときは全範囲を作る(build は存在するレースの範囲だけ返せばよい。空の範囲はここで補う)。
+// version: payload の版数(省略時 PAYLOAD_VERSION)。中身の形を変えたら上げると、その表だけ全部作り直す。
 // 戻り値: 範囲の番号順の payload オブジェクトの配列。
-export async function loadRangeChunks(db, table, build) {
+export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERSION } = {}) {
   const [cacheRes, maxRes] = await Promise.all([
     db.prepare(`SELECT chunk_index, payload FROM ${table}`).all().catch((e) => {
       console.error(`${table}: read failed (ignored)`, e); // 表が無い等。作り直した結果をそのまま使う
@@ -78,7 +80,7 @@ export async function loadRangeChunks(db, table, build) {
   for (const r of cacheRes?.results || []) {
     let p = null;
     try { p = JSON.parse(r.payload); } catch { /* 壊れた行は作り直す */ }
-    if (!p || p.v !== PAYLOAD_VERSION) { legacy = true; continue; }
+    if (!p || p.v !== version) { legacy = true; continue; }
     if (r.chunk_index <= maxIndex) have.set(r.chunk_index, p);
   }
   if (legacy) have.clear();
@@ -102,7 +104,7 @@ export async function loadRangeChunks(db, table, build) {
     // 末尾のレースが消えて範囲が減った場合の残りも消す
     stmts.push(db.prepare(`DELETE FROM ${table} WHERE chunk_index > ?`).bind(maxIndex));
     for (const i of missing) {
-      const p = { v: PAYLOAD_VERSION, ...(built.get(i) || {}) };
+      const p = { v: version, ...(built.get(i) || {}) };
       have.set(i, p);
       builtEntries.push([i, p]);
       const text = JSON.stringify(p);

@@ -3331,3 +3331,16 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .ub-alias-form .ub-alias-btn { padding: 3px 8px; font-size: 11px; }
 .ub-unregistered { font-size: 10px; color: var(--hanko); }
 .ub-preview-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+/* データ検索「競馬場傾向」タブ(2026-10-12) */
+.tt-distance { display: inline-flex; margin: 8px 0; }
+.tt-table th, .tt-table td { text-align: center; }
+.tt-table .tt-cell { line-height: 1.25; min-width: 64px; }
+.tt-avg { font-family: var(--font-mono); font-weight: 700; }
+.tt-diff { font-family: var(--font-mono); font-size: 12px; }
+.tt-diff.tt-fast { color: #2c5e8f; }
+.tt-diff.tt-slow { color: var(--hanko); }
+.tt-n { font-size: 11px; color: var(--ink-soft); }
+.tt-few { opacity: .45; }
+.tt-empty { color: var(--ink-soft); }
+.tt-overall { background: rgba(0, 0, 0, .04); }

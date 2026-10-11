@@ -24,6 +24,7 @@
       <button type="button" class="stats-tab" data-tab="horse-info">馬情報検索</button>
       <button type="button" class="stats-tab" data-tab="graded-race">重賞検索</button>
       <button type="button" class="stats-tab" data-tab="jockey">騎手検索</button>
+      <button type="button" class="stats-tab" data-tab="track-trends">競馬場傾向</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="race-stats">
@@ -166,6 +167,34 @@
 
     </section>
 
+
+    <!-- 競馬場傾向タブ(2026-10-12追加)。仕様はdocs/design/data-search.md「競馬場傾向タブ」。
+         芝ダ・距離・クラスを選ぶと、競馬場ごと・馬場状態ごとの勝ちタイムの平均と、全競馬場の平均との差。 -->
+    <section class="stats-section stats-panel" data-panel="track-trends" hidden>
+      <div class="horse-index-rows" id="tt-course-filter">
+        <button type="button" class="horse-row-btn active" data-value="芝">芝</button>
+        <button type="button" class="horse-row-btn" data-value="ダート">ダート</button>
+        <button type="button" class="horse-row-btn" data-value="障害">障害</button>
+      </div>
+      <label class="ds-filter tt-distance">
+        <span class="ds-filter-label">距離</span>
+        <select id="tt-distance"></select>
+      </label>
+      <div class="horse-index-rows" id="tt-class-filter">
+        <button type="button" class="horse-row-btn active" data-value="all">すべて</button>
+        <button type="button" class="horse-row-btn" data-value="maiden">新馬・未勝利</button>
+        <button type="button" class="horse-row-btn" data-value="1win">1勝</button>
+        <button type="button" class="horse-row-btn" data-value="2win">2勝</button>
+        <button type="button" class="horse-row-btn" data-value="3win">3勝</button>
+        <button type="button" class="horse-row-btn" data-value="open">OP・重賞</button>
+      </div>
+      <p class="ds-status" id="tt-status" hidden></p>
+      <p class="stats-note">勝ち馬のタイムの平均です(このアプリに取り込まれたレース)。各欄の下段は、同じ馬場の全競馬場の平均との差
+        (マイナスは時計が速い競馬場)。「全競馬場」の行の下段は良馬場との差(馬場による補正値)。レース数が少ない(<span id="tt-min">3</span>未満)欄は薄く表示し、補正には使いません。
+        クラスは条件(新馬・未勝利・1勝クラス等)から判定し、判定できないレースは「すべて」にだけ入ります。</p>
+      <div class="table-wrap"><table class="stats-table tt-table" id="tt-table"></table></div>
+    </section>
+
     <!-- 騎手検索タブ(2026-10-03追加)。仕様はdocs/design/data-search.md「騎手検索タブ」。
          騎手名の一部入力→候補から選択→通算・年度別・コース別の成績表。 -->
     <section class="stats-section stats-panel" data-panel="jockey" hidden>
@@ -210,5 +239,6 @@
 <script src="graded-race-notes.js"></script>
 <script src="graded-race-search.js"></script>
 <script src="jockey-search.js"></script>
+<script src="track-trends.js"></script>
 </body>
 </html>

@@ -7,6 +7,11 @@ import {
   loadJockeyAliasMapCached,
   applyJockeyAliasMap,
   jockeyDisplayName,
+  getRaceLineups,
+  buildTrackTrends,
+  trackTimeOffsets,
+  correctRunTime,
+  normalizeTrackConditionText,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -32,7 +37,9 @@ import {
 //     horses: { <正規化馬名>: { all:   { time: {...} | null, last3f: {...} | null },
 //                               track: { time: {...} | null, last3f: {...} | null } } } }
 //   time / last3f は { time_text, seconds | last3f, race_date, track, race_name,
-//   track_condition, finish_position }。time には、その走の上がり3F run_last3f・斤量 weight_carried・騎手 jockey(無ければ null)も付く。キーは prediction.js の normalizeHorseName と同じ形。
+//   track_condition, finish_position }。time には、その走の上がり3F run_last3f・斤量 weight_carried・騎手 jockey(無ければ null)も付く。
+//   corrected(2026-10-12追加): 全場・同距離の走のうち、今回の競馬場・良馬場に換算したタイムが最速の走。time と同じ項目に
+//   corrected_seconds(換算後)・adj(足した補正値)・partial(補正値が出せず一部0で計算した)を足したもの。無ければ null。キーは prediction.js の normalizeHorseName と同じ形。
 
 const normalizeName = (v) => String(v ?? "").replace(/[　\s]+/g, " ").trim();
 
@@ -90,20 +97,28 @@ export async function onRequestGet(context) {
   // 騎手名は表示用なのでエイリアスを2分使い回す版で正しい表記へ寄せる(_lib/memo-cache.js)。
   const jockeyAliasMap = await loadJockeyAliasMapCached(env.DB);
 
+  // 補正タイム(2026-10-12追加。docs/design/data-search.md「競馬場傾向タブ」): 全場・同距離の各走を、
+  // 競馬場・馬場の補正値で「今回の競馬場・良馬場」のタイムに換算し、換算後が最速の走を corrected に入れる。
+  // 補正値は集計用の小さいキャッシュ(約20行)から全クラスの勝ちタイムで出す。
+  const offsets = trackTimeOffsets(buildTrackTrends(await getRaceLineups(env.DB), { courseType: race.course_type, distance: race.distance }));
+
+  // そのタイムを出した走の情報。run_last3f・weight_carried・jockey は2026-10-12追加(展開・時計タブの表で表示)
+  const timeInfo = (row, sec, base) => {
+    const runL3 = Number(row.final_furlong_time);
+    const w = Number(row.weight_carried);
+    return {
+      time_text: row.time_text, seconds: sec, run_last3f: row.final_furlong_time != null && runL3 > 0 ? runL3 : null,
+      weight_carried: row.weight_carried != null && w > 0 ? w : null,
+      jockey: row.jockey ? jockeyDisplayName(applyJockeyAliasMap(jockeyAliasMap, row.jockey)) : null,
+      ...base,
+    };
+  };
+
   // 1つの走を集計枠(all / track)へ反映する。最速タイム・最速上がりはそれぞれ別の走でもよい。
   const consider = (slot, row, base) => {
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && (!slot.time || sec < slot.time.seconds)) {
-      // run_last3f: そのタイムを出した走の上がり3F(2026-10-12追加。展開・時計タブの持ちタイム順位で表示)
-      const runL3 = Number(row.final_furlong_time);
-      // weight_carried / jockey: そのタイムを出した走の斤量・騎手(2026-10-12追加。持ちタイム順位の表で表示)
-      const w = Number(row.weight_carried);
-      slot.time = {
-        time_text: row.time_text, seconds: sec, run_last3f: row.final_furlong_time != null && runL3 > 0 ? runL3 : null,
-        weight_carried: row.weight_carried != null && w > 0 ? w : null,
-        jockey: row.jockey ? jockeyDisplayName(applyJockeyAliasMap(jockeyAliasMap, row.jockey)) : null,
-        ...base,
-      };
+      slot.time = timeInfo(row, sec, base);
     }
     const l3 = Number(row.final_furlong_time);
     if (row.final_furlong_time != null && Number.isFinite(l3) && l3 > 0 && (!slot.last3f || l3 < slot.last3f.last3f)) {
@@ -117,7 +132,7 @@ export async function onRequestGet(context) {
     const name = entryKey && keyMap.get(entryKey);
     if (!name) continue;
     if (!horses[name]) {
-      horses[name] = { all: { time: null, last3f: null }, track: { time: null, last3f: null } };
+      horses[name] = { all: { time: null, last3f: null }, track: { time: null, last3f: null }, corrected: null };
     }
     const base = {
       race_date: row.race_date,
@@ -128,6 +143,15 @@ export async function onRequestGet(context) {
     };
     consider(horses[name].all, row, base);
     if (race.track && row.track === race.track) consider(horses[name].track, row, base);
+
+    const sec = timeTextToSeconds(row.time_text);
+    if (sec != null && race.track) {
+      const c = correctRunTime(sec, { runTrack: row.track, runCondition: normalizeTrackConditionText(row.track_condition), targetTrack: race.track }, offsets);
+      const cur = horses[name].corrected;
+      if (!cur || c.seconds < cur.corrected_seconds) {
+        horses[name].corrected = { ...timeInfo(row, sec, base), corrected_seconds: c.seconds, adj: c.adj, partial: c.partial };
+      }
+    }
   }
 
   return Response.json({ condition, horses, pedigree });

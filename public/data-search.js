@@ -10,6 +10,7 @@
 let hiInitialized = false;
 let grInitialized = false;
 let jsInitialized = false;
+let ttInitialized = false;
 // ?graded=<graded_races.id>(2026-10-08): 予想登録画面の「過去のデータ」・馬券購入画面の「開催予定の重賞」から、
 // 重賞検索タブでその重賞を開いた状態で表示する。このときレース成績タブの集計は、タブを開くまで読み込まない。
 const dsGradedLinkId = new URLSearchParams(window.location.search).get("graded");
@@ -38,6 +39,11 @@ document.querySelectorAll(".stats-tab").forEach((tab) => {
     if (target === "jockey" && !jsInitialized) {
       jsInitialized = true;
       jsInit();
+    }
+    // 競馬場傾向タブ(2026-10-12追加): track-trends.js(ttInit)。
+    if (target === "track-trends" && !ttInitialized) {
+      ttInitialized = true;
+      ttInit();
     }
   });
 });

@@ -34,3 +34,4 @@ export * from "./_lib/ticket-view-version.js";
 export * from "./_lib/horse-names-cache.js";
 export * from "./_lib/d1-usage.js";
 export * from "./_lib/service-guard.js";
+export * from "./_lib/track-trends.js";

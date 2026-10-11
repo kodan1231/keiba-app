@@ -191,3 +191,22 @@ export async function recomputeAllRaceBaseNames(db) {
   if (statements.length) await runBatchInChunks(db, statements);
   return { updated: statements.length };
 }
+
+// レースのクラス(2026-10-12追加。データ検索「競馬場傾向」タブのクラス絞り込み用)。
+//   "maiden"(新馬・未勝利) / "1win"(1勝クラス・旧500万下) / "2win"(2勝・旧1000万下) /
+//   "3win"(3勝・旧1600万下) / "open"(オープン・リステッド・重賞) / null(判定できない)
+// 条件の生テキスト class_flags(例 "3歳以上 1勝クラス(混合)[指定]")を先に見て、決まらなければレース名を見る。
+export const RACE_CLASSES = ["maiden", "1win", "2win", "3win", "open"];
+function raceClassOfText(text) {
+  const s = String(text ?? "").normalize("NFKC");
+  if (!s.trim()) return null;
+  if (/新馬|未勝利|未出走/.test(s)) return "maiden";
+  if (/1勝クラス|500万/.test(s)) return "1win";
+  if (/2勝クラス|1000万/.test(s)) return "2win";
+  if (/3勝クラス|1600万/.test(s)) return "3win";
+  if (/オープン|\bOP\b|\(L\)|リステッド|重賞|G[1-3]|GI{1,3}\b|Jpn/.test(s)) return "open";
+  return null;
+}
+export function raceClassOf(race) {
+  return raceClassOfText(race?.class_flags) || raceClassOfText(race?.race_name);
+}

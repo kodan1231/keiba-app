@@ -1070,6 +1070,58 @@ function paceRecommendSectionHtml(entries) {
     </div>`;
 }
 
+// ⑤ 補正タイム順位(2026-10-12追加。docs/design/data-search.md「競馬場傾向タブ」): 全場・同距離の走を、競馬場と馬場の
+//    補正値で「今回の競馬場・良馬場」に換算したタイム(horse-best の corrected)の速い順。補正値の元はデータ検索「競馬場傾向」。
+function paceCorrectedSectionHtml(entries) {
+  const course = formatCourseText(selectedRace.course_type, selectedRace.distance);
+  const heading = `<h3 class="pace-heading">補正タイム順位(全場・${escapeHtml(course || "同距離")})<small>競馬場と馬場による時計の差を補正し、${escapeHtml(selectedRace.track || "今回の競馬場")}・良馬場で走った場合に換算した最速タイム。補正値はデータ検索「競馬場傾向」の勝ちタイムの平均から。※は補正値が出せない部分を0として計算</small></h3>`;
+  const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
+  if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
+  if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
+  if (!st.data.condition || !selectedRace.track) return `${heading}<p class="pace-none">このレースの競馬場・コース・距離が未登録のため出せません</p>`;
+
+  const ranked = [];
+  const none = [];
+  for (const e of entries) {
+    const c = (st.data.horses || {})[normalizeHorseName(e.horse_name)]?.corrected;
+    if (c) ranked.push({ e, c });
+    else none.push(e);
+  }
+  const sorted = paceRanked(ranked, x => x.c.corrected_seconds);
+  const top = sorted.length ? sorted[0].c.corrected_seconds : 0;
+  const secText = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec - m * 60;
+    return m ? `${m}:${s.toFixed(1).padStart(4, "0")}` : s.toFixed(1);
+  };
+  const adjText = (a) => (Math.abs(a) < 0.005 ? "±0.0" : `${a > 0 ? "+" : "−"}${Math.abs(a).toFixed(1)}`);
+  const rows = sorted.map((x, i) => `
+      <tr>
+        <td>${x.rank}</td>
+        <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
+        <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? "※" : ""}</td>
+        <td>${i === 0 ? "—" : `+${(x.c.corrected_seconds - top).toFixed(1)}`}</td>
+        <td>${escapeHtml(x.c.time_text)}</td>
+        <td>${escapeHtml(x.c.track || "—")}</td>
+        <td>${escapeHtml(x.c.track_condition || "—")}</td>
+        <td>${adjText(x.c.adj)}</td>
+        <td>${x.c.run_last3f != null ? Number(x.c.run_last3f).toFixed(1) : "—"}</td>
+        <td>${x.c.weight_carried != null ? Number(x.c.weight_carried).toFixed(1) : "—"}</td>
+        <td>${escapeHtml(x.c.jockey || "—")}</td>
+        <td title="${escapeAttr(x.c.race_name || "")}">${escapeHtml([formatDateMd(x.c.race_date), x.c.finish_position != null ? `${x.c.finish_position}着` : null].filter(Boolean).join(" "))}</td>
+      </tr>`).join("");
+  none.sort((a, b) => paceNumberOf(a) - paceNumberOf(b));
+  return `${heading}
+    ${sorted.length ? `
+      <div class="table-wrap">
+        <table class="horse-history-table pace-time-table">
+          <thead><tr><th>順位</th><th>馬</th><th>補正タイム</th><th>差</th><th>元のタイム</th><th>競馬場</th><th>馬場</th><th>補正</th><th>上がり3F</th><th>斤量</th><th>騎手</th><th>その走</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : `<p class="pace-none">この距離を走ったことのある馬はいません</p>`}
+    ${none.length ? `<p class="pace-time-none"><span>走なし</span>${none.map(e => `<span class="pace-chip">${paceHorseLabelHtml(e)}</span>`).join("")}</p>` : ""}`;
+}
+
 function renderPace() {
   if (!paceEl || !selectedRace) return;
   const entries = paceEntries();
@@ -1077,7 +1129,7 @@ function renderPace() {
     paceEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
     return;
   }
-  paceEl.innerHTML = paceRecommendSectionHtml(entries) + paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries) + paceJockeySectionHtml();
+  paceEl.innerHTML = paceRecommendSectionHtml(entries) + paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries) + paceCorrectedSectionHtml(entries) + paceJockeySectionHtml();
   paceEl.querySelectorAll(".pace-sort-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       paceJockeySort = btn.dataset.sort;
