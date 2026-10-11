@@ -4,6 +4,9 @@ import {
   loadHorseAliasMapCached,
   buildHorseSearchKeys,
   timeTextToSeconds,
+  loadJockeyAliasMapCached,
+  applyJockeyAliasMap,
+  jockeyDisplayName,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -29,7 +32,7 @@ import {
 //     horses: { <正規化馬名>: { all:   { time: {...} | null, last3f: {...} | null },
 //                               track: { time: {...} | null, last3f: {...} | null } } } }
 //   time / last3f は { time_text, seconds | last3f, race_date, track, race_name,
-//   track_condition, finish_position }。time には、その走の上がり3F run_last3f(無ければ null)も付く。キーは prediction.js の normalizeHorseName と同じ形。
+//   track_condition, finish_position }。time には、その走の上がり3F run_last3f・斤量 weight_carried・騎手 jockey(無ければ null)も付く。キーは prediction.js の normalizeHorseName と同じ形。
 
 const normalizeName = (v) => String(v ?? "").replace(/[　\s]+/g, " ").trim();
 
@@ -73,7 +76,7 @@ export async function onRequestGet(context) {
   const searchKeys = [...searchKeyToKey.keys()];
   const placeholders = searchKeys.map(() => "?").join(",");
   const { results } = await env.DB.prepare(
-    `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position,
+    `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position, rr.weight_carried, rr.jockey,
             r.race_date, r.track, r.race_name, r.track_condition
        FROM race_results rr
        JOIN races r ON r.id = rr.race_id
@@ -84,13 +87,23 @@ export async function onRequestGet(context) {
         AND r.race_date < ?`
   ).bind(...searchKeys, race.course_type, race.distance, race.race_date).all();
 
+  // 騎手名は表示用なのでエイリアスを2分使い回す版で正しい表記へ寄せる(_lib/memo-cache.js)。
+  const jockeyAliasMap = await loadJockeyAliasMapCached(env.DB);
+
   // 1つの走を集計枠(all / track)へ反映する。最速タイム・最速上がりはそれぞれ別の走でもよい。
   const consider = (slot, row, base) => {
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && (!slot.time || sec < slot.time.seconds)) {
       // run_last3f: そのタイムを出した走の上がり3F(2026-10-12追加。展開・時計タブの持ちタイム順位で表示)
       const runL3 = Number(row.final_furlong_time);
-      slot.time = { time_text: row.time_text, seconds: sec, run_last3f: row.final_furlong_time != null && runL3 > 0 ? runL3 : null, ...base };
+      // weight_carried / jockey: そのタイムを出した走の斤量・騎手(2026-10-12追加。持ちタイム順位の表で表示)
+      const w = Number(row.weight_carried);
+      slot.time = {
+        time_text: row.time_text, seconds: sec, run_last3f: row.final_furlong_time != null && runL3 > 0 ? runL3 : null,
+        weight_carried: row.weight_carried != null && w > 0 ? w : null,
+        jockey: row.jockey ? jockeyDisplayName(applyJockeyAliasMap(jockeyAliasMap, row.jockey)) : null,
+        ...base,
+      };
     }
     const l3 = Number(row.final_furlong_time);
     if (row.final_furlong_time != null && Number.isFinite(l3) && l3 > 0 && (!slot.last3f || l3 < slot.last3f.last3f)) {

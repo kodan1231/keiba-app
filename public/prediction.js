@@ -838,6 +838,8 @@ function paceTimeSectionHtml(entries) {
         <td><strong>${escapeHtml(x.t.time_text)}</strong></td>
         <td>${i === 0 ? "—" : `+${diff.toFixed(1)}`}</td>
         <td>${x.t.run_last3f != null ? Number(x.t.run_last3f).toFixed(1) : "—"}</td>
+        <td>${x.t.weight_carried != null ? Number(x.t.weight_carried).toFixed(1) : "—"}</td>
+        <td>${escapeHtml(x.t.jockey || "—")}</td>
         <td title="${escapeAttr(x.t.race_name || "")}">${escapeHtml(sub)}</td>
       </tr>`;
   }).join("");
@@ -845,7 +847,7 @@ function paceTimeSectionHtml(entries) {
     ${ranked.length ? `
       <div class="table-wrap">
         <table class="horse-history-table pace-time-table">
-          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>上がり3F</th><th>その走</th></tr></thead>
+          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>上がり3F</th><th>斤量</th><th>騎手</th><th>その走</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<p class="pace-none">この条件を走ったことのある馬はいません</p>`}
