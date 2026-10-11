@@ -3229,6 +3229,8 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-time-horse .prediction-horse-number { margin-right: 4px; }
 .pace-time-none { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
 .pace-time-none > span:first-child { font-weight: 700; color: var(--ink-soft); }
+.pace-sort-btn { font: inherit; font-weight: 700; background: none; border: none; padding: 0; color: inherit; cursor: pointer; text-decoration: underline dotted; }
+.pace-sort-btn.active { color: var(--hanko); text-decoration: none; }
 .ub-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .ub-table { border-collapse: separate; border-spacing: 0; font-size: 11px; background: #fff; }
 .ub-table th, .ub-table td {

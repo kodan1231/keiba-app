@@ -577,6 +577,7 @@ function setupPredictionViewTabs() {
       if (umabashiraEl) umabashiraEl.hidden = predictionView !== "umabashira";
       if (paceEl) paceEl.hidden = predictionView !== "pace";
       ensureHorseBest();
+      ensureJockeyCourse();
     });
   });
 }
@@ -850,6 +851,80 @@ function paceTimeSectionHtml(entries) {
     ${none.length ? `<p class="pace-time-none"><span>走なし</span>${none.map(e => `<span class="pace-chip">${paceHorseLabelHtml(e)}</span>`).join("")}</p>` : ""}`;
 }
 
+// ③ 騎手の同コース成績(2026-10-12追加): GET /api/data-search/jockey-course。展開・時計タブを開いたときに
+//    レースごとに1回だけ取得する。最初は馬番順、見出しの「騎乗」「単勝率」「複勝率」で並べ替え(レースを切り替えても保つ)。
+let jockeyCourse = null; // { raceId, status: "loading"|"done"|"error"|"paused", data }
+let paceJockeySort = "number"; // "number" | "rides" | "win" | "show"
+
+function ensureJockeyCourse() {
+  if (!selectedRace || predictionView !== "pace") return;
+  const rid = selectedRace.id;
+  if (jockeyCourse && jockeyCourse.raceId === rid) return; // 取得済み・取得中・失敗済み
+  jockeyCourse = { raceId: rid, status: "loading", data: null };
+  authedFetch(`/api/data-search/jockey-course?race_id=${encodeURIComponent(rid)}`)
+    .then(res => {
+      if (res.status === 503) return { paused: true };
+      return res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`));
+    })
+    .then(data => {
+      if (!jockeyCourse || jockeyCourse.raceId !== rid) return; // 取得中に別レースへ切り替わった
+      jockeyCourse = data.paused ? { raceId: rid, status: "paused", data: null } : { raceId: rid, status: "done", data };
+      if (selectedRace && selectedRace.id === rid) renderPace();
+    })
+    .catch(() => {
+      if (!jockeyCourse || jockeyCourse.raceId !== rid) return;
+      jockeyCourse = { raceId: rid, status: "error", data: null };
+      if (selectedRace && selectedRace.id === rid) renderPace();
+    });
+}
+
+const pacePct = (v) => `${(v * 100).toFixed(1)}%`;
+
+function paceJockeySectionHtml() {
+  const cond = [selectedRace.track, formatCourseText(selectedRace.course_type, selectedRace.distance)].filter(Boolean).join(" ");
+  const heading = `<h3 class="pace-heading">騎手の${escapeHtml(cond || "同条件")} 成績<small>同じ競馬場・芝ダート・距離での騎乗(このレースより前の取り込み済み全期間)。騎乗が少ないと率は当てにならない</small></h3>`;
+  const st = jockeyCourse && jockeyCourse.raceId === selectedRace.id ? jockeyCourse : null;
+  if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
+  if (st.status === "paused") return `${heading}<p class="pace-none">D1の使用量が多いため、データ検索の集計は一時停止中です</p>`;
+  if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
+  if (!st.data.condition) return `${heading}<p class="pace-none">このレースのコース・距離が未登録のため出せません</p>`;
+
+  const list = [...(st.data.jockeys || [])];
+  const num = (x) => (x.horse_number === null || x.horse_number === undefined ? 999 : Number(x.horse_number));
+  const val = { rides: (s) => s.rides, win: (s) => s.winRate, show: (s) => s.showRate }[paceJockeySort];
+  list.sort((a, b) => {
+    if (val) {
+      // 騎手が空欄の馬は最後。同じ値なら騎乗の多い順→馬番順
+      if (!a.stats || !b.stats) return (a.stats ? 0 : 1) - (b.stats ? 0 : 1) || num(a) - num(b);
+      return val(b.stats) - val(a.stats) || b.stats.rides - a.stats.rides || num(a) - num(b);
+    }
+    return num(a) - num(b);
+  });
+  const sortTh = (key, label) =>
+    `<th><button type="button" class="pace-sort-btn ${paceJockeySort === key ? "active" : ""}" data-sort="${key}">${label}${paceJockeySort === key ? " ▼" : ""}</button></th>`;
+  const rows = list.map(x => {
+    const s = x.stats;
+    const horse = paceHorseLabelHtml({ horse_number: x.horse_number, waku_number: x.waku_number, horse_name: x.horse_name });
+    if (!s) return `<tr><td class="pace-time-horse">${horse}</td><td>—</td><td colspan="4" class="pace-none">騎手未定</td></tr>`;
+    return `
+      <tr>
+        <td class="pace-time-horse">${horse}</td>
+        <td>${escapeHtml(x.jockey || "")}</td>
+        <td>${s.rides}</td>
+        <td>${s.first}-${s.second}-${s.third}-${s.other}</td>
+        <td>${s.rides ? pacePct(s.winRate) : "—"}</td>
+        <td>${s.rides ? pacePct(s.showRate) : "—"}</td>
+      </tr>`;
+  }).join("");
+  return `${heading}
+    <div class="table-wrap">
+      <table class="horse-history-table pace-time-table pace-jockey-table">
+        <thead><tr>${sortTh("number", "馬")}<th>騎手</th>${sortTh("rides", "騎乗")}<th>着度数</th>${sortTh("win", "単勝率")}${sortTh("show", "複勝率")}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderPace() {
   if (!paceEl || !selectedRace) return;
   const entries = paceEntries();
@@ -857,7 +932,15 @@ function renderPace() {
     paceEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
     return;
   }
-  paceEl.innerHTML = paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries);
+  paceEl.innerHTML = paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries) + paceJockeySectionHtml();
+  paceEl.querySelectorAll(".pace-sort-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      paceJockeySort = btn.dataset.sort;
+      renderPace();
+    });
+  });
+  // 展開・時計タブを表示中なら騎手成績を取得する(取得済み・別タブ表示中なら何もしない)。
+  ensureJockeyCourse();
 }
 
 // ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------
