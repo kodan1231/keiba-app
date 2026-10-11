@@ -561,7 +561,8 @@ async function setHorseMark(n, mark) {
 // 仕様は docs/design/screens.md「予想登録画面」の「馬柱表示」。
 const umabashiraEl = document.getElementById("prediction-umabashira");
 const UB_RUNS = 5;
-let predictionView = "card"; // "card"(出馬表)/"umabashira"(馬柱)。レースを切り替えても保つ
+let predictionView = "card"; // "card"(出馬表)/"umabashira"(馬柱)/"pace"(展開・時計)。レースを切り替えても保つ
+const paceEl = document.getElementById("prediction-pace");
 
 function setupPredictionViewTabs() {
   document.querySelectorAll(".prediction-view-tab").forEach(tab => {
@@ -574,14 +575,16 @@ function setupPredictionViewTabs() {
       });
       horsesEl.hidden = predictionView !== "card";
       if (umabashiraEl) umabashiraEl.hidden = predictionView !== "umabashira";
-      if (predictionView === "umabashira") ensureHorseBest();
+      if (paceEl) paceEl.hidden = predictionView !== "pace";
+      ensureHorseBest();
     });
   });
 }
 
-// 馬柱を表示している時だけ、今のレースの持ちタイムを1回取得する。取得後に馬柱を描き直す。
+// 馬柱・展開・時計タブを表示している時だけ、今のレースの持ちタイムを1回取得する(両タブで共用)。
+// 取得後に馬柱を描き直す(renderUmabashira() の中で展開・時計タブも描き直す)。
 function ensureHorseBest() {
-  if (!selectedRace || predictionView !== "umabashira") return;
+  if (!selectedRace || (predictionView !== "umabashira" && predictionView !== "pace")) return;
   const rid = selectedRace.id;
   if (horseBest && horseBest.raceId === rid) return; // 取得済み・取得中・失敗済み
   horseBest = { raceId: rid, status: "loading", data: null };
@@ -683,6 +686,8 @@ function ubRunCellHtml(r) {
 }
 
 function renderUmabashira() {
+  // 展開・時計タブも同じきっかけ(出走馬・過去走・持ちタイムの更新)で描き直す。
+  renderPace();
   if (!umabashiraEl || !selectedRace) return;
   const hasUnconfirmedNumbers = selectedRace.entries.some((e) => e.horse_number === null || e.horse_number === undefined);
   const entries = hasUnconfirmedNumbers
@@ -738,6 +743,121 @@ function renderUmabashira() {
   applyPrediction();
   // 馬柱を表示中なら持ちタイムを取得する(取得済み・別タブ表示中なら何もしない)。
   ensureHorseBest();
+}
+
+// ---------- 展開・時計タブ(2026-10-12追加。docs/design/screens.md「予想登録画面」の「展開・時計」) ----------
+// ① 前走の脚質: horseHistory(追加の通信なし)の前走の最初のコーナー通過順位 ÷ 頭数で判定し、
+//    脚質ごとに前にいた順で並べる。判定の基準は重賞検索タブ(_lib/graded-race-search.js の runningStyleOf)と同じ。
+// ② 持ちタイム順位: horseBest(馬柱と共用)の同場(同じ競馬場・芝ダ・距離)の最速タイムを速い順に並べる。
+const PACE_STYLES = ["逃げ", "先行", "差し", "追込"];
+
+// 前走 = このレースより前で、取消・除外を除いた一番新しい走(取消・除外は走っていないため)。
+// horseHistory は新しい順。過去のレースを開いたときは、そのレースより後の走も入っているので日付で除く。
+function paceLastRun(runs) {
+  const date = String(selectedRace.race_date || "");
+  return (runs || []).find(r => r && String(r.race_date || "") < date && r.status !== "scratched" && r.status !== "excluded") || null;
+}
+
+// { style, pos, fieldSize, ratio } | null(通過順位・頭数が無い走、前走が無い馬)
+function paceStyleOf(run) {
+  if (!run) return null;
+  const m = String(run.corner_positions ?? "").normalize("NFKC").match(/\d+/);
+  const pos = m ? Number(m[0]) : 0;
+  const fieldSize = Number(run.field_size) || 0;
+  if (!pos || !fieldSize) return null;
+  const ratio = pos / fieldSize;
+  const style = pos === 1 ? "逃げ" : ratio <= 1 / 3 ? "先行" : ratio <= 2 / 3 ? "差し" : "追込";
+  return { style, pos, fieldSize, ratio };
+}
+
+function paceEntries() {
+  return (selectedRace.entries || []).filter(e => e && e.horse_name);
+}
+
+function paceHorseLabelHtml(e) {
+  const hasNumber = e.horse_number !== null && e.horse_number !== undefined;
+  return `<span class="prediction-horse-number waku-tint waku-${e.waku_number || 0}">${hasNumber ? Number(e.horse_number) : "-"}</span><span class="pace-horse-name">${escapeHtml(e.horse_name)}</span>`;
+}
+
+const paceNumberOf = (e) => (e.horse_number === null || e.horse_number === undefined ? 999 : Number(e.horse_number));
+
+function paceStyleSectionHtml(entries) {
+  const groups = new Map([...PACE_STYLES, "不明"].map(s => [s, []]));
+  for (const e of entries) {
+    const run = paceLastRun(horseHistory[normalizeHorseName(e.horse_name)]);
+    const st = paceStyleOf(run);
+    groups.get(st ? st.style : "不明").push({ e, run, st });
+  }
+  for (const [style, list] of groups) {
+    list.sort((a, b) => (style === "不明" ? 0 : a.st.ratio - b.st.ratio || a.st.pos - b.st.pos) || paceNumberOf(a.e) - paceNumberOf(b.e));
+  }
+  const rows = [...groups].filter(([style, list]) => list.length || style !== "不明").map(([style, list]) => `
+    <div class="pace-style-row">
+      <span class="pace-style-label pace-style-${PACE_STYLES.indexOf(style)}">${escapeHtml(style)}<small>${list.length}頭</small></span>
+      <div class="pace-style-horses">
+        ${list.length ? list.map(({ e, run, st }) => `
+          <span class="pace-chip" title="${escapeAttr(run ? `${formatDateMd(run.race_date)} ${run.track || ""} ${run.race_name || ""} 通過 ${run.corner_positions || "—"}` : "前走なし")}">
+            ${paceHorseLabelHtml(e)}${st ? `<small class="pace-chip-sub">${st.pos}/${st.fieldSize}</small>` : `<small class="pace-chip-sub">${run ? "通過なし" : "前走なし"}</small>`}
+          </span>`).join("") : `<span class="pace-none">—</span>`}
+      </div>
+    </div>`).join("");
+  return `
+    <h3 class="pace-heading">前走の脚質<small>前走の最初のコーナーの位置(位置/頭数)で判定。脚質ごとに前にいた順</small></h3>
+    <div class="pace-style-list">${rows}</div>`;
+}
+
+function paceTimeSectionHtml(entries) {
+  const cond = [selectedRace.track, formatCourseText(selectedRace.course_type, selectedRace.distance)].filter(Boolean).join(" ");
+  const heading = `<h3 class="pace-heading">${escapeHtml(cond || "同条件")} の持ちタイム順位<small>同じ競馬場・芝ダート・距離での最速タイム(このレースより前の走)</small></h3>`;
+  const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
+  if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
+  if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
+  if (!st.data.condition) return `${heading}<p class="pace-none">このレースのコース・距離が未登録のため出せません</p>`;
+
+  const ranked = [];
+  const none = [];
+  for (const e of entries) {
+    const best = (st.data.horses || {})[normalizeHorseName(e.horse_name)];
+    const t = best && best.track && best.track.time;
+    if (t) ranked.push({ e, t });
+    else none.push(e);
+  }
+  ranked.sort((a, b) => a.t.seconds - b.t.seconds || String(a.t.race_date).localeCompare(String(b.t.race_date)));
+  none.sort((a, b) => paceNumberOf(a) - paceNumberOf(b));
+  const top = ranked.length ? ranked[0].t.seconds : 0;
+  let rank = 0;
+  const rows = ranked.map((x, i) => {
+    if (i === 0 || x.t.seconds !== ranked[i - 1].t.seconds) rank = i + 1; // 同タイムは同順位
+    const diff = x.t.seconds - top;
+    const sub = [formatDateMd(x.t.race_date), x.t.track_condition, x.t.finish_position != null ? `${x.t.finish_position}着` : null].filter(Boolean).join(" ");
+    return `
+      <tr>
+        <td>${rank}</td>
+        <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
+        <td><strong>${escapeHtml(x.t.time_text)}</strong></td>
+        <td>${i === 0 ? "—" : `+${diff.toFixed(1)}`}</td>
+        <td title="${escapeAttr(x.t.race_name || "")}">${escapeHtml(sub)}</td>
+      </tr>`;
+  }).join("");
+  return `${heading}
+    ${ranked.length ? `
+      <div class="table-wrap">
+        <table class="horse-history-table pace-time-table">
+          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>その走</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : `<p class="pace-none">この条件を走ったことのある馬はいません</p>`}
+    ${none.length ? `<p class="pace-time-none"><span>走なし</span>${none.map(e => `<span class="pace-chip">${paceHorseLabelHtml(e)}</span>`).join("")}</p>` : ""}`;
+}
+
+function renderPace() {
+  if (!paceEl || !selectedRace) return;
+  const entries = paceEntries();
+  if (!entries.length) {
+    paceEl.innerHTML = `<p class="prediction-no-entries">出走馬が登録されていません。</p>`;
+    return;
+  }
+  paceEl.innerHTML = paceStyleSectionHtml(entries) + paceTimeSectionHtml(entries);
 }
 
 // ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------

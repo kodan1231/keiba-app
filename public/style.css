@@ -3209,6 +3209,26 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .prediction-view-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 9px; }
 
 .prediction-umabashira { padding: 8px 0; }
+/* 展開・時計タブ(2026-10-12) */
+.prediction-pace { padding: 8px 0; }
+.prediction-pace[hidden] { display: none; }
+.pace-heading { font-size: 15px; margin: 14px 0 8px; }
+.pace-heading small { display: block; font-size: 11px; font-weight: 400; color: var(--ink-soft); margin-top: 2px; }
+.pace-style-list { display: flex; flex-direction: column; gap: 6px; }
+.pace-style-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--rule-strong); }
+.pace-style-label { flex: none; width: 52px; font-weight: 700; }
+.pace-style-label small { display: block; font-size: 11px; font-weight: 400; color: var(--ink-soft); }
+.pace-style-0 { color: var(--hanko); }
+.pace-style-horses { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pace-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 2px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--paper-raised); font-size: 13px; }
+.pace-chip .prediction-horse-number { flex: none; }
+.pace-chip-sub { font-size: 11px; color: var(--ink-soft); font-family: var(--font-mono); }
+.pace-none { color: var(--ink-soft); font-size: 13px; }
+.pace-time-table { font-size: 13px; }
+.pace-time-table td.pace-time-horse { text-align: left; }
+.pace-time-horse .prediction-horse-number { margin-right: 4px; }
+.pace-time-none { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
+.pace-time-none > span:first-child { font-weight: 700; color: var(--ink-soft); }
 .ub-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .ub-table { border-collapse: separate; border-spacing: 0; font-size: 11px; background: #fff; }
 .ub-table th, .ub-table td {
