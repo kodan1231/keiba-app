@@ -25,7 +25,8 @@ import {
 //
 // レスポンス: { condition: { track, course_type, distance } | null,
 //   jockeys: [{ horse_number, waku_number, horse_name, jockey, stats: { rides, first, second, third, other,
-//              winRate, quinellaRate, showRate } | null }] }(出走馬の並び。騎手が空欄の馬は stats: null)
+//              winRate, quinellaRate, showRate } | null }] }(出走馬の並び。騎手が空欄の馬は stats: null),
+//   horse_numbers: [{ horse_number, stats }](同コースの馬番別成績。2026-10-12追加。馬番の小さい順) }
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -42,7 +43,7 @@ export async function onRequestGet(context) {
 
   const entries = (parseJsonSafe(target.entries, []) || []).filter((e) => e && e.horse_name);
   if (!target.track || !target.course_type || !target.distance) {
-    return Response.json({ condition: null, jockeys: [] });
+    return Response.json({ condition: null, jockeys: [], horse_numbers: [] });
   }
   const condition = { track: target.track, course_type: target.course_type, distance: Number(target.distance) };
 
@@ -54,7 +55,10 @@ export async function onRequestGet(context) {
     if (k && !counts.has(k)) counts.set(k, emptyRideCounts());
   }
 
-  if (counts.size) {
+  // 馬番別成績(2026-10-12追加。推奨馬の「有利な馬番」用)。騎手と同じ走を数えるので読み取りは増えない。
+  const numberCounts = new Map(); // 馬番 -> 集計
+
+  if (entries.length) {
     const lineups = await getRaceLineups(db);
     const keyCache = new Map(); // 生の騎手名 -> キー(同じ名前の変換は1回だけ)
     for (const r of lineups) {
@@ -66,7 +70,12 @@ export async function onRequestGet(context) {
         r.course_type !== condition.course_type ||
         Number(r.distance) !== condition.distance
       ) continue;
-      for (const [, jockey, pos] of r.lineup) {
+      for (const [horseNumber, jockey, pos] of r.lineup) {
+        const n = Number(horseNumber);
+        if (Number.isInteger(n) && n > 0) {
+          if (!numberCounts.has(n)) numberCounts.set(n, emptyRideCounts());
+          addRide(numberCounts.get(n), pos);
+        }
         if (!jockey) continue;
         let k = keyCache.get(jockey);
         if (k === undefined) {
@@ -89,5 +98,8 @@ export async function onRequestGet(context) {
       stats: k ? finalizeRideCounts(counts.get(k)) : null,
     };
   });
-  return Response.json({ condition, jockeys });
+  const horse_numbers = [...numberCounts.keys()]
+    .sort((a, b) => a - b)
+    .map((n) => ({ horse_number: n, stats: finalizeRideCounts(numberCounts.get(n)) }));
+  return Response.json({ condition, jockeys, horse_numbers });
 }

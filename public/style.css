@@ -3229,6 +3229,23 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-time-horse .prediction-horse-number { margin-right: 4px; }
 .pace-time-none { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
 .pace-time-none > span:first-child { font-weight: 700; color: var(--ink-soft); }
+.pace-reco { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.pace-reco-block { background: var(--paper-raised); border: 1px solid var(--rule-strong); padding: 10px 12px; min-width: 0; }
+.pace-reco-block h4 { margin: 0; font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.pace-reco-pace { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pace-reco-high { color: var(--hanko); }
+.pace-reco-slow { color: #2c5e8f; }
+.pace-reco-middle { color: var(--ink-soft); }
+.pace-reco-note { font-size: 11px; color: var(--ink-soft); margin: 4px 0 6px; }
+.pace-top-list { list-style: none; margin: 0; padding: 0; }
+.pace-top-list li { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-top: 1px dotted var(--rule-strong); font-size: 13px; }
+.pace-top-list li:first-child { border-top: none; }
+.pace-top-rank { flex: none; width: 1.6em; font-weight: 700; text-align: right; }
+.pace-top-list .prediction-horse-number { flex: none; }
+.pace-top-list .pace-horse-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pace-top-jockey { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.pace-top-value { margin-left: auto; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
+.pace-top-value small { color: var(--ink-soft); margin-left: 2px; }
 .pace-sort-btn { font: inherit; font-weight: 700; background: none; border: none; padding: 0; color: inherit; cursor: pointer; text-decoration: underline dotted; }
 .pace-sort-btn.active { color: var(--hanko); text-decoration: none; }
 .ub-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
