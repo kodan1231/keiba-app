@@ -14,6 +14,13 @@ let grItems = [];
 let grGradeFilter = "all";
 let grLoadToken = 0; // 別の重賞へ切り替えたら、進行中の取得結果を捨てるための世代番号
 let grHorsesByNumber = new Map();
+let grNotesView = null; // 重賞メモの入力欄(graded-race-notes.js。2026-10-12)
+
+function grDisposeNotes() {
+  if (grNotesView) grNotesView.dispose();
+  grNotesView = null;
+  grEls.notes.innerHTML = "";
+}
 
 const GR_RECENT_RUNS = 5;
 const GR_PAYOUT_ORDER = ["tan", "fuku", "wakuren", "umaren", "wide", "umatan", "sanrenpuku", "sanrentan"];
@@ -149,6 +156,7 @@ async function grLoadList() {
 
 function grShowPicker() {
   grLoadToken += 1;
+  grDisposeNotes();
   grEls.detail.hidden = true;
   grEls.picker.hidden = false;
 }
@@ -587,6 +595,7 @@ function grRenderTrends(data) {
 async function grLoadDetail(id) {
   const token = ++grLoadToken;
   grHorsesByNumber = new Map();
+  grDisposeNotes();
   grEls.picker.hidden = true;
   grEls.detail.hidden = false;
   const item = grItems.find((it) => String(it.id) === String(id));
@@ -613,6 +622,7 @@ async function grLoadDetail(id) {
   grEls.title.innerHTML = `<span class="gr-grade gr-grade-${escapeAttr(m.is_jump ? "J" : m.grade)}">${escapeHtml(grGradeLabel(m))}</span> ${escapeHtml(m.name)}`;
   grEls.sub.textContent = [m.track, formatCourseText(m.course_type, m.distance), m.age_condition].filter(Boolean).join(" ");
 
+  grNotesView = mountGradedRaceNotes(grEls.notes, { gradedRaceId: m.id, year: data.current_year });
   grRenderCurrent(data);
   grRenderPast(data);
   grRenderTrends(data);
@@ -630,6 +640,7 @@ function grInit() {
   grEls.detail = document.getElementById("gr-detail");
   grEls.title = document.getElementById("gr-title");
   grEls.sub = document.getElementById("gr-sub");
+  grEls.notes = document.getElementById("gr-notes");
   grEls.currentHeading = document.getElementById("gr-current-heading");
   grEls.current = document.getElementById("gr-current");
   grEls.pastHeading = document.getElementById("gr-past-heading");

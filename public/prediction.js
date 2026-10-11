@@ -276,6 +276,8 @@ async function selectRace() {
   horseHistory = {};
   applyHorseHistory();
   loadHorseHistory().catch(() => {});
+  // 重賞メモの有無(ヘッダーの「重賞メモ」ボタンの強調用)も独立して読み込む(2026-10-12)。
+  loadGradedNotes();
   // 購入画面への導線ボタンの状態設定は renderRaceHeader() の中(applyBuyButtonState())で
   // 毎回行う(2026-10-03。下記参照)。
 
@@ -411,6 +413,7 @@ function renderRaceHeader() {
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
       ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
       ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
+      ${selectedRace.graded ? `<button type="button" id="graded-memo-btn" class="race-cond-badge graded-memo-btn ${gradedNotesHaveMemo() ? "has-memo" : ""}" title="この重賞の年ごとのメモ(予想の根拠・結果の振り返り。自分だけに表示)">重賞メモ</button>` : ""}
     </div>
     <span id="prediction-message" class="submit-message" hidden></span>
   `;
@@ -425,6 +428,7 @@ function renderRaceHeader() {
     switchToRace(Number(e.target.value));
   });
   document.getElementById("key-race-toggle-btn").addEventListener("click", toggleKeyRace);
+  document.getElementById("graded-memo-btn")?.addEventListener("click", openGradedMemo);
   // ボタンは作り直されたばかりで初期状態なので、毎回ここで状態を設定し直す。
   applyBuyButtonState();
 }
@@ -798,6 +802,66 @@ async function saveHorseNote(name, memoRaw) {
     horseMemoStatus.className = `horse-note-status ${res.ok ? "success" : "error"}`;
   }
 }
+
+// ---- 重賞メモ(2026-10-12追加。docs/design/graded-race-search.md「重賞メモ」) ----
+// 重賞のレースのとき、ヘッダーの「重賞メモ」ボタンからダイアログを開く。重賞1つ×年ごとのメモで、
+// このレースの年のメモを編集し、ほかの年のメモを下に表示する(入力欄は graded-race-notes.js)。
+// gradedNotes は表示中の重賞のメモ一覧。別の重賞へ切り替えた直後に前の重賞の有無で
+// ボタンを強調しないよう、重賞の id と組で持つ。
+let gradedNotes = { gradedRaceId: null, notes: [] };
+let gradedNotesView = null;
+const gradedMemoModal = document.getElementById("graded-memo-modal");
+
+function gradedNotesHaveMemo() {
+  const g = selectedRace?.graded;
+  return Boolean(g && gradedNotes.gradedRaceId === g.id && gradedNotes.notes.length);
+}
+
+function updateGradedMemoButton() {
+  const btn = document.getElementById("graded-memo-btn");
+  if (btn) btn.classList.toggle("has-memo", gradedNotesHaveMemo());
+}
+
+async function loadGradedNotes() {
+  const g = selectedRace?.graded;
+  if (!g) return;
+  try {
+    const notes = await fetchGradedRaceNotes(g.id);
+    if (selectedRace?.graded?.id !== g.id) return;
+    gradedNotes = { gradedRaceId: g.id, notes };
+    updateGradedMemoButton();
+  } catch {
+    // 取得に失敗してもボタンは使える(ダイアログを開いたときに取り直す)。
+  }
+}
+
+function openGradedMemo() {
+  const g = selectedRace?.graded;
+  if (!g) return;
+  document.getElementById("graded-memo-title").textContent = `${g.name} のメモ`;
+  gradedNotesView = mountGradedRaceNotes(document.getElementById("graded-memo-body"), {
+    gradedRaceId: g.id,
+    year: Number(String(selectedRace.race_date || "").slice(0, 4)) || new Date().getFullYear(),
+    notes: gradedNotes.gradedRaceId === g.id ? gradedNotes.notes : undefined,
+    onChange(notes) {
+      gradedNotes = { gradedRaceId: g.id, notes };
+      updateGradedMemoButton();
+    },
+  });
+  gradedMemoModal.hidden = false;
+}
+
+function closeGradedMemo() {
+  if (gradedNotesView) {
+    gradedNotesView.dispose();
+    gradedNotesView = null;
+  }
+  gradedMemoModal.hidden = true;
+}
+
+document.getElementById("graded-memo-close-btn").addEventListener("click", closeGradedMemo);
+gradedMemoModal.addEventListener("click", (e) => { if (e.target === gradedMemoModal) closeGradedMemo(); });
+registerEscToClose(gradedMemoModal, closeGradedMemo);
 
 // 「メモ」ボタンの見た目(メモ登録済みの強調)を、その馬名のメモの有無に合わせる。
 // nameを省略すると全馬を更新する。

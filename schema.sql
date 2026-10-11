@@ -465,6 +465,22 @@ CREATE TABLE IF NOT EXISTS graded_races (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
+
+-- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
+-- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。
+-- races.id ではなく重賞マスタの id と年で持つので、レースを登録する前・取り込んでいない年にも書ける。
+-- graded_races 行を削除してもメモは消さない(FOREIGN KEY を付けない。消えたメモは画面に出なくなるだけ)。
+-- docs/design/graded-race-search.md「重賞メモ」参照。
+CREATE TABLE IF NOT EXISTS graded_race_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  graded_race_id INTEGER NOT NULL,
+  year INTEGER NOT NULL,
+  memo TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(user_id, graded_race_id, year)
+);
 -- (直前にあった、対応するBEGINの無い孤立した"END;"はここで除去した。おそらく
 -- コピー&ペーストの取り違えによる混入。トリガーは全て自分のBEGIN...ENDブロック内で
 -- 閉じており、この行は不要かつ「wrangler d1 execute --file=schema.sql」実行時に

@@ -39,6 +39,7 @@
 -- 2026-10-09: range_chunk_caches(キャッシュ3つの範囲ごとのトリガー・horse_names_cache)・cleanup_unused_tables(races_cache・
 --  external_fetch_pause の削除)・service_guard(app_settings)も本番適用済み・schema.sql 反映済みのため削除した。
 --  未適用のマイグレーションは無い。
+-- 2026-10-12: graded_race_notes(重賞メモ)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -51,3 +52,17 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- 今後スキーマ変更が必要になったら、この下に新しい "-- @STEP: 名前" ブロックを
 -- 追記していく。DROP/RENAMEを伴う破壊的な変更は極力避け、ALTER TABLE ADD COLUMNや
 -- CREATE TABLE/INDEX IF NOT EXISTSなど、再実行しても安全な変更を基本とすること。
+
+-- @STEP: graded_race_notes
+-- 重賞メモ(2026-10-12)。新しい空の表を作るだけなので、書き込みは数行。
+CREATE TABLE IF NOT EXISTS graded_race_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  graded_race_id INTEGER NOT NULL,
+  year INTEGER NOT NULL,
+  memo TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(user_id, graded_race_id, year)
+);
+INSERT INTO schema_migrations (name) VALUES ('graded_race_notes');

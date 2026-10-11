@@ -2411,6 +2411,20 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .graded-day-where{font-size:12px;opacity:.75}
 /* 予想登録画面: 重賞の「過去のデータ」(データ検索「重賞検索」を別タブで開く) */
 .graded-past-link{text-decoration:none;cursor:pointer}
+/* 予想登録画面: 「重賞メモ」ボタン(2026-10-12)。メモがある重賞は馬メモと同じ強調 */
+.graded-memo-btn{font-family:inherit;background:#fff;color:var(--ink-soft);cursor:pointer}
+.graded-memo-btn.has-memo{border-color:var(--hanko);color:var(--hanko)}
+.graded-memo-btn.has-memo::after{content:"●";font-size:8px;margin-left:3px}
+/* 重賞メモの入力欄(graded-race-notes.js。予想登録画面のダイアログ・重賞検索タブで共用) */
+.grn-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-bottom:6px}
+.grn-text{width:100%;box-sizing:border-box;font-size:16px}
+.grn-others-title{font-size:13px;font-weight:700;margin:14px 0 6px}
+.grn-other{border-top:1px solid var(--rule-strong);padding:8px 0}
+.grn-other-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.grn-other-year{font-weight:700}
+.grn-other-text{white-space:pre-wrap;word-break:break-word;margin-top:4px;font-size:14px}
+.grn-edit-btn{padding:4px 12px;font-size:12px}
+.gr-notes-card{background:var(--paper-raised);border:1px solid var(--rule-strong);padding:12px 14px;margin-bottom:12px}
 
 /* 管理画面: D1の使用量(2026-10-08) */
 .d1-meter{margin:6px 0 10px}

@@ -30,6 +30,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | データ検索画面(レース成績集計・馬情報検索) | `public/data-search.js`, `public/data-search.html`, `functions/api/data-search/race-stats.js`, `functions/api/data-search/horse-search.js`, `functions/api/data-search/horse-info.js`, `functions/api/_lib/horse-master.js`(netkeibaへの自動取得は2026-10-08廃止) |
 | データ検索画面「騎手検索」タブ(通算・年度別・コース別成績) | `public/jockey-search.js`, `public/data-search.html`, `functions/api/data-search/jockeys.js`, `functions/api/data-search/jockey-stats.js`, `functions/api/_lib/jockey-stats.js`, `functions/api/_lib/race-lineup.js` |
 | データ検索「重賞検索」タブ(今年の出走馬・過去10年成績) | `public/graded-race-search.js`, `public/data-search.html`, `functions/api/data-search/graded-races.js`, `functions/api/data-search/graded-race.js`, `functions/api/data-search/graded-race-horses.js`, `functions/api/_lib/graded-race-search.js` |
+| 重賞メモ(重賞×年ごと・自分だけ。重賞検索タブと予想登録画面) | `public/graded-race-notes.js`(入力欄の共通部品), `functions/api/graded-race-notes/index.js`, `public/graded-race-search.js`, `public/prediction.js` |
 | 重賞管理(管理画面)・レース分類(重賞/条件戦/その他) | `public/jra-graded-races-pdf.js`, `functions/api/admin/graded-races/*`, `functions/api/_lib/race-classification.js` |
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
 | 出走馬一覧PDFインポート | `public/jra-entries-pdf.js`, `functions/api/races/entries-import.js` |
