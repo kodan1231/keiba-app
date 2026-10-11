@@ -29,7 +29,7 @@ import {
 //     horses: { <正規化馬名>: { all:   { time: {...} | null, last3f: {...} | null },
 //                               track: { time: {...} | null, last3f: {...} | null } } } }
 //   time / last3f は { time_text, seconds | last3f, race_date, track, race_name,
-//   track_condition, finish_position }。キーは prediction.js の normalizeHorseName と同じ形。
+//   track_condition, finish_position }。time には、その走の上がり3F run_last3f(無ければ null)も付く。キーは prediction.js の normalizeHorseName と同じ形。
 
 const normalizeName = (v) => String(v ?? "").replace(/[　\s]+/g, " ").trim();
 
@@ -88,7 +88,9 @@ export async function onRequestGet(context) {
   const consider = (slot, row, base) => {
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && (!slot.time || sec < slot.time.seconds)) {
-      slot.time = { time_text: row.time_text, seconds: sec, ...base };
+      // run_last3f: そのタイムを出した走の上がり3F(2026-10-12追加。展開・時計タブの持ちタイム順位で表示)
+      const runL3 = Number(row.final_furlong_time);
+      slot.time = { time_text: row.time_text, seconds: sec, run_last3f: row.final_furlong_time != null && runL3 > 0 ? runL3 : null, ...base };
     }
     const l3 = Number(row.final_furlong_time);
     if (row.final_furlong_time != null && Number.isFinite(l3) && l3 > 0 && (!slot.last3f || l3 < slot.last3f.last3f)) {
