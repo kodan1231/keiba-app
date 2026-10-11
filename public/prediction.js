@@ -830,7 +830,7 @@ function paceTimeSectionHtml(entries) {
   const rows = ranked.map((x, i) => {
     if (i === 0 || x.t.seconds !== ranked[i - 1].t.seconds) rank = i + 1; // 同タイムは同順位
     const diff = x.t.seconds - top;
-    const sub = [formatDateMd(x.t.race_date), x.t.track_condition, x.t.finish_position != null ? `${x.t.finish_position}着` : null].filter(Boolean).join(" ");
+    const sub = [formatDateMd(x.t.race_date), x.t.finish_position != null ? `${x.t.finish_position}着` : null].filter(Boolean).join(" ");
     return `
       <tr>
         <td>${rank}</td>
@@ -840,6 +840,7 @@ function paceTimeSectionHtml(entries) {
         <td>${x.t.run_last3f != null ? Number(x.t.run_last3f).toFixed(1) : "—"}</td>
         <td>${x.t.weight_carried != null ? Number(x.t.weight_carried).toFixed(1) : "—"}</td>
         <td>${escapeHtml(x.t.jockey || "—")}</td>
+        <td>${escapeHtml(x.t.track_condition || "—")}</td>
         <td title="${escapeAttr(x.t.race_name || "")}">${escapeHtml(sub)}</td>
       </tr>`;
   }).join("");
@@ -847,7 +848,7 @@ function paceTimeSectionHtml(entries) {
     ${ranked.length ? `
       <div class="table-wrap">
         <table class="horse-history-table pace-time-table">
-          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>上がり3F</th><th>斤量</th><th>騎手</th><th>その走</th></tr></thead>
+          <thead><tr><th>順位</th><th>馬</th><th>タイム</th><th>差</th><th>上がり3F</th><th>斤量</th><th>騎手</th><th>馬場</th><th>その走</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<p class="pace-none">この条件を走ったことのある馬はいません</p>`}
