@@ -74,7 +74,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
 | `_lib/range-chunk-cache.js` | `loadRangeChunks` `rangeCondition` `rangeIndexOf` `RANGE_SIZE`(races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直すキャッシュの共通処理。2026-10-08追加) |
-| `_lib/horse-names-cache.js` | `getHorseNameCounts`(馬名ごとのレース数のキャッシュ horse_names_cache。馬情報検索の候補・登録馬一覧用。範囲ごと。2026-10-08追加) |
+| `_lib/horse-names-cache.js` | `getHorseNameCounts`(馬名ごとのレース数のキャッシュ horse_names_cache。馬情報検索の候補・登録馬一覧用。範囲ごと。2026-10-08追加。読み込みが約38ミリ秒と重いため同じ実行環境で60秒使い回す〈2026-10-13〉) |
 | `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/race-lineup-cache.js` | `getRaceLineups`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/memo-cache.js` | `memoized` `invalidateMemo`(小さな設定表を同じ実行環境で2分間使い回す。2026-10-07追加)。**画面表示用の読み取りAPIは `loadJockeyAliasMapCached` `loadHorseAliasMapCached` `loadGradedRaceMapCached` を使い、DBへ書き込む処理は毎回読む版を使う**。エイリアス・重賞を変える管理APIは `invalidateMemo` を呼ぶ |

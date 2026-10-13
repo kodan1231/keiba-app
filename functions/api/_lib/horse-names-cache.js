@@ -14,17 +14,23 @@
 // 無効化は DB トリガー(@STEP: range_chunk_caches)。
 
 import { loadRangeChunks, rangeCondition, RANGE_SIZE } from "./range-chunk-cache.js";
+import { memoized } from "./memo-cache.js";
 
 // 戻り値: { entries: Map<表記, レース数>, results: Map<表記, レース数> }(全範囲の合計)
-export async function getHorseNameCounts(db) {
-  const chunks = await loadRangeChunks(db, "horse_names_cache", buildHorseNameChunks);
-  const entries = new Map();
-  const results = new Map();
-  for (const c of chunks) {
-    for (const [name, n] of c.e || []) entries.set(name, (entries.get(name) || 0) + n);
-    for (const [name, n] of c.r || []) results.set(name, (results.get(name) || 0) + n);
-  }
-  return { entries, results };
+// 2026-10-13: 読み込みと合算(約144万文字・約2万頭分)に手元で約38ミリ秒かかり、馬情報検索は入力のたびに呼ばれるため、
+// 同じ実行環境で60秒使い回す(_lib/memo-cache.js)。取り込みの反映は最大60秒遅れる。戻り値の Map は書き換えないこと(使い回すため)。
+export const MEMO_HORSE_NAME_COUNTS = "horse_name_counts";
+export function getHorseNameCounts(db) {
+  return memoized(MEMO_HORSE_NAME_COUNTS, async () => {
+    const chunks = await loadRangeChunks(db, "horse_names_cache", buildHorseNameChunks);
+    const entries = new Map();
+    const results = new Map();
+    for (const c of chunks) {
+      for (const [name, n] of c.e || []) entries.set(name, (entries.get(name) || 0) + n);
+      for (const [name, n] of c.r || []) results.set(name, (results.get(name) || 0) + n);
+    }
+    return { entries, results };
+  }, 60 * 1000);
 }
 
 async function buildHorseNameChunks(db, indices) {
