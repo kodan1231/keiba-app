@@ -3358,3 +3358,9 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-admin .pace-reco-note { width: 100%; margin: 0; }
 .pace-w-cell { white-space: nowrap; }
 .pace-w-cell .pace-w-input input { width: 3.6em; font-size: 14px; }
+
+/* データ検索「重賞検索」: 総合推奨馬の検証(2026-10-13) */
+.gr-picks-hits { font-weight: 700; color: var(--hanko); }
+.gr-picks-table { font-size: 12px; }
+.gr-picks-table td.gr-picks-horse { text-align: left; }
+.gr-picks-hit { background: rgba(176, 48, 40, .08); font-weight: 700; }

@@ -37,6 +37,81 @@ function grNorm(s) {
     .toLowerCase();
 }
 
+// ---------- 総合推奨馬の検証(2026-10-13追加。docs/design/graded-race-search.md「総合推奨馬の検証」) ----------
+// この重賞の比率(予想登録画面「展開・時計」タブの総合推奨馬と同じ)と、過去の各年をその年より前のデータだけで採点したときの
+// 総合点の上位5頭・実際の着順。API: GET /api/data-search/graded-race-picks?id=N
+const GR_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム" };
+const GR_FACTOR_KEYS = ["pace", "number", "jockey", "time"];
+const GR_PACE_LABEL = { high: "ハイ", slow: "スロー", middle: "ミドル" };
+
+function grWeightsSourceText(w) {
+  if (w.scope === "graded") return w.source === "auto" ? "この重賞の比率(過去の結果で一番当たった比率を自動で選択)" : "この重賞の比率(管理者が設定)";
+  if (w.scope === "default") return "標準の比率(この重賞の比率はまだありません)";
+  return "既定の比率(この重賞の比率はまだありません)";
+}
+
+function grPicksHtml(data) {
+  const w = data.weights || {};
+  const weightsText = GR_FACTOR_KEYS.map((f) => `${GR_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
+  const a = w.scope === "graded" ? w.auto : null;
+  const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+  const years = data.years || [];
+  const hitsTotal = years.reduce((s, y) => s + y.hits, 0);
+  const top3Total = years.reduce((s, y) => s + y.top3.length, 0);
+  const head = `
+    <p class="stats-note">比率: <strong>${escapeHtml(weightsText)}</strong>(${escapeHtml(grWeightsSourceText(w))})</p>
+    ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合ベスト5に3着以内の馬が${a.best.hits}/${a.top3}頭(${pct(a.best.hit_rate)})。均等の比率なら${a.equal.hits}頭(${pct(a.equal.hit_rate)})</p>` : ""}
+    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。上位5頭に入った3着以内の馬: <strong>${hitsTotal}/${top3Total}頭</strong></p>` : ""}`;
+  if (!years.length) return `${head}<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
+  const cell = (x) => (x.missing ? `<span class="ticket-sub" title="データ無し">−</span>` : `<span title="${escapeAttr(x.value || "")}">${x.score}</span>`);
+  const place = (p) => {
+    const label = { scratched: "取消", excluded: "除外", stopped: "中止" }[p.status];
+    if (label) return label;
+    return p.finish_position ? `${p.finish_position}着` : "—";
+  };
+  return head + years.map((y) => `
+    <div class="gr-year-card">
+      <div class="gr-year-head">
+        <span class="gr-year">${y.year}年</span>
+        <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
+        <span class="gr-picks-hits">3着以内 ${y.hits}/${y.top3.length}頭</span>
+      </div>
+      <div class="table-wrap">
+        <table class="horse-history-table gr-picks-table">
+          <thead><tr><th>総合</th><th>馬</th><th>総合点</th>${GR_FACTOR_KEYS.map((f) => `<th>${GR_FACTOR_LABELS[f]}</th>`).join("")}<th>着順</th></tr></thead>
+          <tbody>${y.picks.map((p) => `
+            <tr class="${p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3 ? "gr-picks-hit" : ""}">
+              <td>${p.rank}位</td>
+              <td class="gr-picks-horse">${p.horse_number != null ? `${p.horse_number} ` : ""}${escapeHtml(p.horse_name || "")}</td>
+              <td><strong>${p.total.toFixed(1)}</strong></td>
+              ${GR_FACTOR_KEYS.map((f) => `<td>${cell(p.factors[f])}</td>`).join("")}
+              <td>${escapeHtml(place(p))}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="gr-main-payout">実際の3着以内: ${y.top3.map((t) => `${t.finish_position}着 ${escapeHtml(t.horse_name || "")}(総合${t.total_rank ?? "−"}位)`).join(" / ")}</p>
+    </div>`).join("");
+}
+
+async function grLoadPicks(gradedId, token) {
+  grEls.picks.innerHTML = `<p class="ticket-sub">読み込み中…(過去の各年を採点しています)</p>`;
+  try {
+    const res = await authedFetch(`/api/data-search/graded-race-picks?id=${encodeURIComponent(gradedId)}`);
+    if (token !== grLoadToken) return;
+    if (res.status === 503) {
+      grEls.picks.innerHTML = `<p class="ticket-sub">D1の使用量が多いため、データ検索の集計は一時停止中です。</p>`;
+      return;
+    }
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    if (token !== grLoadToken) return;
+    grEls.picks.innerHTML = grPicksHtml(data);
+  } catch {
+    if (token === grLoadToken) grEls.picks.innerHTML = `<p class="ticket-sub">取得に失敗しました。</p>`;
+  }
+}
+
 function grGradeLabel(item) {
   return `${item.is_jump ? "J・" : ""}${item.grade}`;
 }
@@ -606,6 +681,7 @@ async function grLoadDetail(id) {
   grEls.past.innerHTML = "";
   grEls.trends.innerHTML = "";
   grEls.trendsNote.textContent = "";
+  grEls.picks.innerHTML = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 
   let data;
@@ -626,6 +702,7 @@ async function grLoadDetail(id) {
   grRenderCurrent(data);
   grRenderPast(data);
   grRenderTrends(data);
+  grLoadPicks(m.id, token);
   if (data.current.status !== "unannounced" && data.current.race) {
     grLoadHorses(data.current.race.id, token);
   }
@@ -647,6 +724,7 @@ function grInit() {
   grEls.past = document.getElementById("gr-past");
   grEls.trendsNote = document.getElementById("gr-trends-note");
   grEls.trends = document.getElementById("gr-trends");
+  grEls.picks = document.getElementById("gr-picks");
 
   grEls.search.addEventListener("input", () => grRenderList());
   grEls.gradeFilter.querySelectorAll(".horse-row-btn").forEach((btn) => {

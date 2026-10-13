@@ -126,16 +126,14 @@ function evaluateYear(year, w) {
   return { hits, posSum };
 }
 
-// 重賞の過去(最大10年)の結果から比率を自動算出する(2026-10-13 に方式を変更)。
-// 各年について、そのレースより前のデータだけで4要素の点を付け直し(画面と同じ規則)、比率の候補(10%刻み。4要素で286通り)ごとに
-// 総合点のベスト5に3着以内の馬が何頭入ったかを数え、過去の全年で一番多く当たった比率を採用する。
-// 同じ当たり数なら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等(34/33/33)に近い方。
-// 2026-10-13 以前は「各要素のベスト5の的中率 − 偶然の割合」に比例させていたが、偶然以下の要素が0%に切り捨てられ、
-// 富士S・秋華賞が騎手100%になった(展開のデータが少なく、馬番が偶然をわずかに下回ったため)。要素ごとの的中率は参考として detail に残す。
-// 対象は今日まで(当日を含む)に行われ着順のある年。opts.targetRace(画面で開いたレース)があれば、その年を detail.target_year に記録する。
-// D1の読み取り: 一覧用キャッシュ・集計用キャッシュ(各約20行)+ 対象レースの race_results(約200行)+
+// 重賞の過去(最大10年。今日〈当日を含む〉までに行われ着順のある年)の各年について、そのレースより前のデータだけで
+// 4要素の点を付け直す(_lib/race-factors.js。画面と同じ規則)。比率の自動算出と、重賞検索タブの「過去の上位5頭」で共用する
+// (2026-10-13 に autoPaceWeights から切り出し)。
+// 戻り値: { error } か { master, targets, checkedRaceIds, years: [{ year, race, pace_type, runners: [{ key, horse_name, horse_number,
+//   status, finish_position, factors: { f: { score, missing, value } } }], top3Keys }] }(新しい年から)
+// D1の読み取り: 一覧用キャッシュ・集計用キャッシュ・勝ちタイムのキャッシュ(各約20行)+ 対象レースの race_results(約200行)+
 //   その出走馬の全戦績(race_results の horse_key インデックス。毎日王冠で約800行)。
-export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
+export async function loadGradedBacktest(db, gradedRaceId) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
   if (!master) return { error: "重賞が見つかりません" };
 
@@ -157,7 +155,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   const targetIds = targets.map((t) => Number(t.race.id));
   const { results: rrRows } = await db
     .prepare(
-      `SELECT race_id, horse_key, horse_number, jockey, status, finish_position
+      `SELECT race_id, horse_key, horse_name, horse_number, jockey, status, finish_position
          FROM race_results WHERE race_id IN (${targetIds.map(() => "?").join(",")})`
     )
     .bind(...targetIds)
@@ -190,37 +188,59 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   }
   const ctx = createFactorContext(lineups, raceTimes, aliasMap);
 
+  const years = [];
+  for (const { year, race } of targets) {
+    const runnersAll = runnersByRace.get(Number(race.id)) || [];
+    const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
+    if (!runnersAll.length || !top3.length) continue;
+    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey })), runsByHorse);
+    years.push({
+      year,
+      race,
+      pace_type: rf.pace_type,
+      top3Keys: new Set(top3.map((r) => r.horse_key)),
+      runners: runnersAll.map((h) => ({
+        key: h.horse_key, horse_name: h.horse_name, horse_number: h.horse_number, status: h.status, finish_position: h.finish_position,
+        factors: Object.fromEntries(PACE_FACTORS.map((f) => {
+          const v = rf.factors[f].get(h.horse_key);
+          return [f, { score: v.score, missing: v.missing, value: v.value }];
+        })),
+      })),
+    });
+  }
+  const checkedRaceIds = targets.filter((t) => t.race.has_finish_order || runnersByRace.has(Number(t.race.id))).map((t) => Number(t.race.id));
+  return { master, targets, checkedRaceIds, years };
+}
+
+// 重賞の過去(最大10年)の結果から比率を自動算出する(2026-10-13 に方式を変更)。
+// 各年の4要素の点(loadGradedBacktest)をもとに、比率の候補ごとに総合点のベスト5に3着以内の馬が何頭入ったかを数え、
+// 過去の全年で一番多く当たった比率を採用する。同じ当たり数なら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等に近い方。
+// 2026-10-13 以前は「各要素のベスト5の的中率 − 偶然の割合」に比例させていたが、偶然以下の要素が0%に切り捨てられ、
+// 富士S・秋華賞が騎手100%になった(展開のデータが少なく、馬番が偶然をわずかに下回ったため)。要素ごとの的中率は参考として detail に残す。
+// opts.targetRace(画面で開いたレース)があれば、その年を detail.target_year に記録する。
+export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
+  const bt = await loadGradedBacktest(db, gradedRaceId);
+  if (bt.error) return { error: bt.error };
+
   const factorTotal = { top3: 0 };
   for (const f of PACE_FACTORS) factorTotal[f] = { hits: 0, expected: 0 };
   const years = []; // 年ごとの採点結果(比率の候補の評価に使う)
   const yearsOut = []; // detail に残す根拠
-
-  for (const { year, race } of targets) {
-    const runnersAll = runnersByRace.get(Number(race.id)) || [];
-    const n = runnersAll.length;
-    const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
-    if (!n || !top3.length) continue;
-    const date = String(race.race_date);
-
-    const runners = runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey }));
-    const rf = computeRaceFactors(ctx, race, runners, runsByHorse);
-    const pace = rf.pace_type;
-    // 各要素の並び(データのある馬だけ・順位順)
-    const orders = Object.fromEntries(PACE_FACTORS.map((f) => [f,
-      [...rf.factors[f].entries()].filter(([, v]) => !v.missing).map(([key, v]) => ({ key, rank: v.rank })).sort((a, b) => a.rank - b.rank)]));
-    const top3Keys = new Set(top3.map((r) => r.horse_key));
+  for (const y of bt.years) {
+    const n = y.runners.length;
     years.push(compileYear(
-      runners.map((h) => h.key),
-      top3Keys,
-      Object.fromEntries(PACE_FACTORS.map((f) => [f, new Map([...rf.factors[f]].map(([k, v]) => [k, v.score]))]))
+      y.runners.map((h) => h.key),
+      y.top3Keys,
+      Object.fromEntries(PACE_FACTORS.map((f) => [f, new Map(y.runners.map((h) => [h.key, h.factors[f].score]))]))
     ));
-    const yearOut = { year, race_id: race.id, field_size: n, pace_type: pace, top3: top3.length };
-    factorTotal.top3 += top3.length;
+    const yearOut = { year: y.year, race_id: y.race.id, field_size: n, pace_type: y.pace_type, top3: y.top3Keys.size };
+    factorTotal.top3 += y.top3Keys.size;
     for (const f of PACE_FACTORS) {
-      const best = orders[f].slice(0, PACE_TOP_N);
-      const hits = best.filter((x) => top3Keys.has(x.key)).length;
+      // 要素ごとのベスト5(データのある馬を点の高い順)
+      const best = y.runners.filter((h) => !h.factors[f].missing).sort((a, b) => b.factors[f].score - a.factors[f].score).slice(0, PACE_TOP_N);
+      const hits = best.filter((h) => y.top3Keys.has(h.key)).length;
       factorTotal[f].hits += hits;
-      factorTotal[f].expected += (top3.length * best.length) / n;
+      factorTotal[f].expected += (y.top3Keys.size * best.length) / n;
       yearOut[f] = { hits, picked: best.length };
     }
     yearsOut.push(yearOut);
@@ -283,7 +303,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
       race_ids: yearsOut.map((y) => y.race_id),
       // 着順のあったレース(全頭の結果がそろわず採点に使えなかった年も含む)。古いかどうかの判定に使う
       // (着順の無かった今年のレースは入れない。結果が入ったら計算し直すため)
-      checked_race_ids: targets.filter((t) => t.race.has_finish_order || runnersByRace.has(Number(t.race.id))).map((t) => Number(t.race.id)),
+      checked_race_ids: bt.checkedRaceIds,
       races: yearsOut.length,
       top3: factorTotal.top3,
       best: { hits: best.hits, hit_rate: rate(best.hits) },
@@ -292,6 +312,36 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
       years: yearsOut,
     },
   };
+}
+
+// 重賞検索タブの「過去の上位5頭」(2026-10-13追加): 過去の各年を、指定の比率で採点した総合点の上位5頭と実際の着順。
+// 総合点 = Σ 比率 × 点 ÷ 比率の合計(画面の総合推奨馬と同じ)。同点は同順位。
+export function gradedPicksOf(bt, w) {
+  const wOf = (f) => Number(w[`w_${f}`] ?? 0);
+  const wSum = PACE_FACTORS.reduce((a, f) => a + wOf(f), 0) || 1;
+  return bt.years.map((y) => {
+    const totals = y.runners.map((h) => ({ h, total: Math.round((PACE_FACTORS.reduce((a, f) => a + wOf(f) * h.factors[f].score, 0) / wSum) * 10) / 10 }));
+    totals.sort((a, b) => b.total - a.total);
+    let rank = 0;
+    const ranked = totals.map((x, i) => {
+      if (i === 0 || x.total !== totals[i - 1].total) rank = i + 1;
+      return { ...x, rank };
+    });
+    const picks = ranked.filter((x) => x.rank <= PACE_TOP_N).map((x) => ({
+      rank: x.rank, total: x.total, horse_name: x.h.horse_name, horse_number: x.h.horse_number,
+      status: x.h.status, finish_position: x.h.finish_position,
+      factors: Object.fromEntries(PACE_FACTORS.map((f) => [f, { score: Math.round(x.h.factors[f].score), missing: x.h.factors[f].missing, value: x.h.factors[f].value }])),
+    }));
+    const hits = picks.filter((p) => p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3).length;
+    const top3 = y.runners
+      .filter((h) => y.top3Keys.has(h.key))
+      .sort((a, b) => a.finish_position - b.finish_position)
+      .map((h) => ({ finish_position: h.finish_position, horse_name: h.horse_name, horse_number: h.horse_number, total_rank: ranked.find((x) => x.h.key === h.key)?.rank ?? null }));
+    return {
+      year: y.year, race_id: y.race.id, race_date: y.race.race_date, track: y.race.track, course_type: y.race.course_type, distance: y.race.distance,
+      field_size: y.runners.length, pace_type: y.pace_type, hits, top3, picks,
+    };
+  });
 }
 
 // 自動の比率が古くなっていないか(画面で開いたレース race で判定)。
