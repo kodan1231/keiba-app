@@ -13,7 +13,8 @@ import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } f
 export const PACE_FACTORS = FACTOR_KEYS;
 export const DEFAULT_PACE_WEIGHTS = { w_pace: 25, w_number: 25, w_jockey: 25, w_time: 25 };
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 4; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更
+const AUTO_METHOD_VERSION = 5; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
+// 5: 同日 上位3頭の1着数→2着以内の数→3着以内の数の優先順で比べる
 export const PACE_TOP_N = 5; // 重賞検索の検証で年ごとに表示する頭数
 // 比率の比較で選ぶ頭数(2026-10-13 ユーザー要望で5→3。総合点の上位3頭のうち何頭が3着以内に入ったかで比べる)
 export const PACE_PICK_N = 3;
@@ -86,24 +87,27 @@ function weightCandidates(step = 10) {
 // 全頭がベスト5扱いになって当たりが多く数えられ、その要素の比率が不当に高く選ばれた。位置も同点の中の平均にする。
 // CPU時間対策(2026-10-13): 候補286通り×最大11年を採点するため、年ごとの点を先に数値の配列にしておき(compileYear)、
 // 採点ではオブジェクトを作らない。Map を引く素朴な書き方だと手元で約46ミリ秒かかり、無料枠のCPU上限(10ミリ秒)を超えた。
-function compileYear(keys, top3Keys, scores) {
+// placeOf: Map(key -> 着順 1/2/3。それ以外は無し)
+function compileYear(keys, placeOf, scores) {
   const n = keys.length;
   const F = PACE_FACTORS.length;
   const S = new Float64Array(n * F);
-  const top3 = new Uint8Array(n);
+  const place = new Uint8Array(n); // 1/2/3 着(それ以外は0)
   keys.forEach((key, h) => {
     PACE_FACTORS.forEach((f, k) => {
       const s = scores[f].get(key);
       S[h * F + k] = s == null ? MISSING_SCORE : s;
     });
-    top3[h] = top3Keys.has(key) ? 1 : 0;
+    place[h] = placeOf.get(key) || 0;
   });
-  return { n, S, top3, totals: new Float64Array(n), order: Array.from({ length: n }, (_, i) => i) };
+  return { n, S, place, totals: new Float64Array(n), order: Array.from({ length: n }, (_, i) => i) };
 }
 
 // w: 比率の配列(PACE_FACTORS の順)
+// 戻り値: { win, quin, show(総合上位3頭のうち 1着 / 2着以内 / 3着以内 の頭数。同点の境目は按分), hits(= show), posSum }
+// 2026-10-13 ユーザー要望: 比率の比較は 1着の数 → 2着以内の数 → 3着以内の数 の優先順(autoPaceWeights の consider)
 function evaluateYear(year, w) {
-  const { n, S, top3, totals, order } = year;
+  const { n, S, place, totals, order } = year;
   const F = w.length;
   for (let h = 0; h < n; h++) {
     let t = 0;
@@ -111,21 +115,28 @@ function evaluateYear(year, w) {
     totals[h] = Math.round(t * 1000); // 浮動小数の誤差で同点が崩れないよう整数にする
   }
   order.sort((a, b) => totals[b] - totals[a]);
-  let hits = 0;
+  let win = 0, quin = 0, show = 0;
   let posSum = 0;
   for (let i = 0; i < n; ) {
     let j = i;
     while (j + 1 < n && totals[order[j + 1]] === totals[order[i]]) j++;
-    let inTop3 = 0;
-    for (let x = i; x <= j; x++) inTop3 += top3[order[x]];
-    if (inTop3) {
-      const slots = Math.max(0, Math.min(j + 1, PACE_PICK_N) - i); // この同点の組に残っている上位3頭の枠
-      hits += (inTop3 * slots) / (j - i + 1);
-      posSum += inTop3 * ((i + j) / 2 + 1);
+    let w1 = 0, w2 = 0, w3 = 0;
+    for (let x = i; x <= j; x++) {
+      const p = place[order[x]];
+      if (p === 1) w1++;
+      if (p >= 1 && p <= 2) w2++;
+      if (p >= 1 && p <= 3) w3++;
+    }
+    if (w3) {
+      const share = Math.max(0, Math.min(j + 1, PACE_PICK_N) - i) / (j - i + 1); // この同点の組に残っている上位3頭の枠を按分
+      win += w1 * share;
+      quin += w2 * share;
+      show += w3 * share;
+      posSum += w3 * ((i + j) / 2 + 1);
     }
     i = j + 1;
   }
-  return { hits, posSum };
+  return { win, quin, show, hits: show, posSum };
 }
 
 // 重賞の過去(最大10年。今日〈当日を含む〉までに行われ着順のある年)の各年について、そのレースより前のデータだけで
@@ -233,7 +244,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
     const n = y.runners.length;
     years.push(compileYear(
       y.runners.map((h) => h.key),
-      y.top3Keys,
+      new Map(y.runners.filter((h) => h.status === "finished" && h.finish_position >= 1 && h.finish_position <= 3).map((h) => [h.key, h.finish_position])),
       Object.fromEntries(PACE_FACTORS.map((f) => [f, new Map(y.runners.map((h) => [h.key, h.factors[f].score]))]))
     ));
     const yearOut = { year: y.year, race_id: y.race.id, field_size: n, pace_type: y.pace_type, top3: y.top3Keys.size };
@@ -251,29 +262,33 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   if (!factorTotal.top3) return { error: "過去の着順が取り込まれていません" };
 
   // 比率の候補ごとに過去の全年を採点し、一番当たった比率を選ぶ
+  const r2 = (x) => Math.round(x * 100) / 100;
   const evalWeights = (w) => {
     const wArr = PACE_FACTORS.map((f) => w[`w_${f}`]);
-    let hits = 0, posSum = 0;
+    let win = 0, quin = 0, show = 0, posSum = 0;
     const perYear = years.map((y) => {
       const r = evaluateYear(y, wArr);
-      hits += r.hits;
-      posSum += r.posSum;
-      return Math.round(r.hits * 100) / 100;
+      win += r.win; quin += r.quin; show += r.show; posSum += r.posSum;
+      return { win: r2(r.win), quin: r2(r.quin), show: r2(r.show) };
     });
-    return { hits: Math.round(hits * 100) / 100, posSum, perYear };
+    return { win: r2(win), quin: r2(quin), show: r2(show), hits: r2(show), posSum, perYear };
   };
   const distFromEqual = (w) => PACE_FACTORS.reduce((a, f) => a + Math.abs(w[`w_${f}`] - DEFAULT_PACE_WEIGHTS[`w_${f}`]), 0);
   // 2段階で探す(CPU時間対策): 20%刻み(56通り)で一番当たった比率を見つけ、その周り(各要素±10%)を10%刻みで探す。
   // 10%刻みの全通り(286通り)を試すと採点だけで約6ミリ秒かかり、キャッシュの読み込みと合わせて無料枠の上限(10ミリ秒)を超えうるため。
+  // 比べ方(2026-10-13 ユーザー要望): 総合上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 が多い方。
+  // それも同じなら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等に近い方
   let best = null;
+  const better = (r, b) => {
+    if (r.win !== b.win) return r.win > b.win;
+    if (r.quin !== b.quin) return r.quin > b.quin;
+    if (r.show !== b.show) return r.show > b.show;
+    if (r.posSum !== b.posSum) return r.posSum < b.posSum;
+    return distFromEqual(r.w) < distFromEqual(b.w);
+  };
   const consider = (w) => {
     const r = { w, ...evalWeights(w) };
-    if (
-      !best ||
-      r.hits > best.hits ||
-      (r.hits === best.hits && r.posSum < best.posSum) ||
-      (r.hits === best.hits && r.posSum === best.posSum && distFromEqual(w) < distFromEqual(best.w))
-    ) best = r;
+    if (!best || better(r, best)) best = r;
   };
   for (const w of weightCandidates(20)) consider(w);
   const coarse = best.w;
@@ -282,8 +297,8 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   }
   const equal = evalWeights(DEFAULT_PACE_WEIGHTS);
   yearsOut.forEach((y, i) => {
-    y.total_hits = best.perYear[i];
-    y.equal_hits = equal.perYear[i];
+    y.total = best.perYear[i]; // 選んだ比率での総合上位3頭の { win, quin, show }
+    y.equal = equal.perYear[i];
   });
 
   const summary = {};
@@ -309,8 +324,9 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
       checked_race_ids: bt.checkedRaceIds,
       races: yearsOut.length,
       top3: factorTotal.top3,
-      best: { hits: best.hits, hit_rate: rate(best.hits) },
-      equal: { hits: equal.hits, hit_rate: rate(equal.hits) },
+      // 総合上位3頭のうち 1着 / 2着以内 / 3着以内 の頭数(hits = show)。分母は年数×3
+      best: { win: best.win, quin: best.quin, show: best.show, hits: best.hits, hit_rate: rate(best.hits) },
+      equal: { win: equal.win, quin: equal.quin, show: equal.show, hits: equal.hits, hit_rate: rate(equal.hits) },
       summary,
       years: yearsOut,
     },
@@ -335,15 +351,18 @@ export function gradedPicksOf(bt, w) {
       status: x.h.status, finish_position: x.h.finish_position,
       factors: Object.fromEntries(PACE_FACTORS.map((f) => [f, { score: Math.round(x.h.factors[f].score), missing: x.h.factors[f].missing, value: x.h.factors[f].value }])),
     }));
-    // 当たり: 総合上位3頭(PACE_PICK_N)のうち3着以内に入った頭数。表示は上位5頭まで(selected で上位3頭を示す)
-    const hits = picks.filter((p) => p.rank <= PACE_PICK_N && p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3).length;
+    // 当たり: 総合上位3頭(PACE_PICK_N)のうち 1着 / 2着以内 / 3着以内 の頭数。表示は上位5頭まで(selected で上位3頭を示す)
+    const sel = picks.filter((p) => p.rank <= PACE_PICK_N && p.status === "finished");
+    const win = sel.filter((p) => p.finish_position === 1).length;
+    const quin = sel.filter((p) => p.finish_position >= 1 && p.finish_position <= 2).length;
+    const hits = sel.filter((p) => p.finish_position >= 1 && p.finish_position <= 3).length;
     const top3 = y.runners
       .filter((h) => y.top3Keys.has(h.key))
       .sort((a, b) => a.finish_position - b.finish_position)
       .map((h) => ({ finish_position: h.finish_position, horse_name: h.horse_name, horse_number: h.horse_number, total_rank: ranked.find((x) => x.h.key === h.key)?.rank ?? null }));
     return {
       year: y.year, race_id: y.race.id, race_date: y.race.race_date, track: y.race.track, course_type: y.race.course_type, distance: y.race.distance,
-      field_size: y.runners.length, pace_type: y.pace_type, hits, top3, picks,
+      field_size: y.runners.length, pace_type: y.pace_type, win, quin, hits, top3, picks,
     };
   });
 }

@@ -1080,7 +1080,8 @@ function paceAutoSummaryText(detail) {
   if (!s) return "";
   if (detail.method === "backtest") {
     const pct = (v) => `${Math.round((v || 0) * 100)}%`;
-    return `${detail.races}年分 総合上位3頭のうち3着以内 ${detail.best.hits}/${detail.races * 3}頭(${pct(detail.best.hits / (detail.races * 3))})・均等なら${detail.equal.hits}頭`;
+    const t = (b) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}` : `3着以内${b.hits}`);
+    return `${detail.races}年分 総合上位3頭(${detail.races * 3}頭)のうち ${t(detail.best)}頭・均等なら ${t(detail.equal)}頭`;
   }
   const pct = (v) => `${Math.round((v || 0) * 100)}%`;
   return `${detail.races}年分 ` + PACE_W_KEYS.map(([k, label]) => {

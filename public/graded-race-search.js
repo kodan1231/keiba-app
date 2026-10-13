@@ -44,6 +44,11 @@ const GR_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", t
 const GR_FACTOR_KEYS = ["pace", "number", "jockey", "time"];
 const GR_PACE_LABEL = { high: "ハイ", slow: "スロー", middle: "ミドル" };
 
+// 総合上位3頭のうち 1着・2着以内・3着以内 の頭数(古い形式で win が無いときは3着以内だけ)
+function grHitText(b, races) {
+  return (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show ?? b.hits}頭` : `3着以内${b.hits}頭`) + `(上位3頭×${races}年=${races * 3}頭中)`;
+}
+
 function grWeightsSourceText(w) {
   if (w.scope === "graded") return w.source === "auto" ? "この重賞の比率(過去の結果で一番当たった比率を自動で選択)" : "この重賞の比率(管理者が設定)";
   if (w.scope === "default") return "標準の比率(この重賞の比率はまだありません)";
@@ -56,12 +61,11 @@ function grPicksHtml(data) {
   const a = w.scope === "graded" ? w.auto : null;
   const pct = (x) => `${Math.round((x || 0) * 100)}%`;
   const years = data.years || [];
-  const hitsTotal = years.reduce((s, y) => s + y.hits, 0);
-  const pickTotal = years.length * 3;
+  const sum = (k) => years.reduce((s, y) => s + (y[k] || 0), 0);
   const head = `
     <p class="stats-note">比率: <strong>${escapeHtml(weightsText)}</strong>(${escapeHtml(grWeightsSourceText(w))})</p>
-    ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合上位3頭のうち3着以内に入ったのは${a.best.hits}/${a.races * 3}頭(${pct(a.best.hits / (a.races * 3))})。均等の比率なら${a.equal.hits}頭</p>` : ""}
-    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。比率の比較は★の上位3頭のうち何頭が3着以内に入ったかで行います: <strong>${hitsTotal}/${pickTotal}頭</strong></p>` : ""}`;
+    ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合上位3頭のうち ${grHitText(a.best, a.races)}。均等の比率なら ${grHitText(a.equal, a.races)}</p>` : ""}
+    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。比率は★の上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 の順で比べています。この比率では <strong>${grHitText({ win: sum("win"), quin: sum("quin"), show: sum("hits") }, years.length)}</strong></p>` : ""}`;
   if (!years.length) return `${head}<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
   const cell = (x) => (x.missing ? `<span class="ticket-sub" title="データ無し">−</span>` : `<span title="${escapeAttr(x.value || "")}">${x.score}</span>`);
   const place = (p) => {
@@ -74,7 +78,7 @@ function grPicksHtml(data) {
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>
         <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
-        <span class="gr-picks-hits">★上位3頭のうち3着以内 ${y.hits}/3頭</span>
+        <span class="gr-picks-hits">★上位3頭: 1着${y.win}・2着以内${y.quin}・3着以内${y.hits}頭</span>
       </div>
       <div class="table-wrap">
         <table class="horse-history-table gr-picks-table">

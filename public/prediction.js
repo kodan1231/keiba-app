@@ -1080,9 +1080,9 @@ function paceTotalSectionHtml(entries) {
   const w = draft || ws.data;
   const weightsText = PACE_FACTOR_KEYS.map(f => `${PACE_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
   const a = !draft && ws.data.scope === "graded" ? ws.data.auto : null;
-  const pctOf = (x) => `${Math.round((x || 0) * 100)}%`;
+  const paceHitText = (b, races) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}頭` : `3着以内${b.hits}頭`) + `(上位3頭×${races}年=${races * 3}頭中)`;
   const autoText = a
-    ? `過去${a.races}年でこの比率を試すと、総合上位3頭のうち3着以内に入ったのは${a.best.hits}/${a.races * 3}頭(${pctOf(a.best.hits / (a.races * 3))})。均等の比率なら${a.equal.hits}頭`
+    ? `過去${a.races}年でこの比率を試すと、総合上位3頭のうち ${paceHitText(a.best, a.races)}。均等の比率なら ${paceHitText(a.equal, a.races)}`
     : "";
   const recomputingText = paceRecomputing === ws.key ? "過去の結果から比率を計算し直しています…(終わると自動で切り替わります)" : "";
   const info = `<p class="pace-reco-note">比率: <strong>${escapeHtml(weightsText)}</strong>${draft ? "(入力中・未保存)" : `(${escapeHtml(paceWeightsSourceText(ws.data))})`}</p>${autoText ? `<p class="pace-reco-note">${escapeHtml(autoText)}</p>` : ""}${recomputingText ? `<p class="pace-reco-note">${escapeHtml(recomputingText)}</p>` : ""}`;
@@ -1146,7 +1146,8 @@ async function paceWeightsAction(action) {
   } else if (action === "auto") {
     const d = data.detail || {};
     const pct = (v) => `${Math.round((v || 0) * 100)}%`;
-    paceWeightsMessage = `自動算出しました(${d.races || 0}年分・3着以内${d.top3 || 0}頭)。総合上位3頭のうち3着以内 ${d.best?.hits ?? 0}/${(d.races || 0) * 3}頭、均等の比率なら${d.equal?.hits ?? 0}頭`;
+    const paceHitText = (b, races) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}頭` : `3着以内${b.hits}頭`) + `(上位3頭×${races}年=${races * 3}頭中)`;
+    paceWeightsMessage = d.best ? `自動算出しました。過去${d.races}年で総合上位3頭のうち ${paceHitText(d.best, d.races)}。均等の比率なら ${paceHitText(d.equal, d.races)}` : "自動算出しました";
   } else {
     paceWeightsMessage = action === "clear-graded" ? "この重賞の比率を消しました(過去の結果から自動で選び直します)" : "保存しました";
   }
