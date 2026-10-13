@@ -1057,7 +1057,8 @@ function ensurePaceWeights(force = false) {
   if (!force && paceWeights && paceWeights.key === key) return;
   paceWeights = { key, status: "loading", data: null };
   const g = selectedRace.graded;
-  authedFetch(`/api/pace-weights${g ? `?graded_race_id=${encodeURIComponent(g.id)}` : ""}`)
+  // 重賞は開いたレースも渡す。その重賞の自動の比率が無い・古いと、サーバーがここで計算し直して保存する(2026-10-13)
+  authedFetch(`/api/pace-weights${g ? `?graded_race_id=${encodeURIComponent(g.id)}&race_id=${encodeURIComponent(selectedRace.id)}` : ""}`)
     .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
     .then(data => {
       if (!paceWeights || paceWeights.key !== key) return;
@@ -1081,7 +1082,7 @@ function paceScoresOf(ranked) {
 
 function paceWeightsSourceText(d) {
   if (!d) return "";
-  if (d.scope === "graded") return `この重賞の比率(${d.source === "auto" ? "過去の結果から自動算出" : "管理者が設定"})`;
+  if (d.scope === "graded") return `この重賞の比率(${d.source === "auto" ? "過去10年の結果で一番当たった比率を自動で選択" : "管理者が設定"})`;
   if (d.scope === "default") return "標準の比率(管理者が設定)";
   return "既定の比率";
 }
@@ -1096,8 +1097,8 @@ function paceWeightsAdminHtml(w) {
       ${input("w_pace", "展開")}${input("w_number", "馬番")}${input("w_jockey", "騎手")}
       <div class="pace-w-admin-actions">
         ${g ? `<button type="button" class="ghost-btn pace-w-btn" data-action="save-graded">この重賞の比率として保存</button>
-               <button type="button" class="ghost-btn pace-w-btn" data-action="auto">過去の結果から自動算出して保存</button>
-               <button type="button" class="ghost-btn pace-w-btn" data-action="clear-graded">この重賞の比率を消す(標準に戻す)</button>` : ""}
+               <button type="button" class="ghost-btn pace-w-btn" data-action="auto">過去の結果から自動算出し直す</button>
+               <button type="button" class="ghost-btn pace-w-btn" data-action="clear-graded">手で決めた比率を消す(自動に戻す)</button>` : ""}
         <button type="button" class="ghost-btn pace-w-btn" data-action="save-default">標準の比率として保存</button>
       </div>
       ${paceWeightsMessage ? `<p class="pace-reco-note">${escapeHtml(paceWeightsMessage)}</p>` : ""}
@@ -1113,7 +1114,12 @@ function paceTotalSectionHtml(entries) {
   const draft = paceWeightsDraft && paceWeightsDraft.key === ws.key ? paceWeightsDraft : null;
   const w = draft || ws.data;
   const weightsText = `展開${w.w_pace}%・馬番${w.w_number}%・騎手${w.w_jockey}%`;
-  const info = `<p class="pace-reco-note">比率: <strong>${escapeHtml(weightsText)}</strong>${draft ? "(入力中・未保存)" : `(${escapeHtml(paceWeightsSourceText(ws.data))})`}</p>`;
+  const a = !draft && ws.data.scope === "graded" ? ws.data.auto : null;
+  const pctOf = (x) => `${Math.round((x || 0) * 100)}%`;
+  const autoText = a
+    ? `過去${a.races}年でこの比率を試すと、総合ベスト5に3着以内の馬が${a.best.hits}/${a.top3}頭(${pctOf(a.best.hit_rate)})。均等の比率なら${a.equal.hits}頭(${pctOf(a.equal.hit_rate)})`
+    : "";
+  const info = `<p class="pace-reco-note">比率: <strong>${escapeHtml(weightsText)}</strong>${draft ? "(入力中・未保存)" : `(${escapeHtml(paceWeightsSourceText(ws.data))})`}</p>${autoText ? `<p class="pace-reco-note">${escapeHtml(autoText)}</p>` : ""}`;
 
   const orders = {
     pace: paceOrderPace(entries, pacePredictionOf(entries)),
@@ -1162,7 +1168,7 @@ async function paceWeightsAction(action) {
         body: JSON.stringify({ graded_race_id: action === "save-graded" ? g.id : 0, ...body }),
       });
     } else if (action === "clear-graded") {
-      if (!confirm("この重賞の比率を消して、標準の比率を使うようにしますか?")) return;
+      if (!confirm("この重賞の比率を消しますか?(次に開いたときに過去の結果から自動で選び直します)")) return;
       res = await authedFetch(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(g.id)}`, { method: "DELETE" });
     } else if (action === "auto") {
       paceWeightsMessage = "過去の結果から計算中…";
@@ -1178,12 +1184,11 @@ async function paceWeightsAction(action) {
   if (!res || !res.ok) {
     paceWeightsMessage = `保存できませんでした${data.error ? `: ${data.error}` : ""}`;
   } else if (action === "auto") {
-    const s = data.detail?.summary || {};
+    const d = data.detail || {};
     const pct = (v) => `${Math.round((v || 0) * 100)}%`;
-    paceWeightsMessage = `自動算出しました(${data.detail?.races || 0}年分・3着以内${data.detail?.top3 || 0}頭)。ベスト5の的中率(偶然): ` +
-      ["pace", "number", "jockey"].map(f => `${PACE_FACTOR_LABELS[f]} ${pct(s[f]?.hit_rate)}(${pct(s[f]?.chance_rate)})`).join("・");
+    paceWeightsMessage = `自動算出しました(${d.races || 0}年分・3着以内${d.top3 || 0}頭)。総合ベスト5の的中 ${d.best?.hits ?? 0}頭(${pct(d.best?.hit_rate)})、均等の比率なら${d.equal?.hits ?? 0}頭(${pct(d.equal?.hit_rate)})`;
   } else {
-    paceWeightsMessage = action === "clear-graded" ? "この重賞の比率を消しました(標準の比率を使います)" : "保存しました";
+    paceWeightsMessage = action === "clear-graded" ? "この重賞の比率を消しました(過去の結果から自動で選び直します)" : "保存しました";
   }
   paceWeightsDraft = null;
   ensurePaceWeights(true);

@@ -1078,6 +1078,10 @@ function paceWeightsReadInputs(container) {
 function paceAutoSummaryText(detail) {
   const s = detail?.summary;
   if (!s) return "";
+  if (detail.method === "backtest") {
+    const pct = (v) => `${Math.round((v || 0) * 100)}%`;
+    return `${detail.races}年分 総合ベスト5の的中 ${detail.best.hits}/${detail.top3}頭(${pct(detail.best.hit_rate)})・均等なら${detail.equal.hits}頭(${pct(detail.equal.hit_rate)})`;
+  }
   const pct = (v) => `${Math.round((v || 0) * 100)}%`;
   return `${detail.races}年分 ` + PACE_W_KEYS.map(([k, label]) => {
     const f = k.replace("w_", "");
@@ -1124,7 +1128,7 @@ async function loadPaceWeights() {
   }
   const sourceText = (w) => (!w ? "標準を使用" : w.source === "auto" ? "自動算出" : "手動");
   table.innerHTML = `
-    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(展開・馬番・騎手 %)</th><th>設定</th><th>自動算出の根拠(ベスト5の的中率)</th><th>更新</th><th></th></tr></thead>
+    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(展開・馬番・騎手 %)</th><th>設定</th><th>自動算出の根拠(過去の各年で試した的中)</th><th>更新</th><th></th></tr></thead>
     <tbody>
       ${items.map((g) => `
         <tr data-id="${g.graded_race_id}">
@@ -1138,7 +1142,7 @@ async function loadPaceWeights() {
             <div class="row-actions">
               <button type="button" class="ghost-btn pace-w-row-save">保存</button>
               <button type="button" class="ghost-btn pace-w-row-auto">自動算出</button>
-              ${g.weights ? `<button type="button" class="icon-btn delete pace-w-row-clear" title="この重賞の比率を消す(標準を使う)">×</button>` : ""}
+              ${g.weights ? `<button type="button" class="icon-btn delete pace-w-row-clear" title="この重賞の比率を消す(次に開いたときに自動で選び直す)">×</button>` : ""}
             </div>
           </td>
         </tr>`).join("")}
@@ -1162,8 +1166,8 @@ async function loadPaceWeights() {
     if (!data2) { btn.disabled = false; btn.textContent = "自動算出"; }
   }));
   table.querySelectorAll(".pace-w-row-clear").forEach((btn) => btn.addEventListener("click", () => {
-    if (!confirm("この重賞の比率を消して、標準の比率を使うようにしますか?")) return;
-    paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(rowOf(btn).dataset.id)}`, { method: "DELETE" }, "消しました(標準の比率を使います)");
+    if (!confirm("この重賞の比率を消しますか?(予想登録画面で次に開いたときに、過去の結果から自動で選び直します)")) return;
+    paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(rowOf(btn).dataset.id)}`, { method: "DELETE" }, "消しました(次に開いたときに自動で選び直します)");
   }));
 }
 
