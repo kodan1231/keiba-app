@@ -88,10 +88,21 @@ function nkHandlePage(data) {
   }
   const kind = nkPageKind(data.url);
   if (!kind) {
-    alert("netkeibaの馬柱(5走)または結果・払戻のページではありません。");
+    alert("netkeibaの馬柱(5走)・結果・払戻、または過去レース(db.netkeiba.com/race/…)のページではありません。");
     return;
   }
   const doc = new DOMParser().parseFromString(data.html, "text/html"); // スクリプトは実行されない
+  // 過去レースのデータベース(db.netkeiba.com/race/<ID>/。2026-10-13追加): 結果・払戻と同じ確認画面へ。調教師はフルネームなのでそのまま送る
+  if (kind === "db_result") {
+    const record = nkParseDbResult(doc);
+    if (!record) {
+      alert("過去レースのページから結果を読み取れませんでした。");
+      return;
+    }
+    nkFinishReceive(`結果を受け取りました(netkeibaデータベース): ${record.race_date} ${record.track}${record.race_number}R ${record.race_name || ""}`.trim());
+    nkOpenResult(record);
+    return;
+  }
   const meta = nkParseRaceMeta(doc);
   if (!meta) {
     alert("ページからレースの開催日・競馬場・レース番号を読み取れませんでした。");

@@ -29,9 +29,11 @@ function nkText(el) {
 }
 
 // ページの種類。対象外なら null。
+// 2026-10-13: netkeiba の過去レースのデータベース(db.netkeiba.com/race/<レースID 12桁>/。中央・地方)も対象にした("db_result")。
 function nkPageKind(url) {
   let u;
   try { u = new URL(url); } catch { return null; }
+  if (u.hostname === "db.netkeiba.com" && /^\/race\/\d{12}\/?$/.test(u.pathname)) return "db_result";
   if (!NK_ALLOWED_HOSTS.includes(u.hostname)) return null;
   if (u.pathname.endsWith("/race/shutuba_past.html")) return "shutuba_past";
   if (u.pathname.endsWith("/race/result.html")) return "result";
@@ -251,6 +253,154 @@ function nkParseResult(doc) {
     entries,
     finish_order: finishSparse.filter((v) => v !== undefined).slice(0, 3),
     payouts: nkParsePayouts(doc),
+    race_results,
+  };
+}
+
+// ---------- 過去レースのデータベース(db.netkeiba.com/race/<レースID>/。2026-10-13追加) ----------
+// 結果・払戻の1ページ。race.netkeiba.com の結果ページとは作りが違う(見出しは .data_intro、表は table.race_table_01、
+// 払戻は table.pay_table_01)。結果取込API へ送る形(nkParseResult と同じ)にする。調教師はフルネームなのでそのまま送る。
+const NK_DB_BET_TYPE_BY_LABEL = { ...NK_BET_TYPE_BY_LABEL, 三連複: "sanrenpuku", 三連単: "sanrentan" };
+
+// 見出し: <dt>11R</dt>、<h1>第2回アイルランドT(GII)</h1>、
+// <span>芝左1800m / 天候 : 晴 / 芝 : 良 / 発走 : 15:45</span>、<p class="smalltxt">2026年10月11日 4回東京4日目 3歳以上オープン (国際) 牝(指)(別定)</p>
+function nkParseDbRaceMeta(doc) {
+  const intro = doc.querySelector(".data_intro");
+  if (!intro) return null;
+  const small = nkText(intro.querySelector("p.smalltxt")).normalize("NFKC");
+  const dm = small.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*\d+回(\S+?)\d+日目\s*(.*)$/);
+  const rm = nkText(intro.querySelector("dt")).match(/(\d{1,2})\s*R/);
+  if (!dm || !rm) return null;
+  const rest = dm[5].trim();
+  const wm = rest.match(/(馬齢|定量|別定|ハンデ)/);
+  const class_flags = rest.replace(/\(?(馬齢|定量|別定|ハンデ)\)?/, "").replace(/\s+/g, " ").trim() || null;
+
+  // レース名(グレード等の括弧書きは除く。例「第2回アイルランドT(GII)」→「第2回アイルランドT」)
+  const race_name = nkText(intro.querySelector("h1")).replace(/\s*[(（](G|J・?G|Jpn|L|OP)[^)）]*[)）]\s*$/i, "").trim() || null;
+
+  const d1 = nkText(intro.querySelector("dd p span")).normalize("NFKC");
+  const courseM = d1.match(/(芝|ダ|障)[^\d/]*?(\d{3,4})m/);
+  const dirM = d1.match(/(芝|ダ|障)\s*(左|右)/);
+  const weatherM = d1.match(/天候\s*:\s*([^\s/]+)/);
+  const condM = d1.match(/(?:芝|ダート|ダ)\s*:\s*([^\s/]+)/);
+  const timeM = d1.match(/発走\s*:\s*(\d{1,2}):(\d{2})/);
+  const COURSE = { 芝: "芝", ダ: "ダート", 障: "障害" };
+  return {
+    race_date: `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`,
+    track: dm[4],
+    race_number: Number(rm[1]),
+    race_name,
+    course_type: courseM ? COURSE[courseM[1]] : null,
+    distance: courseM ? Number(courseM[2]) : null,
+    course_direction: dirM ? dirM[2] : null,
+    weather: weatherM ? weatherM[1] : null,
+    track_condition: condM ? condM[1] : null,
+    post_time: timeM ? `${timeM[1].padStart(2, "0")}:${timeM[2]}` : null,
+    weight_type: wm ? wm[1] : null,
+    class_flags,
+  };
+}
+
+// 払戻(table.pay_table_01。2つに分かれている)。組み合わせ・金額は <br> 区切りで同じ数だけ並ぶ。
+function nkParseDbPayouts(doc) {
+  const payouts = {};
+  const lines = (td) => (td ? td.innerHTML.split(/<br\s*\/?>/i).map((s) => s.replace(/<[^>]*>/g, "").trim()).filter(Boolean) : []);
+  doc.querySelectorAll("table.pay_table_01 tr").forEach((tr) => {
+    const type = NK_DB_BET_TYPE_BY_LABEL[nkText(tr.querySelector("th"))];
+    if (!type) return;
+    const tds = tr.querySelectorAll("td");
+    const combos = lines(tds[0]);
+    const amounts = lines(tds[1]).map((s) => Number(s.replace(/[,円\s]/g, "")));
+    const list = [];
+    combos.forEach((c, i) => {
+      const combo = (c.match(/\d+/g) || []).map(Number);
+      const rate = amounts[i];
+      if (combo.length && Number.isFinite(rate) && rate > 0) list.push({ combo: type === "tan" || type === "fuku" ? combo.slice(0, 1) : combo, rate });
+    });
+    if (list.length) payouts[type] = list;
+  });
+  return payouts;
+}
+
+// 着順の欄: 数字(「5(降)」等は先頭の数字)、取消・除外・中止は「取」「除」「中」等
+function nkDbStatusOf(rankText) {
+  if (/取/.test(rankText)) return "scratched";
+  if (/除/.test(rankText)) return "excluded";
+  if (/中/.test(rankText)) return "stopped";
+  return "finished";
+}
+
+function nkParseDbResult(doc) {
+  const meta = nkParseDbRaceMeta(doc);
+  if (!meta) return null;
+  const table = doc.querySelector("table.race_table_01");
+  if (!table) return null;
+  const rows = Array.from(table.querySelectorAll("tr"));
+  // 見出し行の th(「着<br>順」は文字だけだと「着順」)。表示されない列(タイム指数マスター等)も th と td の数はそろっている
+  const headers = Array.from(rows[0].querySelectorAll("th")).map((th) => nkText(th).replace(/\s+/g, ""));
+  const col = (re) => headers.findIndex((h) => re.test(h));
+  const C = {
+    rank: col(/^着順$/), waku: col(/^枠番$/), num: col(/^馬番$/), name: col(/^馬名$/), sexAge: col(/^性齢$/),
+    weight: col(/^斤量$/), jockey: col(/^騎手$/), time: col(/^タイム$/), margin: col(/^着差$/), corner: col(/^通過$/),
+    last3f: col(/^上り$/), pop: col(/^人気$/), body: col(/^馬体重/), trainer: col(/^調教師$/),
+  };
+  const cell = (tds, i) => (i >= 0 ? tds[i] : null);
+  const entries = [];
+  const race_results = [];
+  const finishSparse = [];
+  rows.slice(1).forEach((tr) => {
+    const tds = Array.from(tr.children).filter((c) => c.tagName === "TD");
+    if (!tds.length) return;
+    const horseNumber = Number(nkText(cell(tds, C.num)));
+    if (!Number.isInteger(horseNumber) || horseNumber < 1) return;
+    const rankText = nkText(cell(tds, C.rank)).normalize("NFKC");
+    const status = nkDbStatusOf(rankText);
+    const rankNum = rankText.match(/^\d+/);
+    const finishPosition = status === "finished" && rankNum ? Number(rankNum[0]) : null;
+    const nameTd = cell(tds, C.name);
+    const horseName = nkText(nameTd?.querySelector("a")) || nkText(nameTd) || null;
+    const waku = Number(nkText(cell(tds, C.waku)));
+    const sexAge = nkText(cell(tds, C.sexAge)) || null;
+    const weightNum = Number(nkText(cell(tds, C.weight)));
+    const weightCarried = Number.isFinite(weightNum) && weightNum > 0 ? weightNum : null;
+    const jockey = nkJockeyFromCell(cell(tds, C.jockey));
+    const trainer = nkText(cell(tds, C.trainer)?.querySelector("a")) || null;
+    const popText = nkText(cell(tds, C.pop));
+    const last3f = Number(nkText(cell(tds, C.last3f)));
+    const bodyM = nkText(cell(tds, C.body)).match(/^(\d+)\s*[（(]([^)）]*)[)）]/);
+    entries.push({
+      horse_number: horseNumber,
+      waku_number: Number.isInteger(waku) && waku >= 1 && waku <= 8 ? waku : null,
+      horse_name: horseName,
+      jockey,
+      sex_age: sexAge,
+      weight_carried: weightCarried,
+    });
+    race_results.push({
+      horse_number: horseNumber,
+      horse_name: horseName,
+      sex_age: sexAge,
+      weight_carried: weightCarried,
+      jockey,
+      status,
+      finish_position: finishPosition,
+      time_text: nkText(cell(tds, C.time)) || null,
+      margin: nkText(cell(tds, C.margin)) || null,
+      corner_positions: nkText(cell(tds, C.corner)) || null,
+      final_furlong_time: Number.isFinite(last3f) && last3f > 0 ? last3f : null,
+      body_weight: bodyM ? Number(bodyM[1]) : null,
+      body_weight_change: bodyM ? bodyM[2] || null : null,
+      trainer,
+      win_popularity: /^\d+$/.test(popText) ? Number(popText) : null,
+    });
+    if (Number.isInteger(finishPosition) && finishSparse[finishPosition - 1] === undefined) finishSparse[finishPosition - 1] = horseNumber;
+  });
+  if (!race_results.length) return null;
+  return {
+    ...meta,
+    entries,
+    finish_order: finishSparse.filter((v) => v !== undefined).slice(0, 3),
+    payouts: nkParseDbPayouts(doc),
     race_results,
   };
 }
