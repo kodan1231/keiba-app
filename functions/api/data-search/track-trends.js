@@ -1,6 +1,6 @@
 import {
   jsonError,
-  getRaceLineups,
+  getRaceTimes,
   buildTrackTrends,
   trendDistanceOptions,
   RACE_CLASSES,
@@ -16,11 +16,12 @@ import {
 // 平均は勝ち馬(1着)のタイム(秒)。差(補正値)は画面側で全競馬場の平均との差として出す。
 // 仕様は docs/design/data-search.md「競馬場傾向タブ」。
 //
-// D1の読み取り: 集計用の小さいキャッシュ(race_lineup_cache。範囲〈200レース〉ごとの行で約20行)だけ。
+// D1の読み取り: 勝ちタイムの小さいキャッシュ(race_time_cache。範囲〈200レース〉ごとの行で約20行。2026-10-13〜。
+// 以前は集計用の小さいキャッシュ race_lineup_cache を読んでいたが、読み込みのCPU時間が約9ミリ秒と重かった)だけ。
 // races / race_results は読まない(キャッシュの作り直しが必要な範囲があるときだけ、その範囲を読む)。
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const lineups = await getRaceLineups(context.env.DB);
+  const lineups = await getRaceTimes(context.env.DB);
   const distances = trendDistanceOptions(lineups);
 
   const courseType = url.searchParams.get("course_type");

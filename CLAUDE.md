@@ -81,6 +81,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
 | `_lib/d1-usage.js` | `getD1Usage` `loadD1Usage` `d1UsageRatio`(今日の D1 使用量を Cloudflare の分析APIで取る。秘密情報 `CF_ANALYTICS_TOKEN`。2026-10-08追加) |
 | `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |
+| `_lib/race-time-cache.js` | `getRaceTimes`(勝ちタイムの小さいキャッシュ race_time_cache。競馬場・芝ダ障・距離・馬場・クラス・勝ちタイムだけ。範囲ごと。60秒使い回し。競馬場傾向タブ・補正タイム用。2026-10-13追加。集計用キャッシュは読み込みが約9.7ミリ秒と重いため分けた) |
 | `_lib/track-trends.js` | `buildTrackTrends` `trendDistanceOptions` `trackTimeOffsets` `correctRunTime` `TREND_MIN_RACES`(競馬場傾向タブ・補正タイム。DB不使用。2026-10-12追加。クラス判定は `_lib/race-classification.js` の `raceClassOf`) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 

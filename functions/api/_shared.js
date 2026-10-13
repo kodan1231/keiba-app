@@ -36,3 +36,4 @@ export * from "./_lib/d1-usage.js";
 export * from "./_lib/service-guard.js";
 export * from "./_lib/track-trends.js";
 export * from "./_lib/pace-score.js";
+export * from "./_lib/race-time-cache.js";

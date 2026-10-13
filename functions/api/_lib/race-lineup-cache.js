@@ -16,6 +16,8 @@
 //   race_class: raceClassOf()(maiden/1win/2win/3win/open)か null。
 //   (2026-10-12: データ検索「競馬場傾向」タブ・予想登録画面の補正タイム用に win_time 以降を追加し、v を 3 にした。
 //    v が違う行は全部作り直す〈1回だけ。races と race_results を全件読む〉)
+//   (2026-10-13: 競馬場傾向・補正タイムは勝ちタイムの小さいキャッシュ race_time_cache を読むようにしたため、
+//    win_time 以降は今は使っていない。版数を戻すと全件の作り直しが起きるので、そのまま残している)
 //
 // 作り直しは DB から必要な列だけを読む(重いJSON解析をしない)。保存の失敗は握りつぶす(best-effort)。
 // 無効化は DB トリガー(@STEP: range_chunk_caches。変わったレース・結果のレースの範囲の行だけ消す)。
@@ -23,6 +25,7 @@
 // 編集・取込の多い日に数十回起きて D1 の1日の読み取り上限の92%に達した。変わった範囲だけ作り直すようにした。
 
 import { loadRangeChunks, rangeCondition, rangeIndexOf } from "./range-chunk-cache.js";
+import { memoized } from "./memo-cache.js";
 import { raceClassOf } from "./race-classification.js";
 import { timeTextToSeconds } from "./graded-race-search.js";
 
@@ -62,11 +65,16 @@ function winnerTimeOf(rr) {
 // 各要素: { id, race_date, track, course_type, distance, tan, umaren,
 //           lineup: [[horse_number, jockey, pos], ...] | null, win_time, track_condition, race_class }
 //   lineup は出走した馬だけ。pos は 1/2/3(3着以内)または null(着外)。
-export async function getRaceLineups(db) {
-  const chunks = await loadRangeChunks(db, "race_lineup_cache", buildLineupChunks, { version: LINEUP_CACHE_VERSION });
-  const out = [];
-  for (const c of chunks) for (const x of c.r || []) out.push(expandRace(x, c.j || []));
-  return out;
+// 2026-10-13: 読み込み(JSON の解析と展開)に約9ミリ秒かかるため、同じ実行環境で60秒使い回す(_lib/memo-cache.js)。
+// 取り込みの反映は最大60秒遅れる。戻り値の配列・要素は書き換えないこと(使い回すため)。
+export const MEMO_RACE_LINEUPS = "race_lineups";
+export function getRaceLineups(db) {
+  return memoized(MEMO_RACE_LINEUPS, async () => {
+    const chunks = await loadRangeChunks(db, "race_lineup_cache", buildLineupChunks, { version: LINEUP_CACHE_VERSION });
+    const out = [];
+    for (const c of chunks) for (const x of c.r || []) out.push(expandRace(x, c.j || []));
+    return out;
+  }, 60 * 1000);
 }
 
 function expandRace(x, dict) {

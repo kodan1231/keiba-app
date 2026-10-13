@@ -466,6 +466,39 @@ CREATE TABLE IF NOT EXISTS graded_races (
 );
 CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
 
+-- 勝ちタイムの小さいキャッシュ(2026-10-13追加。@STEP: race_time_cache)。データ検索「競馬場傾向」タブ・予想登録画面の補正タイム用に、
+-- 各レースの競馬場・芝ダ障・距離・馬場・クラス・勝ちタイムだけを races.id の範囲(200件)ごとに持つ(_lib/race-time-cache.js)。
+-- トリガーは変わったレース・結果のレースの範囲の行だけ消す(race_lineup_cache と同じ。結果は time_text の更新でも消す)。
+CREATE TABLE IF NOT EXISTS race_time_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_ins AFTER INSERT ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = NEW.id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_upd AFTER UPDATE OF id, track, course_type, distance, track_condition, class_flags, race_name ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index IN (OLD.id / 200, NEW.id / 200);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_del AFTER DELETE ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = OLD.id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_ins AFTER INSERT ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = NEW.race_id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_del AFTER DELETE ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = OLD.race_id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_upd AFTER UPDATE OF race_id, status, finish_position, time_text ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index IN (OLD.race_id / 200, NEW.race_id / 200);
+END;
+
 -- 総合推奨馬の重視度の比率(2026-10-13追加。@STEP: pace_weights)。予想登録画面「展開・時計」タブの総合推奨馬で、
 -- 展開・馬番・騎手の点数に掛ける比率(%。合計100)。全ユーザー共通で、変えられるのは管理者だけ。
 -- graded_race_id = 0 は「標準の比率」(重賞以外のレースと、比率を決めていない重賞で使う)。

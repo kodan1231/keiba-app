@@ -7,7 +7,7 @@ import {
   loadJockeyAliasMapCached,
   applyJockeyAliasMap,
   jockeyDisplayName,
-  getRaceLineups,
+  getRaceTimes,
   buildTrackTrends,
   trackTimeOffsets,
   correctRunTime,
@@ -99,8 +99,10 @@ export async function onRequestGet(context) {
 
   // 補正タイム(2026-10-12追加。docs/design/data-search.md「競馬場傾向タブ」): 全場・同距離の各走を、
   // 競馬場・馬場の補正値で「今回の競馬場・良馬場」のタイムに換算し、換算後が最速の走を corrected に入れる。
-  // 補正値は集計用の小さいキャッシュ(約20行)から全クラスの勝ちタイムで出す。
-  const offsets = trackTimeOffsets(buildTrackTrends(await getRaceLineups(env.DB), { courseType: race.course_type, distance: race.distance }));
+  // 補正値は勝ちタイムの小さいキャッシュ(race_time_cache。約20行。同じ実行環境で60秒使い回す)から全クラスの勝ちタイムで出す。
+  // 2026-10-13: 当初は集計用の小さいキャッシュ race_lineup_cache を読んでいたが、読み込みのCPU時間が約9ミリ秒と
+  // 無料枠の上限(10ミリ秒)に近かったため、必要な列だけの別キャッシュにした。
+  const offsets = trackTimeOffsets(buildTrackTrends(await getRaceTimes(env.DB), { courseType: race.course_type, distance: race.distance }));
 
   // そのタイムを出した走の情報。run_last3f・weight_carried・jockey は2026-10-12追加(展開・時計タブの表で表示)
   const timeInfo = (row, sec, base) => {

@@ -515,8 +515,16 @@ Cloudflare Workers のCPU時間上限超過(`exceededResources`。当日23件、
   換算後が最速の走を `corrected` で返す(`docs/design/screens.md`「予想登録画面」)
 - **API**: `GET /api/data-search/track-trends`(距離の選択肢だけ)/ `?course_type=芝&distance=1600&class=all`
   → `{ distances, condition, conditions, min_races, overall: { all: {n, avg}, 良: {...}, ... }, tracks: [{ track, all, 良, 稍重, 重, 不良 }] }`
-- **D1の読み取り**: 集計用の小さいキャッシュ(約20行)だけ。勝ちタイム・馬場状態・クラスはキャッシュに持つ(下記)。
-  horse-best も補正値のためにこのキャッシュを読むので、1回あたり約20行増える(馬柱・展開・時計タブを開いたときにレースごとに1回)
+- **D1の読み取り**: 勝ちタイムの小さいキャッシュ `race_time_cache`(`_lib/race-time-cache.js`。約20行)だけ。
+  horse-best も補正値のためにこのキャッシュを読む(馬柱・展開・時計タブを開いたときにレースごとに1回。同じ実行環境で60秒使い回す)
+- **CPU時間(2026-10-13)**: 当初(10-12)は集計用の小さいキャッシュ race_lineup_cache(約80万文字)を読んで集計していたが、
+  本番のキャッシュで測ると読み込み(JSON の解析と展開)だけで約9.7ミリ秒かかり、Cloudflare 無料枠のCPU時間の上限
+  (1リクエスト10ミリ秒)に近かった。馬柱タブを開くたびに呼ばれる horse-best で上限を超えると持ちタイムごと出なくなるため、
+  必要な列(競馬場・芝ダ障・距離・馬場・クラス・勝ちタイム)だけの別キャッシュ race_time_cache(約15.5万文字・読み込み約2ミリ秒)にした。
+  トリガーは race_lineup_cache と同じく変わった範囲の行だけ消す(結果は status・finish_position・time_text の更新、
+  レースは track・course_type・distance・track_condition・class_flags・race_name の更新で消す。@STEP: race_time_cache)。
+  あわせて race_lineup_cache の読み込み結果も同じ実行環境で60秒使い回す(レース成績・騎手検索・騎手の同コース成績の2回目以降が軽くなる。
+  取り込みの反映は最大60秒遅れる)
 
 ## 既知の制約・今後(レース成績タブ)
 

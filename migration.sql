@@ -41,6 +41,7 @@
 --  未適用のマイグレーションは無い。
 -- 2026-10-12: graded_race_notes(重賞メモ)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-13: pace_weights(総合推奨馬の比率)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-13: race_time_cache(勝ちタイムの小さいキャッシュ+トリガー6つ)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -80,3 +81,37 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 INSERT INTO schema_migrations (name) VALUES ('pace_weights');
+
+-- @STEP: race_time_cache
+-- 勝ちタイムの小さいキャッシュ(2026-10-13)。空の表とトリガー6つを作るだけ(中身は最初に読まれたときに作る。
+-- その1回で races 約4千行+race_results 約5万行を読む)。
+CREATE TABLE IF NOT EXISTS race_time_cache (
+  chunk_index INTEGER PRIMARY KEY,
+  payload TEXT,
+  updated_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_ins AFTER INSERT ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = NEW.id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_upd AFTER UPDATE OF id, track, course_type, distance, track_condition, class_flags, race_name ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index IN (OLD.id / 200, NEW.id / 200);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_races_del AFTER DELETE ON races
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = OLD.id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_ins AFTER INSERT ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = NEW.race_id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_del AFTER DELETE ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index = OLD.race_id / 200;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_race_time_cache_rr_upd AFTER UPDATE OF race_id, status, finish_position, time_text ON race_results
+BEGIN
+  DELETE FROM race_time_cache WHERE chunk_index IN (OLD.race_id / 200, NEW.race_id / 200);
+END;
+INSERT INTO schema_migrations (name) VALUES ('race_time_cache');
