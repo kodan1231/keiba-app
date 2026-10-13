@@ -3,7 +3,7 @@ import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PA
 // 管理者向け: 総合推奨馬の重視度の比率(pace_weights。2026-10-13追加)。仕様は docs/design/screens.md「総合推奨馬」。
 //   GET    → { default: {...}|null, builtin, items: [{ graded_race_id, name, grade, is_jump, schedule_md, weights|null }] }
 //            (重賞マスタ全件〈年間140件前後〉+ 比率の表〈同程度〉を全件読む。管理画面を開いたときだけ)
-//   PUT    { graded_race_id(0=標準), w_pace, w_number, w_jockey } → 保存(source='manual'。合計100の%にそろえる)
+//   PUT    { graded_race_id(0=標準), w_pace, w_number, w_jockey, w_time } → 保存(source='manual'。合計100の%にそろえる)
 //   DELETE ?graded_race_id=N → その重賞の比率を消す(標準の比率を使うようになる)。0(標準)は消すと既定値に戻る
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
@@ -11,13 +11,13 @@ export async function onRequestGet(context) {
   const db = context.env.DB;
   const [{ results: graded }, weightRows] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
-    db.prepare("SELECT graded_race_id, w_pace, w_number, w_jockey, source, detail, updated_at FROM pace_weights").all()
+    db.prepare("SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at FROM pace_weights").all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
   ]);
   const byId = new Map(weightRows.map((r) => [Number(r.graded_race_id), r]));
   const out = (r) => (r ? {
-    w_pace: r.w_pace, w_number: r.w_number, w_jockey: r.w_jockey, source: r.source, updated_at: r.updated_at,
+    w_pace: r.w_pace, w_number: r.w_number, w_jockey: r.w_jockey, w_time: r.w_time ?? 0, source: r.source, updated_at: r.updated_at,
     detail: r.detail ? safeJson(r.detail) : null,
   } : null);
   return Response.json({
@@ -48,11 +48,11 @@ export async function onRequestPut(context) {
   }
   const now = new Date().toISOString();
   await db.prepare(
-    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, source, detail, updated_at)
-     VALUES (?, ?, ?, ?, 'manual', NULL, ?)
+    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)
      ON CONFLICT(graded_race_id) DO UPDATE SET w_pace = excluded.w_pace, w_number = excluded.w_number,
-       w_jockey = excluded.w_jockey, source = 'manual', detail = NULL, updated_at = excluded.updated_at`
-  ).bind(id, w.w_pace, w.w_number, w.w_jockey, now).run();
+       w_jockey = excluded.w_jockey, w_time = excluded.w_time, source = 'manual', detail = NULL, updated_at = excluded.updated_at`
+  ).bind(id, w.w_pace, w.w_number, w.w_jockey, w.w_time, now).run();
   return Response.json({ ok: true, graded_race_id: id, ...w, source: "manual", updated_at: now });
 }
 

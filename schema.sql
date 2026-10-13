@@ -500,7 +500,7 @@ BEGIN
 END;
 
 -- 総合推奨馬の重視度の比率(2026-10-13追加。@STEP: pace_weights)。予想登録画面「展開・時計」タブの総合推奨馬で、
--- 展開・馬番・騎手の点数に掛ける比率(%。合計100)。全ユーザー共通で、変えられるのは管理者だけ。
+-- 展開・馬番・騎手・補正タイム(2026-10-13追加)の点数に掛ける比率(%。合計100)。全ユーザー共通で、変えられるのは管理者だけ。
 -- graded_race_id = 0 は「標準の比率」(重賞以外のレースと、比率を決めていない重賞で使う)。
 -- source: 'manual'(管理者が入力)/ 'auto'(その重賞の過去の結果から自動算出)。detail: 自動算出の根拠(JSON)。
 -- graded_races 行を削除しても消さない(外部キーなし)。docs/design/screens.md「総合推奨馬」参照。
@@ -509,6 +509,7 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   w_pace INTEGER NOT NULL,
   w_number INTEGER NOT NULL,
   w_jockey INTEGER NOT NULL,
+  w_time INTEGER NOT NULL DEFAULT 0, -- 補正タイム(2026-10-13追加。@STEP: pace_weights_time)
   source TEXT NOT NULL DEFAULT 'manual',
   detail TEXT,
   updated_at TEXT DEFAULT (datetime('now'))

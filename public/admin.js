@@ -1052,7 +1052,7 @@ function setupGradedRacesImport() {
 // ---------- 総合推奨馬の比率(2026-10-13追加) ----------
 // 予想登録画面「展開・時計」タブの総合推奨馬で使う、展開・馬番・騎手の比率(%)。全ユーザー共通。
 // API: GET/PUT/DELETE /api/admin/pace-weights、POST /api/admin/pace-weights/auto。仕様は docs/design/screens.md「総合推奨馬」。
-const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"]];
+const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"], ["w_time", "補正タイム"]];
 
 function paceWeightsMsg(text, ok) {
   const el = document.getElementById("pace-weights-message");
@@ -1128,7 +1128,7 @@ async function loadPaceWeights() {
   }
   const sourceText = (w) => (!w ? "標準を使用" : w.source === "auto" ? "自動算出" : "手動");
   table.innerHTML = `
-    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(展開・馬番・騎手 %)</th><th>設定</th><th>自動算出の根拠(過去の各年で試した的中)</th><th>更新</th><th></th></tr></thead>
+    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(展開・馬番・騎手・補正タイム %)</th><th>設定</th><th>自動算出の根拠(過去の各年で試した的中)</th><th>更新</th><th></th></tr></thead>
     <tbody>
       ${items.map((g) => `
         <tr data-id="${g.graded_race_id}">
