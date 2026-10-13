@@ -1,30 +1,20 @@
 // 総合推奨馬(2026-10-13追加。予想登録画面「展開・時計」タブ)の重視度の比率と、重賞の過去の結果からの自動算出。
 // 仕様は docs/design/screens.md「総合推奨馬」。
 //
-// 点数の付け方(画面側 public/prediction.js の paceFactorScores 等と同じ規則。変えるときは両方そろえる):
-//   - 展開: 前走の脚質でペースを予想(逃げ2頭以上 or 逃げ+先行が頭数の半分以上→ハイ、逃げ0〜1頭 かつ 逃げ+先行が
-//     頭数の1/4以下→スロー、それ以外→ミドル)。ハイは補正タイム順、スローは全場・同距離の最速上がり3F順、
-//     ミドルは両方の順位の合計順(両方ある馬だけ)。2026-10-13: 当初は同場・同距離の記録だけで、記録の無い馬が多く50点に
-//     なっていたため、競馬場を問わない記録にした(タイムは今回の競馬場・良馬場への換算。上がりの競馬場別の補正は今後)
-//   - 補正タイム(2026-10-13追加): 全場・同距離の走を今回の競馬場・良馬場に換算したタイム(_lib/track-trends.js)の速い順
-//   - 馬番: 同コースの馬番別の複勝率順(同じなら単勝率→騎乗の多い順)
-//   - 騎手: 同コースの複勝率順(同じなら単勝率→騎乗の多い順)。騎乗5回未満は対象外
-//   - 各要素の順位を 100(1位)〜0(最下位)の等間隔の点にする。データの無い馬は50点。総合点 = Σ 比率% × 点 / 100
-import { runningStyleOf, timeTextToSeconds, findRacesByGradedKey, jstYear } from "./graded-race-search.js";
+// 点数の付け方は _lib/race-factors.js に一本化した(2026-10-13。以前は画面〈prediction.js〉とここに二重に持っていた)。
+import { findRacesByGradedKey, jstYear } from "./graded-race-search.js";
 import { gradedRaceNameKey } from "./race-classification.js";
 import { getRaceIndex } from "./races-index-cache.js";
 import { getRaceLineups } from "./race-lineup-cache.js";
-import { loadJockeyAliasMap, applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
+import { loadJockeyAliasMap } from "./jockey-alias.js";
 import { getRaceTimes } from "./race-time-cache.js";
-import { buildTrackTrends, trackTimeOffsets, correctRunTime } from "./track-trends.js";
-import { normalizeTrackConditionText } from "./race-lineup-cache.js";
+import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } from "./race-factors.js";
 
-export const PACE_FACTORS = ["pace", "number", "jockey", "time"];
+export const PACE_FACTORS = FACTOR_KEYS;
 export const DEFAULT_PACE_WEIGHTS = { w_pace: 25, w_number: 25, w_jockey: 25, w_time: 25 };
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 2;
+const AUTO_METHOD_VERSION = 3; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js)
 export const PACE_TOP_N = 5;
-export const PACE_MIN_JOCKEY_RIDES = 5;
 const AUTO_PAST_YEARS = 10;
 
 // 比率の入力を検証して整数%(合計100)にする。不正なら null。
@@ -78,68 +68,6 @@ export async function getPaceWeights(db, gradedRaceId) {
   return { ...DEFAULT_PACE_WEIGHTS, source: "builtin", updated_at: null, scope: "builtin", auto: null };
 }
 
-// ---- 点数付け(画面側と同じ規則) ----
-
-export function predictPace(styles, fieldSize) {
-  let nige = 0, senko = 0;
-  for (const s of styles) {
-    if (s === "逃げ") nige++;
-    else if (s === "先行") senko++;
-  }
-  const front = nige + senko;
-  return nige >= 2 || front >= fieldSize / 2 ? "high" : nige <= 1 && front <= fieldSize / 4 ? "slow" : "middle";
-}
-
-// 小さい順(lowerIsBetter)に並べて同値同順位。[{key, rank}]
-function rankBy(list, valueOf) {
-  const sorted = [...list].sort((a, b) => valueOf(a) - valueOf(b));
-  let rank = 0;
-  return sorted.map((x, i) => {
-    if (i === 0 || valueOf(x) !== valueOf(sorted[i - 1])) rank = i + 1;
-    return { ...x, rank };
-  });
-}
-
-// 展開の並び。horses: [{ key, time: 秒|null, l3: 秒|null }] → 順位付きの配列(データのある馬だけ)
-export function paceOrder(horses, pace) {
-  if (pace === "high") return rankBy(horses.filter((h) => h.time != null), (h) => h.time);
-  if (pace === "slow") return rankBy(horses.filter((h) => h.l3 != null), (h) => h.l3);
-  const both = horses.filter((h) => h.time != null && h.l3 != null);
-  const tr = new Map(rankBy(both, (h) => h.time).map((h) => [h.key, h.rank]));
-  const lr = new Map(rankBy(both, (h) => h.l3).map((h) => [h.key, h.rank]));
-  return rankBy(both.map((h) => ({ ...h, sum: tr.get(h.key) + lr.get(h.key) })), (h) => h.sum);
-}
-
-// 複勝率の並び。list: [{ key, stats: {rides, winRate, showRate} }] → 順位付き(複勝率・単勝率が同じなら同順位)
-export function rateOrder(list) {
-  const sorted = [...list].sort(
-    (a, b) => b.stats.showRate - a.stats.showRate || b.stats.winRate - a.stats.winRate || b.stats.rides - a.stats.rides
-  );
-  let rank = 0;
-  return sorted.map((x, i) => {
-    const p = sorted[i - 1];
-    if (i === 0 || x.stats.showRate !== p.stats.showRate || x.stats.winRate !== p.stats.winRate) rank = i + 1;
-    return { ...x, rank };
-  });
-}
-
-// ---- 自動算出 ----
-
-function newCounts() {
-  return { rides: 0, first: 0, show: 0 };
-}
-function statsOf(c) {
-  return { rides: c.rides, winRate: c.rides ? c.first / c.rides : 0, showRate: c.rides ? c.show / c.rides : 0 };
-}
-
-// 順位 → 点(1位100・最下位0の等間隔。データのある馬が1頭だけなら100)。画面側 paceScoresOf と同じ。
-function scoresOf(ranked) {
-  const m = ranked.length;
-  const out = new Map();
-  for (const x of ranked) out.set(x.key, m > 1 ? (100 * (m - x.rank)) / (m - 1) : 100);
-  return out;
-}
-
 // 比率の候補(10%刻み・合計100の全組み合わせ。4要素で286通り)
 function weightCandidates(step = 10) {
   const out = [];
@@ -164,7 +92,7 @@ function compileYear(keys, top3Keys, scores) {
   keys.forEach((key, h) => {
     PACE_FACTORS.forEach((f, k) => {
       const s = scores[f].get(key);
-      S[h * F + k] = s == null ? 50 : s;
+      S[h * F + k] = s == null ? MISSING_SCORE : s;
     });
     top3[h] = top3Keys.has(key) ? 1 : 0;
   });
@@ -260,21 +188,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
       runsByHorse.get(row.horse_key).push(row);
     }
   }
-  const fieldSizeByRace = new Map(lineups.filter((r) => r.lineup).map((r) => [Number(r.id), r.lineup.length]));
-  const jockeyKeyCache = new Map();
-  const jockeyKeyOf = (name) => {
-    if (!name) return "";
-    if (!jockeyKeyCache.has(name)) jockeyKeyCache.set(name, jockeyAliasKeyOf(applyJockeyAliasMap(aliasMap, name)));
-    return jockeyKeyCache.get(name);
-  };
-
-  // 補正値(芝ダ障・距離ごと。過去の年で同じなら使い回す)
-  const offsetCache = new Map();
-  const offsetsFor = (race) => {
-    const k = `${race.course_type}|${Number(race.distance)}`;
-    if (!offsetCache.has(k)) offsetCache.set(k, trackTimeOffsets(buildTrackTrends(raceTimes, { courseType: race.course_type, distance: race.distance })));
-    return offsetCache.get(k);
-  };
+  const ctx = createFactorContext(lineups, raceTimes, aliasMap);
 
   const factorTotal = { top3: 0 };
   for (const f of PACE_FACTORS) factorTotal[f] = { hits: 0, expected: 0 };
@@ -282,75 +196,23 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   const yearsOut = []; // detail に残す根拠
 
   for (const { year, race } of targets) {
-    const runners = runnersByRace.get(Number(race.id)) || [];
-    const n = runners.length;
-    const top3 = runners.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
+    const runnersAll = runnersByRace.get(Number(race.id)) || [];
+    const n = runnersAll.length;
+    const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!n || !top3.length) continue;
     const date = String(race.race_date);
 
-    // 展開・補正タイム: 前走の脚質と、全場・同距離の補正タイム(このレースの競馬場・良馬場への換算)・最速上がり(このレースより前)
-    // 補正値は全期間の勝ちタイムから出す(その年より後のレースも含む。年ごとに出し直すと重いため。わずかに先の情報が混ざる)
-    const offsets = offsetsFor(race);
-    const styles = [];
-    const paceHorses = [];
-    for (const h of runners) {
-      const runs = (runsByHorse.get(h.horse_key) || [])
-        .filter((x) => String(x.race_date) < date)
-        .sort((a, b) => String(b.race_date).localeCompare(String(a.race_date)) || b.race_number - a.race_number);
-      const last = runs.find((x) => x.status !== "scratched" && x.status !== "excluded");
-      styles.push(last ? runningStyleOf(last.corner_positions, fieldSizeByRace.get(Number(last.race_id))) : null);
-      let time = null, l3 = null;
-      for (const x of runs) {
-        if (x.status !== "finished" || x.course_type !== race.course_type || Number(x.distance) !== Number(race.distance)) continue;
-        const sec = timeTextToSeconds(x.time_text);
-        if (sec != null) {
-          const c = correctRunTime(sec, { runTrack: x.track, runCondition: normalizeTrackConditionText(x.track_condition), targetTrack: race.track }, offsets).seconds;
-          if (time == null || c < time) time = c;
-        }
-        const f = Number(x.final_furlong_time);
-        if (x.final_furlong_time != null && f > 0 && (l3 == null || f < l3)) l3 = f;
-      }
-      paceHorses.push({ key: h.horse_key, time, l3 });
-    }
-    const pace = predictPace(styles, n);
-
-    // 馬番・騎手: 同コースのこのレースより前の成績
-    const numCounts = new Map();
-    const jockeyCounts = new Map();
-    for (const r of lineups) {
-      if (!r.lineup || String(r.race_date) >= date || r.track !== race.track || r.course_type !== race.course_type || Number(r.distance) !== Number(race.distance)) continue;
-      for (const [hn, jockey, pos] of r.lineup) {
-        const add = (m, k) => {
-          if (!m.has(k)) m.set(k, newCounts());
-          const c = m.get(k);
-          c.rides++;
-          if (pos === 1) c.first++;
-          if (pos >= 1 && pos <= 3) c.show++;
-        };
-        if (hn > 0) add(numCounts, Number(hn));
-        const jk = jockeyKeyOf(jockey);
-        if (jk) add(jockeyCounts, jk);
-      }
-    }
-    const numberList = runners
-      .filter((h) => numCounts.has(Number(h.horse_number)))
-      .map((h) => ({ key: h.horse_key, stats: statsOf(numCounts.get(Number(h.horse_number))) }));
-    const jockeyList = runners
-      .map((h) => ({ key: h.horse_key, c: jockeyCounts.get(jockeyKeyOf(h.jockey)) }))
-      .filter((x) => x.c && x.c.rides >= PACE_MIN_JOCKEY_RIDES)
-      .map((x) => ({ key: x.key, stats: statsOf(x.c) }));
-
-    const orders = {
-      pace: paceOrder(paceHorses, pace),
-      number: rateOrder(numberList),
-      jockey: rateOrder(jockeyList),
-      time: rankBy(paceHorses.filter((h) => h.time != null), (h) => h.time),
-    };
+    const runners = runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey }));
+    const rf = computeRaceFactors(ctx, race, runners, runsByHorse);
+    const pace = rf.pace_type;
+    // 各要素の並び(データのある馬だけ・順位順)
+    const orders = Object.fromEntries(PACE_FACTORS.map((f) => [f,
+      [...rf.factors[f].entries()].filter(([, v]) => !v.missing).map(([key, v]) => ({ key, rank: v.rank })).sort((a, b) => a.rank - b.rank)]));
     const top3Keys = new Set(top3.map((r) => r.horse_key));
     years.push(compileYear(
-      runners.map((h) => h.horse_key),
+      runners.map((h) => h.key),
       top3Keys,
-      Object.fromEntries(PACE_FACTORS.map((f) => [f, scoresOf(orders[f])]))
+      Object.fromEntries(PACE_FACTORS.map((f) => [f, new Map([...rf.factors[f]].map(([k, v]) => [k, v.score]))]))
     ));
     const yearOut = { year, race_id: race.id, field_size: n, pace_type: pace, top3: top3.length };
     factorTotal.top3 += top3.length;

@@ -579,6 +579,7 @@ function setupPredictionViewTabs() {
       ensureHorseBest();
       ensureJockeyCourse();
       ensurePaceWeights();
+      ensureRaceFactors();
     });
   });
 }
@@ -883,29 +884,15 @@ function paceJockeySectionHtml() {
     </div>`;
 }
 
-// ④ 推奨馬(2026-10-12追加。タブの先頭)。上の①〜③と同じデータから作る(追加の通信なし)。基準はユーザー確認済み:
+// ④ 推奨馬(2026-10-12追加)と総合推奨馬(2026-10-13追加)の点数は、サーバーの GET /api/data-search/race-factors で計算する
+// (_lib/race-factors.js。重賞の比率の自動算出と同じ1か所。2026-10-13 に画面側の計算をやめた)。規則はユーザー確認済み:
 //   - ペース予想: 前走の脚質で、逃げ2頭以上 または 逃げ+先行が頭数の半分以上 → ハイ、
 //     逃げ0〜1頭 かつ 逃げ+先行が頭数の1/4以下 → スロー、それ以外 → ミドル(脚質「不明」の馬は数えない。頭数は全出走馬)
-//   - 展開が有利な馬: ハイは補正タイム順、スローは全場・同距離の最速上がり3F順(2026-10-13〜。以前は同場・同距離のみ)、
-//     ミドルは「持ちタイムの順位+上がり3Fの順位」の小さい順(両方ある馬だけ)
-//   - 有利な馬番: 同コースの馬番別の複勝率順(同じなら単勝率→騎乗の多い順)。今回いる馬番だけ
-//   - 騎手: 同コースの複勝率順(同じなら単勝率→騎乗の多い順)。騎乗5回未満は除く
+//   - 展開が有利な馬: ハイは補正タイム順、スローは上がり3F順、ミドルは両方の順位の合計順。記録は同距離→±200m→全距離→芝ダ違いの順に補う
+//   - 有利な馬番: 同コースの馬番別の複勝率順(騎乗が少なければ同場→全場)
+//   - 騎手: 同コースの複勝率を騎乗が少ないほど平均に寄せた値の順(同コースに騎乗が無ければ同場→全成績)
+//   - データの無い馬は25点
 const PACE_TOP_N = 5;
-const PACE_MIN_JOCKEY_RIDES = 5;
-
-function pacePredictionOf(entries) {
-  let nige = 0, senko = 0, unknown = 0;
-  for (const e of entries) {
-    const st = paceStyleOf(paceLastRun(horseHistory[normalizeHorseName(e.horse_name)]));
-    if (!st) unknown++;
-    else if (st.style === "逃げ") nige++;
-    else if (st.style === "先行") senko++;
-  }
-  const n = entries.length;
-  const front = nige + senko;
-  const pace = nige >= 2 || front >= n / 2 ? "high" : nige <= 1 && front <= n / 4 ? "slow" : "middle";
-  return { pace, nige, senko, unknown, n };
-}
 
 // 値の小さい順に並べ、同じ値は同じ順位にする(1, 2, 2, 4 …)。
 function paceRanked(list, valueOf) {
@@ -923,137 +910,80 @@ function paceTopListHtml(items, emptyText) {
     <li><span class="pace-top-rank">${x.rank}</span>${x.labelHtml}<span class="pace-top-value">${x.valueHtml}</span></li>`).join("")}</ol>`;
 }
 
-// 各要素の並び(推奨馬のベスト5と総合推奨馬で共用。2026-10-13に関数へ切り出し)。
-// 戻り値: { message }(取得中・失敗等)か { ranked: [{ e, rank, ... }] }(データのある馬だけ。同値同順位)
-// 規則はサーバー側 functions/api/_lib/pace-score.js(比率の自動算出)と同じ。変えるときは両方そろえる。
-function paceOrderPace(entries, p) {
-  const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
-  if (!st || st.status === "loading") return { message: "読み込み中…" };
-  if (st.status === "error" || !st.data || !st.data.condition) return { message: "持ちタイムを取得できませんでした" };
-  const rows = entries.map(e => {
-    // 2026-10-13: 競馬場を問わない記録にした(以前は同場・同距離のみで、記録の無い馬が多く50点になっていた)。
-    // タイムは補正タイム(今回の競馬場・良馬場への換算)、上がりは全場・同距離の最速(競馬場別の補正は今後)
-    const h = (st.data.horses || {})[normalizeHorseName(e.horse_name)] || {};
-    return { e, time: h.corrected ? { seconds: h.corrected.corrected_seconds } : null, l3: h.all?.last3f || null };
-  });
-  let ranked;
-  if (p.pace === "high") {
-    ranked = paceRanked(rows.filter(x => x.time), x => x.time.seconds);
-  } else if (p.pace === "slow") {
-    ranked = paceRanked(rows.filter(x => x.l3), x => x.l3.last3f);
-  } else {
-    const both = rows.filter(x => x.time && x.l3);
-    const tRank = new Map(paceRanked(both, x => x.time.seconds).map(x => [x.e, x.rank]));
-    const lRank = new Map(paceRanked(both, x => x.l3.last3f).map(x => [x.e, x.rank]));
-    ranked = paceRanked(both.map(x => ({ ...x, sum: tRank.get(x.e) + lRank.get(x.e) })), x => x.sum);
-  }
-  return { ranked };
+let raceFactors = null; // { raceId, status: "loading"|"done"|"error"|"paused", data }
+
+function ensureRaceFactors() {
+  if (!selectedRace || predictionView !== "pace") return;
+  const rid = selectedRace.id;
+  if (raceFactors && raceFactors.raceId === rid) return; // 取得済み・取得中・失敗済み
+  raceFactors = { raceId: rid, status: "loading", data: null };
+  authedFetch(`/api/data-search/race-factors?race_id=${encodeURIComponent(rid)}`)
+    .then(res => {
+      if (res.status === 503) return { paused: true };
+      return res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`));
+    })
+    .then(data => {
+      if (!raceFactors || raceFactors.raceId !== rid) return;
+      raceFactors = data.paused ? { raceId: rid, status: "paused", data: null } : { raceId: rid, status: "done", data };
+      if (selectedRace && selectedRace.id === rid) renderPace();
+    })
+    .catch(() => {
+      if (!raceFactors || raceFactors.raceId !== rid) return;
+      raceFactors = { raceId: rid, status: "error", data: null };
+      if (selectedRace && selectedRace.id === rid) renderPace();
+    });
 }
 
-// 補正タイム(2026-10-13追加。総合推奨馬の4つ目の要素): 全場・同距離の走を今回の競馬場・良馬場に換算したタイムの速い順
-function paceOrderTime(entries) {
-  const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
-  if (!st || st.status === "loading") return { message: "読み込み中…" };
-  if (st.status === "error" || !st.data || !st.data.condition) return { message: "持ちタイムを取得できませんでした" };
-  const rows = entries
-    .map(e => ({ e, c: (st.data.horses || {})[normalizeHorseName(e.horse_name)]?.corrected || null }))
-    .filter(x => x.c);
-  return { ranked: paceRanked(rows, x => x.c.corrected_seconds) };
-}
-
-function paceSecText(sec) {
-  const m = Math.floor(sec / 60);
-  const r = sec - m * 60;
-  return m ? `${m}:${r.toFixed(1).padStart(4, "0")}` : r.toFixed(1);
-}
-
-function paceOrderNumber(entries) {
-  const { data, message } = paceJockeyCourseState();
-  if (!data) return { message };
-  const byNumber = new Map((data.horse_numbers || []).map(x => [Number(x.horse_number), x.stats]));
-  const list = entries
-    .filter(e => e.horse_number !== null && e.horse_number !== undefined)
-    .map(e => ({ e, stats: byNumber.get(Number(e.horse_number)) }))
-    .filter(x => x.stats && x.stats.rides > 0);
-  return { ranked: paceRateRanked(list) };
-}
-
-function paceOrderJockey(entries) {
-  const { data, message } = paceJockeyCourseState();
-  if (!data) return { message };
-  const entryByName = new Map(entries.map(e => [normalizeHorseName(e.horse_name), e]));
-  const list = (data.jockeys || [])
-    .filter(x => x.stats && x.stats.rides >= PACE_MIN_JOCKEY_RIDES)
-    .map(x => ({ ...x, e: entryByName.get(normalizeHorseName(x.horse_name)) || { horse_number: x.horse_number, waku_number: x.waku_number, horse_name: x.horse_name } }));
-  return { ranked: paceRateRanked(list) };
-}
-
-function paceRecommendPaceHtml(entries) {
-  const p = pacePredictionOf(entries);
-  const label = { high: "ハイペース", slow: "スローペース", middle: "ミドルペース" }[p.pace];
-  const basis = { high: "補正タイム順", slow: "上がり3F順", middle: "補正タイムと上がり3Fの順位の合計順" }[p.pace];
-  const reason = `逃げ${p.nige}頭・先行${p.senko}頭(${p.n}頭中${p.unknown ? `、脚質不明${p.unknown}頭` : ""})`;
-  const head = `<div class="pace-reco-block"><h4>展開が有利な馬<span class="pace-reco-pace pace-reco-${p.pace}">${label}予想</span></h4>
-    <p class="pace-reco-note">${escapeHtml(reason)} → ${escapeHtml(basis)}(全場・同距離。タイムは今回の競馬場・良馬場に換算した補正タイム)</p>`;
-  const { ranked, message } = paceOrderPace(entries, p);
-  if (!ranked) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
-  const items = ranked.slice(0, PACE_TOP_N).map(x => ({
-    rank: x.rank,
-    labelHtml: paceHorseLabelHtml(x.e),
-    valueHtml: [
-      p.pace !== "slow" ? `補${paceSecText(x.time.seconds)}` : null,
-      p.pace !== "high" ? `上${Number(x.l3.last3f).toFixed(1)}` : null,
-    ].filter(Boolean).join(" "),
-  }));
-  return `${head}${paceTopListHtml(items, "同場・同距離を走ったことのある馬がいません")}</div>`;
-}
-
-// 馬番別・騎手の推奨は騎手成績のAPI(jockeyCourse)を使う。取得中・停止中・失敗は同じ案内を出す。
-function paceJockeyCourseState() {
-  const st = jockeyCourse && jockeyCourse.raceId === selectedRace.id ? jockeyCourse : null;
+// { message }(取得中・失敗等)か { data }
+function raceFactorsState() {
+  const st = raceFactors && raceFactors.raceId === selectedRace.id ? raceFactors : null;
   if (!st || st.status === "loading") return { message: "読み込み中…" };
   if (st.status === "paused") return { message: "D1の使用量が多いため一時停止中です" };
   if (st.status === "error" || !st.data) return { message: "取得に失敗しました" };
-  if (!st.data.condition) return { message: "このレースのコース・距離が未登録のため出せません" };
+  if (!st.data.pace_type) return { message: "このレースのコース・距離が未登録のため出せません" };
   return { data: st.data };
 }
 
-const paceByShowRate = (a, b) => b.stats.showRate - a.stats.showRate || b.stats.winRate - a.stats.winRate || b.stats.rides - a.stats.rides;
-// 複勝率・単勝率がともに同じなら同順位
-function paceRateRanked(list) {
-  const sorted = [...list].sort(paceByShowRate);
-  let rank = 0;
-  return sorted.map((x, i) => {
-    const prev = sorted[i - 1];
-    if (i === 0 || x.stats.showRate !== prev.stats.showRate || x.stats.winRate !== prev.stats.winRate) rank = i + 1;
-    return { ...x, rank };
-  });
+// ある要素のベスト5(データのある馬を順位順に)
+function paceFactorTopItems(data, f) {
+  return data.horses
+    .filter(h => !h.factors[f].missing)
+    .sort((a, b) => a.factors[f].rank - b.factors[f].rank)
+    .slice(0, PACE_TOP_N)
+    .map(h => ({
+      rank: h.factors[f].rank,
+      labelHtml: `${paceHorseLabelHtml(h)}${f === "jockey" ? `<span class="pace-top-jockey">${escapeHtml(h.jockey || "")}</span>` : ""}`,
+      valueHtml: escapeHtml(h.factors[f].value || ""),
+    }));
 }
-const paceRatesHtml = (s) => `複${pacePct(s.showRate)} 単${pacePct(s.winRate)}<small>(${s.rides}騎乗)</small>`;
 
-function paceRecommendNumberHtml(entries) {
-  const head = `<div class="pace-reco-block"><h4>有利な馬番</h4><p class="pace-reco-note">同コースの馬番別の複勝率順(取り込み済み全期間)</p>`;
-  const { ranked, message } = paceOrderNumber(entries);
-  if (!ranked) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
-  const items = ranked.slice(0, PACE_TOP_N).map(x => ({
-    rank: x.rank, labelHtml: paceHorseLabelHtml(x.e), valueHtml: paceRatesHtml(x.stats),
-  }));
-  const empty = entries.some(e => e.horse_number === null || e.horse_number === undefined)
+function paceRecommendPaceHtml() {
+  const { data, message } = raceFactorsState();
+  if (!data) return `<div class="pace-reco-block"><h4>展開が有利な馬</h4><p class="pace-none">${escapeHtml(message)}</p></div>`;
+  const c = data.counts;
+  const label = { high: "ハイペース", slow: "スローペース", middle: "ミドルペース" }[data.pace_type];
+  const basis = { high: "補正タイム順", slow: "上がり3F順", middle: "補正タイムと上がり3Fの順位の合計順" }[data.pace_type];
+  const reason = `逃げ${c.nige}頭・先行${c.senko}頭(${c.n}頭中${c.unknown ? `、脚質不明${c.unknown}頭` : ""})`;
+  return `<div class="pace-reco-block"><h4>展開が有利な馬<span class="pace-reco-pace pace-reco-${data.pace_type}">${label}予想</span></h4>
+    <p class="pace-reco-note">${escapeHtml(reason)} → ${escapeHtml(basis)}(同距離の記録が無ければ近い距離・芝ダ違いを換算して補う。タイムは今回の競馬場・良馬場に換算した補正タイム)</p>
+    ${paceTopListHtml(paceFactorTopItems(data, "pace"), "記録のある馬がいません")}</div>`;
+}
+
+function paceRecommendNumberHtml() {
+  const head = `<div class="pace-reco-block"><h4>有利な馬番</h4><p class="pace-reco-note">同コースの馬番別の複勝率順(騎乗が20回未満なら同場→全場の同じ芝ダの成績)</p>`;
+  const { data, message } = raceFactorsState();
+  if (!data) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
+  const empty = data.horses.some(h => h.horse_number === null || h.horse_number === undefined)
     ? "馬番が確定していないため出せません"
-    : "同コースの馬番別の記録がありません";
-  return `${head}${paceTopListHtml(items, empty)}</div>`;
+    : "馬番別の記録がありません";
+  return `${head}${paceTopListHtml(paceFactorTopItems(data, "number"), empty)}</div>`;
 }
 
-function paceRecommendJockeyHtml(entries) {
-  const head = `<div class="pace-reco-block"><h4>騎手</h4><p class="pace-reco-note">同コースの複勝率順(騎乗${PACE_MIN_JOCKEY_RIDES}回以上)</p>`;
-  const { ranked, message } = paceOrderJockey(entries);
-  if (!ranked) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
-  const items = ranked.slice(0, PACE_TOP_N).map(x => ({
-    rank: x.rank,
-    labelHtml: `${paceHorseLabelHtml(x.e)}<span class="pace-top-jockey">${escapeHtml(x.jockey || "")}</span>`,
-    valueHtml: paceRatesHtml(x.stats),
-  }));
-  return `${head}${paceTopListHtml(items, `同コースで騎乗${PACE_MIN_JOCKEY_RIDES}回以上の騎手がいません`)}</div>`;
+function paceRecommendJockeyHtml() {
+  const head = `<div class="pace-reco-block"><h4>騎手</h4><p class="pace-reco-note">同コースの複勝率順(騎乗が少ないほどコースの平均に寄せて評価。同コースに騎乗が無ければ同場→全成績)</p>`;
+  const { data, message } = raceFactorsState();
+  if (!data) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
+  return `${head}${paceTopListHtml(paceFactorTopItems(data, "jockey"), "騎手の記録がありません")}</div>`;
 }
 
 // ---- 総合推奨馬(2026-10-13追加。docs/design/screens.md「総合推奨馬」) ----
@@ -1062,7 +992,6 @@ function paceRecommendJockeyHtml(entries) {
 // 管理者だけ、この欄で比率を変えて保存・重賞の過去の結果から自動算出できる。
 const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム" };
 const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time"]; // サーバー側 _lib/pace-score.js の PACE_FACTORS と同じ
-const PACE_MISSING_SCORE = 50;
 let paceWeights = null; // { key, status: "loading"|"done"|"error", data }
 let paceWeightsDraft = null; // 管理者が入力中の比率(保存前の試し計算用){ key, w_pace, w_number, w_jockey, w_time }
 let paceWeightsMessage = "";
@@ -1116,14 +1045,6 @@ function requestPaceWeightsRecompute(key, gradedId, raceId) {
     });
 }
 
-// 順位 → 点(1位100・最下位0の等間隔)。データのある馬が1頭だけなら100。
-function paceScoresOf(ranked) {
-  const m = ranked.length;
-  const out = new Map();
-  for (const x of ranked) out.set(x.e, m > 1 ? (100 * (m - x.rank)) / (m - 1) : 100);
-  return out;
-}
-
 function paceWeightsSourceText(d) {
   if (!d) return "";
   if (d.scope === "graded") return `この重賞の比率(${d.source === "auto" ? "過去10年の結果で一番当たった比率を自動で選択" : "管理者が設定"})`;
@@ -1151,7 +1072,7 @@ function paceWeightsAdminHtml(w) {
 }
 
 function paceTotalSectionHtml(entries) {
-  const head = `<h3 class="pace-heading">総合推奨馬<small>展開・馬番・騎手・補正タイムの順位を100〜0点にし(データの無い馬は50点)、重視度の比率を掛けて合計</small></h3>`;
+  const head = `<h3 class="pace-heading">総合推奨馬<small>展開・馬番・騎手・補正タイムの順位を100〜0点にし(データの無い馬は25点)、重視度の比率を掛けて合計</small></h3>`;
   const ws = paceWeights && paceWeights.key === paceWeightsKey() ? paceWeights : null;
   if (!ws || ws.status === "loading") return `${head}<p class="pace-none">読み込み中…</p>`;
   if (ws.status === "error" || !ws.data) return `${head}<p class="pace-none">比率を取得できませんでした</p>`;
@@ -1166,31 +1087,23 @@ function paceTotalSectionHtml(entries) {
   const recomputingText = paceRecomputing === ws.key ? "過去の結果から比率を計算し直しています…(終わると自動で切り替わります)" : "";
   const info = `<p class="pace-reco-note">比率: <strong>${escapeHtml(weightsText)}</strong>${draft ? "(入力中・未保存)" : `(${escapeHtml(paceWeightsSourceText(ws.data))})`}</p>${autoText ? `<p class="pace-reco-note">${escapeHtml(autoText)}</p>` : ""}${recomputingText ? `<p class="pace-reco-note">${escapeHtml(recomputingText)}</p>` : ""}`;
 
-  const orders = {
-    pace: paceOrderPace(entries, pacePredictionOf(entries)),
-    number: paceOrderNumber(entries),
-    jockey: paceOrderJockey(entries),
-    time: paceOrderTime(entries),
-  };
-  const waiting = Object.values(orders).find(o => !o.ranked);
-  if (waiting) return `${head}${info}${paceWeightsAdminHtml(w)}<p class="pace-none">${escapeHtml(waiting.message)}</p>`;
-  const scores = Object.fromEntries(PACE_FACTOR_KEYS.map(f => [f, paceScoresOf(orders[f].ranked)]));
+  const { data: rf, message } = raceFactorsState();
+  if (!rf) return `${head}${info}${paceWeightsAdminHtml(w)}<p class="pace-none">${escapeHtml(message)}</p>`;
   const wOf = (f) => Number(w[`w_${f}`] ?? 0);
   const wSum = PACE_FACTOR_KEYS.reduce((a, f) => a + wOf(f), 0) || 1;
-  const rows = entries.map(e => {
-    const s = {};
-    for (const f of PACE_FACTOR_KEYS) s[f] = scores[f].has(e) ? scores[f].get(e) : null;
-    const total = PACE_FACTOR_KEYS.reduce((acc, f) => acc + wOf(f) * (s[f] ?? PACE_MISSING_SCORE), 0) / wSum;
-    return { e, s, total: Math.round(total * 10) / 10 };
+  // 点数はサーバー(race-factors)で計算済み。データの無い要素は25点で入っている(missing)
+  const rows = rf.horses.map(h => {
+    const total = PACE_FACTOR_KEYS.reduce((acc, f) => acc + wOf(f) * h.factors[f].score, 0) / wSum;
+    return { e: h, f: h.factors, total: Math.round(total * 10) / 10 };
   });
   const ranked = paceRanked(rows, x => -x.total);
-  const cell = (v) => (v == null ? `<span class="pace-none">−(50)</span>` : String(Math.round(v)));
+  const cell = (x) => (x.missing ? `<span class="pace-none" title="データ無し">−(25)</span>` : `<span title="${escapeAttr(x.value || "")}">${Math.round(x.score)}</span>`);
   const body = ranked.map(x => `
     <tr class="${x.rank <= 3 ? "pace-total-top" : ""}">
       <td>${x.rank}</td>
       <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
       <td><strong>${x.total.toFixed(1)}</strong></td>
-      ${PACE_FACTOR_KEYS.map(f => `<td>${cell(x.s[f])}</td>`).join("")}
+      ${PACE_FACTOR_KEYS.map(f => `<td>${cell(x.f[f])}</td>`).join("")}
     </tr>`).join("");
   return `${head}${info}${paceWeightsAdminHtml(w)}
     <div class="table-wrap">
@@ -1266,9 +1179,9 @@ function paceRecommendSectionHtml(entries) {
     ${paceTotalSectionHtml(entries)}
     <h3 class="pace-heading">推奨馬<small>下の脚質・持ちタイム・騎手成績から機械的に出した参考です</small></h3>
     <div class="pace-reco">
-      ${paceRecommendPaceHtml(entries)}
-      ${paceRecommendNumberHtml(entries)}
-      ${paceRecommendJockeyHtml(entries)}
+      ${paceRecommendPaceHtml()}
+      ${paceRecommendNumberHtml()}
+      ${paceRecommendJockeyHtml()}
     </div>`;
 }
 
@@ -1342,6 +1255,7 @@ function renderPace() {
   // 展開・時計タブを表示中なら騎手成績・比率を取得する(取得済み・別タブ表示中なら何もしない)。
   ensureJockeyCourse();
   ensurePaceWeights();
+  ensureRaceFactors();
 }
 
 // ---------- 馬メモダイアログ(2026-09-25。以前は馬名の展開パネル内のtextarea) ----------

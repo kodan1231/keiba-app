@@ -1,0 +1,298 @@
+// 総合推奨馬の4要素(展開・馬番・騎手・補正タイム)の点数付け(2026-10-13追加)。
+// 予想登録画面「展開・時計」タブ(GET /api/data-search/race-factors)と、重賞の比率の自動算出(_lib/pace-score.js の過去の年の採点)の
+// 両方がこの1か所を使う(以前は画面〈prediction.js〉とサーバーに同じ規則を二重に持っていた)。仕様は docs/design/screens.md「総合推奨馬」。
+//
+// 規則(ユーザー確認済み。2026-10-13):
+//   - 各要素の順位を 100(1位)〜0(最下位)の等間隔の点にする(同値同順位)。データの無い馬は 25点(MISSING_SCORE)。
+//     以前は「データ無し=50点(真ん中)」だったが、記録の無い馬が多く不自然だったため、近い条件で補い、それでも無い馬(新馬など)は25点にした
+//   - タイム(補正タイム): このレースより前の完走した走を、次の順で探して一番近い段の中の最速を使う
+//       ①同じ芝ダ障・同じ距離 ②同じ芝ダ障・±200m ③同じ芝ダ障・全距離 ④芝⇔ダートの違い(障害は除く)
+//     換算: 元のタイム − 走った競馬場の補正値 − 走った日の馬場の補正値(その走の芝ダ・距離の値)→ 距離が違えば
+//       「今回の芝ダ・距離の平均勝ちタイム ÷ 走った芝ダ・距離の平均勝ちタイム」を掛ける(平均が出せなければ距離の比)
+//       → 今回の競馬場の補正値を足す(_lib/track-trends.js)
+//   - 上がり3F: 同じ順で探し、一番近い段の中の最速(換算はしない。競馬場別の補正は今後)
+//   - 展開: 前走の脚質でペースを予想(predictPace)し、ハイ=タイム順、スロー=上がり3F順、ミドル=両方の順位の合計順(両方ある馬)
+//   - 馬番: 同コース(競馬場・芝ダ障・距離)の馬番別の複勝率順。その馬番の騎乗が20回未満なら、同じ競馬場・芝ダ障の全距離、
+//     それも20回未満なら全競馬場の同じ芝ダ障
+//   - 騎手: 同コースの複勝率を、騎乗が少ないほどそのコースの平均に寄せた値(10騎乗分の平均を足して割る)の順。
+//     同コースで騎乗が無ければ同じ競馬場・芝ダ障、それも無ければ全成績で同じように出す
+// 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
+//   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
+import { runningStyleOf, timeTextToSeconds } from "./graded-race-search.js";
+import { buildTrackTrends, trackTimeOffsets, TREND_MIN_RACES } from "./track-trends.js";
+import { normalizeTrackConditionText } from "./race-lineup-cache.js";
+import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
+
+export const FACTOR_KEYS = ["pace", "number", "jockey", "time"];
+export const MISSING_SCORE = 25;
+const NUMBER_MIN_RIDES = 20;
+const JOCKEY_PRIOR_RIDES = 10;
+const NEAR_DISTANCE = 200;
+
+export function predictPace(styles, fieldSize) {
+  let nige = 0, senko = 0;
+  for (const s of styles) {
+    if (s === "逃げ") nige++;
+    else if (s === "先行") senko++;
+  }
+  const front = nige + senko;
+  return nige >= 2 || front >= fieldSize / 2 ? "high" : nige <= 1 && front <= fieldSize / 4 ? "slow" : "middle";
+}
+
+// 小さい順に並べて同値同順位
+export function rankBy(list, valueOf) {
+  const sorted = [...list].sort((a, b) => valueOf(a) - valueOf(b));
+  let rank = 0;
+  return sorted.map((x, i) => {
+    if (i === 0 || valueOf(x) !== valueOf(sorted[i - 1])) rank = i + 1;
+    return { ...x, rank };
+  });
+}
+
+// ---- 共通の下ごしらえ(集計用キャッシュ・勝ちタイムのキャッシュから。同じ配列なら使い回す) ----
+
+const contextCache = new WeakMap(); // lineups 配列 -> { raceTimes, ctx }
+
+function newCounts() {
+  return { rides: 0, first: 0, show: 0 };
+}
+function addRide(m, k, pos) {
+  let c = m.get(k);
+  if (!c) m.set(k, (c = newCounts()));
+  c.rides++;
+  if (pos === 1) c.first++;
+  if (pos >= 1 && pos <= 3) c.show++;
+}
+
+// lineups: getRaceLineups()、raceTimes: getRaceTimes()、aliasMap: 騎手名エイリアス(loadJockeyAliasMap 等)。
+// 3つとも同じもの(使い回し中の同じ配列・Map)なら、前回の下ごしらえを使う(CPU時間対策)
+export function createFactorContext(lineups, raceTimes, aliasMap) {
+  const hit = contextCache.get(lineups);
+  if (hit && hit.raceTimes === raceTimes && hit.aliasMap === aliasMap) return hit.ctx;
+  const jockeyKeyOf = (name) => jockeyAliasKeyOf(applyJockeyAliasMap(aliasMap, name));
+
+  const fieldSizeByRace = new Map();
+  const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, lineup }]
+  const jockeyKey = new Map(); // 生の騎手名 -> キー
+  const keyOf = (name) => {
+    if (!name) return "";
+    let k = jockeyKey.get(name);
+    if (k === undefined) jockeyKey.set(name, (k = jockeyKeyOf(name)));
+    return k;
+  };
+  for (const r of lineups) {
+    if (!r.lineup) continue;
+    fieldSizeByRace.set(Number(r.id), r.lineup.length);
+    const g = `${r.track}|${r.course_type}`;
+    if (!byTrackCt.has(g)) byTrackCt.set(g, []);
+    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), lineup: r.lineup });
+  }
+  // 全競馬場の馬番別・騎手別の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、
+  // 初めて必要になったときに数える(全騎乗 約5.6万件を数えるのに約10ミリ秒かかる。CPU時間対策)
+  let allCounts = null;
+  const allOf = () => {
+    if (allCounts) return allCounts;
+    const numberAllByCt = new Map(); // 芝ダ障 -> Map(馬番 -> counts)
+    const jockeyAll = new Map(); // 騎手キー -> counts
+    for (const r of lineups) {
+      if (!r.lineup) continue;
+      if (!numberAllByCt.has(r.course_type)) numberAllByCt.set(r.course_type, new Map());
+      const nm = numberAllByCt.get(r.course_type);
+      for (const [hn, jockey, pos] of r.lineup) {
+        if (hn > 0) addRide(nm, Number(hn), pos);
+        const jk = keyOf(jockey);
+        if (jk) addRide(jockeyAll, jk, pos);
+      }
+    }
+    return (allCounts = { numberAllByCt, jockeyAll });
+  };
+
+  // 芝ダ障・距離ごとの勝ちタイム(補正値と平均)
+  const timesByCourse = new Map();
+  for (const t of raceTimes) {
+    const k = `${t.course_type}|${Number(t.distance)}`;
+    if (!timesByCourse.has(k)) timesByCourse.set(k, []);
+    timesByCourse.get(k).push(t);
+  }
+  const courseInfo = new Map();
+  const courseOf = (ct, d) => {
+    const k = `${ct}|${Number(d)}`;
+    let v = courseInfo.get(k);
+    if (!v) {
+      const trends = buildTrackTrends(timesByCourse.get(k) || [], { courseType: ct, distance: d });
+      const ov = trends.overall;
+      const avg = ov["良"].n >= TREND_MIN_RACES ? ov["良"].avg : ov.all.n >= TREND_MIN_RACES ? ov.all.avg : null;
+      v = { offsets: trackTimeOffsets(trends), avg };
+      courseInfo.set(k, v);
+    }
+    return v;
+  };
+
+  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf };
+  contextCache.set(lineups, { raceTimes, aliasMap, ctx });
+  return ctx;
+}
+
+// ---- 1レース分の採点 ----
+
+const fmtSec = (sec) => {
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return m ? `${m}:${s.toFixed(1).padStart(4, "0")}` : s.toFixed(1);
+};
+const pct = (v) => `${(v * 100).toFixed(1)}%`;
+const TIER_LABEL = { 1: "", 2: "±200m換算", 3: "距離換算", 4: "芝ダ換算" };
+const SCOPE_LABEL = { course: "同コース", track: "同場", all: "全場" };
+
+// 走の段(1〜4。対象外は 0)
+function tierOf(run, race) {
+  if (run.course_type === race.course_type) {
+    const diff = Math.abs(Number(run.distance) - Number(race.distance));
+    return diff === 0 ? 1 : diff <= NEAR_DISTANCE ? 2 : 3;
+  }
+  const flat = (ct) => ct === "芝" || ct === "ダート";
+  return flat(run.course_type) && flat(race.course_type) ? 4 : 0;
+}
+
+// 走のタイムを今回の競馬場・良馬場・芝ダ・距離に換算する
+function convertTime(ctx, sec, run, race) {
+  const src = ctx.courseOf(run.course_type, run.distance);
+  const off = (m, k) => (k != null && m.get(k) != null ? m.get(k) : 0);
+  let base = sec - off(src.offsets.trackOff, run.track) - off(src.offsets.condOff, normalizeTrackConditionText(run.track_condition));
+  const tgt = ctx.courseOf(race.course_type, race.distance);
+  if (run.course_type !== race.course_type || Number(run.distance) !== Number(race.distance)) {
+    base *= src.avg && tgt.avg ? tgt.avg / src.avg : Number(race.distance) / Number(run.distance);
+  }
+  return base + off(tgt.offsets.trackOff, race.track);
+}
+
+// race: { id, race_date, track, course_type, distance }
+// runners: [{ key, horse_number, jockey }](key は馬の名寄せキー。runsByHorse のキーと同じ)
+// runsByHorse: Map(key -> [{ race_id, race_date, race_number, status, corner_positions, time_text, final_furlong_time,
+//   track, course_type, distance, track_condition }])(日付はここで「このレースより前」に絞る)
+// 戻り値: { pace_type, counts: { nige, senko, unknown, n }, factors: { pace|number|jockey|time: Map(key -> {score, rank, value, missing}) } }
+export function computeRaceFactors(ctx, race, runners, runsByHorse) {
+  const date = String(race.race_date);
+  const n = runners.length;
+
+  // 戦績: 脚質・タイム・上がり
+  const styles = [];
+  const horses = runners.map((h) => {
+    const runs = (runsByHorse.get(h.key) || [])
+      .filter((x) => String(x.race_date) < date)
+      .sort((a, b) => String(b.race_date).localeCompare(String(a.race_date)) || b.race_number - a.race_number);
+    const last = runs.find((x) => x.status !== "scratched" && x.status !== "excluded");
+    styles.push(last ? runningStyleOf(last.corner_positions, ctx.fieldSizeByRace.get(Number(last.race_id))) : null);
+    let time = null, timeTier = 9, timeRun = null, l3 = null, l3Tier = 9;
+    for (const x of runs) {
+      if (x.status !== "finished") continue;
+      const tier = tierOf(x, race);
+      if (!tier) continue;
+      const sec = timeTextToSeconds(x.time_text);
+      if (sec != null && tier <= timeTier) {
+        const c = convertTime(ctx, sec, x, race);
+        if (tier < timeTier || c < time) { time = c; timeTier = tier; timeRun = x; }
+      }
+      const f = Number(x.final_furlong_time);
+      if (x.final_furlong_time != null && f > 0 && tier <= l3Tier && (tier < l3Tier || f < l3)) { l3 = f; l3Tier = tier; }
+    }
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier };
+  });
+  let nige = 0, senko = 0, unknown = 0;
+  for (const s of styles) {
+    if (!s) unknown++;
+    else if (s === "逃げ") nige++;
+    else if (s === "先行") senko++;
+  }
+  const paceType = predictPace(styles, n);
+  const timeText = (x) => `補${fmtSec(x.time)}${TIER_LABEL[x.timeTier] ? `(${x.timeRun.course_type}${x.timeRun.distance}m・${TIER_LABEL[x.timeTier]})` : ""}`;
+  const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
+
+  // 馬番・騎手: 同コース・同場(芝ダ障が同じ)の成績(このレースより前)
+  const numCourse = new Map(), numTrack = new Map(), jkCourse = new Map(), jkTrack = new Map();
+  for (const r of ctx.byTrackCt.get(`${race.track}|${race.course_type}`) || []) {
+    if (r.race_date >= date) continue;
+    const same = r.distance === Number(race.distance);
+    for (const [hn, jockey, pos] of r.lineup) {
+      const jk = ctx.keyOf(jockey);
+      if (hn > 0) {
+        addRide(numTrack, Number(hn), pos);
+        if (same) addRide(numCourse, Number(hn), pos);
+      }
+      if (jk) {
+        addRide(jkTrack, jk, pos);
+        if (same) addRide(jkCourse, jk, pos);
+      }
+    }
+  }
+  const numberList = [];
+  for (const h of runners) {
+    const hn = Number(h.horse_number);
+    if (!(hn > 0)) continue;
+    let c = numCourse.get(hn), scope = "course";
+    if (!c || c.rides < NUMBER_MIN_RIDES) { c = numTrack.get(hn); scope = "track"; }
+    if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf().numberAllByCt.get(race.course_type) || new Map()).get(hn); scope = "all"; }
+    if (!c || !c.rides) continue;
+    numberList.push({ key: h.key, show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope });
+  }
+  // 騎手: 段ごとの平均(そのコース等の全騎乗の複勝率・単勝率)に、騎乗が少ないほど寄せる
+  const avgOf = (m) => {
+    let rides = 0, show = 0, first = 0;
+    for (const c of m.values()) { rides += c.rides; show += c.show; first += c.first; }
+    return { show: rides ? show / rides : 0, win: rides ? first / rides : 0 };
+  };
+  const jkAvg = { course: avgOf(jkCourse), track: avgOf(jkTrack) };
+  const jkAllAvg = () => jkAvg.all || (jkAvg.all = avgOf(ctx.allOf().jockeyAll));
+  const jockeyList = [];
+  for (const h of runners) {
+    const jk = ctx.keyOf(h.jockey);
+    if (!jk) continue;
+    let c = jkCourse.get(jk), scope = "course";
+    if (!c || !c.rides) { c = jkTrack.get(jk); scope = "track"; }
+    if (!c || !c.rides) { c = ctx.allOf().jockeyAll.get(jk); scope = "all"; }
+    if (!c || !c.rides) continue;
+    const a = scope === "all" ? jkAllAvg() : jkAvg[scope], K = JOCKEY_PRIOR_RIDES;
+    jockeyList.push({
+      key: h.key, rides: c.rides, scope, rawShow: c.show / c.rides,
+      show: (c.show + K * a.show) / (c.rides + K), win: (c.first + K * a.win) / (c.rides + K),
+    });
+  }
+  const rateRank = (list) => {
+    const sorted = [...list].sort((a, b) => b.show - a.show || b.win - a.win || b.rides - a.rides);
+    let rank = 0;
+    return sorted.map((x, i) => {
+      const p = sorted[i - 1];
+      if (i === 0 || x.show !== p.show || x.win !== p.win) rank = i + 1;
+      return { ...x, rank };
+    });
+  };
+
+  // 並び
+  const withTime = horses.filter((x) => x.time != null);
+  const withL3 = horses.filter((x) => x.l3 != null);
+  let paceRanked;
+  if (paceType === "high") paceRanked = rankBy(withTime, (x) => x.time).map((x) => ({ ...x, value: timeText(x) }));
+  else if (paceType === "slow") paceRanked = rankBy(withL3, (x) => x.l3).map((x) => ({ ...x, value: l3Text(x) }));
+  else {
+    const both = horses.filter((x) => x.time != null && x.l3 != null);
+    const tr = new Map(rankBy(both, (x) => x.time).map((x) => [x.key, x.rank]));
+    const lr = new Map(rankBy(both, (x) => x.l3).map((x) => [x.key, x.rank]));
+    paceRanked = rankBy(both.map((x) => ({ ...x, sum: tr.get(x.key) + lr.get(x.key) })), (x) => x.sum)
+      .map((x) => ({ ...x, value: `${timeText(x)} ${l3Text(x)}` }));
+  }
+  const ranked = {
+    pace: paceRanked,
+    time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, value: timeText(x) })),
+    number: rateRank(numberList).map((x) => ({ ...x, value: `複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    jockey: rateRank(jockeyList).map((x) => ({ ...x, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+  };
+  const factors = {};
+  for (const f of FACTOR_KEYS) {
+    const m = ranked[f].length;
+    const map = new Map();
+    for (const x of ranked[f]) map.set(x.key, { score: m > 1 ? (100 * (m - x.rank)) / (m - 1) : 100, rank: x.rank, value: x.value, missing: false });
+    for (const h of runners) if (!map.has(h.key)) map.set(h.key, { score: MISSING_SCORE, rank: null, value: null, missing: true });
+    factors[f] = map;
+  }
+  return { pace_type: paceType, counts: { nige, senko, unknown, n }, factors };
+}
