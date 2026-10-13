@@ -13,8 +13,10 @@ import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } f
 export const PACE_FACTORS = FACTOR_KEYS;
 export const DEFAULT_PACE_WEIGHTS = { w_pace: 25, w_number: 25, w_jockey: 25, w_time: 25 };
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 3; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js)
-export const PACE_TOP_N = 5;
+const AUTO_METHOD_VERSION = 4; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更
+export const PACE_TOP_N = 5; // 重賞検索の検証で年ごとに表示する頭数
+// 比率の比較で選ぶ頭数(2026-10-13 ユーザー要望で5→3。総合点の上位3頭のうち何頭が3着以内に入ったかで比べる)
+export const PACE_PICK_N = 3;
 const AUTO_PAST_YEARS = 10;
 
 // 比率の入力を検証して整数%(合計100)にする。不正なら null。
@@ -77,9 +79,9 @@ function weightCandidates(step = 10) {
   return out;
 }
 
-// 1年分を、ある比率で採点したときの { hits(総合ベスト5に入った3着以内の頭数), posSum(3着以内の馬の総合の位置の合計) }。
+// 1年分を、ある比率で採点したときの { hits(総合上位3頭〈PACE_PICK_N〉のうち3着以内に入った頭数), posSum(3着以内の馬の総合の位置の合計) }。
 // 総合点 = Σ 比率 × 点(データ無しは50点)÷ 100。
-// 同点の馬がベスト5の境目をまたぐときは、残りの枠を同点の馬で按分して数える(例: 5位以下に4頭が同点で残り1枠なら1頭あたり1/4)。
+// 同点の馬が上位3頭の境目をまたぐときは、残りの枠を同点の馬で按分して数える(例: 3位以下に4頭が同点で残り1枠なら1頭あたり1/4)。
 // 2026-10-13: 当初は同点を同順位にして全員をベスト5に数えており、ある要素のデータが全頭に無い(全頭50点で同点)と
 // 全頭がベスト5扱いになって当たりが多く数えられ、その要素の比率が不当に高く選ばれた。位置も同点の中の平均にする。
 // CPU時間対策(2026-10-13): 候補286通り×最大11年を採点するため、年ごとの点を先に数値の配列にしておき(compileYear)、
@@ -117,7 +119,7 @@ function evaluateYear(year, w) {
     let inTop3 = 0;
     for (let x = i; x <= j; x++) inTop3 += top3[order[x]];
     if (inTop3) {
-      const slots = Math.max(0, Math.min(j + 1, PACE_TOP_N) - i); // この同点の組に残っているベスト5の枠
+      const slots = Math.max(0, Math.min(j + 1, PACE_PICK_N) - i); // この同点の組に残っている上位3頭の枠
       hits += (inTop3 * slots) / (j - i + 1);
       posSum += inTop3 * ((i + j) / 2 + 1);
     }
@@ -213,7 +215,8 @@ export async function loadGradedBacktest(db, gradedRaceId) {
 }
 
 // 重賞の過去(最大10年)の結果から比率を自動算出する(2026-10-13 に方式を変更)。
-// 各年の4要素の点(loadGradedBacktest)をもとに、比率の候補ごとに総合点のベスト5に3着以内の馬が何頭入ったかを数え、
+// 各年の4要素の点(loadGradedBacktest)をもとに、比率の候補ごとに総合点の上位3頭のうち何頭が3着以内に入ったかを数え
+// (2026-10-13 ユーザー要望で上位5頭→上位3頭に変更)、
 // 過去の全年で一番多く当たった比率を採用する。同じ当たり数なら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等に近い方。
 // 2026-10-13 以前は「各要素のベスト5の的中率 − 偶然の割合」に比例させていたが、偶然以下の要素が0%に切り捨てられ、
 // 富士S・秋華賞が騎手100%になった(展開のデータが少なく、馬番が偶然をわずかに下回ったため)。要素ごとの的中率は参考として detail に残す。
@@ -236,8 +239,8 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
     const yearOut = { year: y.year, race_id: y.race.id, field_size: n, pace_type: y.pace_type, top3: y.top3Keys.size };
     factorTotal.top3 += y.top3Keys.size;
     for (const f of PACE_FACTORS) {
-      // 要素ごとのベスト5(データのある馬を点の高い順)
-      const best = y.runners.filter((h) => !h.factors[f].missing).sort((a, b) => b.factors[f].score - a.factors[f].score).slice(0, PACE_TOP_N);
+      // 要素ごとの上位3頭(データのある馬を点の高い順)
+      const best = y.runners.filter((h) => !h.factors[f].missing).sort((a, b) => b.factors[f].score - a.factors[f].score).slice(0, PACE_PICK_N);
       const hits = best.filter((h) => y.top3Keys.has(h.key)).length;
       factorTotal[f].hits += hits;
       factorTotal[f].expected += (y.top3Keys.size * best.length) / n;
@@ -328,11 +331,12 @@ export function gradedPicksOf(bt, w) {
       return { ...x, rank };
     });
     const picks = ranked.filter((x) => x.rank <= PACE_TOP_N).map((x) => ({
-      rank: x.rank, total: x.total, horse_name: x.h.horse_name, horse_number: x.h.horse_number,
+      rank: x.rank, selected: x.rank <= PACE_PICK_N, total: x.total, horse_name: x.h.horse_name, horse_number: x.h.horse_number,
       status: x.h.status, finish_position: x.h.finish_position,
       factors: Object.fromEntries(PACE_FACTORS.map((f) => [f, { score: Math.round(x.h.factors[f].score), missing: x.h.factors[f].missing, value: x.h.factors[f].value }])),
     }));
-    const hits = picks.filter((p) => p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3).length;
+    // 当たり: 総合上位3頭(PACE_PICK_N)のうち3着以内に入った頭数。表示は上位5頭まで(selected で上位3頭を示す)
+    const hits = picks.filter((p) => p.rank <= PACE_PICK_N && p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3).length;
     const top3 = y.runners
       .filter((h) => y.top3Keys.has(h.key))
       .sort((a, b) => a.finish_position - b.finish_position)

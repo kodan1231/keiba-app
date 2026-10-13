@@ -57,11 +57,11 @@ function grPicksHtml(data) {
   const pct = (x) => `${Math.round((x || 0) * 100)}%`;
   const years = data.years || [];
   const hitsTotal = years.reduce((s, y) => s + y.hits, 0);
-  const top3Total = years.reduce((s, y) => s + y.top3.length, 0);
+  const pickTotal = years.length * 3;
   const head = `
     <p class="stats-note">比率: <strong>${escapeHtml(weightsText)}</strong>(${escapeHtml(grWeightsSourceText(w))})</p>
-    ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合ベスト5に3着以内の馬が${a.best.hits}/${a.top3}頭(${pct(a.best.hit_rate)})。均等の比率なら${a.equal.hits}頭(${pct(a.equal.hit_rate)})</p>` : ""}
-    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。上位5頭に入った3着以内の馬: <strong>${hitsTotal}/${top3Total}頭</strong></p>` : ""}`;
+    ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合上位3頭のうち3着以内に入ったのは${a.best.hits}/${a.races * 3}頭(${pct(a.best.hits / (a.races * 3))})。均等の比率なら${a.equal.hits}頭</p>` : ""}
+    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。比率の比較は★の上位3頭のうち何頭が3着以内に入ったかで行います: <strong>${hitsTotal}/${pickTotal}頭</strong></p>` : ""}`;
   if (!years.length) return `${head}<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
   const cell = (x) => (x.missing ? `<span class="ticket-sub" title="データ無し">−</span>` : `<span title="${escapeAttr(x.value || "")}">${x.score}</span>`);
   const place = (p) => {
@@ -74,14 +74,14 @@ function grPicksHtml(data) {
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>
         <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
-        <span class="gr-picks-hits">3着以内 ${y.hits}/${y.top3.length}頭</span>
+        <span class="gr-picks-hits">★上位3頭のうち3着以内 ${y.hits}/3頭</span>
       </div>
       <div class="table-wrap">
         <table class="horse-history-table gr-picks-table">
           <thead><tr><th>総合</th><th>馬</th><th>総合点</th>${GR_FACTOR_KEYS.map((f) => `<th>${GR_FACTOR_LABELS[f]}</th>`).join("")}<th>着順</th></tr></thead>
           <tbody>${y.picks.map((p) => `
             <tr class="${p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3 ? "gr-picks-hit" : ""}">
-              <td>${p.rank}位</td>
+              <td>${p.selected ? "★" : ""}${p.rank}位</td>
               <td class="gr-picks-horse">${p.horse_number != null ? `${p.horse_number} ` : ""}${escapeHtml(p.horse_name || "")}</td>
               <td><strong>${p.total.toFixed(1)}</strong></td>
               ${GR_FACTOR_KEYS.map((f) => `<td>${cell(p.factors[f])}</td>`).join("")}
