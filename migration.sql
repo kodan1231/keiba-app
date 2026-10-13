@@ -40,6 +40,7 @@
 --  external_fetch_pause の削除)・service_guard(app_settings)も本番適用済み・schema.sql 反映済みのため削除した。
 --  未適用のマイグレーションは無い。
 -- 2026-10-12: graded_race_notes(重賞メモ)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-13: pace_weights(総合推奨馬の比率)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -66,3 +67,16 @@ CREATE TABLE IF NOT EXISTS graded_race_notes (
   UNIQUE(user_id, graded_race_id, year)
 );
 INSERT INTO schema_migrations (name) VALUES ('graded_race_notes');
+
+-- @STEP: pace_weights
+-- 総合推奨馬の重視度の比率(2026-10-13)。新しい空の表を作るだけなので、書き込みは数行。
+CREATE TABLE IF NOT EXISTS pace_weights (
+  graded_race_id INTEGER PRIMARY KEY,
+  w_pace INTEGER NOT NULL,
+  w_number INTEGER NOT NULL,
+  w_jockey INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  detail TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+INSERT INTO schema_migrations (name) VALUES ('pace_weights');

@@ -3345,3 +3345,16 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .tt-few { opacity: .45; }
 .tt-empty { color: var(--ink-soft); }
 .tt-overall { background: rgba(0, 0, 0, .04); }
+
+/* 予想登録画面: 総合推奨馬(2026-10-13) */
+.pace-total-table td.pace-time-horse { min-width: 9em; }
+.pace-total-top { background: rgba(176, 48, 40, .06); }
+.pace-w-admin { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; margin: 6px 0 8px; border: 1px dashed var(--rule-strong); }
+.pace-w-admin-title { font-size: 12px; font-weight: 700; }
+.pace-w-input { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.pace-w-input input { width: 4.2em; font-size: 16px; }
+.pace-w-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.pace-w-btn { padding: 4px 12px; font-size: 12px; }
+.pace-w-admin .pace-reco-note { width: 100%; margin: 0; }
+.pace-w-cell { white-space: nowrap; }
+.pace-w-cell .pace-w-input input { width: 3.6em; font-size: 14px; }

@@ -263,6 +263,20 @@
           <p id="race-base-name-recompute-status" class="submit-message" hidden></p>
         </div>
       </section>
+
+      <!-- 総合推奨馬の比率(2026-10-13追加)。仕様は docs/design/screens.md「総合推奨馬」 -->
+      <section class="stats-section">
+        <h2 class="stats-section-title">総合推奨馬の比率</h2>
+        <p class="ticket-sub">
+          予想登録画面「展開・時計」タブの総合推奨馬で、展開・馬番・騎手の点数に掛ける比率(%)です。全ユーザー共通です。
+          重賞は重賞ごとの比率、決めていない重賞と重賞以外のレースは標準の比率を使います。
+          「自動算出」は、その重賞の過去(最大10年)の結果で、各要素のベスト5に3着以内の馬が入った割合から比率を出して保存します
+          (過去の各年の出走馬の戦績を読むため、1回で数千行を読みます)。
+        </p>
+        <div class="pace-w-admin" id="pace-weights-default"></div>
+        <p id="pace-weights-message" class="submit-message" hidden></p>
+        <details class="admin-collapsible"><summary>重賞ごとの比率 <span class="admin-collapsible-count" data-count-for="pace-weights-table"></span></summary><div class="table-wrap"><table class="stats-table" id="pace-weights-table"></table></div></details>
+      </section>
     </div>
   </main>
 </div>

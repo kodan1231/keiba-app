@@ -466,6 +466,21 @@ CREATE TABLE IF NOT EXISTS graded_races (
 );
 CREATE INDEX IF NOT EXISTS idx_graded_races_name_key ON graded_races(name_key);
 
+-- 総合推奨馬の重視度の比率(2026-10-13追加。@STEP: pace_weights)。予想登録画面「展開・時計」タブの総合推奨馬で、
+-- 展開・馬番・騎手の点数に掛ける比率(%。合計100)。全ユーザー共通で、変えられるのは管理者だけ。
+-- graded_race_id = 0 は「標準の比率」(重賞以外のレースと、比率を決めていない重賞で使う)。
+-- source: 'manual'(管理者が入力)/ 'auto'(その重賞の過去の結果から自動算出)。detail: 自動算出の根拠(JSON)。
+-- graded_races 行を削除しても消さない(外部キーなし)。docs/design/screens.md「総合推奨馬」参照。
+CREATE TABLE IF NOT EXISTS pace_weights (
+  graded_race_id INTEGER PRIMARY KEY,
+  w_pace INTEGER NOT NULL,
+  w_number INTEGER NOT NULL,
+  w_jockey INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  detail TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
 -- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。
 -- races.id ではなく重賞マスタの id と年で持つので、レースを登録する前・取り込んでいない年にも書ける。
