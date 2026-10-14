@@ -597,4 +597,6 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
   jraEntriesParseBtn.disabled = false;
   jraEntriesImportFile.disabled = false;
   if (!failures.length) { jraEntriesImportModal.hidden = true; } else { jraEntriesImportSubmit.disabled = false; }
+  // 計算待ちに積まれた総合推奨馬の比率を裏で計算する(2026-10-14。pace-runner.js。閉じても夜間に続きを行う)
+  if ((created || updated) && typeof runPaceQueueInBackground === "function") runPaceQueueInBackground();
 });

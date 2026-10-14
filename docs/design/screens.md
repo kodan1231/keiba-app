@@ -926,10 +926,19 @@ PC幅では表ヘッダーの見出しと二重になるため701px以上で非�
       (`GET /api/admin/pace-backtest?kind=graded|course&key=`)と「選んだ結果を保存する」(`PUT /api/admin/pace-weights/auto-result`)だけ。
       比率を選ぶのは `public/pace-search.js`(ES モジュール。ブラウザと Node の両方で同じファイルを使う。規則は1か所)。
       - **夜間**: 馬番が確定した出馬表を取り込んだ・保存したとき(entries-import・レースの登録/編集。全頭の馬番が入っているレースだけ)、
-        そのレースのコースと当たる重賞を表 `pace_recompute_queue` に積む(`_lib/pace-queue.js`。INSERT OR IGNORE)。毎晩3時(日本時間)に
-        GitHub Actions(`.github/workflows/pace-nightly.yml` → `scripts/pace-nightly.mjs`)が管理者のAPIトークンで計算待ちを処理する:
-        前の自動計算から7日未満・手で保存した比率なら計算せず外す。それ以外は採点を受け取り → 比率を選び → 保存 → 外す。失敗した分は残る
-        (次の晩にやり直す)。GitHub の Secrets に `KEIBA_BASE_URL`(アプリのURL)と `KEIBA_API_TOKEN`(管理者のAPIトークン)が要る
+        そのレースのコースと当たる重賞を表 `pace_recompute_queue` に積む(`_lib/pace-queue.js`。INSERT OR IGNORE)。計算待ちは次の2つで処理する
+        (規則はどちらも同じ: 前の自動計算から7日未満・手で保存した比率なら計算せず外す。それ以外は採点 → 比率を選ぶ → 保存 → 外す):
+        - **取り込み直後(ブラウザ)**: 出馬表の取り込み(ブックマークレット・PDF)が終わったら、レース管理画面の裏で計算待ちを処理する
+          (`public/pace-runner.js` の `runPaceQueueInBackground`。画面の右下に進み具合)。途中で閉じた分は計算待ちに残る
+        - **夜間(Cloudflare の定時起動)**: 別の Worker `workers/pace-cron`(Cron Trigger `*/10 18-19 * * *` = 日本時間 3:00〜4:50 の10分ごと)が
+          アプリの `POST /api/cron/pace-step` を1回の起動あたり最大45回呼ぶ(無料枠の外へのリクエスト上限50のため)。1回の呼び出しは
+          「計算待ちの先頭を作業にする」「採点を6レース進める」「比率選びを1段進める」のどれか1つだけ(`_lib/pace-job.js`。途中の状態は表
+          `pace_jobs`〈@STEP: pace_jobs〉)で、それぞれが別の処理なのでCPU上限(10ミリ秒)に収まる(手元で1歩 0.7〜7ミリ秒)。比率選びは
+          `public/pace-search.js` の `startPaceSearch` / `stepPaceSearch`(全段をまとめて行う `choosePaceWeights` と結果は同じ)。
+          `/api/cron/` はログイン不要の代わりに秘密情報 `PACE_CRON_SECRET`(ヘッダー `X-Cron-Secret`。Pages と Worker に同じ値)で確かめる
+          (`functions/_middleware.js`)。ブラウザで計算し終えて計算待ちから消えた分の作業は、次の1歩で消す
+        - 当初(2026-10-14 午前)は GitHub Actions(`.github/workflows/pace-nightly.yml`)で毎晩動かしていたが、ユーザー要望で上の2つに置き換えた。
+          `scripts/pace-nightly.mjs` は手で動かしたいとき用に残している(管理者のAPIトークンが要る)
       - **今すぐ計算(管理者)**: **自動計算のボタンは管理画面「重賞・予想」タブに集約**(2026-10-14 ユーザー要望。当初は展開・時計タブの
         管理者欄にも「この重賞/このコースを今すぐ計算」を置いていたが外した)。**比率の変更・保存も管理画面だけ**(2026-10-14 ユーザー要望。
         以前は展開・時計タブに管理者だけの比率の入力欄〈保存前の試し計算つき〉と「この重賞/このコース/標準の比率として保存」があった。

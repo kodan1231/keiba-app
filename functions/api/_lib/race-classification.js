@@ -173,8 +173,8 @@ export function loadGradedRaceMapCached(db) {
   return memoized(MEMO_GRADED_RACES, () => loadGradedRaceMap(db));
 }
 
-// races全件のrace_base_nameを再計算する一括補正(管理画面「重賞管理」の
-// 「レースのベース名を再計算する」ボタンから呼び出す)。race_base_name列追加時の
+// races全件のrace_base_nameを再計算する一括補正(POST /api/admin/races/recompute-base-names。
+// 管理画面のボタンは2026-10-14に削除し、APIトークンで手で呼ぶ)。race_base_name列追加時の
 // 初回バックフィル、および将来raceBaseNameOf()の正規化ルールを変更した際の
 // 再計算に使う。1回のSELECTで全件取得→メモリ上で判定→変更行だけdb.batch()
 // (runBatchInChunks)でまとめてUPDATEする、他の一括補正(jockey-alias.js等)と

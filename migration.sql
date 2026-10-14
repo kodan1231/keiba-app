@@ -193,3 +193,19 @@ CREATE TABLE IF NOT EXISTS pace_recompute_queue (
   PRIMARY KEY (kind, key)
 );
 INSERT INTO schema_migrations (name) VALUES ('course_pace_weights');
+
+-- @STEP: pace_jobs
+-- 比率の計算の作業(定時起動が1歩ずつ進める途中の状態。2026-10-14)。空の表を作るだけ。
+CREATE TABLE IF NOT EXISTS pace_jobs (
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  offset INTEGER NOT NULL DEFAULT 0,
+  total INTEGER,
+  races TEXT,
+  state TEXT,
+  missing_score REAL,
+  updated_at TEXT,
+  PRIMARY KEY (kind, key)
+);
+INSERT INTO schema_migrations (name) VALUES ('pace_jobs');

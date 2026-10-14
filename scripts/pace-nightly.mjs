@@ -1,5 +1,6 @@
-// 総合推奨馬の比率の夜間計算(2026-10-14追加。仕様は docs/design/screens.md「比率の計算(夜間・今すぐ計算)」)。
-// GitHub Actions(.github/workflows/pace-nightly.yml)が毎晩3時(日本時間)に動かす。手元でも動かせる:
+// 総合推奨馬の比率の計算待ちを、手元の Node で処理する(2026-10-14追加。仕様は docs/design/screens.md「比率の計算(夜間・今すぐ計算)」)。
+// 当初は GitHub Actions で毎晩動かしていたが、2026-10-14 に Cloudflare の定時起動(workers/pace-cron)と取り込み直後のブラウザでの
+// 計算(public/pace-runner.js)に置き換えた。このスクリプトは手で動かしたいとき用:
 //   KEIBA_BASE_URL=https://<アプリのURL> KEIBA_API_TOKEN=<管理者のAPIトークン> node scripts/pace-nightly.mjs
 // 流れ: 計算待ち(GET /api/admin/pace-queue)の重賞・コースごとに、
 //   前の自動計算から7日未満、または手で保存した比率なら計算せず計算待ちから外す。

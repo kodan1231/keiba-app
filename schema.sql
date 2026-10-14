@@ -555,6 +555,21 @@ CREATE TABLE IF NOT EXISTS pace_recompute_queue (
   PRIMARY KEY (kind, key)
 );
 
+-- 比率の計算の作業(2026-10-14追加。@STEP: pace_jobs)。定時起動(workers/pace-cron → /api/cron/pace-step)が1歩ずつ進める途中の状態。
+-- phase: 'score'(採点中。races に採点したレースを足していく)/ 'search'(比率選び中。state に段の結果)。終わったら消す。_lib/pace-job.js
+CREATE TABLE IF NOT EXISTS pace_jobs (
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  offset INTEGER NOT NULL DEFAULT 0,
+  total INTEGER,
+  races TEXT,
+  state TEXT,
+  missing_score REAL,
+  updated_at TEXT,
+  PRIMARY KEY (kind, key)
+);
+
 -- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
 -- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。
 -- races.id ではなく重賞マスタの id と年で持つので、レースを登録する前・取り込んでいない年にも書ける。

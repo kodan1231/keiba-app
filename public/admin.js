@@ -878,34 +878,6 @@ function resetGradedRaceForm() {
   if (submitBtn) submitBtn.textContent = "登録";
 }
 
-// レースのベース名(race_base_name。「第N回」等の回次を除いた名前)を全レース分
-// 再計算する。race_base_name列追加直後の初回バックフィル用(2026-09-24追加)。
-// 何度実行しても安全(冪等)。
-function setupRaceBaseNameRecomputeButton() {
-  const btn = document.getElementById("race-base-name-recompute-btn");
-  const messageEl = document.getElementById("race-base-name-recompute-status");
-  if (!btn) return;
-
-  btn.addEventListener("click", async () => {
-    if (!(await confirmHeavyOperation("全レースのベース名を再計算します(全レースを読み、変わったレースを書き換えます)。実行しますか？"))) return;
-    btn.disabled = true;
-    messageEl.hidden = true;
-
-    const res = await authedFetch("/api/admin/races/recompute-base-names", { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-
-    messageEl.hidden = false;
-    if (res.ok) {
-      messageEl.className = "submit-message success";
-      messageEl.textContent = `再計算が完了しました(${data.updated || 0}件を更新)。`;
-    } else {
-      messageEl.className = "submit-message error";
-      messageEl.textContent = data.error || "再計算に失敗しました。";
-    }
-    btn.disabled = false;
-  });
-}
-
 function setupGradedRaceForm() {
   const form = document.getElementById("graded-race-form");
   const messageEl = document.getElementById("graded-race-form-message");
@@ -1199,9 +1171,7 @@ async function loadPaceWeights() {
 }
 
 // ---- 自動計算: 計算待ち(2026-10-14。API: GET/DELETE /api/admin/pace-queue)----
-// 「計算待ちを今すぐ計算」は夜間の定時実行(scripts/pace-nightly.mjs)と同じ規則: 前の自動計算から7日未満・手で保存した比率は
-// 計算せず計算待ちから外す。それ以外はこのブラウザで計算して保存し、外す。
-const PACE_SKIP_DAYS = 7;
+// 「計算待ちを今すぐ計算」は夜間の定時起動(workers/pace-cron)と同じ規則で、このブラウザで処理する(pace-runner.js の runPaceQueueInBrowser)。
 let paceQueueItems = [];
 
 function paceQueueLabel(it) {
@@ -1220,7 +1190,7 @@ async function loadPaceQueue() {
   const res = await authedFetch("/api/admin/pace-queue");
   if (!res.ok) { summary.textContent = "読み込みに失敗しました"; return; }
   paceQueueItems = (await res.json()).items || [];
-  summary.textContent = paceQueueItems.length ? `${paceQueueItems.length}件(毎晩3時に計算します)` : "ありません";
+  summary.textContent = paceQueueItems.length ? `${paceQueueItems.length}件` : "ありません";
   listEl.textContent = paceQueueItems.map(paceQueueLabel).join(" / ");
 }
 
@@ -1228,26 +1198,11 @@ async function runPaceQueue(btn) {
   if (!paceQueueItems.length) { paceWeightsMsg("計算待ちはありません", true); return; }
   const label = btn.textContent;
   btn.disabled = true;
-  let done = 0, skipped = 0, failed = 0;
-  for (const it of paceQueueItems) {
-    btn.textContent = `計算中…(${done + skipped + failed + 1}/${paceQueueItems.length})`;
-    try {
-      const recent = it.last_computed_at && Date.now() - Date.parse(it.last_computed_at) < PACE_SKIP_DAYS * 86400000;
-      if (!it.manual && !recent) {
-        const ok = await paceComputeAdmin(it.kind, it.key, null, { reload: false });
-        if (!ok) { failed++; continue; }
-        done++;
-      } else {
-        skipped++;
-      }
-      await authedFetch(`/api/admin/pace-queue?kind=${encodeURIComponent(it.kind)}&key=${encodeURIComponent(it.key)}`, { method: "DELETE" });
-    } catch {
-      failed++;
-    }
-  }
+  const r = await runPaceQueueInBrowser((text) => { btn.textContent = text; });
   btn.disabled = false;
   btn.textContent = label;
-  paceWeightsMsg(`計算待ちを処理しました(計算${done}件・7日未満などで省略${skipped}件${failed ? `・失敗${failed}件(計算待ちに残しました)` : ""})`, !failed);
+  if (r.busy) { paceWeightsMsg("別の計算が動いています。終わってからもう一度押してください", false); return; }
+  paceWeightsMsg(`計算待ちを処理しました(計算${r.done}件・7日未満などで省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
   await loadPaceWeights();
 }
 
@@ -1448,7 +1403,6 @@ async function onReady() {
   setupServiceGuardForm();
   setupGradedRaceForm();
   setupGradedRacesImport();
-  setupRaceBaseNameRecomputeButton();
   setupTrainerAliasForm();
   setupPaceWeightsFilter();
   setupPaceCompute();

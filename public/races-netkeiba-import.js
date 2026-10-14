@@ -222,6 +222,8 @@ document.getElementById("nk-batch-submit-btn")?.addEventListener("click", async 
   msg.textContent = `新規 ${count("created")}件・更新 ${count("updated")}件${failed.length ? `・失敗 ${failed.length}件(${failed.map((r) => r.key || "").join(" / ")})` : ""}で登録しました。`;
   await loadRaces();
   showRaceDate(nkBatch.records[0].race_date);
+  // 出馬表なら、計算待ちに積まれた総合推奨馬の比率を裏で計算する(2026-10-14。pace-runner.js。閉じても夜間に続きを行う)
+  if (isEntries && typeof runPaceQueueInBackground === "function") runPaceQueueInBackground();
 });
 
 function nkFindRace(meta) {

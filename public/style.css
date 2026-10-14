@@ -3347,6 +3347,12 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-admin .pace-reco-note { width: 100%; margin: 0; }
 .pace-w-cell { white-space: nowrap; }
 .pace-w-cell .pace-w-input input { width: 3.6em; font-size: 14px; }
+/* 取り込み直後の推奨馬の比率の計算の進み具合(2026-10-14。pace-runner.js) */
+.pace-runner-status {
+  position: fixed; right: 12px; bottom: 12px; z-index: 50;
+  background: var(--paper-raised); border: 1px solid var(--rule-strong);
+  padding: 8px 12px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
 /* 展開・時計タブ: 総合推奨馬の軸・相手(2026-10-14) */
 .pace-pick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .pace-pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

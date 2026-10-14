@@ -151,35 +151,68 @@ function search(races, { evaluate, keys, start = null }) {
 const AXIS_KEYS = ["show", "win", "quin"];
 const PARTNER_KEYS = ["win", "quin", "show"];
 
-function pickBoth(rs, startAxis = null, startPartner = null) {
-  const axis = search(rs, { evaluate: evaluateAxis, keys: AXIS_KEYS, start: startAxis });
-  const axisIdx = rs.map((r) => axisPick(r, axis.best.arr));
-  const partner = search(rs, { evaluate: (r, w, i) => evaluatePartner(r, w, axisIdx[i]), keys: PARTNER_KEYS, start: startPartner });
-  return { axis, partner };
+const sum3 = (x) => ({ win: x.win, quin: x.quin, show: x.show });
+const usableRaces = (races) => (races || []).filter((r) => r && r.runners && r.runners.length && r.runners.some((h) => h.place >= 1 && h.place <= 3));
+
+// ---- 1段ずつ進める形(2026-10-14。Cloudflare の定時起動〈workers/pace-cron〉から、サーバーの1回の処理のCPU上限〈10ミリ秒〉に
+// 収まるよう1段ずつ呼ぶため。ブラウザ・Node は choosePaceWeights で全段を続けて呼ぶ。結果はどちらも同じ) ----
+// 段: 全体の軸 → 全体の相手 → (レース数の足りるペースごとに)軸 → 相手。1段 = 山登り1回(数十レースで数ミリ秒)。
+// state は JSON にして保存できる: { stage, stages: [{ kind, pace }], out: { "axis|" / "partner|" / "axis|high" …: { arr, win, quin, show, equal } } }
+export function startPaceSearch(races) {
+  const usable = usableRaces(races);
+  if (!usable.length) return { error: "採点できる過去のレースがありません" };
+  const stages = [{ kind: "axis", pace: null }, { kind: "partner", pace: null }];
+  for (const p of PACE_TYPES) {
+    if (usable.filter((r) => r.pace_type === p).length >= PACE_SPLIT_MIN) stages.push({ kind: "axis", pace: p }, { kind: "partner", pace: p });
+  }
+  return { stage: 0, stages, out: {} };
 }
 
-const sum3 = (x) => ({ win: x.win, quin: x.quin, show: x.show });
+// 1段進める。戻り値: { done: false, state } か { done: true, result }(result は choosePaceWeights と同じ形)
+export function stepPaceSearch(races, state) {
+  const usable = usableRaces(races);
+  if (!usable.length) return { done: true, result: { error: "採点できる過去のレースがありません" } };
+  const st = state.stages[state.stage];
+  if (st) {
+    const idx = st.pace ? usable.map((r, i) => (r.pace_type === st.pace ? i : -1)).filter((i) => i >= 0) : usable.map((_, i) => i);
+    const rs = idx.map((i) => compileRace(usable[i]));
+    const key = (kind, pace) => `${kind}|${pace || ""}`;
+    let r;
+    if (st.kind === "axis") {
+      r = search(rs, { evaluate: evaluateAxis, keys: AXIS_KEYS, start: st.pace ? state.out[key("axis", null)].arr : null });
+    } else {
+      // 相手: 同じ範囲の軸の比率で各レースの軸を決めてから
+      const axisArr = state.out[key("axis", st.pace)].arr;
+      const axisIdx = rs.map((x) => axisPick(x, axisArr));
+      r = search(rs, {
+        evaluate: (x, w, i) => evaluatePartner(x, w, axisIdx[i]), keys: PARTNER_KEYS,
+        start: st.pace ? state.out[key("partner", null)].arr : null,
+      });
+    }
+    const out = { ...state.out, [key(st.kind, st.pace)]: { arr: r.best.arr, ...sum3(r.best), equal: sum3(r.equal), races: idx.length } };
+    const next = { ...state, stage: state.stage + 1, out };
+    if (next.stage < state.stages.length) return { done: false, state: next };
+    state = next;
+  }
+  return { done: true, result: assembleResult(usable, state.out) };
+}
 
-// 比率を選ぶ。戻り値: { weights, byPace, partnerWeights, partnerByPace, detail } か { error }
-export function choosePaceWeights(races) {
-  const usable = (races || []).filter((r) => r && r.runners && r.runners.length && r.runners.some((h) => h.place >= 1 && h.place <= 3));
-  if (!usable.length) return { error: "採点できる過去のレースがありません" };
-  const compiled = usable.map(compileRace);
-  const all = pickBoth(compiled);
+function assembleResult(usable, out) {
+  const toW = (arr) => Object.fromEntries(FACTORS.map((f, i) => [`w_${f}`, arr[i]]));
+  const ax = out["axis|"], pt = out["partner|"];
   const byPace = {}, partnerByPace = {}, byPaceDetail = {}, partnerByPaceDetail = {};
   for (const p of PACE_TYPES) {
-    const idx = usable.map((r, i) => (r.pace_type === p ? i : -1)).filter((i) => i >= 0);
-    if (idx.length < PACE_SPLIT_MIN) continue;
-    const r = pickBoth(idx.map((i) => compiled[i]), all.axis.best.arr, all.partner.best.arr);
-    byPace[p] = r.axis.best.w;
-    partnerByPace[p] = r.partner.best.w;
-    byPaceDetail[p] = { races: idx.length, best: sum3(r.axis.best), equal: sum3(r.axis.equal) };
-    partnerByPaceDetail[p] = { races: idx.length, best: sum3(r.partner.best), equal: sum3(r.partner.equal) };
+    const a = out[`axis|${p}`], b = out[`partner|${p}`];
+    if (!a || !b) continue;
+    byPace[p] = toW(a.arr);
+    partnerByPace[p] = toW(b.arr);
+    byPaceDetail[p] = { races: a.races, best: sum3(a), equal: a.equal };
+    partnerByPaceDetail[p] = { races: b.races, best: sum3(b), equal: b.equal };
   }
   return {
-    weights: all.axis.best.w,
+    weights: toW(ax.arr),
     byPace,
-    partnerWeights: all.partner.best.w,
+    partnerWeights: toW(pt.arr),
     partnerByPace,
     detail: {
       method: "backtest",
@@ -187,12 +220,24 @@ export function choosePaceWeights(races) {
       computed_at: new Date().toISOString(),
       races: usable.length,
       race_ids: usable.map((r) => r.race_id),
-      best: sum3(all.axis.best),
-      equal: sum3(all.axis.equal),
+      best: sum3(ax),
+      equal: ax.equal,
       by_pace: byPaceDetail,
-      partner: { races: usable.length, best: sum3(all.partner.best), equal: sum3(all.partner.equal), by_pace: partnerByPaceDetail },
+      partner: { races: usable.length, best: sum3(pt), equal: pt.equal, by_pace: partnerByPaceDetail },
     },
   };
+}
+
+// 比率を選ぶ(全段を続けて)。戻り値: { weights, byPace, partnerWeights, partnerByPace, detail } か { error }
+export function choosePaceWeights(races) {
+  let state = startPaceSearch(races);
+  if (state.error) return { error: state.error };
+  for (let guard = 0; guard < 20; guard++) {
+    const r = stepPaceSearch(races, state);
+    if (r.done) return r.result;
+    state = r.state;
+  }
+  return { error: "計算が終わりませんでした" };
 }
 
 // 採点を数レースずつ取りに行き(fetchChunk(offset) → { total, races, missing_score, ... })、比率を選ぶ。

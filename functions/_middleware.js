@@ -36,6 +36,17 @@ export async function onRequest(context) {
     url.pathname === "/api/auth/register" ||
     url.pathname === "/api/auth/logout";
 
+  // 定時起動(workers/pace-cron)からの呼び出し(2026-10-14): ログインの代わりに秘密情報 PACE_CRON_SECRET で確かめる。
+  // /api/cron/ の下だけ。秘密情報が設定されていない・違うときは 401。
+  if (url.pathname.startsWith("/api/cron/")) {
+    const secret = request.headers.get("X-Cron-Secret") || "";
+    if (!env.PACE_CRON_SECRET || secret !== env.PACE_CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    context.data.isCron = true;
+    return next();
+  }
+
   if (isApi && !isPublicAuthRoute) {
     if (!env.APP_PASSWORD) {
       return new Response(
