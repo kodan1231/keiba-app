@@ -22,8 +22,9 @@ export async function onRequestGet(context) {
   // (CPU時間上限超過と利用者の通信量の対策。docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
   if (params.get("index") === "1") {
     let rows = await getRaceIndexRows(env.DB);
-    // ゲスト(2026-10-14。docs/design/guest.md)は次の開催週末の中央のレースだけ
-    if (context.data?.isGuest) {
+    // ゲスト(2026-10-14。docs/design/guest.md)は次の開催週末の中央のレースだけ。
+    // ゲスト画面からの取得(&guest=1)も、ログイン中でも同じに絞る(管理者がゲスト画面をゲストと同じ見え方で確認するため)
+    if (context.data?.isGuest || params.get("guest") === "1") {
       const win = guestRaceWindow();
       const di = RACE_INDEX_FIELDS.indexOf("race_date"), ti = RACE_INDEX_FIELDS.indexOf("track");
       rows = rows.filter((r) => isGuestRace({ race_date: r[di], track: r[ti] }, win));

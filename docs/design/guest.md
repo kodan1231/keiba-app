@@ -21,6 +21,8 @@
 - 使えるのは **GET の次のAPIだけ**(`GUEST_API_RULES`)。それ以外は 403 `guest_forbidden`(書き込みはすべて不可):
   - `/api/auth/check`(`is_guest: true` を返す)
   - `/api/races?index=1`(`races/index.js` が期間内の中央のレースだけに絞る)
+    - 2026-10-14: ゲスト画面からの取得は `&guest=1` を付け(`public/utils.js` の `fetchRaceIndex({ guestView })`)、ログイン中に開いても同じに絞る
+      (管理者がゲスト画面を確認したとき、ログインが優先されて全レースが並んでいた。ログインを強制的に外す案は取りやめ)
   - `/api/races/:id`、`/api/races/:id/horse-history`、`/api/races/:id/horse-best`
   - `/api/data-search/*`(`race-factors`・`jockey-course` は `race_id` のレース)
   - `/api/pace-weights`(比率の読み取り。計算し直し `recompute` は不可)

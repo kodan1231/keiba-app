@@ -135,8 +135,10 @@ function formatCourseText(courseType, distance) {
 // { fields: [...], rows: [[...], ...] } をオブジェクトの配列にする。出走馬・払戻は含まれない
 // (has_finish_order / has_payout_rates / entry_count / has_unconfirmed_numbers の印だけ)。
 // 出走馬等が要るときはレース1件ぶんを GET /api/races/:id で取る。
-async function fetchRaceIndex() {
-  const res = await authedFetch("/api/races?index=1");
+// guestView: ゲスト画面(guest.html)から呼ぶとき true。ログイン中に開いても、ゲストと同じ一覧(次の開催週末の中央のレース)に
+// サーバーが絞る(2026-10-14 ユーザー要望。管理者がゲスト画面を確認したとき全レースが並んでいた)
+async function fetchRaceIndex({ guestView = false } = {}) {
+  const res = await authedFetch(`/api/races?index=1${guestView ? "&guest=1" : ""}`);
   if (!res.ok) return null;
   const data = await res.json();
   const fields = data.fields || [];

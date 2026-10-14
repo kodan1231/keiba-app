@@ -41,7 +41,7 @@ async function fetchRaceDetail(raceId) {
 }
 
 async function loadRaces() {
-  const list = await fetchRaceIndex();
+  const list = await fetchRaceIndex({ guestView: GUEST_VIEW });
   if (!list) {
     showEmpty("レース情報の取得に失敗しました。");
     return;
