@@ -806,7 +806,7 @@ function paceStyleSectionHtml(entries) {
       </div>
     </div>`).join("");
   return `
-    <h3 class="pace-heading">前走の脚質<small>前走の最初のコーナーの位置(位置/頭数)で判定。脚質ごとに前にいた順</small></h3>
+    <h3 class="pace-heading">前走の脚質</h3>
     <div class="pace-style-list">${rows}</div>`;
 }
 
@@ -841,7 +841,7 @@ const pacePct = (v) => `${(v * 100).toFixed(1)}%`;
 
 function paceJockeySectionHtml() {
   const cond = [selectedRace.track, formatCourseText(selectedRace.course_type, selectedRace.distance)].filter(Boolean).join(" ");
-  const heading = `<h3 class="pace-heading">騎手の${escapeHtml(cond || "同条件")} 成績<small>同じ競馬場・芝ダート・距離での騎乗(このレースより前の取り込み済み全期間)。騎乗が少ないと率は当てにならない</small></h3>`;
+  const heading = `<h3 class="pace-heading">騎手の${escapeHtml(cond || "同条件")} 成績</h3>`;
   const st = jockeyCourse && jockeyCourse.raceId === selectedRace.id ? jockeyCourse : null;
   if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
   if (st.status === "paused") return `${heading}<p class="pace-none">D1の使用量が多いため、データ検索の集計は一時停止中です</p>`;
@@ -960,17 +960,13 @@ function paceFactorTopItems(data, f) {
 function paceRecommendPaceHtml() {
   const { data, message } = raceFactorsState();
   if (!data) return `<div class="pace-reco-block"><h4>展開が有利な馬</h4><p class="pace-none">${escapeHtml(message)}</p></div>`;
-  const c = data.counts;
   const label = { high: "ハイペース", slow: "スローペース", middle: "ミドルペース" }[data.pace_type];
-  const basis = { high: "補正タイム順", slow: "上がり3F順", middle: "補正タイムと上がり3Fの順位の合計順" }[data.pace_type];
-  const reason = `逃げ${c.nige}頭・先行${c.senko}頭(${c.n}頭中${c.unknown ? `、脚質不明${c.unknown}頭` : ""})`;
   return `<div class="pace-reco-block"><h4>展開が有利な馬<span class="pace-reco-pace pace-reco-${data.pace_type}">${label}予想</span></h4>
-    <p class="pace-reco-note">${escapeHtml(reason)} → ${escapeHtml(basis)}(同距離の記録が無ければ近い距離・芝ダ違いを換算して補う。タイムは今回の競馬場・良馬場に換算した補正タイム)</p>
     ${paceTopListHtml(paceFactorTopItems(data, "pace"), "記録のある馬がいません")}</div>`;
 }
 
 function paceRecommendNumberHtml() {
-  const head = `<div class="pace-reco-block"><h4>有利な馬番</h4><p class="pace-reco-note">同コースの馬番別の複勝率順(騎乗が20回未満なら同場→全場の同じ芝ダの成績)</p>`;
+  const head = `<div class="pace-reco-block"><h4>有利な馬番</h4>`;
   const { data, message } = raceFactorsState();
   if (!data) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
   const empty = data.horses.some(h => h.horse_number === null || h.horse_number === undefined)
@@ -980,7 +976,7 @@ function paceRecommendNumberHtml() {
 }
 
 function paceRecommendJockeyHtml() {
-  const head = `<div class="pace-reco-block"><h4>騎手</h4><p class="pace-reco-note">同コースの複勝率順(騎乗が少ないほどコースの平均に寄せて評価。同コースに騎乗が無ければ同場→全成績)</p>`;
+  const head = `<div class="pace-reco-block"><h4>騎手</h4>`;
   const { data, message } = raceFactorsState();
   if (!data) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
   return `${head}${paceTopListHtml(paceFactorTopItems(data, "jockey"), "騎手の記録がありません")}</div>`;
@@ -1067,12 +1063,11 @@ function paceWeightsAdminHtml(w) {
         <button type="button" class="ghost-btn pace-w-btn" data-action="save-default">標準の比率として保存</button>
       </div>
       ${paceWeightsMessage ? `<p class="pace-reco-note">${escapeHtml(paceWeightsMessage)}</p>` : ""}
-      <p class="pace-reco-note">入力すると下の順位がすぐ変わります(保存するまで他の人には反映されません)。重賞ごとの一覧は管理画面にあります。</p>
     </div>`;
 }
 
 function paceTotalSectionHtml(entries) {
-  const head = `<h3 class="pace-heading">総合推奨馬<small>展開・馬番・騎手・補正タイムの順位を100〜0点にし(データの無い馬は25点)、重視度の比率を掛けて合計</small></h3>`;
+  const head = `<h3 class="pace-heading">総合推奨馬</h3>`;
   const ws = paceWeights && paceWeights.key === paceWeightsKey() ? paceWeights : null;
   if (!ws || ws.status === "loading") return `${head}<p class="pace-none">読み込み中…</p>`;
   if (ws.status === "error" || !ws.data) return `${head}<p class="pace-none">比率を取得できませんでした</p>`;
@@ -1178,7 +1173,7 @@ function setupPaceWeightsAdmin() {
 function paceRecommendSectionHtml(entries) {
   return `
     ${paceTotalSectionHtml(entries)}
-    <h3 class="pace-heading">推奨馬<small>下の脚質・持ちタイム・騎手成績から機械的に出した参考です</small></h3>
+    <h3 class="pace-heading">推奨馬</h3>
     <div class="pace-reco">
       ${paceRecommendPaceHtml()}
       ${paceRecommendNumberHtml()}
@@ -1190,7 +1185,7 @@ function paceRecommendSectionHtml(entries) {
 //    補正値で「今回の競馬場・良馬場」に換算したタイム(horse-best の corrected)の速い順。補正値の元はデータ検索「競馬場傾向」。
 function paceCorrectedSectionHtml(entries) {
   const course = formatCourseText(selectedRace.course_type, selectedRace.distance);
-  const heading = `<h3 class="pace-heading">補正タイム順位(全場・${escapeHtml(course || "同距離")})<small>競馬場と馬場による時計の差を補正し、${escapeHtml(selectedRace.track || "今回の競馬場")}・良馬場で走った場合に換算した最速タイム。補正値はデータ検索「競馬場傾向」の勝ちタイムの平均から。※は補正値が出せない部分を0として計算</small></h3>`;
+  const heading = `<h3 class="pace-heading">補正タイム順位(全場・${escapeHtml(course || "同距離")})</h3>`;
   const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
   if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
   if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
@@ -1215,7 +1210,7 @@ function paceCorrectedSectionHtml(entries) {
       <tr>
         <td>${x.rank}</td>
         <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
-        <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? "※" : ""}</td>
+        <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? `<span title="補正値が出せない部分を0として計算">※</span>` : ""}</td>
         <td>${i === 0 ? "—" : `+${(x.c.corrected_seconds - top).toFixed(1)}`}</td>
         <td>${escapeHtml(x.c.time_text)}</td>
         <td>${escapeHtml(x.c.track || "—")}</td>
