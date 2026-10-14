@@ -33,10 +33,25 @@
     { page: "data-search", href: "data-search.html", app: "search", label: "データ検索", guestOk: true, roles: ["main", "search"] },
     { page: "races", href: "races.html", app: "admin", label: "レース管理", adminOnly: true, roles: ["main", "admin"] },
     { page: "admin", href: "admin.html", app: "admin", label: "管理", adminOnly: true, roles: ["main", "admin"] },
-    // 予想・擬似購入用アプリへ戻るリンク。データ検索用にも出す(2026-10-15 ユーザー要望。ゲストにも出すので guestOk)
+    // 予想・擬似購入用アプリへ戻るリンク。データ検索用にも出す(2026-10-15 ユーザー要望。ゲストにも出すので guestOk)。
+    // データ検索用では、馬券帳の画面から移ってきたとき(=馬券帳にログインしている人)だけ出す(下の cameFromMain)
     { page: "main-home", href: "index.html", app: "main", label: "馬券帳へ", guestOk: true, roles: ["admin", "search"] },
   ];
   const appRole = typeof currentAppRole === "function" ? currentAppRole() : "all";
+  // データ検索用アプリ: 馬券帳(予想・擬似購入用)の画面から移ってきたか(2026-10-15)。データ検索用は別のURLなので馬券帳のログイン状態は
+  // 見られない。代わりに、移ってきたときの referrer(どのサイトから来たか)が馬券帳なら、このタブの間だけ印(sessionStorage)を付ける。
+  // 馬券帳はログインしないと開けないので、実質「馬券帳にログインしている人」だけ。直接・ブックマークから開いたゲストには出さない
+  const cameFromMain = (() => {
+    if (appRole !== "search") return false;
+    const KEY = "kb_from_main";
+    try {
+      const main = typeof APP_URLS === "object" ? APP_URLS.main : "";
+      if (main && document.referrer && document.referrer.startsWith(main)) sessionStorage.setItem(KEY, "1");
+      return sessionStorage.getItem(KEY) === "1";
+    } catch {
+      return false;
+    }
+  })();
 
   // ページ固有のヘッダーアクションボタン(かごバッジと退場ボタンの間に挿入)。
   // ボタンのidは従来のHTMLと同一。イベント登録は各ページのJS(app.js/races.js等)が
@@ -66,7 +81,11 @@
 
   const currentPage = (document.body && document.body.dataset.page) || "";
 
-  const navHtml = NAV_ITEMS.filter((item) => (appRole === "all" ? item.page !== "main-home" : !item.roles || item.roles.includes(appRole))).map((item) => {
+  const navHtml = NAV_ITEMS.filter((item) => {
+    if (appRole === "all") return item.page !== "main-home";
+    if (item.page === "main-home" && appRole === "search" && !cameFromMain) return false;
+    return !item.roles || item.roles.includes(appRole);
+  }).map((item) => {
     const cls = "nav-link" + (item.page === currentPage ? " active" : "");
     // 管理者用アプリでは全員が管理者なので adminOnly で隠さない
     const adminAttr = item.adminOnly && appRole !== "admin" ? " data-admin-only hidden" : "";
