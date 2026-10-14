@@ -17,5 +17,5 @@ export async function onRequestPost(context) {
 
   const result = await computeAndSaveAutoPaceWeights(db, id, { targetYear: jstYear() });
   if (result.error) return jsonError(result.error, 400);
-  return Response.json({ ok: true, graded_race_id: id, ...result.weights, by_pace: result.byPace, source: "auto", detail: result.detail, updated_at: result.updated_at });
+  return Response.json({ ok: true, graded_race_id: id, ...result.weights, by_pace: result.byPace, partner: result.partner, source: "auto", detail: result.detail, updated_at: result.updated_at });
 }

@@ -46,6 +46,7 @@
 -- 2026-10-14: pace_weights_by_pace(比率の表にペース予想ごとの比率の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_weights_more_factors(比率の表に性齢・馬体重・同コースの列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: guest_access(ゲスト閲覧の端末・IPブロックの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-14: pace_weights_partner(比率の表に相手指数の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -157,3 +158,8 @@ CREATE TABLE IF NOT EXISTS guest_ip_blocks (
   note TEXT
 );
 INSERT INTO schema_migrations (name) VALUES ('guest_access');
+
+-- @STEP: pace_weights_partner
+-- 総合推奨馬の相手指数の比率の列(2026-10-14)。列を足すだけ(自動の比率は方式の版が上がったので次に開かれたときに計算し直す)。
+ALTER TABLE pace_weights ADD COLUMN partner TEXT;
+INSERT INTO schema_migrations (name) VALUES ('pace_weights_partner');

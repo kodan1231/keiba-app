@@ -1084,11 +1084,13 @@ function paceAutoSummaryText(detail) {
   const s = detail?.summary;
   if (!s) return "";
   if (detail.method === "backtest") {
-    const t = (b) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}` : `3着以内${b.hits}`);
-    // ペース予想ごと(2026-10-14)
+    // 軸指数・相手指数(2026-10-14): 軸が3着以内・1着の年数 / 軸+相手に1着馬が入った年数
+    const ta = (b) => `軸3着以内${b.show}・1着${b.win}`;
+    const tp = (b) => (b ? `相手に1着馬${b.win}` : "");
+    const pt = detail.partner || {};
     const paces = PACE_W_TYPES.filter(([p]) => detail.by_pace?.[p])
-      .map(([p, label]) => `${label}${detail.by_pace[p].races}年: ${t(detail.by_pace[p].best)}頭`).join(" / ");
-    return `${detail.races}年分 総合上位3頭(${detail.races * 3}頭)のうち ${t(detail.best)}頭・均等なら ${t(detail.equal)}頭${paces ? `。${paces}` : ""}`;
+      .map(([p, label]) => `${label}${detail.by_pace[p].races}年: ${ta(detail.by_pace[p].best)}・${tp(pt.by_pace?.[p]?.best)}`).join(" / ");
+    return `${detail.races}年分 ${ta(detail.best)}・${tp(pt.best)}回(均等なら ${ta(detail.equal)}・${tp(pt.equal)})${paces ? `。${paces}` : ""}`;
   }
   const pct = (v) => `${Math.round((v || 0) * 100)}%`;
   return `${detail.races}年分 ` + PACE_W_KEYS.map(([k, label]) => {
@@ -1098,9 +1100,13 @@ function paceAutoSummaryText(detail) {
 }
 
 // 全ペース共通+ハイ・ミドル・スローの4段の入力(2026-10-14)。w: その重賞(または標準)の比率の行(無ければ null)、
-// fallback: 未設定のときに薄く出す比率(重賞は標準、標準は既定値)
-function paceWeightsLinesHtml(w, fallback) {
-  const hasCommon = w && w.source !== "none";
+// fallback: 未設定のときに薄く出す比率(重賞は標準、標準は既定値)。kind: "axis"(軸指数)/ "partner"(相手指数。w.partner を使う)
+function paceWeightsLinesHtml(w, fallback, kind = "axis") {
+  // 相手指数(2026-10-14): w.partner = { common, by_pace }。未設定なら軸指数の比率を薄く出す(使われるのは軸指数のため)
+  const kindRow = kind === "partner"
+    ? (w?.partner ? { ...(w.partner.common || {}), source: w.partner.common ? w.partner.common.source || "manual" : "none", by_pace: w.partner.by_pace || {} } : null)
+    : w;
+  const hasCommon = kindRow && kindRow.source !== "none";
   const sourceText = (s) => (s === "auto" ? "自動" : s === "manual" ? "手動" : "");
   const line = (pace, label, val, placeholder, source, clearable) => `
     <div class="pace-w-line" data-pace="${pace}">
@@ -1108,30 +1114,34 @@ function paceWeightsLinesHtml(w, fallback) {
       ${paceWeightsInputsHtml(val, placeholder)}
       <small class="pace-w-line-source">${sourceText(source)}</small>
       <button type="button" class="ghost-btn pace-w-line-save">保存</button>
-      ${clearable ? `<button type="button" class="icon-btn delete pace-w-line-clear" title="このペースの比率を消す">×</button>` : ""}
+      ${clearable ? `<button type="button" class="icon-btn delete pace-w-line-clear" title="この比率を消す">×</button>` : ""}
     </div>`;
-  const common = hasCommon ? w : null;
-  return line("", "共通", common, fallback, common?.source, false)
+  const common = hasCommon ? kindRow : null;
+  const commonFallback = kind === "partner" && w && w.source !== "none" ? w : fallback;
+  return `<div class="pace-w-kind" data-kind="${kind}"><span class="pace-w-admin-title">${kind === "partner" ? "相手指数" : "軸指数"}</span>`
+    + line("", "共通", common, commonFallback, common?.source, kind === "partner" && Boolean(common))
     + PACE_W_TYPES.map(([p, label]) => {
-      const e = w?.by_pace?.[p] || null;
-      return line(p, label, e, common || fallback, e?.source, Boolean(e));
-    }).join("");
+      const e = kindRow?.by_pace?.[p] || null;
+      return line(p, label, e, common || commonFallback, e?.source, Boolean(e));
+    }).join("")
+    + `</div>`;
 }
 
 // 4段の入力の「保存」「×」(container の中の [data-id] が重賞のID。標準は0)
 function setupPaceWeightsLines(container) {
+  const kindOf = (btn) => btn.closest("[data-kind]")?.dataset.kind || "axis"; // 軸指数 / 相手指数(2026-10-14)
   container.querySelectorAll(".pace-w-line-save").forEach((btn) => btn.addEventListener("click", () => {
     const line = btn.closest(".pace-w-line");
     const id = Number(btn.closest("[data-id]").dataset.id);
     paceWeightsRequest("/api/admin/pace-weights", {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graded_race_id: id, pace_type: line.dataset.pace, ...paceWeightsReadInputs(line) }),
+      body: JSON.stringify({ graded_race_id: id, pace_type: line.dataset.pace, kind: kindOf(btn), ...paceWeightsReadInputs(line) }),
     }, "保存しました");
   }));
   container.querySelectorAll(".pace-w-line-clear").forEach((btn) => btn.addEventListener("click", () => {
     const line = btn.closest(".pace-w-line");
     const id = Number(btn.closest("[data-id]").dataset.id);
-    paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(id)}&pace_type=${encodeURIComponent(line.dataset.pace)}`,
+    paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(id)}&pace_type=${encodeURIComponent(line.dataset.pace)}&kind=${kindOf(btn)}`,
       { method: "DELETE" }, "消しました");
   }));
 }
@@ -1166,7 +1176,8 @@ async function loadPaceWeights() {
       <button type="button" class="ghost-btn" id="pace-missing-score-save">保存</button>
     </div>
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
-    ${paceWeightsLinesHtml(data.default, data.builtin)}`;
+    ${paceWeightsLinesHtml(data.default, data.builtin)}
+    ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}`;
   document.getElementById("pace-missing-score-save").addEventListener("click", () => {
     paceWeightsRequest("/api/admin/pace-weights/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -1222,6 +1233,7 @@ function renderPaceWeightsList() {
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
+          ${paceWeightsLinesHtml(w, std, "partner")}
           ${w?.source === "auto" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
             <button type="button" class="ghost-btn pace-w-row-auto">自動算出</button>

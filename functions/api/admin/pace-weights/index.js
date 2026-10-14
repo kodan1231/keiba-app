@@ -1,4 +1,4 @@
-import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS, parseByPace, getPaceScoreSettings } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS, parseByPace, parsePartner, getPaceScoreSettings } from "../../_shared.js";
 
 const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
 
@@ -10,13 +10,16 @@ const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・
 //            pace_type("high"|"middle"|"slow"。2026-10-14追加)があればそのペースの比率、無ければ全ペース共通の比率
 //   DELETE ?graded_race_id=N[&pace_type=P] → その重賞の比率を消す(標準の比率を使うようになる)。0(標準)は消すと既定値に戻る。
 //            pace_type があればそのペースの比率だけ消す
+// kind(2026-10-14追加): "axis"(既定。軸指数)/ "partner"(相手指数。列 partner の JSON)。PUT の本文・DELETE の ?kind= で指定。
+//   相手指数の共通の比率は DELETE ?kind=partner(pace_type なし)で消せる(軸指数〈または自動〉に戻る)。行ごと消すのは kind なし
+//   GET の weights.partner: { common: { w_*, source }|null, by_pace: {...} }
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
   const [{ results: graded }, weightRows, scoreSettings] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
-    db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, source, detail, updated_at FROM pace_weights`).all()
+    db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, partner, source, detail, updated_at FROM pace_weights`).all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
     getPaceScoreSettings(db, { fresh: true }), // 点数の設定(2026-10-14。変更は ./settings.js)
@@ -25,6 +28,7 @@ export async function onRequestGet(context) {
   const out = (r) => (r ? {
     ...Object.fromEntries(COLS.map((c) => [c, r[c] ?? 0])), source: r.source, updated_at: r.updated_at,
     by_pace: parseByPace(r.by_pace),
+    partner: parsePartner(r.partner),
     detail: r.detail ? safeJson(r.detail) : null,
   } : null);
   return Response.json({
@@ -63,6 +67,20 @@ export async function onRequestPut(context) {
     if (!g) return jsonError("重賞が見つかりません", 404);
   }
   const now = new Date().toISOString();
+  if (data?.kind === "partner") {
+    // 相手指数(2026-10-14): 列 partner の共通かペースの1つだけ書き換える。行が無ければ「軸の共通は未設定(source='none')」の行を作る
+    const row = await db.prepare("SELECT partner FROM pace_weights WHERE graded_race_id = ?").bind(id).first();
+    const partner = parsePartner(row?.partner);
+    if (pace) partner.by_pace = { ...partner.by_pace, [pace]: { ...w, source: "manual" } };
+    else partner.common = { ...w, source: "manual" };
+    const d = DEFAULT_PACE_WEIGHTS;
+    await db.prepare(
+      `INSERT INTO pace_weights (graded_race_id, ${COLS.join(", ")}, partner, source, detail, updated_at)
+       VALUES (?, ${COLS.map(() => "?").join(", ")}, ?, 'none', NULL, ?)
+       ON CONFLICT(graded_race_id) DO UPDATE SET partner = excluded.partner, updated_at = excluded.updated_at`
+    ).bind(id, ...COLS.map((c) => d[c]), JSON.stringify(partner), now).run();
+    return Response.json({ ok: true, graded_race_id: id, kind: "partner", pace_type: pace, ...w, source: "manual", updated_at: now });
+  }
   if (pace) {
     // ペースの比率: by_pace の1つだけ書き換える。行が無ければ「共通は未設定(source='none')」の行を作る
     const row = await db.prepare("SELECT by_pace FROM pace_weights WHERE graded_race_id = ?").bind(id).first();
@@ -93,6 +111,19 @@ export async function onRequestDelete(context) {
   if (!Number.isInteger(id) || id < 0) return jsonError("graded_race_id が不正です", 400);
   const { pace, error: pErr } = paceTypeOf(url.searchParams.get("pace_type"));
   if (pErr) return pErr;
+  if (url.searchParams.get("kind") === "partner") {
+    // 相手指数(2026-10-14): ペースの1つ、または共通を消す。重賞の自動の比率は根拠を消して次に開いたときに選び直させる
+    const row = await db.prepare("SELECT partner FROM pace_weights WHERE graded_race_id = ?").bind(id).first();
+    if (!row) return Response.json({ ok: true, graded_race_id: id, kind: "partner" });
+    const partner = parsePartner(row.partner);
+    if (pace) delete partner.by_pace[pace];
+    else partner.common = null;
+    await db.prepare(
+      `UPDATE pace_weights SET partner = ?, detail = CASE WHEN graded_race_id > 0 AND source <> 'manual' THEN NULL ELSE detail END,
+         updated_at = ? WHERE graded_race_id = ?`
+    ).bind(JSON.stringify(partner), new Date().toISOString(), id).run();
+    return Response.json({ ok: true, graded_race_id: id, kind: "partner", pace_type: pace });
+  }
   if (!pace) {
     await db.prepare("DELETE FROM pace_weights WHERE graded_race_id = ?").bind(id).run();
     return Response.json({ ok: true, graded_race_id: id });

@@ -516,6 +516,9 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   source TEXT NOT NULL DEFAULT 'manual', -- 'none' = 全ペース共通の比率は未設定(by_pace だけ。2026-10-14)
   -- ペース予想ごとの比率(2026-10-14追加。@STEP: pace_weights_by_pace)。JSON { high|middle|slow: { w_*, source: 'manual'|'auto' } }
   by_pace TEXT,
+  -- 相手指数の比率(2026-10-14追加。@STEP: pace_weights_partner)。JSON { common: { w_*, source }|null, by_pace: { high|middle|slow: { w_*, source } } }。
+  -- 行の w_* と by_pace は軸指数の比率。相手指数がどこにも無ければ軸指数の比率を使う(_lib/pace-score.js)
+  partner TEXT,
   detail TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
 );

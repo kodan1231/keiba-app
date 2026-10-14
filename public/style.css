@@ -3358,6 +3358,12 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-admin .pace-reco-note { width: 100%; margin: 0; }
 .pace-w-cell { white-space: nowrap; }
 .pace-w-cell .pace-w-input input { width: 3.6em; font-size: 14px; }
+/* 展開・時計タブ: 総合推奨馬の軸・相手(2026-10-14) */
+.pace-pick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.pace-pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pace-pick-label { min-width: 4.2em; font-weight: 700; font-size: 13px; }
+.pace-pick-axis { color: var(--hanko); }
+.pace-total-mark { font-weight: 700; color: var(--hanko); text-align: center; }
 /* 管理画面: タブ(2026-10-14)。スクロールしても上に残し、スマホでは横にスワイプ */
 .admin-tabs {
   position: sticky; top: 0; z-index: 5;
@@ -3379,6 +3385,9 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-item-sub { font-size: 12px; color: var(--ink-soft); }
 .pace-w-item-body { padding: 4px 4px 12px; }
 .pace-w-item-body .pace-w-input input { width: 3.6em; font-size: 16px; }
+/* 管理画面: 軸指数・相手指数の入力のかたまり(2026-10-14) */
+.pace-w-kind { width: 100%; padding: 4px 0; }
+.pace-w-kind + .pace-w-kind { border-top: 1px dashed var(--rule-strong); margin-top: 4px; }
 /* 管理画面: 共通+ペース予想ごとの4段(2026-10-14) */
 .pace-w-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; padding: 2px 0; }
 .pace-w-line + .pace-w-line { border-top: 1px dotted var(--rule-strong); }
