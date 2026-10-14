@@ -71,6 +71,10 @@ export async function onRequestPost(context) {
       if (r.jockey) next.jockey = applyJockeyAliasMap(aliasMap, r.jockey);
       return next;
     });
+    // 出走馬表(entries)の性齢・斤量が空なら、同じ取り込みの各馬の結果(race_results)の値で埋める(2026-10-14)。
+    // 読み取り側によって entries に性齢・斤量が入らないことがあり、予想登録画面(entries を表示)に馬齢・斤量が出ない
+    // 中央の重賞が続いたため(スワンS・毎日王冠など。race_results には入っていた)。馬番 → 馬名の順で突き合わせる
+    fillEntriesFromResults(incomingEntries, raceResultsInput);
 
     items.push({
       raceDate: item.race_date,
@@ -362,4 +366,21 @@ export async function onRequestPost(context) {
   await applyImportedTrainerNames(db, items.flatMap((it) => it.raceResultsInput));
 
   return Response.json({ ok: true, results });
+}
+// entries の性齢・斤量が空の馬に、race_results(同じレースの取り込み分)の値を入れる。entries・results は同じレースの配列
+function fillEntriesFromResults(entries, results) {
+  if (!entries.length || !results.length) return;
+  const nameKey = (v) => String(v ?? "").replace(/[　\s]+/g, "");
+  const byNumber = new Map(), byName = new Map();
+  for (const r of results) {
+    if (Number.isInteger(Number(r.horse_number)) && r.horse_number !== null) byNumber.set(Number(r.horse_number), r);
+    if (r.horse_name) byName.set(nameKey(r.horse_name), r);
+  }
+  for (const e of entries) {
+    const r = (e.horse_number !== null && byNumber.get(Number(e.horse_number))) || byName.get(nameKey(e.horse_name));
+    if (!r) continue;
+    if (!e.sex_age && r.sex_age) e.sex_age = r.sex_age;
+    const w = Number(r.weight_carried);
+    if ((e.weight_carried === null || e.weight_carried === undefined) && r.weight_carried != null && Number.isFinite(w) && w > 0) e.weight_carried = w;
+  }
 }
