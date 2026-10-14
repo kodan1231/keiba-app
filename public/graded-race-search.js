@@ -44,54 +44,18 @@ const GR_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", t
 const GR_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"]; // 後ろ3つは2026-10-14追加
 const GR_PACE_LABEL = { high: "ハイ", slow: "スロー", middle: "ミドル" };
 
-// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)の過去の当たりの年数
-//   軸: 軸が 3着以内 / 1着 の年数、相手: 軸+相手3頭に 1着馬 / 1・2着馬 / 1〜3着馬 が入った年数
-function grAxisHitText(b, races) {
-  return `軸の3着以内${b.show}・1着${b.win}回(${races}年中)`;
-}
-function grPartnerHitText(b, races) {
-  return `軸+相手に1着馬${b.win}・1-2着馬${b.quin}・1-3着馬${b.show}回(${races}年中)`;
-}
-
-function grWeightsSourceText(w) {
-  if (w.scope === "graded") return w.source === "auto" ? "この重賞の比率(過去の結果で一番当たった比率を自動で選択)" : "この重賞の比率(管理者が設定)";
-  if (w.scope === "default") return "標準の比率(この重賞の比率はまだありません)";
-  return "既定の比率(この重賞の比率はまだありません)";
-}
-
-function grWeightsText(w) {
-  return GR_FACTOR_KEYS.map((f) => `${GR_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
-}
-
+// 2026-10-14 ユーザー要望: 上の説明(軸指数・相手指数の比率と出どころ、自動で選んだときの成績、全年の当たりの合計)は出さない。
+// 年ごとの軸・相手の表だけ出す(比率は管理画面で見る)。
 function grPicksHtml(data) {
-  const wAll = data.weights || {};
   const years = data.years || [];
-  const count = (k) => years.filter((y) => y[k]).length;
-  // 軸指数・相手指数それぞれの比率(共通+共通と違う比率を持つペース。2026-10-14)
-  const kindLines = (w, label, hitText) => {
-    const a = w.scope === "graded" ? w.auto : null;
-    const paces = ["high", "middle", "slow"].map((p) => {
-      const pw = w.paces?.[p];
-      if (!pw || !pw.pace_type) return "";
-      return `<br>${GR_PACE_LABEL[p]}ペース予想: ${escapeHtml(grWeightsText(pw))}(${escapeHtml(pw.scope === "graded" ? (pw.source === "auto" ? "自動" : "管理者が設定") : "標準")})`;
-    }).join("");
-    return `<p class="stats-note"><strong>${label}</strong> 全ペース共通: ${escapeHtml(grWeightsText(w))}(${escapeHtml(w.from_axis ? "軸指数と同じ" : grWeightsSourceText(w))})${paces}
-      ${a ? `<br>自動で選んだときの成績: ${escapeHtml(hitText(a.best, a.races))}。均等の比率なら ${escapeHtml(hitText(a.equal, a.races))}` : ""}</p>`;
-  };
-  const head = `
-    ${kindLines(wAll, "軸指数", grAxisHitText)}
-    ${kindLines(wAll.partner || wAll, "相手指数", grPartnerHitText)}
-    ${years.length ? `<p class="stats-note">各年をその年より前のデータだけで、その年のペース予想の比率で採点した軸(◎)1頭・相手(○)3頭です(予想登録画面の総合推奨馬と同じ計算)。
-      この比率では <strong>${escapeHtml(grAxisHitText({ show: count("axis_show"), win: count("axis_win") }, years.length))}</strong>・
-      <strong>${escapeHtml(grPartnerHitText({ win: count("partner_win"), quin: count("partner_quin"), show: count("partner_show") }, years.length))}</strong></p>` : ""}`;
-  if (!years.length) return `${head}<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
+  if (!years.length) return `<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
   const cell = (x) => (x.missing ? `<span class="ticket-sub" title="データ無し">−</span>` : `<span title="${escapeAttr(x.value || "")}">${x.score}</span>`);
   const place = (p) => {
     const label = { scratched: "取消", excluded: "除外", stopped: "中止" }[p.status];
     if (label) return label;
     return p.finish_position ? `${p.finish_position}着` : "—";
   };
-  return head + years.map((y) => `
+  return years.map((y) => `
     <div class="gr-year-card">
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>

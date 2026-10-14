@@ -1947,13 +1947,6 @@ body.history-selection-mode .group-detail-actions {
   white-space: nowrap;
 }
 
-.prediction-help {
-  padding: 12px 18px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  border-bottom: 1px solid var(--rule);
-}
-
 .prediction-tickets {
   padding: 14px 18px;
   border-bottom: 1px solid var(--rule);
@@ -2120,10 +2113,6 @@ body.history-selection-mode .group-detail-actions {
 }
 
 @media (max-width: 600px) {
-  /* クラスタJ-2: モバイルでは操作説明を省略して馬一覧を優先する */
-  .prediction-help {
-    display: none;
-  }
 
   .prediction-main {
     padding: 18px 12px 60px;

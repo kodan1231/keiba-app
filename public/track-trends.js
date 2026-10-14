@@ -54,7 +54,7 @@ function ttCellHtml(cell, base, minRaces) {
 function ttRenderTable(data) {
   const conds = data.conditions || ["良", "稍重", "重", "不良"];
   const minRaces = data.min_races || 3;
-  ttEls.min.textContent = String(minRaces);
+  if (ttEls.min) ttEls.min.textContent = String(minRaces); // 説明文は2026-10-14に外した(要素が無ければ何もしない)
   if (!data.tracks || !data.tracks.length) {
     ttEls.table.innerHTML = `<tbody><tr><td class="ticket-sub">該当するレースがありません。</td></tr></tbody>`;
     return;

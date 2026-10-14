@@ -1195,6 +1195,75 @@ async function loadPaceWeights() {
   renderPaceWeightsList();
   courseWeightsList = { courses: data.courses || [], std };
   renderCourseWeightsList();
+  loadPaceQueue();
+}
+
+// ---- 自動計算: 計算待ち(2026-10-14。API: GET/DELETE /api/admin/pace-queue)----
+// 「計算待ちを今すぐ計算」は夜間の定時実行(scripts/pace-nightly.mjs)と同じ規則: 前の自動計算から7日未満・手で保存した比率は
+// 計算せず計算待ちから外す。それ以外はこのブラウザで計算して保存し、外す。
+const PACE_SKIP_DAYS = 7;
+let paceQueueItems = [];
+
+function paceQueueLabel(it) {
+  if (it.kind === "course") {
+    const [track, ct, dist] = String(it.key).split("|");
+    return `${track} ${ct}${dist}m`;
+  }
+  const g = (paceWeightsList?.items || []).find((x) => String(x.graded_race_id) === String(it.key));
+  return g ? `${g.name}(重賞)` : `重賞 ${it.key}`;
+}
+
+async function loadPaceQueue() {
+  const summary = document.getElementById("pace-queue-summary");
+  const listEl = document.getElementById("pace-queue-list");
+  if (!summary || !listEl) return;
+  const res = await authedFetch("/api/admin/pace-queue");
+  if (!res.ok) { summary.textContent = "読み込みに失敗しました"; return; }
+  paceQueueItems = (await res.json()).items || [];
+  summary.textContent = paceQueueItems.length ? `${paceQueueItems.length}件(毎晩3時に計算します)` : "ありません";
+  listEl.textContent = paceQueueItems.map(paceQueueLabel).join(" / ");
+}
+
+async function runPaceQueue(btn) {
+  if (!paceQueueItems.length) { paceWeightsMsg("計算待ちはありません", true); return; }
+  const label = btn.textContent;
+  btn.disabled = true;
+  let done = 0, skipped = 0, failed = 0;
+  for (const it of paceQueueItems) {
+    btn.textContent = `計算中…(${done + skipped + failed + 1}/${paceQueueItems.length})`;
+    try {
+      const recent = it.last_computed_at && Date.now() - Date.parse(it.last_computed_at) < PACE_SKIP_DAYS * 86400000;
+      if (!it.manual && !recent) {
+        const ok = await paceComputeAdmin(it.kind, it.key, null, { reload: false });
+        if (!ok) { failed++; continue; }
+        done++;
+      } else {
+        skipped++;
+      }
+      await authedFetch(`/api/admin/pace-queue?kind=${encodeURIComponent(it.kind)}&key=${encodeURIComponent(it.key)}`, { method: "DELETE" });
+    } catch {
+      failed++;
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+  paceWeightsMsg(`計算待ちを処理しました(計算${done}件・7日未満などで省略${skipped}件${failed ? `・失敗${failed}件(計算待ちに残しました)` : ""})`, !failed);
+  await loadPaceWeights();
+}
+
+function setupPaceCompute() {
+  const trackSel = document.getElementById("course-compute-track");
+  if (trackSel && !trackSel.options.length) {
+    trackSel.innerHTML = TRACK_DISPLAY_ORDER.map((t) => `<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join("");
+  }
+  document.getElementById("pace-queue-run-btn")?.addEventListener("click", (e) => runPaceQueue(e.currentTarget));
+  document.getElementById("course-compute-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const dist = Number(document.getElementById("course-compute-distance").value);
+    if (!(dist > 0)) return;
+    const key = `${trackSel.value}|${document.getElementById("course-compute-type").value}|${dist}`;
+    paceComputeAdmin("course", key, document.getElementById("course-compute-btn"));
+  });
 }
 
 // ---- 重賞ごとの比率の一覧(2026-10-14: 1重賞1行の要約+タップで入力を開く。最初は今月・来月の重賞だけ) ----
@@ -1266,31 +1335,39 @@ function renderPaceWeightsList() {
 
 // 「今すぐ計算」(2026-10-14。docs/design/screens.md「比率の計算(夜間・今すぐ計算)」): サーバーから採点を数レースずつ受け取り、
 // このブラウザで比率を選んで(public/pace-search.js。夜間の定時実行と同じ計算)保存する。kind: "graded" | "course"
-async function paceComputeAdmin(kind, key, btn) {
-  const label = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "採点中…";
+// btn: 進み具合を出すボタン(無ければ出さない)、opts.reload: 保存後に一覧を読み直すか。戻り値: 保存できたか
+//(採点できる過去のレースが無いときも true〈計算待ちから外してよい〉)
+async function paceComputeAdmin(kind, key, btn, { reload = true } = {}) {
+  const label = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "採点中…"; }
+  let ok = false;
   try {
     const { collectAndChoose } = await import("./pace-search.js");
-    const { result } = await collectAndChoose(async (offset) => {
+    const { result, info } = await collectAndChoose(async (offset) => {
       const res = await authedFetch(`/api/admin/pace-backtest?kind=${kind}&key=${encodeURIComponent(key)}&offset=${offset}&limit=6`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       return data;
-    }, (done, total) => { btn.textContent = `採点中…(${done}/${total})`; });
+    }, (done, total) => { if (btn) btn.textContent = `採点中…(${done}/${total})`; });
     if (result.error) {
-      paceWeightsMsg(result.error, false);
+      paceWeightsMsg(`${info?.label || key}: ${result.error}`, false);
+      ok = true;
     } else {
       const d = result.detail;
-      await paceWeightsRequest("/api/admin/pace-weights/auto-result", {
+      const res = await authedFetch("/api/admin/pace-weights/auto-result", {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, key, result }),
-      }, `計算して保存しました(${d.races}レース: 軸の3着以内${d.best.show}・1着${d.best.win}回 / 軸+相手に1着馬${d.partner.best.win}回)`);
+      });
+      ok = res.ok;
+      paceWeightsMsg(ok
+        ? `${info?.label || key}: 計算して保存しました(${d.races}レース: 軸の3着以内${d.best.show}・1着${d.best.win}回 / 軸+相手に1着馬${d.partner.best.win}回)`
+        : `${info?.label || key}: 保存できませんでした`, ok);
+      if (ok && reload) await loadPaceWeights();
     }
   } catch (e) {
     paceWeightsMsg(`計算できませんでした: ${e.message}`, false);
   }
-  btn.disabled = false;
-  btn.textContent = label;
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+  return ok;
 }
 
 // ---- コースごとの比率の一覧(2026-10-14。計算・保存したコースだけ。重賞の一覧と同じ形) ----
@@ -1307,7 +1384,7 @@ function renderCourseWeightsList() {
   const shown = q ? courses.filter((c) => labelOf(c).replace(/\s/g, "").toLowerCase().includes(q)) : courses;
   if (count) count.textContent = `${shown.length}件 / 全${courses.length}件`;
   if (!shown.length) {
-    list.innerHTML = `<p class="ticket-sub">${courses.length ? "該当するコースはありません" : "まだ計算したコースはありません(出馬表を取り込んだ夜、または予想登録画面の「このコースを今すぐ計算」で作られます)"}</p>`;
+    list.innerHTML = courses.length ? `<p class="ticket-sub">該当するコースはありません</p>` : ""; // 説明文は2026-10-14に外した
     return;
   }
   const weightsText = (w) => PACE_W_KEYS.map(([k, label]) => `${label}${w[k] ?? 0}`).join("・");
@@ -1374,6 +1451,7 @@ async function onReady() {
   setupRaceBaseNameRecomputeButton();
   setupTrainerAliasForm();
   setupPaceWeightsFilter();
+  setupPaceCompute();
   setupGuestIpForm();
   setupAdminTabs();
 }
@@ -1492,17 +1570,19 @@ function setupGuestIpForm() {
 // 開いたタブの欄だけ表示し、データはそのタブを初めて開いたときに読む(以前は画面を開くと全部の欄を読んでいた)。
 // 開くタブ: URL の #タブ名 → 前回開いたタブ(この端末の localStorage)→ 状況。
 const ADMIN_TAB_LOADERS = {
-  status: () => [loadD1Usage(false), loadServiceGuard(), loadUnregisteredRaces()],
-  import: () => [loadApiTokenStatus()],
+  status: () => [loadD1Usage(false), loadServiceGuard()],
+  import: () => [loadUnregisteredRaces(), loadApiTokenStatus()], // 未登録レース一覧は取り込みタブ(2026-10-14)
   alias: () => [loadJockeyAliases(), loadHorseAliases(), setupHorseIndex(), loadTrainerAliases()],
   graded: () => [loadGradedRaces(), loadPaceWeights()],
-  users: () => [loadUsers()],
-  guest: () => [loadGuestAdmin()],
+  users: () => [loadUsers(), loadGuestAdmin()], // ゲスト閲覧もユーザータブ(2026-10-14。当初は「ゲスト」タブ)
 };
+// 以前のタブ名(ブックマーク・前回のタブの復元用)
+const ADMIN_TAB_ALIASES = { guest: "users" };
 const ADMIN_TAB_STORAGE_KEY = "admin_tab";
 const adminTabLoaded = new Set();
 
 function showAdminTab(tab) {
+  tab = ADMIN_TAB_ALIASES[tab] || tab;
   if (!ADMIN_TAB_LOADERS[tab]) tab = "status";
   document.querySelectorAll("[data-admin-tab-btn]").forEach((b) => {
     const on = b.dataset.adminTabBtn === tab;
