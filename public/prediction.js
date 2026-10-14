@@ -889,7 +889,7 @@ function paceJockeySectionHtml() {
 //   - ペース予想: 前走の脚質で、逃げ2頭以上 または 逃げ+先行が頭数の半分以上 → ハイ、
 //     逃げ0〜1頭 かつ 逃げ+先行が頭数の1/4以下 → スロー、それ以外 → ミドル(脚質「不明」の馬は数えない。頭数は全出走馬)
 //   - 展開が有利な馬: ハイは補正タイム順、スローは上がり3F順、ミドルは両方の順位の合計順。記録は同距離→±200m→全距離→芝ダ違いの順に補う
-//   - 有利な馬番: 同コースの馬番別の複勝率順(騎乗が少なければ同場→全場)
+//   - 有利な馬番: 同コースの馬番帯(3頭ずつ。1-3, 4-6 …)別の複勝率順(騎乗が少なければ同場→全場。2026-10-14 馬番ごと→馬番帯)
 //   - 騎手: 同コースの複勝率を騎乗が少ないほど平均に寄せた値の順(同コースに騎乗が無ければ同場→全成績)
 //   - データの無い馬は25点
 const PACE_TOP_N = 5;
@@ -971,7 +971,7 @@ function paceRecommendNumberHtml() {
   if (!data) return `${head}<p class="pace-none">${escapeHtml(message)}</p></div>`;
   const empty = data.horses.some(h => h.horse_number === null || h.horse_number === undefined)
     ? "馬番が確定していないため出せません"
-    : "馬番別の記録がありません";
+    : "馬番帯別の記録がありません";
   return `${head}${paceTopListHtml(paceFactorTopItems(data, "number"), empty)}</div>`;
 }
 

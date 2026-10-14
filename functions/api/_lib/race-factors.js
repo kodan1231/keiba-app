@@ -12,8 +12,10 @@
 //       → 今回の競馬場の補正値を足す(_lib/track-trends.js)
 //   - 上がり3F: 同じ順で探し、一番近い段の中の最速(換算はしない。競馬場別の補正は今後)
 //   - 展開: 前走の脚質でペースを予想(predictPace)し、ハイ=タイム順、スロー=上がり3F順、ミドル=両方の順位の合計順(両方ある馬)
-//   - 馬番: 同コース(競馬場・芝ダ障・距離)の馬番別の複勝率順。その馬番の騎乗が20回未満なら、同じ競馬場・芝ダ障の全距離、
-//     それも20回未満なら全競馬場の同じ芝ダ障
+//   - 馬番: 同コース(競馬場・芝ダ障・距離)の馬番帯別の複勝率順。その馬番帯の騎乗が20回未満なら、同じ競馬場・芝ダ障の全距離、
+//     それも20回未満なら全競馬場の同じ芝ダ障。馬番帯は3頭ずつ(1-3, 4-6, 7-9, 10-12, 13-15, 16-18。numberGroupOf)。
+//     2026-10-14 ユーザー要望で馬番ごと→馬番帯に変更(馬番ごとでは騎乗が少なく揺れが大きいため。枠番は頭数で
+//     同じ馬番でも枠が変わる〈8番が8枠になる等〉ので使わない)。同じ馬番帯の馬は同じ順位・同じ点になる
 //   - 騎手: 同コースの複勝率を、騎乗が少ないほどそのコースの平均に寄せた値(10騎乗分の平均を足して割る)の順。
 //     同コースで騎乗が無ければ同じ競馬場・芝ダ障、それも無ければ全成績で同じように出す
 // 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
@@ -28,6 +30,13 @@ export const MISSING_SCORE = 25;
 const NUMBER_MIN_RIDES = 20;
 const JOCKEY_PRIOR_RIDES = 10;
 const NEAR_DISTANCE = 200;
+const NUMBER_GROUP_SIZE = 3;
+
+// 馬番 → 馬番帯(1-3 → 1, 4-6 → 2, … 16-18 → 6)
+export function numberGroupOf(hn) {
+  return Math.ceil(Number(hn) / NUMBER_GROUP_SIZE);
+}
+const numberGroupLabel = (g) => `${(g - 1) * NUMBER_GROUP_SIZE + 1}-${g * NUMBER_GROUP_SIZE}番`;
 
 export function predictPace(styles, fieldSize) {
   let nige = 0, senko = 0;
@@ -92,14 +101,14 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   let allCounts = null;
   const allOf = () => {
     if (allCounts) return allCounts;
-    const numberAllByCt = new Map(); // 芝ダ障 -> Map(馬番 -> counts)
+    const numberAllByCt = new Map(); // 芝ダ障 -> Map(馬番帯 -> counts)
     const jockeyAll = new Map(); // 騎手キー -> counts
     for (const r of lineups) {
       if (!r.lineup) continue;
       if (!numberAllByCt.has(r.course_type)) numberAllByCt.set(r.course_type, new Map());
       const nm = numberAllByCt.get(r.course_type);
       for (const [hn, jockey, pos] of r.lineup) {
-        if (hn > 0) addRide(nm, Number(hn), pos);
+        if (hn > 0) addRide(nm, numberGroupOf(hn), pos);
         const jk = keyOf(jockey);
         if (jk) addRide(jockeyAll, jk, pos);
       }
@@ -216,8 +225,9 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
     for (const [hn, jockey, pos] of r.lineup) {
       const jk = ctx.keyOf(jockey);
       if (hn > 0) {
-        addRide(numTrack, Number(hn), pos);
-        if (same) addRide(numCourse, Number(hn), pos);
+        const g = numberGroupOf(hn);
+        addRide(numTrack, g, pos);
+        if (same) addRide(numCourse, g, pos);
       }
       if (jk) {
         addRide(jkTrack, jk, pos);
@@ -229,11 +239,12 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
   for (const h of runners) {
     const hn = Number(h.horse_number);
     if (!(hn > 0)) continue;
-    let c = numCourse.get(hn), scope = "course";
-    if (!c || c.rides < NUMBER_MIN_RIDES) { c = numTrack.get(hn); scope = "track"; }
-    if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf().numberAllByCt.get(race.course_type) || new Map()).get(hn); scope = "all"; }
+    const g = numberGroupOf(hn);
+    let c = numCourse.get(g), scope = "course";
+    if (!c || c.rides < NUMBER_MIN_RIDES) { c = numTrack.get(g); scope = "track"; }
+    if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf().numberAllByCt.get(race.course_type) || new Map()).get(g); scope = "all"; }
     if (!c || !c.rides) continue;
-    numberList.push({ key: h.key, show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope });
+    numberList.push({ key: h.key, show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope, group: g });
   }
   // 騎手: 段ごとの平均(そのコース等の全騎乗の複勝率・単勝率)に、騎乗が少ないほど寄せる
   const avgOf = (m) => {
@@ -283,7 +294,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
   const ranked = {
     pace: paceRanked,
     time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, value: timeText(x) })),
-    number: rateRank(numberList).map((x) => ({ ...x, value: `複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    number: rateRank(numberList).map((x) => ({ ...x, value: `${numberGroupLabel(x.group)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     jockey: rateRank(jockeyList).map((x) => ({ ...x, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
   };
   const factors = {};
