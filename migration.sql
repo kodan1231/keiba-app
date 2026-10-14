@@ -209,3 +209,10 @@ CREATE TABLE IF NOT EXISTS pace_jobs (
   PRIMARY KEY (kind, key)
 );
 INSERT INTO schema_migrations (name) VALUES ('pace_jobs');
+
+-- @STEP: pace_weights_adjust
+-- 評価点(初距離・初競馬場の減点、継続騎乗の加点。2026-10-14)を重賞・コースの比率の行に持つ列。JSON { first_distance, first_track, same_jockey, source }。
+-- 列を足すだけ(既存の行は NULL = 評価点なし → 設定の既定値を使う)。
+ALTER TABLE pace_weights ADD COLUMN adjust TEXT;
+ALTER TABLE course_pace_weights ADD COLUMN adjust TEXT;
+INSERT INTO schema_migrations (name) VALUES ('pace_weights_adjust');

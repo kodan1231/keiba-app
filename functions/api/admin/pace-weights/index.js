@@ -1,6 +1,6 @@
 import {
   requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS,
-  parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey,
+  parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey, parseAdjust, normalizeAdjust,
 } from "../../_shared.js";
 
 const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
@@ -17,16 +17,20 @@ const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・
 // kind(2026-10-14追加): "axis"(既定。軸指数)/ "partner"(相手指数。列 partner の JSON)。
 //   相手指数の共通の比率は DELETE ?kind=partner(pace_type なし)で消せる(軸指数に戻る)。
 // 2026-10-14: 比率の自動算出は夜間の定時実行・管理者の「今すぐ計算」(ブラウザ)で行い、結果は ./auto-result.js で保存する。
+// 評価点(2026-10-14追加。列 adjust の JSON { first_distance, first_track, same_jockey, source }。重賞・コースだけ。標準は設定の既定値〈./settings.js〉):
+//   PUT { graded_race_id(1以上) | course_key, kind: "adjust", first_distance, first_track, same_jockey } → 手動で保存
+//   DELETE ?graded_race_id=N | ?course_key=K &kind=adjust → 評価点だけ消す(次の計算で自動の値が入る)
+//   GET の weights.adjust に入る(無ければ null)
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
   const [{ results: graded }, weightRows, courseRows, scoreSettings] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
-    db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, partner, source, detail, updated_at FROM pace_weights`).all()
+    db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, partner, adjust, source, detail, updated_at FROM pace_weights`).all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
-    db.prepare(`SELECT track, course_type, distance, ${COLS.join(", ")}, by_pace, partner, source, detail, updated_at FROM course_pace_weights ORDER BY track, course_type, distance`).all()
+    db.prepare(`SELECT track, course_type, distance, ${COLS.join(", ")}, by_pace, partner, adjust, source, detail, updated_at FROM course_pace_weights ORDER BY track, course_type, distance`).all()
       .then((r) => r.results || [])
       .catch(() => []),
     getPaceScoreSettings(db, { fresh: true }), // 点数の設定(2026-10-14。変更は ./settings.js)
@@ -36,6 +40,7 @@ export async function onRequestGet(context) {
     ...Object.fromEntries(COLS.map((c) => [c, r[c] ?? 0])), source: r.source, updated_at: r.updated_at,
     by_pace: parseByPace(r.by_pace),
     partner: parsePartner(r.partner),
+    adjust: parseAdjust(r.adjust),
     detail: r.detail ? safeJson(r.detail) : null,
   } : null);
   return Response.json({
@@ -82,6 +87,7 @@ export async function onRequestPut(context) {
   if (error) return error;
   const t = await targetOf(db, data || {});
   if (t.error) return t.error;
+  if (data?.kind === "adjust") return putAdjust(db, t, data);
   const { pace, error: pErr } = paceTypeOf(data?.pace_type);
   if (pErr) return pErr;
   const w = normalizePaceWeights(data);
@@ -136,6 +142,10 @@ export async function onRequestDelete(context) {
   if (pErr) return pErr;
   const where = t.keyCols.map((c) => `${c} = ?`).join(" AND ");
   const now = new Date().toISOString();
+  if (url.searchParams.get("kind") === "adjust") {
+    await db.prepare(`UPDATE ${t.table} SET adjust = NULL, updated_at = ? WHERE ${where}`).bind(now, ...t.keyBinds).run();
+    return Response.json({ ok: true, kind: "adjust" });
+  }
   if (url.searchParams.get("kind") === "partner") {
     // 相手指数(2026-10-14): ペースの1つ、または共通を消す(次の計算で自動の値が入る)
     const row = await db.prepare(`SELECT partner FROM ${t.table} WHERE ${where}`).bind(...t.keyBinds).first();
@@ -162,4 +172,19 @@ export async function onRequestDelete(context) {
     await db.prepare(`UPDATE ${t.table} SET by_pace = ?, updated_at = ? WHERE ${where}`).bind(JSON.stringify(byPace), now, ...t.keyBinds).run();
   }
   return Response.json({ ok: true, pace_type: pace });
+}
+
+// 評価点を手で保存する(2026-10-14)。行が無ければ「比率は未設定(source='none')」の行を作る
+async function putAdjust(db, t, data) {
+  if (t.table === "pace_weights" && Number(t.keyBinds[0]) === 0) return jsonError("標準の評価点は「評価点の既定値」で変更してください", 400);
+  const a = normalizeAdjust({ first_distance: data.first_distance, first_track: data.first_track, same_jockey: data.same_jockey });
+  if (!a) return jsonError("評価点は0〜50の数で入力してください", 400);
+  const keyList = t.keyCols.join(", ");
+  const now = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO ${t.table} (${keyList}, ${COLS.join(", ")}, adjust, source, detail, updated_at)
+     VALUES (${t.keyCols.map(() => "?").join(", ")}, ${COLS.map(() => "?").join(", ")}, ?, 'none', NULL, ?)
+     ON CONFLICT(${keyList}) DO UPDATE SET adjust = excluded.adjust, updated_at = excluded.updated_at`
+  ).bind(...t.keyBinds, ...COLS.map((c) => DEFAULT_PACE_WEIGHTS[c]), JSON.stringify({ ...a, source: "manual" }), now).run();
+  return Response.json({ ok: true, kind: "adjust", ...a, source: "manual", updated_at: now });
 }

@@ -1031,6 +1031,32 @@ const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", 
 // ペース予想ごとの比率(2026-10-14追加)。"" は全ペース共通
 const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "スロー"]];
 
+// 評価点(2026-10-14追加。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): [キー, 名前, 符号]
+const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"]];
+let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
+
+function paceAdjustText(a) {
+  return PACE_ADJ_KEYS.map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
+}
+
+// 評価点の入力1行。a: その重賞・コースの評価点(無ければ null)。空欄は薄く出す既定値を使う
+function paceAdjustLineHtml(a) {
+  const src = a ? (a.source === "auto" ? "自動" : "手動") : "";
+  return `<div class="pace-w-kind pace-adj-line"><span class="pace-w-admin-title">評価点(タイム・騎手の点に足し引き)</span>
+    <div class="pace-w-line">
+      ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${a ? a[k] : ""}" placeholder="${paceAdjustDefault[k]}">点</label>`).join("")}
+      <small class="pace-w-line-source">${src}</small>
+      <button type="button" class="ghost-btn pace-adj-save">保存</button>
+      ${a ? `<button type="button" class="icon-btn delete pace-adj-clear" title="この評価点を消す(既定値を使う。次の計算で自動の値が入る)">×</button>` : ""}
+    </div></div>`;
+}
+
+function paceAdjustReadInputs(container) {
+  const out = {};
+  for (const input of container.querySelectorAll("input[data-akey]")) out[input.dataset.akey] = Number(input.value === "" ? input.placeholder : input.value);
+  return out;
+}
+
 function paceWeightsMsg(text, ok) {
   const el = document.getElementById("pace-weights-message");
   if (!el) return;
@@ -1062,7 +1088,9 @@ function paceAutoSummaryText(detail) {
     const pt = detail.partner || {};
     const paces = PACE_W_TYPES.filter(([p]) => detail.by_pace?.[p])
       .map(([p, label]) => `${label}${detail.by_pace[p].races}レース: ${ta(detail.by_pace[p].best)}・${tp(pt.by_pace?.[p]?.best)}`).join(" / ");
-    return `${detail.races}レース分 ${ta(detail.best)}・${tp(pt.best)}回(均等なら ${ta(detail.equal)}・${tp(pt.equal)})${paces ? `。${paces}` : ""}`;
+    // 評価点(2026-10-14): 選んだ値と、既定の評価点のときとの軸の成績の比較
+    const adj = detail.adjust ? `。評価点 ${paceAdjustText(detail.adjust)}(${ta(detail.adjust.best)}回。既定値なら ${ta(detail.adjust.base)})` : "";
+    return `${detail.races}レース分 ${ta(detail.best)}・${tp(pt.best)}回(均等なら ${ta(detail.equal)}・${tp(pt.equal)})${paces ? `。${paces}` : ""}${adj}`;
   }
   if (!s) return "";
   const pct = (v) => `${Math.round((v || 0) * 100)}%`;
@@ -1116,6 +1144,16 @@ function setupPaceWeightsLines(container) {
       body: JSON.stringify({ ...targetOf(btn), pace_type: line.dataset.pace, kind: kindOf(btn), ...paceWeightsReadInputs(line) }),
     }, "保存しました");
   }));
+  // 評価点(2026-10-14)
+  container.querySelectorAll(".pace-adj-save").forEach((btn) => btn.addEventListener("click", () => {
+    paceWeightsRequest("/api/admin/pace-weights", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...targetOf(btn), kind: "adjust", ...paceAdjustReadInputs(btn.closest(".pace-adj-line")) }),
+    }, "評価点を保存しました");
+  }));
+  container.querySelectorAll(".pace-adj-clear").forEach((btn) => btn.addEventListener("click", () => {
+    paceWeightsRequest(`/api/admin/pace-weights?${targetQuery(targetOf(btn))}&kind=adjust`, { method: "DELETE" }, "評価点を消しました");
+  }));
   container.querySelectorAll(".pace-w-line-clear").forEach((btn) => btn.addEventListener("click", () => {
     const line = btn.closest(".pace-w-line");
     paceWeightsRequest(`/api/admin/pace-weights?${targetQuery(targetOf(btn))}&pace_type=${encodeURIComponent(line.dataset.pace)}&kind=${kindOf(btn)}`,
@@ -1146,11 +1184,18 @@ async function loadPaceWeights() {
   defBox.dataset.id = "0";
   // データの無い馬の点(偏差値。2026-10-14追加。API: PUT /api/admin/pace-weights/settings)
   const missing = data.score_settings?.missing_score ?? 40;
+  // 評価点の既定値(2026-10-14追加): 重賞・コースの評価点(自動・手動)が無いときに使う
+  paceAdjustDefault = { ...paceAdjustDefault, ...(data.score_settings?.adjust || {}) };
   defBox.innerHTML = `
     <div class="pace-w-line">
       <span class="pace-w-admin-title">データ無しの点(偏差値)</span>
       <label class="pace-w-input"><input type="number" min="0" max="100" step="1" id="pace-missing-score" value="${missing}">点</label>
       <button type="button" class="ghost-btn" id="pace-missing-score-save">保存</button>
+    </div>
+    <div class="pace-w-line" id="pace-adjust-default">
+      <span class="pace-w-admin-title">評価点の既定値</span>
+      ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${paceAdjustDefault[k]}">点</label>`).join("")}
+      <button type="button" class="ghost-btn" id="pace-adjust-default-save">保存</button>
     </div>
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
     ${paceWeightsLinesHtml(data.default, data.builtin)}
@@ -1160,6 +1205,12 @@ async function loadPaceWeights() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ missing_score: Number(document.getElementById("pace-missing-score").value) }),
     }, "データ無しの点を保存しました(保存済みの比率は、次の計算からこの点で採点します)");
+  });
+  document.getElementById("pace-adjust-default-save").addEventListener("click", () => {
+    paceWeightsRequest("/api/admin/pace-weights/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adjust: paceAdjustReadInputs(document.getElementById("pace-adjust-default")) }),
+    }, "評価点の既定値を保存しました(評価点の無い重賞・コースの推奨馬に2分以内に反映されます)");
   });
   setupPaceWeightsLines(defBox);
 
@@ -1269,6 +1320,7 @@ function renderPaceWeightsList() {
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
           ${paceWeightsLinesHtml(w, std, "partner")}
+          ${paceAdjustLineHtml(w?.adjust || null)}
           ${w?.source === "auto" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
             <button type="button" class="ghost-btn pace-w-row-auto">今すぐ計算(過去10年)</button>
@@ -1356,6 +1408,7 @@ function renderCourseWeightsList() {
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
           ${paceWeightsLinesHtml(w, std, "partner")}
+          ${paceAdjustLineHtml(w?.adjust || null)}
           ${w?.detail?.method === "backtest" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
             <button type="button" class="ghost-btn course-w-auto">今すぐ計算(直近1年)</button>

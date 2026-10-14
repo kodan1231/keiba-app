@@ -519,6 +519,9 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   -- 相手指数の比率(2026-10-14追加。@STEP: pace_weights_partner)。JSON { common: { w_*, source }|null, by_pace: { high|middle|slow: { w_*, source } } }。
   -- 行の w_* と by_pace は軸指数の比率。相手指数がどこにも無ければ軸指数の比率を使う(_lib/pace-score.js)
   partner TEXT,
+  -- 評価点(2026-10-14追加。@STEP: pace_weights_adjust)。JSON { first_distance, first_track, same_jockey, source: 'manual'|'auto' }。
+  -- 初距離・初競馬場はタイムの点から引き、継続騎乗は騎手の点に足す(偏差値の点)。NULL なら設定の既定値(_lib/pace-settings.js)
+  adjust TEXT,
   detail TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -539,6 +542,9 @@ CREATE TABLE IF NOT EXISTS course_pace_weights (
   w_course INTEGER NOT NULL DEFAULT 0,
   by_pace TEXT,
   partner TEXT,
+  -- 評価点(2026-10-14追加。@STEP: pace_weights_adjust)。JSON { first_distance, first_track, same_jockey, source: 'manual'|'auto' }。
+  -- 初距離・初競馬場はタイムの点から引き、継続騎乗は騎手の点に足す(偏差値の点)。NULL なら設定の既定値(_lib/pace-settings.js)
+  adjust TEXT,
   source TEXT NOT NULL DEFAULT 'auto',
   detail TEXT,
   updated_at TEXT,

@@ -53,7 +53,7 @@ export async function paceJobStep(db) {
   try { races = JSON.parse(job.races || "[]"); } catch { races = []; }
 
   if (job.phase === "score") {
-    const chunk = await backtestChunk(db, job.kind, job.key, job.offset, 6, job.missing_score);
+    const chunk = await backtestChunk(db, job.kind, job.key, job.offset, 6, { missingScore: job.missing_score });
     if (chunk.error) {
       await dropJob(db, job.kind, job.key);
       await dropQueue(db, job.kind, job.key);

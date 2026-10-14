@@ -20,13 +20,14 @@ export async function onRequestGet(context) {
   const { id, error } = parsePositiveIntId(url.searchParams.get("id"), "id");
   if (error) return error;
 
-  // 採点の使い回しはデータ無しの点ごと(設定を変えたら作り直す。2026-10-14)
-  const { missing_score: missingScore } = await getPaceScoreSettings(db);
+  // 採点の使い回しはデータ無しの点ごと(設定を変えたら作り直す。2026-10-14)。評価点は採点の後に掛ける(gradedPicksOf)
+  const settings = await getPaceScoreSettings(db);
+  const missingScore = settings.missing_score;
   const [weights, bt] = await Promise.all([
     getPaceWeights(db, id),
     memoized(`graded_backtest_${id}_${missingScore}`, () => loadGradedBacktest(db, id, { missingScore }), BT_MEMO_MS),
   ]);
   if (bt.error === "重賞が見つかりません") return jsonError(bt.error, 404);
   if (bt.error) return Response.json({ weights, years: [], message: bt.error });
-  return Response.json({ weights, years: gradedPicksOf(bt, weights) });
+  return Response.json({ weights, years: gradedPicksOf(bt, weights, weights.adjust || settings.adjust) });
 }
