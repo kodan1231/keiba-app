@@ -6,7 +6,7 @@ import { findRacesByGradedKey, jstYear } from "./graded-race-search.js";
 import { gradedRaceNameKey } from "./race-classification.js";
 import { getRaceIndex } from "./races-index-cache.js";
 import { getRaceLineups } from "./race-lineup-cache.js";
-import { loadJockeyAliasMap } from "./jockey-alias.js";
+import { loadJockeyAliasMapCached } from "./jockey-alias.js";
 import { getRaceTimes } from "./race-time-cache.js";
 import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } from "./race-factors.js";
 
@@ -188,7 +188,8 @@ export async function loadGradedBacktest(db, gradedRaceId) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
   if (!master) return { error: "重賞が見つかりません" };
 
-  const [allRaces, lineups, aliasMap, raceTimes] = await Promise.all([getRaceIndex(db), getRaceLineups(db), loadJockeyAliasMap(db), getRaceTimes(db)]);
+  // 騎手名エイリアスは使い回し版(2026-10-14。読み取り専用のため。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
+  const [allRaces, lineups, aliasMap, raceTimes] = await Promise.all([getRaceIndex(db), getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db)]);
   const matches = findRacesByGradedKey(allRaces, new Set([master.name_key, gradedRaceNameKey(master.name)].filter(Boolean)));
   const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const currentYear = jstYear();

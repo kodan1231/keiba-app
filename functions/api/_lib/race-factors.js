@@ -29,7 +29,7 @@
 //   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
 import { runningStyleOf, timeTextToSeconds } from "./graded-race-search.js";
 import { buildTrackTrends, trackTimeOffsets, TREND_MIN_RACES } from "./track-trends.js";
-import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS } from "./race-lineup-cache.js";
+import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 
 // 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加
@@ -89,8 +89,8 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   if (hit && hit.raceTimes === raceTimes && hit.aliasMap === aliasMap) return hit.ctx;
   const jockeyKeyOf = (name) => jockeyAliasKeyOf(applyJockeyAliasMap(aliasMap, name));
 
-  const fieldSizeByRace = new Map();
-  const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, lineup }]
+  // 2026-10-14 CPU時間対策: lineup を展開せず、集計用キャッシュの平らな配列(flat。LINEUP_STRIDE ずつ)のまま数える。
+  // 騎手は範囲ごとの辞書(dict)の番号なので、辞書ごとに騎手キーの配列を1回だけ作る。
   const jockeyKey = new Map(); // 生の騎手名 -> キー
   const keyOf = (name) => {
     if (!name) return "";
@@ -98,35 +98,48 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     if (k === undefined) jockeyKey.set(name, (k = jockeyKeyOf(name)));
     return k;
   };
+  const dictKeys = new Map(); // dict 配列 -> 騎手キーの配列
+  const keysOfDict = (dict) => {
+    let a = dictKeys.get(dict);
+    if (!a) dictKeys.set(dict, (a = dict.map(keyOf)));
+    return a;
+  };
+  const fieldSizeByRace = new Map();
+  const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, flat, jk }]
   for (const r of lineups) {
-    if (!r.lineup) continue;
-    fieldSizeByRace.set(Number(r.id), r.lineup.length);
+    if (!r.flat) continue;
+    fieldSizeByRace.set(Number(r.id), r.size);
     const g = `${r.track}|${r.course_type}`;
     if (!byTrackCt.has(g)) byTrackCt.set(g, []);
-    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), lineup: r.lineup });
+    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict) });
   }
-  // 全競馬場の馬番別・騎手別の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、
-  // 初めて必要になったときに数える(全騎乗 約5.6万件を数えるのに約10ミリ秒かかる。CPU時間対策)
-  let allCounts = null;
-  const allOf = () => {
-    if (allCounts) return allCounts;
-    const numberAllByCt = new Map(); // 芝ダ障 -> Map(馬番帯 -> counts)
-    const sexAllByCt = new Map(); // 芝ダ障 -> Map(性齢コード -> counts)
-    const weightAllByCt = new Map(); // 芝ダ障 -> Map(体重帯 -> counts)
-    const jockeyAll = new Map(); // 騎手キー -> counts
-    const mapOf = (m, k) => m.get(k) || (m.set(k, new Map()), m.get(k));
+  // 全競馬場の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、初めて必要になったときに
+  // 種類ごとに数える(2026-10-14: 4種類まとめて数えると本番の6.3万騎乗で約14ミリ秒かかったため、要る種類だけにした)。
+  //   numberAllByCt / sexAllByCt / weightAllByCt: 芝ダ障 -> Map(馬番帯 / 性齢コード / 体重帯 -> counts)、jockeyAll: 騎手キー -> counts
+  const allCounts = {};
+  const allOf = (kind) => {
+    if (allCounts[kind]) return allCounts[kind];
+    const out = new Map();
+    const S = LINEUP_STRIDE;
     for (const r of lineups) {
-      if (!r.lineup) continue;
-      const nm = mapOf(numberAllByCt, r.course_type), sm = mapOf(sexAllByCt, r.course_type), wm = mapOf(weightAllByCt, r.course_type);
-      for (const [hn, jockey, pos, sa, wb] of r.lineup) {
-        if (hn > 0) addRide(nm, numberGroupOf(hn), pos);
-        if (sa) addRide(sm, sa, pos);
-        if (wb) addRide(wm, wb, pos);
-        const jk = keyOf(jockey);
-        if (jk) addRide(jockeyAll, jk, pos);
+      const flat = r.flat;
+      if (!flat) continue;
+      if (kind === "jockeyAll") {
+        const jk = keysOfDict(r.dict);
+        for (let i = 0; i < flat.length; i += S) {
+          const ji = flat[i + 1];
+          if (ji >= 0 && jk[ji]) addRide(out, jk[ji], flat[i + 2]);
+        }
+        continue;
+      }
+      let m = out.get(r.course_type);
+      if (!m) out.set(r.course_type, (m = new Map()));
+      for (let i = 0; i < flat.length; i += S) {
+        const k = kind === "numberAllByCt" ? (flat[i] > 0 ? numberGroupOf(flat[i]) : 0) : kind === "sexAllByCt" ? flat[i + 3] : flat[i + 4];
+        if (k) addRide(m, k, flat[i + 2]);
       }
     }
-    return (allCounts = { numberAllByCt, sexAllByCt, weightAllByCt, jockeyAll });
+    return (allCounts[kind] = out);
   };
 
   // 芝ダ障・距離ごとの勝ちタイム(補正値と平均)
@@ -238,13 +251,19 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
   const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
 
   // 馬番・騎手: 同コース・同場(芝ダ障が同じ)の成績(このレースより前)
+  // 騎手は今回乗る騎手だけ数え、平均用に全騎乗の合計を別に数える(2026-10-14 CPU時間対策。結果は同じ)
   const numCourse = new Map(), numTrack = new Map(), jkCourse = new Map(), jkTrack = new Map();
   const sexCourse = new Map(), sexTrack = new Map(), wtCourse = new Map(), wtTrack = new Map();
+  const runnerJk = new Set(runners.map((h) => ctx.keyOf(h.jockey)).filter(Boolean));
+  const jkTotal = { course: newCounts(), track: newCounts() };
+  const addTotal = (c, pos) => { c.rides++; if (pos === 1) c.first++; if (pos >= 1 && pos <= 3) c.show++; };
+  const S = LINEUP_STRIDE;
   for (const r of ctx.byTrackCt.get(`${race.track}|${race.course_type}`) || []) {
     if (r.race_date >= date) continue;
     const same = r.distance === Number(race.distance);
-    for (const [hn, jockey, pos, sa, wb] of r.lineup) {
-      const jk = ctx.keyOf(jockey);
+    const flat = r.flat;
+    for (let i = 0; i < flat.length; i += S) {
+      const hn = flat[i], ji = flat[i + 1], pos = flat[i + 2], sa = flat[i + 3], wb = flat[i + 4];
       if (hn > 0) {
         const g = numberGroupOf(hn);
         addRide(numTrack, g, pos);
@@ -258,9 +277,14 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
         addRide(wtTrack, wb, pos);
         if (same) addRide(wtCourse, wb, pos);
       }
+      const jk = ji >= 0 ? r.jk[ji] : "";
       if (jk) {
-        addRide(jkTrack, jk, pos);
-        if (same) addRide(jkCourse, jk, pos);
+        addTotal(jkTotal.track, pos);
+        if (same) addTotal(jkTotal.course, pos);
+        if (runnerJk.has(jk)) {
+          addRide(jkTrack, jk, pos);
+          if (same) addRide(jkCourse, jk, pos);
+        }
       }
     }
   }
@@ -268,7 +292,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
   const groupRate = (k, course, track, allKey) => {
     let c = course.get(k), scope = "course";
     if (!c || c.rides < NUMBER_MIN_RIDES) { c = track.get(k); scope = "track"; }
-    if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf()[allKey].get(race.course_type) || new Map()).get(k); scope = "all"; }
+    if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf(allKey).get(race.course_type) || new Map()).get(k); scope = "all"; }
     return c && c.rides ? { show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope } : null;
   };
   const numberList = [], sexList = [], weightList = [];
@@ -292,20 +316,21 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
     if (r) weightList.push({ key: x.key, ...r, wb, kg: x.bodyWeight });
   }
   // 騎手: 段ごとの平均(そのコース等の全騎乗の複勝率・単勝率)に、騎乗が少ないほど寄せる
-  const avgOf = (m) => {
-    let rides = 0, show = 0, first = 0;
-    for (const c of m.values()) { rides += c.rides; show += c.show; first += c.first; }
-    return { show: rides ? show / rides : 0, win: rides ? first / rides : 0 };
+  const avgOf = (c) => ({ show: c.rides ? c.show / c.rides : 0, win: c.rides ? c.first / c.rides : 0 });
+  const jkAvg = { course: avgOf(jkTotal.course), track: avgOf(jkTotal.track) };
+  const jkAllAvg = () => {
+    if (jkAvg.all) return jkAvg.all;
+    const t = newCounts();
+    for (const c of ctx.allOf("jockeyAll").values()) { t.rides += c.rides; t.show += c.show; t.first += c.first; }
+    return (jkAvg.all = avgOf(t));
   };
-  const jkAvg = { course: avgOf(jkCourse), track: avgOf(jkTrack) };
-  const jkAllAvg = () => jkAvg.all || (jkAvg.all = avgOf(ctx.allOf().jockeyAll));
   const jockeyList = [];
   for (const h of runners) {
     const jk = ctx.keyOf(h.jockey);
     if (!jk) continue;
     let c = jkCourse.get(jk), scope = "course";
     if (!c || !c.rides) { c = jkTrack.get(jk); scope = "track"; }
-    if (!c || !c.rides) { c = ctx.allOf().jockeyAll.get(jk); scope = "all"; }
+    if (!c || !c.rides) { c = ctx.allOf("jockeyAll").get(jk); scope = "all"; }
     if (!c || !c.rides) continue;
     const a = scope === "all" ? jkAllAvg() : jkAvg[scope], K = JOCKEY_PRIOR_RIDES;
     jockeyList.push({

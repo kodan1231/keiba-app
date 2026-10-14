@@ -89,28 +89,60 @@ function winnerTimeOf(rr) {
 //   lineup は出走した馬だけ。pos は 1/2/3(3着以内)または null(着外)。sexAgeCode・weightBand は不明なら0。
 // 2026-10-13: 読み込み(JSON の解析と展開)に約9ミリ秒かかるため、同じ実行環境で60秒使い回す(_lib/memo-cache.js)。
 // 取り込みの反映は最大60秒遅れる。戻り値の配列・要素は書き換えないこと(使い回すため)。
+// 2026-10-14: 本番(4,667レース・6.3万騎乗)で読み込みが約15ミリ秒(解析7+展開8)になったため、lineup の展開は
+// 初めて読まれたときにレースごとに行う(LineupRace の getter)。全レースを見ない処理は、競馬場等で絞ってから .lineup を読むこと。
+// 平らな配列のまま速く数えたい処理(_lib/race-factors.js)は flat / dict / size を使う。
 export const MEMO_RACE_LINEUPS = "race_lineups";
+export { LINEUP_STRIDE };
 export function getRaceLineups(db) {
   return memoized(MEMO_RACE_LINEUPS, async () => {
     const chunks = await loadRangeChunks(db, "race_lineup_cache", buildLineupChunks, { version: LINEUP_CACHE_VERSION });
     const out = [];
-    for (const c of chunks) for (const x of c.r || []) out.push(expandRace(x, c.j || []));
+    for (const c of chunks) {
+      const dict = c.j || [];
+      for (const x of c.r || []) out.push(new LineupRace(x, dict));
+    }
     return out;
   }, 60 * 1000);
 }
 
-function expandRace(x, dict) {
-  const [id, race_date, track, course_type, distance, tan, umaren, flat, win_time, track_condition, race_class] = x;
-  let lineup = null;
-  if (Array.isArray(flat)) {
-    lineup = [];
-    for (let i = 0; i < flat.length; i += LINEUP_STRIDE) {
-      const ji = flat[i + 1];
-      lineup.push([flat[i] || null, ji >= 0 ? dict[ji] : null, flat[i + 2] || null, flat[i + 3] || 0, flat[i + 4] || 0]);
-    }
+// 1レース分。lineup は読まれたときに展開して持つ。
+//   flat: [馬番, 騎手の辞書番号, 着順(1〜3、着外0), 性齢コード, 馬体重帯] の繰り返し(LINEUP_STRIDE ずつ)か null
+//   dict: 騎手名の辞書(同じ範囲のレースで共有する配列)、size: 出走した頭数(flat が無ければ0)
+class LineupRace {
+  constructor(x, dict) {
+    const [id, race_date, track, course_type, distance, tan, umaren, flat, win_time, track_condition, race_class] = x;
+    this.id = id;
+    this.race_date = race_date;
+    this.track = track;
+    this.course_type = course_type;
+    this.distance = distance;
+    this.tan = tan;
+    this.umaren = umaren;
+    this.win_time = win_time ?? null;
+    this.track_condition = track_condition ?? null;
+    this.race_class = race_class ?? null;
+    this.flat = Array.isArray(flat) ? flat : null;
+    this.dict = dict;
+    this.size = this.flat ? this.flat.length / LINEUP_STRIDE : 0;
+    this._lineup = undefined;
   }
-  return { id, race_date, track, course_type, distance, tan, umaren, lineup,
-    win_time: win_time ?? null, track_condition: track_condition ?? null, race_class: race_class ?? null };
+
+  // [[horse_number, jockey, pos, sexAgeCode, weightBand], ...] | null
+  get lineup() {
+    if (this._lineup !== undefined) return this._lineup;
+    const flat = this.flat;
+    let lineup = null;
+    if (flat) {
+      const dict = this.dict;
+      lineup = [];
+      for (let i = 0; i < flat.length; i += LINEUP_STRIDE) {
+        const ji = flat[i + 1];
+        lineup.push([flat[i] || null, ji >= 0 ? dict[ji] : null, flat[i + 2] || null, flat[i + 3] || 0, flat[i + 4] || 0]);
+      }
+    }
+    return (this._lineup = lineup);
+  }
 }
 
 // 指定した範囲(null は全件)のレースを読み、範囲ごとの payload({ j, r })にする。

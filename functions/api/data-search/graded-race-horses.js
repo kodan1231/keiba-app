@@ -174,13 +174,14 @@ export async function onRequestGet(context) {
   const entryJockeyKeys = new Set(entries.map((e) => gradedJockeyKey(e.jockey)).filter(Boolean));
   const jockeyCourse = new Map();
   for (const r of lineups) {
+    // .lineup は読んだときに展開されるので、コースで絞ってから読む(2026-10-14 CPU時間対策)
     if (
-      !r.lineup ||
-      Number(r.id) === raceId ||
-      !(String(r.race_date) < String(target.race_date)) ||
       r.track !== target.track ||
       r.course_type !== target.course_type ||
-      Number(r.distance) !== Number(target.distance)
+      Number(r.distance) !== Number(target.distance) ||
+      Number(r.id) === raceId ||
+      !(String(r.race_date) < String(target.race_date)) ||
+      !r.lineup
     ) continue;
     for (const [, jockey, pos] of r.lineup) {
       const jk = gradedJockeyKey(jockey);
@@ -199,7 +200,7 @@ export async function onRequestGet(context) {
         if (!race) return null;
         // 出走頭数: 集計用キャッシュの出走馬一覧(出走した馬だけ)の頭数。無ければ出走表の頭数(2026-10-07〜)
         const lu = lineupById.get(Number(race.id));
-        const fieldSize = lu && lu.lineup && lu.lineup.length ? lu.lineup.length : Number(race.entry_count) || null;
+        const fieldSize = lu && lu.size ? lu.size : Number(race.entry_count) || null;
         return {
           race_id: race.id,
           race_date: race.race_date,
