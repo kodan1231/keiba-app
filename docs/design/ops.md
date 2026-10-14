@@ -83,9 +83,10 @@ D1 の1日の上限(読み取り500万行・書き込み10万行。アカウン�
 1. Cloudflare ダッシュボード → 右上のアカウント →「プロフィール」→「API トークン」→「トークンを作成」→「カスタムトークン」
 2. 権限: 「アカウント」「Account Analytics」「読み取り」と、「アカウント」「D1」「読み取り」(データベース名の表示用)。
    アカウントリソース: このアカウントのみ
-3. 作成したトークンを、Pages プロジェクト keiba-yosou-app の「設定」→「変数とシークレット」に、
-   名前 `CF_ANALYTICS_TOKEN`・種類「シークレット」で登録する(または `npx wrangler pages secret put CF_ANALYTICS_TOKEN --project-name keiba-yosou-app`)
-4. 再デプロイ後、管理画面に使用量が出る(未設定なら設定の案内が出る)
+3. 作成したトークン(40文字前後。作成直後の画面でしか見られない)を、Pages プロジェクト **keiba-admin**(2026-10-14 から管理画面は
+   管理者用アプリ。docs/design/app-split.md。それまでは keiba-yosou-app)の「設定」→「変数とシークレット」に、
+   名前 `CF_ANALYTICS_TOKEN`・種類「シークレット」で登録する(または `npx wrangler pages secret put CF_ANALYTICS_TOKEN --project-name keiba-admin`)
+4. 再デプロイ(管理画面の keiba-admin →「デプロイ」→ 最新の「デプロイを再試行」、または push)後、管理画面に使用量が出る(未設定なら設定の案内が出る)
 
 管理画面の「D1の使用量(今日)」には、このアプリの重い問い合わせ(今日の読み取り行数の多い順に10件。回数・1回あたりの行数)も出す
 (新しく入れた処理が想定外に重くないかの確認用。CLAUDE.md「D1の問い合わせを足す・変えるときの必須チェック」)。
