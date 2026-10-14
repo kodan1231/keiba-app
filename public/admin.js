@@ -1053,6 +1053,19 @@ function paceAdjustLineHtml(a) {
     </div></div>`;
 }
 
+// 評価点の成績の表示(並びの一致〈2026-10-14〜〉があればそれ、古い結果は軸の3着以内の数)
+function paceAdjustStatText(best, base) {
+  const p = (v) => `${(v * 100).toFixed(1)}%`;
+  if (best?.agree != null && base?.agree != null) return `並びの一致 ${p(best.agree)}(既定値なら ${p(base.agree)})`;
+  return `軸3着以内${best?.show}回(既定値なら${base?.show}回)`;
+}
+
+// 最後に「評価点の既定値」を自動で計算した結果(設定の adjust_auto)の1行
+function paceAdjustAutoText(a) {
+  if (!a) return "まだ自動で計算していません";
+  return `最後の自動計算: ${formatDateTime(a.computed_at)} ${a.races}レース → ${paceAdjustText(a.values)}。${paceAdjustStatText(a.best, a.base)}`;
+}
+
 function paceAdjustReadInputs(container) {
   const out = {};
   for (const input of container.querySelectorAll("input[data-akey]")) out[input.dataset.akey] = Number(input.value === "" ? input.placeholder : input.value);
@@ -1091,7 +1104,7 @@ function paceAutoSummaryText(detail) {
     const paces = PACE_W_TYPES.filter(([p]) => detail.by_pace?.[p])
       .map(([p, label]) => `${label}${detail.by_pace[p].races}レース: ${ta(detail.by_pace[p].best)}・${tp(pt.by_pace?.[p]?.best)}`).join(" / ");
     // 評価点(2026-10-14): 選んだ値と、既定の評価点のときとの軸の成績の比較
-    const adj = detail.adjust ? `。評価点 ${paceAdjustText(detail.adjust)}(${ta(detail.adjust.best)}回。既定値なら ${ta(detail.adjust.base)})` : "";
+    const adj = detail.adjust ? `。評価点 ${paceAdjustText(detail.adjust)}(${paceAdjustStatText(detail.adjust.best, detail.adjust.base)})` : "";
     return `${detail.races}レース分 ${ta(detail.best)}・${tp(pt.best)}回(均等なら ${ta(detail.equal)}・${tp(pt.equal)})${paces ? `。${paces}` : ""}${adj}`;
   }
   if (!s) return "";
@@ -1198,8 +1211,9 @@ async function loadPaceWeights() {
       <span class="pace-w-admin-title">評価点の既定値</span>
       ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${paceAdjustDefault[k]}">点</label>`).join("")}
       <button type="button" class="ghost-btn" id="pace-adjust-default-save">保存</button>
-      <button type="button" class="ghost-btn" id="pace-adjust-default-auto" title="全コースの直近1年(最大600レース)から評価点を選び、入力欄に入れます(保存は別)">自動で計算</button>
+      <button type="button" class="ghost-btn" id="pace-adjust-default-auto" title="全コースの直近1年(最大600レース)から評価点を選び、そのまま保存します">自動で計算</button>
     </div>
+    <p class="ticket-sub" id="pace-adjust-auto-info">${escapeHtml(paceAdjustAutoText(data.score_settings?.adjust_auto))}</p>
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
     ${paceWeightsLinesHtml(data.default, data.builtin)}
     ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}`;
@@ -1226,11 +1240,12 @@ async function loadPaceWeights() {
 }
 
 // 評価点の既定値を自動で出す(2026-10-14。docs/design/screens.md「評価点の既定値の自動計算」): 全コースの直近1年から最大600レースを
-// 採点し(GET /api/admin/pace-backtest?kind=all)、比率と同じ計算(public/pace-search.js)で評価点を選ぶ。結果は入力欄に入れるだけで、
-// 保存は「保存」を押したとき。前年の同レース(重賞だけの項目)はこの計算では選べないので、今の値のまま。
+// 採点し(GET /api/admin/pace-backtest?kind=all)、比率と同じ計算(public/pace-search.js)で評価点を選ぶ。選んだ値をそのまま既定値として保存し、
+// 計算の結果(日時・レース数・成績)も設定の adjust_auto に保存して入力欄の下に出す(2026-10-14 ユーザー要望。以前は入力欄に入れるだけで、
+// 保存し忘れや一覧の読み直しで消えていた)。前年の同レース(重賞だけの項目)はこの計算では選べないので、今の値のまま。
 // D1: 1回の計算全体で約16万行を読む(1日の上限の約3%)。
 async function paceAdjustDefaultAuto(btn) {
-  if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値を計算します(約16万行を読みます。1〜2分かかります)。実行しますか？"))) return;
+  if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値を計算し、そのまま保存します(約12万行を読みます。1〜2分かかります)。実行しますか？"))) return;
   const label = btn.textContent;
   btn.disabled = true;
   try {
@@ -1245,15 +1260,17 @@ async function paceAdjustDefaultAuto(btn) {
       paceWeightsMsg(`計算できませんでした: ${result.error || "評価点を選べませんでした"}`, false);
       return;
     }
-    const box = document.getElementById("pace-adjust-default");
-    for (const k of ["first_distance", "first_track", "same_jockey"]) {
-      const input = box?.querySelector(`input[data-akey="${k}"]`);
-      if (input) input.value = result.adjust[k];
-    }
     const d = result.detail.adjust;
     const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey };
-    paceWeightsMsg(`${result.detail.races}レースで計算しました: ${paceAdjustText(pick)}(軸3着以内${d.best.show}回。既定値のままなら${d.base.show}回)。`
-      + "入力欄に入れました。よければ「保存」を押してください(前年の同レースは重賞だけの項目のため変えていません)", true);
+    // 前年の同レースは今の既定値のまま、3つだけ置き換えて保存する
+    const saved = await paceWeightsRequest("/api/admin/pace-weights/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adjust: { ...paceAdjustDefault, ...pick },
+        adjust_auto: { computed_at: new Date().toISOString(), races: result.detail.races, values: pick, best: d.best, base: d.base },
+      }),
+    }, `${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`);
+    if (!saved) paceWeightsMsg("計算はできましたが、保存に失敗しました", false);
   } catch (e) {
     paceWeightsMsg(`計算できませんでした: ${e.message}`, false);
   } finally {

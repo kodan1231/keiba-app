@@ -64,7 +64,7 @@ export async function paceJobStep(db) {
     const finished = offset >= chunk.total || !chunk.races.length;
     let phase = "score", state = null;
     if (finished) {
-      const s = startPaceSearch(races);
+      const s = startPaceSearch(races, { baseAdjust: (await getPaceScoreSettings(db)).adjust });
       if (s.error) {
         await dropJob(db, job.kind, job.key);
         await dropQueue(db, job.kind, job.key);
@@ -81,7 +81,7 @@ export async function paceJobStep(db) {
   // 比率選びを1段
   let state = null;
   try { state = JSON.parse(job.state || "null"); } catch { state = null; }
-  if (!state) state = startPaceSearch(races);
+  if (!state) state = startPaceSearch(races, { baseAdjust: (await getPaceScoreSettings(db)).adjust });
   const r = stepPaceSearch(races, state);
   if (!r.done) {
     await db.prepare("UPDATE pace_jobs SET state = ?, updated_at = ? WHERE kind = ? AND key = ?").bind(JSON.stringify(r.state), now, job.kind, job.key).run();
