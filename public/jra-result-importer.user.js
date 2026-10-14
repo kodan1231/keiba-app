@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         馬券帳 - JRAレース結果インポート
 // @namespace    keiba-yosou-app
-// @version      1.0.1
+// @version      1.1.0
 // @description  JRAレース結果ページを開いたら、ボタン1つで馬券帳へ結果を送信する(印刷してPDF保存してアプリへアップロードする手間を省く)。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
 // @match        https://sp.jra.jp/JRADB/accessS.html*
-// @require      https://keiba-yosou-app.pages.dev/jra-result-html.js
-// @connect      keiba-yosou-app.pages.dev
+// @require      https://keiba-admin.pages.dev/jra-result-html.js
+// @connect      keiba-admin.pages.dev
 // @grant        GM_xmlhttpRequest
 // @grant        GM.setValue
 // @grant        GM.getValue
@@ -35,7 +35,8 @@
 (function () {
   "use strict";
 
-  const APP_BASE_URL = "https://keiba-yosou-app.pages.dev";
+  // 2026-10-14: 取り込みは管理者用アプリ(keiba-admin)だけになった(docs/design/app-split.md)
+  const APP_BASE_URL = "https://keiba-admin.pages.dev";
   const TOKEN_KEY = "keiba_app_api_token";
 
   async function getToken() {

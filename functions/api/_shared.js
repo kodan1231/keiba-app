@@ -41,3 +41,4 @@ export * from "./_lib/race-factors.js";
 export * from "./_lib/pace-settings.js";
 export * from "./_lib/guest.js";
 export * from "./_lib/pace-queue.js";
+export * from "./_lib/app-role.js";

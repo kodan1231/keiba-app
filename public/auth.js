@@ -23,9 +23,12 @@ window.currentUser = { username: null, isAdmin: false, isGuest: false, passwordR
 // ゲスト(ゲスト用URLから入った閲覧専用の利用者。2026-10-14。docs/design/guest.md)が見られる画面(body の data-page)
 const GUEST_PAGES = ["guest", "data-search"];
 const GUEST_ERROR_TEXT = {
-  guest_invalid: "このURLは使えなくなりました。URLを教えてくれた人に新しいURLを確認してください。",
+  // 2026-10-14: 合言葉を廃止し、データ検索用アプリ(keiba-search)は公開中なら誰でも見られる。使えないのは公開を止めたとき
+  guest_invalid: "現在、公開を停止しています。",
   guest_blocked: "この端末からは利用できません。",
 };
+// 管理者用アプリ(keiba-admin)に管理者以外でログインしたとき(2026-10-14。docs/design/app-split.md)
+const ADMIN_ONLY_TEXT = "管理者のアカウントでログインしてください。";
 
 function setupAuth(onReady) {
   const loginScreen = document.getElementById("login-screen");
@@ -40,6 +43,8 @@ function setupAuth(onReady) {
   const modeHint = document.getElementById("login-mode-hint");
 
   let mode = "login"; // "login" | "register"
+  // 管理者用アプリでは新規登録を出さない(アカウントは予想・擬似購入用アプリで作る。2026-10-14)
+  if (modeToggle && typeof currentAppRole === "function" && currentAppRole() === "admin") modeToggle.hidden = true;
 
   function applyMode() {
     if (!submitBtn || !modeToggle) return;
@@ -94,7 +99,13 @@ function setupAuth(onReady) {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         window.currentUser.username = data.username || username;
-        await refreshCurrentUser();
+        const ok = await refreshCurrentUser();
+        if (!ok && lastAuthError === "admin_only") {
+          await fetch("/api/auth/logout", { method: "POST" });
+          loginError.textContent = ADMIN_ONLY_TEXT;
+          loginError.hidden = false;
+          return;
+        }
         showApp();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -170,6 +181,11 @@ function setupAuth(onReady) {
         return;
       }
       showApp();
+    } else if (lastAuthError === "admin_only") {
+      await fetch("/api/auth/logout", { method: "POST" });
+      showLogin();
+      const err = document.getElementById("login-error");
+      if (err) { err.textContent = ADMIN_ONLY_TEXT; err.hidden = false; }
     } else if (GUEST_ERROR_TEXT[lastAuthError]) {
       loginScreen.innerHTML = `<div class="ticket"><h1 class="ticket-title">馬券帳</h1><p class="ticket-sub">${GUEST_ERROR_TEXT[lastAuthError]}</p></div>`;
       showLogin();

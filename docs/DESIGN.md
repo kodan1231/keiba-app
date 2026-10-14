@@ -29,6 +29,7 @@
 | `docs/design/race-results.md` | `race_results`テーブル・目的/用途・スキーマ・更新ルール・取消/除外/中止の扱い・`races.entries`との役割分担 |
 | `docs/design/jockey-aliases.md` | 騎手名エイリアス(`jockey_aliases`)・対応方針の切り分け・スキーマ・正規化を適用する2経路・管理画面 |
 | `docs/design/horse-aliases.md` | 馬名エイリアス(`horse_aliases`)・突き合わせキー(NFKC+空白除去)・正規化を適用する経路・`horse_notes`衝突扱い・管理画面「登録馬一覧」(50音行+検索) |
+| `docs/design/app-split.md` | **アプリの入口の分離**(予想・擬似購入用 / データ検索用 / 管理者用。URLごとの画面・API・ログインの振り分け。2026-10-14) |
 | `docs/design/auth-multiuser.md` | 認証・複数ユーザー対応(管理者判定・セッション・所有者user_id・共有データ`races`) |
 | `docs/design/data-flow.md` | データフロー(通常購入/CSV取込/PDF取込 → 各テーブル) |
 | `docs/design/csv-import.md` | CSV取込の仕様・着順/払戻レートの反映・確定扱いの統一・「馬／組番」列の解析 |

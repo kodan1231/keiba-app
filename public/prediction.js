@@ -429,7 +429,7 @@ function renderRaceHeader() {
       <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
       ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
-      ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
+      ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="${appUrl("search", `data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}`)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
       ${selectedRace.graded && !GUEST_VIEW ? `<button type="button" id="graded-memo-btn" class="race-cond-badge graded-memo-btn ${gradedNotesHaveMemo() ? "has-memo" : ""}" title="この重賞の年ごとのメモ(予想の根拠・結果の振り返り。自分だけに表示)">重賞メモ</button>` : ""}
     </div>
     <span id="prediction-message" class="submit-message" hidden></span>

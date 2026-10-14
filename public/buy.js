@@ -213,7 +213,7 @@ function renderGradedDayList(day) {
     ${graded.map(r => {
       const g = r.graded;
       const grade = `${g.is_jump ? "J" : ""}${g.grade || ""}`;
-      return `<a class="graded-day-item" href="data-search.html?graded=${encodeURIComponent(g.id)}" target="_blank" rel="noopener" title="データ検索「重賞検索」で過去10年の成績を別タブで開きます">
+      return `<a class="graded-day-item" href="${appUrl("search", `data-search.html?graded=${encodeURIComponent(g.id)}`)}" target="_blank" rel="noopener" title="データ検索「重賞検索」で過去10年の成績を別タブで開きます">
         <span class="graded-day-grade">${escapeHtml(grade)}</span>
         <span class="graded-day-name">${escapeHtml(g.name)}</span>
         <span class="graded-day-where">${escapeHtml(r.track)}${r.race_number}R</span>

@@ -149,6 +149,27 @@ async function fetchRaceIndex({ guestView = false } = {}) {
   });
 }
 
+// アプリの入口の分離(2026-10-14。docs/design/app-split.md。サーバー側は functions/api/_lib/app-role.js と同じURL・判定)。
+// 予想・擬似購入用(main)・データ検索用(search)・管理者用(admin)。手元(localhost 等)は分けない("all")
+const APP_URLS = {
+  main: "https://keiba-yosou-app.pages.dev",
+  search: "https://keiba-search.pages.dev",
+  admin: "https://keiba-admin.pages.dev",
+};
+function currentAppRole() {
+  const h = location.hostname;
+  const is = (name) => h === `${name}.pages.dev` || h.endsWith(`.${name}.pages.dev`);
+  if (is("keiba-search")) return "search";
+  if (is("keiba-admin")) return "admin";
+  if (is("keiba-yosou-app")) return "main";
+  return "all";
+}
+// 別のアプリの画面へのリンク。同じアプリ(または手元)ならそのままの相対パス
+function appUrl(app, path) {
+  const role = currentAppRole();
+  return role === "all" || role === app ? path : `${APP_URLS[app]}/${path}`;
+}
+
 // 競馬場の表示順(中央4場 → 中央ローカル6場 → 南関東4場 → その他地方。いずれも東から)。
 // buy.js の RACE_TRACK_ORDER と同じ並び(buy.js はデータ検索画面で読み込まれないため、
 // 全画面共通の utils.js にも置いた。名前の衝突を避けて別名にしている。2026-10-03)。

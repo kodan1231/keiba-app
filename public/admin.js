@@ -1555,15 +1555,15 @@ async function loadGuestAdmin() {
   if (!res.ok) { box.innerHTML = `<p class="ticket-sub">読み込みに失敗しました</p>`; return; }
   const data = await res.json();
   const s = data.settings || {};
-  const url = s.path ? `${location.origin}${s.path}` : "";
+  // 2026-10-14: 合言葉を廃止し、データ検索用アプリ(keiba-search)の今週のレースのURLを出す(docs/design/app-split.md)
+  const url = `${APP_URLS.search}/guest`;
   box.innerHTML = `
     <p><label><input type="checkbox" id="guest-enabled" ${s.enabled ? "checked" : ""} /> ゲスト閲覧を公開する</label></p>
     ${s.enabled && url ? `
       <p class="guest-url" id="guest-url">${escapeHtml(url)}</p>
       <div class="row-actions">
         <button type="button" class="ghost-btn" id="guest-copy-btn">URLをコピー</button>
-        <button type="button" class="ghost-btn" id="guest-regenerate-btn">URLを作り直す</button>
-      </div>` : `<p class="ticket-sub">公開すると、ゲスト用のURLがここに出ます。</p>`}
+      </div>` : `<p class="ticket-sub">公開すると、データ検索用アプリ(今週のレース・データ検索)を誰でも見られるようになります。止めている間は「公開を停止しています」と出ます。</p>`}
     <p class="ticket-sub">今見られるレース: ${escapeHtml(formatDateMdW(data.window.from))} 〜 ${escapeHtml(formatDateMdW(data.window.to))} の中央のレース</p>`;
   document.getElementById("guest-enabled").addEventListener("change", (e) => {
     guestRequest("PUT", { enabled: e.target.checked }, e.target.checked ? "公開しました" : "公開を止めました");
@@ -1571,10 +1571,7 @@ async function loadGuestAdmin() {
   document.getElementById("guest-copy-btn")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(url); guestMsg("コピーしました", true); } catch { guestMsg("コピーできませんでした。URLを選択してコピーしてください", false); }
   });
-  document.getElementById("guest-regenerate-btn")?.addEventListener("click", () => {
-    if (!confirm("URLを作り直しますか?(古いURLと、そこから入った端末は使えなくなります)")) return;
-    guestRequest("POST", { action: "regenerate" }, "URLを作り直しました");
-  });
+  // 「URLを作り直す」は合言葉の廃止(2026-10-14)で外した(端末の止め方はブロック)
 
   const devices = data.devices || [];
   table.innerHTML = devices.length ? `

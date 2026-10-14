@@ -583,7 +583,7 @@ function grResultTableHtml(rows, { full }) {
 // 別タブで開く(重賞検索の表示を残したまま直し、戻って再表示できるように)。
 function grEditLinkHtml(race) {
   if (!window.currentUser?.isAdmin || !race?.id) return "";
-  return `<a class="gr-edit-link" href="races.html?entries=${encodeURIComponent(race.id)}" target="_blank" rel="noopener">レース管理で開く</a>`;
+  return `<a class="gr-edit-link" href="${appUrl("admin", `races.html?entries=${encodeURIComponent(race.id)}`)}" target="_blank" rel="noopener">レース管理で開く</a>`;
 }
 
 function grRenderPast(data) {

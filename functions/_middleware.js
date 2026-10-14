@@ -21,13 +21,36 @@
 // Cloudflare Pagesの標準挙動(「/」には index.html を返す)がそのまま働き、
 // 追加のリダイレクト処理は一切不要になった。詳細はdocs/DESIGN.md
 // 「トップページ(/)の表示について」参照。
-import { verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse, resolveGuest } from "./api/_shared.js";
+import {
+  verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse, resolveGuest,
+  appRoleOf, pageRedirect, blockedOnMain, adminPublicApi, notFoundJson, readGuestCookie, createGuestCookie, getGuestSettings, randomToken,
+} from "./api/_shared.js";
+
+// アプリの入口の分離(2026-10-14。_lib/app-role.js・docs/design/app-split.md)。
+// どのURLで来たか(role)で、画面の振り分け・使えるAPI・ログインの扱いを変える。
+//   main: ログイン要。管理・取り込み・データ検索(予想登録画面の2つを除く)の API は 404。ゲストの Cookie は見ない
+//   search: ログイン不要。ログインの Cookie・トークンは見ず、全員ゲスト(使える API は _lib/guest.js の GUEST_API_RULES)。
+//           画面を開いたときにゲストの Cookie(kbg)が無ければ渡す(合言葉は廃止)。検索エンジンには載せない
+//   admin: 管理者だけ。ログイン・ログアウト以外の API は管理者でなければ 403(admin_only)。新規登録は不可
+//   all: 手元の開発用(以前と同じ)
 
 export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
+  const role = appRoleOf(url, env);
+  context.data.appRole = role;
 
   const isApi = url.pathname.startsWith("/api/");
+
+  if (!isApi) {
+    const moved = pageRedirect(role, url);
+    if (moved) return moved;
+    if (role === "search") return searchPage(context, url);
+    return next();
+  }
+  if (role === "main" && blockedOnMain(request, url)) return notFoundJson();
+  if (role === "search") return searchApi(context, url);
+
   // logout はセッション内容を一切参照せず常にCookieクリアを返すだけ(logout.js 参照)。
   // 認証チェックを通すと、セッション切れ状態で「退場」を押したとき401で弾かれ
   // Set-Cookie(Max-Age=0)まで到達しないため、未認証でも通す。
@@ -39,6 +62,7 @@ export async function onRequest(context) {
   // 定時起動(workers/pace-cron)からの呼び出し(2026-10-14): ログインの代わりに秘密情報 PACE_CRON_SECRET で確かめる。
   // /api/cron/ の下だけ。秘密情報が設定されていない・違うときは 401。
   if (url.pathname.startsWith("/api/cron/")) {
+    if (role === "main") return notFoundJson(); // 夜間計算の受け口は管理者用アプリだけ
     const secret = request.headers.get("X-Cron-Secret") || "";
     if (!env.PACE_CRON_SECRET || secret !== env.PACE_CRON_SECRET) {
       return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
@@ -47,7 +71,10 @@ export async function onRequest(context) {
     return next();
   }
 
-  if (isApi && !isPublicAuthRoute) {
+  if (role === "admin" && url.pathname === "/api/auth/register") return notFoundJson();
+  const isPublic = role === "admin" ? adminPublicApi(url) : isPublicAuthRoute;
+
+  if (isApi && !isPublic) {
     if (!env.APP_PASSWORD) {
       return new Response(
         JSON.stringify({ error: "サーバー側にAPP_PASSWORDが設定されていません" }),
@@ -70,8 +97,9 @@ export async function onRequest(context) {
 
     // ゲスト閲覧(2026-10-14。_lib/guest.js・docs/design/guest.md): ログインしていなくても、ゲスト用URLで渡した
     // Cookie(kbg)があれば、決まった読み取りのAPIだけ通す。ログインしている人はセッションを優先する。
+    // 2026-10-14: ゲストはデータ検索用アプリ(search。下の searchApi)だけ。main・admin ではゲストの Cookie を見ない(手元の all は以前どおり)
     let guest = null;
-    if (!session) {
+    if (!session && role === "all") {
       guest = await resolveGuest(context);
       if (guest instanceof Response) return guest;
     }
@@ -92,6 +120,10 @@ export async function onRequest(context) {
       context.data.userId = session.userId;
       context.data.username = session.username;
       context.data.isAdmin = isAdminUsername(env, session.username);
+      // 管理者用アプリは管理者だけ(画面はログイン画面に戻し「管理者のアカウントで」と出す。public/auth.js)
+      if (role === "admin" && !context.data.isAdmin) {
+        return new Response(JSON.stringify({ error: "admin_only" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
     }
 
     // D1 の使用量が増えたときの重い機能の自動一時停止(2026-10-08。_lib/service-guard.js)。
@@ -105,4 +137,50 @@ export async function onRequest(context) {
   }
 
   return next();
+}
+
+// ---- データ検索用アプリ(search) ----
+const NO_INDEX = "noindex, nofollow";
+
+// 画面: ゲストの Cookie(今の版)が無ければ渡す(DB には書かない。端末の行はAPIを使ったときに _lib/guest.js の recordGuestAccess が作る)。
+// 検索エンジンには載せない(robots.txt と X-Robots-Tag)
+async function searchPage(context, url) {
+  const { request, env, next } = context;
+  if (url.pathname === "/robots.txt") {
+    return new Response("User-agent: *\nDisallow: /\n", { headers: { "Content-Type": "text/plain", "X-Robots-Tag": NO_INDEX } });
+  }
+  const res = await next();
+  const out = new Response(res.body, res);
+  out.headers.set("X-Robots-Tag", NO_INDEX);
+  if (/\.html$|^\/[a-z-]*$/.test(url.pathname) && env.APP_PASSWORD) {
+    const settings = await getGuestSettings(env.DB);
+    const cookie = await readGuestCookie(env, request.headers.get("Cookie"));
+    if (settings.enabled && (!cookie || cookie.version !== settings.version)) {
+      out.headers.append("Set-Cookie", await createGuestCookie(env, cookie?.deviceId || randomToken(16), settings.version));
+    }
+  }
+  return out;
+}
+
+// API: 全員ゲスト(ログインの Cookie・トークンは見ない)。ログイン・登録・夜間計算は無い
+async function searchApi(context, url) {
+  if (url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/auth/check") return notFoundJson();
+  if (url.pathname.startsWith("/api/cron/")) return notFoundJson();
+  const guest = await resolveGuest(context);
+  if (guest instanceof Response) return guest;
+  if (!guest) {
+    return new Response(JSON.stringify({ error: "guest_invalid" }), { status: 401, headers: { "Content-Type": "application/json" } });
+  }
+  context.data.isGuest = true;
+  context.data.guestDeviceId = guest.deviceId;
+  context.data.userId = null;
+  context.data.username = null;
+  context.data.isAdmin = false;
+  try {
+    const guarded = await serviceGuardResponse(context);
+    if (guarded) return guarded;
+  } catch (e) {
+    console.error("service guard failed (ignored)", e);
+  }
+  return context.next();
 }

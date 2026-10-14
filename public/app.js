@@ -724,7 +724,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
         .join("")}
     </div>
     ${first.imported || !(window.currentUser && window.currentUser.isAdmin) ? "" : `<div class="group-detail-actions">
-      <a href="races.html?edit=${encodeURIComponent(first.race_id)}" class="ghost-btn">払戻を編集(レース管理へ)</a>
+      <a href="${appUrl("admin", `races.html?edit=${encodeURIComponent(first.race_id)}`)}" class="ghost-btn">払戻を編集(レース管理へ)</a>
     </div>`}
   `;
 

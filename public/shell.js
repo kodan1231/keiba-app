@@ -23,15 +23,19 @@
   // ログインユーザーの管理者判定に応じて表示/非表示を切り替える。
   // guestOnly: ゲスト(ゲスト用URLから入った閲覧専用の利用者。2026-10-14。docs/design/guest.md)にだけ出す。
   // guestOk: ゲストにも出す(それ以外はゲストには出さない。body.guest-mode の CSS で隠す)。
+  // app: その画面があるアプリ(2026-10-14。アプリの入口の分離。docs/design/app-split.md)。別のアプリの画面は utils.js の appUrl で
+  // そのアプリのURLへのリンクにする。roles: そのアプリ(currentAppRole)のときだけナビに出す(省略は全部。手元の "all" は全部出す)
   const NAV_ITEMS = [
-    { page: "guest", href: "guest.html", label: "今週のレース", guestOnly: true, guestOk: true },
-    { page: "buy", href: "index.html", label: "馬券購入" },
-    { page: "history", href: "history.html", label: "馬券履歴" },
-    { page: "stats", href: "stats.html", label: "集計" },
-    { page: "data-search", href: "data-search.html", label: "データ検索", guestOk: true },
-    { page: "races", href: "races.html", label: "レース管理", adminOnly: true },
-    { page: "admin", href: "admin.html", label: "管理", adminOnly: true },
+    { page: "guest", href: "guest.html", app: "search", label: "今週のレース", guestOnly: true, guestOk: true, roles: ["search"] },
+    { page: "buy", href: "index.html", app: "main", label: "馬券購入", roles: ["main"] },
+    { page: "history", href: "history.html", app: "main", label: "馬券履歴", roles: ["main"] },
+    { page: "stats", href: "stats.html", app: "main", label: "集計", roles: ["main"] },
+    { page: "data-search", href: "data-search.html", app: "search", label: "データ検索", guestOk: true, roles: ["main", "search"] },
+    { page: "races", href: "races.html", app: "admin", label: "レース管理", adminOnly: true, roles: ["main", "admin"] },
+    { page: "admin", href: "admin.html", app: "admin", label: "管理", adminOnly: true, roles: ["main", "admin"] },
+    { page: "main-home", href: "index.html", app: "main", label: "馬券帳へ", roles: ["admin"] },
   ];
+  const appRole = typeof currentAppRole === "function" ? currentAppRole() : "all";
 
   // ページ固有のヘッダーアクションボタン(かごバッジと退場ボタンの間に挿入)。
   // ボタンのidは従来のHTMLと同一。イベント登録は各ページのJS(app.js/races.js等)が
@@ -63,11 +67,13 @@
 
   const currentPage = (document.body && document.body.dataset.page) || "";
 
-  const navHtml = NAV_ITEMS.map((item) => {
+  const navHtml = NAV_ITEMS.filter((item) => (appRole === "all" ? item.page !== "main-home" : !item.roles || item.roles.includes(appRole))).map((item) => {
     const cls = "nav-link" + (item.page === currentPage ? " active" : "");
-    const adminAttr = item.adminOnly ? " data-admin-only hidden" : "";
-    const guestAttr = (item.guestOnly ? " data-guest-only hidden" : "") + (item.guestOk ? " data-guest-ok" : "");
-    return `<a href="${item.href}" class="${cls}"${adminAttr}${guestAttr}>${item.label}</a>`;
+    // 管理者用アプリでは全員が管理者なので adminOnly で隠さない
+    const adminAttr = item.adminOnly && appRole !== "admin" ? " data-admin-only hidden" : "";
+    const guestAttr = (item.guestOnly && appRole !== "search" ? " data-guest-only hidden" : "") + (item.guestOk ? " data-guest-ok" : "");
+    const href = typeof appUrl === "function" && item.app ? appUrl(item.app, item.href) : item.href;
+    return `<a href="${href}" class="${cls}"${adminAttr}${guestAttr}>${item.label}</a>`;
   }).join("");
 
   const mastheadHtml = `
