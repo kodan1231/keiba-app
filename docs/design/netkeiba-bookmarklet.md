@@ -32,8 +32,9 @@ netkeiba が Cloudflare からのアクセスを拒否しており(`docs/design/
      `{ type: "nk-page", url, html }` を送る(送り先 origin はアプリの origin に限定)
 3. レース管理画面(`public/races-netkeiba-import.js`)は、レース一覧の読み込み後(`loadRaces()` の
    `nkOnRacesLoaded()`)に opener へ `"nk-ready"` を送り、受け取ったら `public/netkeiba-html.js` で読み取る。
-   受け取るのは origin が `https://race.netkeiba.com` / `https://nar.netkeiba.com` で、かつ `url` のホストと
-   一致するメッセージだけ。HTML は `DOMParser` で読む(スクリプトは実行されない)
+   受け取るのは origin が `https://race.netkeiba.com` / `https://nar.netkeiba.com` / `https://db.netkeiba.com` /
+   `https://www.jra.go.jp` で、かつ `url` のホストと一致するメッセージだけ(`NK_ORIGINS`。2026-10-14: 過去レースの
+   `db.netkeiba.com` がこの一覧に漏れていて自動で受け取れず、毎回貼り付けになっていたため足した)。HTML は `DOMParser` で読む(スクリプトは実行されない)
 4. **予備手段**: 5秒たっても受け取れない場合(netkeiba 側の設定でタブ間のやり取りが切れている等)は、
    貼り付け欄を出す。ブックマークレットがコピーした内容を貼り付けて「読み込む」で同じ処理をする
 5. 馬券帳に未ログインならログイン画面が出る。ログイン後にレース一覧を読み込んでから受け取りを始める

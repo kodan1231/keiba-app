@@ -10,7 +10,8 @@
 // コピーした内容を貼り付けて読み込む。アプリから netkeiba へは問い合わせない。
 
 // 2026-10-10: JRA公式(PC版)の出走馬一覧・結果ページも受け取る(docs/design/netkeiba-bookmarklet.md「JRA公式ページ」)
-const NK_ORIGINS = ["https://race.netkeiba.com", "https://nar.netkeiba.com", "https://www.jra.go.jp"];
+// 2026-10-14: 過去レース(db.netkeiba.com)が漏れていて自動で受け取れず、毎回貼り付けになっていたため足した
+const NK_ORIGINS = ["https://race.netkeiba.com", "https://nar.netkeiba.com", "https://db.netkeiba.com", "https://www.jra.go.jp"];
 const JRA_ORIGIN = "https://www.jra.go.jp";
 const NK_RECEIVE_TIMEOUT_MS = 5000;
 
