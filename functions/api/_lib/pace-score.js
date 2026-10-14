@@ -14,6 +14,12 @@ import { loadJockeyAliasMapCached } from "./jockey-alias.js";
 import { getRaceTimes } from "./race-time-cache.js";
 import { FACTOR_KEYS, DEFAULT_MISSING_SCORE, ADJUST_KEYS, applyAdjust, createFactorContext, computeRaceFactors } from "./race-factors.js";
 import { parseCourseKey } from "./pace-queue.js";
+import { memoized } from "./memo-cache.js";
+
+// レース一覧(races_index_cache)を同じ実行環境で60秒使い回す(2026-10-14)。読み込み〈約90万文字の解析〉に10ミリ秒以上かかり、
+// 比率の計算で6レースずつ採点を呼ぶたびに読み直すと、それだけで無料枠のCPU時間の上限(10ミリ秒)を超えて 503 になったため
+const PACE_RACE_INDEX_MEMO_MS = 60 * 1000;
+const paceRaceIndex = (db) => memoized("pace_race_index", () => getRaceIndex(db), PACE_RACE_INDEX_MEMO_MS);
 
 export const PACE_FACTORS = FACTOR_KEYS;
 // 既定の比率(ほぼ均等)。2026-10-14 に7要素(性齢・馬体重・同コースを追加)にした。それまでは4要素とも25。public/pace-search.js と同じ
@@ -267,7 +273,7 @@ function gradedRacesByYear(allRaces, master) {
 async function gradedTargets(db, gradedRaceId) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
   if (!master) return { error: "重賞が見つかりません" };
-  const byYear = gradedRacesByYear(await getRaceIndex(db), master);
+  const byYear = gradedRacesByYear(await paceRaceIndex(db), master);
   const today = todayJst();
   const currentYear = jstYear();
   const targets = [...byYear.entries()]
@@ -287,13 +293,13 @@ export async function prevYearGradedRaceId(db, gradedRaceId, race) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
   if (!master) return null;
   const year = Number(String(race.race_date || "").slice(0, 4));
-  const p = gradedRacesByYear(await getRaceIndex(db), master).get(year - 1);
+  const p = gradedRacesByYear(await paceRaceIndex(db), master).get(year - 1);
   return p ? Number(p.id) : null;
 }
 
 // コースの直近1年(今日より前。結果のあるレース。新しい順)。races_index_cache から絞る(D1はキャッシュ約20行)
 async function courseTargets(db, course) {
-  const allRaces = await getRaceIndex(db);
+  const allRaces = await paceRaceIndex(db);
   const today = todayJst();
   const from = new Date(Date.now() + 9 * 3600 * 1000 - COURSE_PAST_DAYS * 86400000).toISOString().slice(0, 10);
   return allRaces
@@ -304,7 +310,7 @@ async function courseTargets(db, course) {
 
 // 全コースの直近1年(今日より前。結果のあるレース)から、等間隔に最大 ALL_SAMPLE_MAX レース(新しい順)
 async function allCourseTargets(db) {
-  const allRaces = await getRaceIndex(db);
+  const allRaces = await paceRaceIndex(db);
   const today = todayJst();
   const from = new Date(Date.now() + 9 * 3600 * 1000 - COURSE_PAST_DAYS * 86400000).toISOString().slice(0, 10);
   const pool = allRaces

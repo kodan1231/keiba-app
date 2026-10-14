@@ -9,15 +9,32 @@
 const PACE_RUNNER_SKIP_DAYS = 7;
 let paceRunnerBusy = false;
 
+// 採点(GET /api/admin/pace-backtest)を1回受け取る。サーバーの1回の処理が無料枠のCPU時間を超えると 503 等になるため、
+// 失敗したら1回で採点するレース数を減らして(6 → 3 → 1 → 1)少し待ってやり直す(2026-10-14)。入力の誤り(4xx)はやり直さない。
+// 管理画面(admin.js)の「今すぐ計算」「評価点の既定値の自動で計算」からも使う。
+const PACE_FETCH_LIMITS = [6, 3, 1, 1];
+async function paceFetchBacktestChunk(kind, key, offset) {
+  let lastError = null;
+  for (let i = 0; i < PACE_FETCH_LIMITS.length; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 1000 * i));
+    try {
+      const res = await authedFetch(`/api/admin/pace-backtest?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}&offset=${offset}&limit=${PACE_FETCH_LIMITS[i]}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) return data;
+      lastError = new Error(data.error || `HTTP ${res.status}`);
+      if (res.status < 500) throw lastError;
+    } catch (e) {
+      lastError = e;
+      if (e && /^HTTP 4|が不正|見つかりません/.test(e.message)) throw e;
+    }
+  }
+  throw new Error(`採点を受け取れませんでした(${PACE_FETCH_LIMITS.length}回やり直しました。${lastError?.message || ""})`);
+}
+
 // 計算待ち1件を計算して保存する。戻り値: { ok, message }(採点できる過去のレースが無いときも ok: true〈外してよい〉)
 async function paceRunnerComputeOne(kind, key, onProgress = () => {}) {
   const { collectAndChoose } = await import("./pace-search.js");
-  const { result, info } = await collectAndChoose(async (offset) => {
-    const res = await authedFetch(`/api/admin/pace-backtest?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}&offset=${offset}&limit=6`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    return data;
-  }, onProgress);
+  const { result, info } = await collectAndChoose((offset) => paceFetchBacktestChunk(kind, key, offset), onProgress);
   const label = info?.label || key;
   if (result.error) return { ok: true, message: `${label}: ${result.error}` };
   const res = await authedFetch("/api/admin/pace-weights/auto-result", {

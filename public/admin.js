@@ -1244,22 +1244,31 @@ async function loadPaceWeights() {
 // 計算の結果(日時・レース数・成績)も設定の adjust_auto に保存して入力欄の下に出す(2026-10-14 ユーザー要望。以前は入力欄に入れるだけで、
 // 保存し忘れや一覧の読み直しで消えていた)。前年の同レース(重賞だけの項目)はこの計算では選べないので、今の値のまま。
 // D1: 1回の計算全体で約16万行を読む(1日の上限の約3%)。
+// 「自動で計算」ボタンのすぐ下の行(#pace-adjust-auto-info)に進み具合・結果・エラーを出す(2026-10-14 ユーザー要望。
+// 以前は「総合推奨馬の比率」の欄の下のメッセージに出していて気づけなかった)。ok: true=成功 / false=失敗 / null=途中
+function paceAdjustAutoMsg(text, ok) {
+  const el = document.getElementById("pace-adjust-auto-info");
+  if (!el) return;
+  el.textContent = text;
+  el.className = ok === true ? "submit-message success" : ok === false ? "submit-message error" : "ticket-sub";
+  el.hidden = false;
+}
+
 async function paceAdjustDefaultAuto(btn) {
   if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値を計算し、そのまま保存します(約12万行を読みます。1〜2分かかります)。実行しますか？"))) return;
   const label = btn.textContent;
   btn.disabled = true;
   try {
     const { collectAndChoose } = await import("./pace-search.js");
-    const { result } = await collectAndChoose(async (offset) => {
-      const res = await authedFetch(`/api/admin/pace-backtest?kind=all&key=all&offset=${offset}&limit=6`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      return data;
-    }, (done, total) => { btn.textContent = `採点中…(${done}/${total})`; });
+    const { result } = await collectAndChoose((offset) => paceFetchBacktestChunk("all", "all", offset), (done, total) => {
+      btn.textContent = `採点中…(${done}/${total})`;
+      paceAdjustAutoMsg(`採点中です(${done}/${total}レース)。画面を閉じずにお待ちください`, null);
+    });
     if (result.error || !result.adjust) {
-      paceWeightsMsg(`計算できませんでした: ${result.error || "評価点を選べませんでした"}`, false);
+      paceAdjustAutoMsg(`計算できませんでした: ${result.error || "評価点を選べませんでした"}`, false);
       return;
     }
+    paceAdjustAutoMsg("計算できました。保存しています…", null);
     const d = result.detail.adjust;
     const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey };
     // 前年の同レースは今の既定値のまま、3つだけ置き換えて保存する
@@ -1270,9 +1279,11 @@ async function paceAdjustDefaultAuto(btn) {
         adjust_auto: { computed_at: new Date().toISOString(), races: result.detail.races, values: pick, best: d.best, base: d.base },
       }),
     }, `${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`);
-    if (!saved) paceWeightsMsg("計算はできましたが、保存に失敗しました", false);
+    // 保存後に一覧ごと描き直されるので、描き直した後のボタンの下に結果を出す
+    if (saved) paceAdjustAutoMsg(`${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`, true);
+    else paceAdjustAutoMsg("計算はできましたが、保存に失敗しました", false);
   } catch (e) {
-    paceWeightsMsg(`計算できませんでした: ${e.message}`, false);
+    paceAdjustAutoMsg(`計算できませんでした: ${e.message}`, false);
   } finally {
     btn.disabled = false;
     btn.textContent = label;
@@ -1411,12 +1422,8 @@ async function paceComputeAdmin(kind, key, btn, { reload = true } = {}) {
   let ok = false;
   try {
     const { collectAndChoose } = await import("./pace-search.js");
-    const { result, info } = await collectAndChoose(async (offset) => {
-      const res = await authedFetch(`/api/admin/pace-backtest?kind=${kind}&key=${encodeURIComponent(key)}&offset=${offset}&limit=6`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      return data;
-    }, (done, total) => { if (btn) btn.textContent = `採点中…(${done}/${total})`; });
+    const { result, info } = await collectAndChoose((offset) => paceFetchBacktestChunk(kind, key, offset),
+      (done, total) => { if (btn) btn.textContent = `採点中…(${done}/${total})`; });
     if (result.error) {
       paceWeightsMsg(`${info?.label || key}: ${result.error}`, false);
       ok = true;
