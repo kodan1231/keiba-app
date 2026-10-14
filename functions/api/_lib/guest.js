@@ -163,6 +163,7 @@ const GUEST_API_RULES = [
   { re: /^\/api\/races\/(\d+)$/, raceFromPath: true },
   { re: /^\/api\/races\/(\d+)\/horse-history$/, raceFromPath: true },
   { re: /^\/api\/races\/(\d+)\/horse-best$/, raceFromPath: true },
+  { re: /^\/api\/races\/(\d+)\/results$/, raceFromPath: true }, // 予想登録画面の結果タブ(2026-10-14)
   { re: /^\/api\/data-search\/(race-factors|jockey-course)$/, raceFromQuery: true },
   { re: /^\/api\/data-search\/[a-z-]+$/ },
   { re: /^\/api\/pace-weights$/ },

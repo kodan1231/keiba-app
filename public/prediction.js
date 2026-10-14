@@ -242,6 +242,7 @@ async function selectRace() {
   panel.hidden = false;
   renderRaceHeader();
   renderHorses();
+  updateResultTab();
 
   if (GUEST_VIEW) {
     // ゲストは自分の予想・メモ・購入を持たない。過去成績(馬柱・展開・時計の元)だけ読む
@@ -592,12 +593,136 @@ function setupPredictionViewTabs() {
       horsesEl.hidden = predictionView !== "card";
       if (umabashiraEl) umabashiraEl.hidden = predictionView !== "umabashira";
       if (paceEl) paceEl.hidden = predictionView !== "pace";
+      if (resultEl) resultEl.hidden = predictionView !== "result";
+      ensureRaceResults();
       ensureHorseBest();
       ensureJockeyCourse();
       ensurePaceWeights();
       ensureRaceFactors();
     });
   });
+}
+
+// ---------- 結果タブ(2026-10-14追加。docs/design/screens.md「予想登録画面」の「結果タブ」) ----------
+// 結果を取り込んだレース(着順か払戻がある)だけタブを出す。全着順は race_results(GET /api/races/:id/results。
+// 1レース分〈十数行〉をインデックスで読む)を、結果タブを開いたときだけ1回取る。払戻はレース本体(selectedRace.payouts)。
+// race_results が無い古いレースは、着順(finish_order)と出走馬表から分かる範囲だけ出す。
+const resultEl = document.getElementById("prediction-result");
+let raceResults = null; // { raceId, status: "loading" | "done" | "error", items }
+
+function raceHasResult(race) {
+  return !!race && (!!race.finish_order || hasSettledPayoutRates(race.payouts));
+}
+
+// レースを切り替えたときに呼ぶ。結果の無いレースでは結果タブを隠し、結果タブを見ていたら出馬表へ戻す。
+function updateResultTab() {
+  const tab = document.querySelector('.prediction-view-tab[data-view="result"]');
+  if (!tab) return;
+  const has = raceHasResult(selectedRace);
+  tab.hidden = !has;
+  if (!has && predictionView === "result") {
+    document.querySelector('.prediction-view-tab[data-view="card"]')?.click();
+    return;
+  }
+  ensureRaceResults();
+}
+
+function ensureRaceResults() {
+  if (!selectedRace || predictionView !== "result" || !resultEl) return;
+  const rid = selectedRace.id;
+  if (raceResults && raceResults.raceId === rid) { renderRaceResults(); return; }
+  raceResults = { raceId: rid, status: "loading", items: [] };
+  renderRaceResults();
+  authedFetch(`/api/races/${rid}/results`)
+    .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then(data => {
+      if (!raceResults || raceResults.raceId !== rid) return;
+      raceResults = { raceId: rid, status: "done", items: data.items || [] };
+      if (selectedRace && selectedRace.id === rid) renderRaceResults();
+    })
+    .catch(() => {
+      if (!raceResults || raceResults.raceId !== rid) return;
+      raceResults = { raceId: rid, status: "error", items: [] };
+      if (selectedRace && selectedRace.id === rid) renderRaceResults();
+    });
+}
+
+const RESULT_STATUS_LABEL = { scratched: "取消", excluded: "除外", stopped: "中止" };
+
+function raceResultRows() {
+  if (raceResults?.items?.length) return raceResults.items;
+  // race_results が無いレース: 着順(上位の馬番)と出走馬表から作る
+  const entries = selectedRace.entries || [];
+  const order = Array.isArray(selectedRace.finish_order) ? selectedRace.finish_order : [];
+  return order.map((n, i) => {
+    const e = entries.find(x => Number(x.horse_number) === Number(n)) || {};
+    return { finish_position: i + 1, horse_number: n, waku_number: e.waku_number, horse_name: e.horse_name, jockey: e.jockey, status: "finished" };
+  });
+}
+
+function raceResultTableHtml(rows) {
+  const marks = new Map((prediction.marks || []).map(m => [Number(m.horse_number), m.mark]));
+  const wakuOf = (n) => (selectedRace.entries || []).find(x => Number(x.horse_number) === Number(n))?.waku_number;
+  const cell = (v) => escapeHtml(v === null || v === undefined || v === "" ? "" : String(v));
+  const body = rows.map(r => {
+    const n = r.horse_number;
+    const waku = r.waku_number ?? wakuOf(n);
+    const place = r.status && r.status !== "finished" ? RESULT_STATUS_LABEL[r.status] || "" : r.finish_position;
+    const bw = r.body_weight ? `${r.body_weight}${r.body_weight_change ? `(${r.body_weight_change})` : ""}` : "";
+    return `<tr class="${r.finish_position && r.finish_position <= 3 ? `result-top result-top-${r.finish_position}` : ""}">
+      <td class="result-place">${cell(place)}</td>
+      <td>${cell(waku)}</td>
+      <td>${cell(n)}</td>
+      ${GUEST_VIEW ? "" : `<td class="result-mark">${cell(marks.get(Number(n)))}</td>`}
+      <td class="result-horse">${cell(r.horse_name)}</td>
+      <td>${cell(r.sex_age)}</td>
+      <td>${cell(r.weight_carried)}</td>
+      <td>${cell(r.jockey)}</td>
+      <td>${cell(r.time_text)}</td>
+      <td>${cell(r.margin)}</td>
+      <td>${cell(r.corner_positions)}</td>
+      <td>${cell(r.final_furlong_time)}</td>
+      <td>${cell(r.win_popularity)}</td>
+      <td>${cell(bw)}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="table-wrap">
+    <table class="horse-history-table result-table">
+      <thead><tr><th>着</th><th>枠</th><th>馬番</th>${GUEST_VIEW ? "" : "<th>印</th>"}<th>馬名</th><th>性齢</th><th>斤量</th><th>騎手</th><th>タイム</th><th>着差</th><th>通過</th><th>上り</th><th>人気</th><th>馬体重</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+}
+
+function raceResultPayoutsHtml() {
+  const payouts = selectedRace.payouts || {};
+  const rows = BET_TYPE_ORDER.filter(bt => Array.isArray(payouts[bt]) && payouts[bt].length).map(bt => {
+    const sep = BET_TYPES[bt].ordered ? "→" : "-";
+    const items = payouts[bt].map(p => {
+      const combo = Array.isArray(p.combo) ? p.combo.join(sep) : "";
+      const rate = p.rate !== null && p.rate !== undefined ? `${Number(p.rate).toLocaleString()}円` : "—";
+      return `<div class="result-payout-item"><span class="result-payout-combo">${escapeHtml(combo)}</span><span class="result-payout-rate">${escapeHtml(rate)}</span></div>`;
+    }).join("");
+    return `<tr><th>${escapeHtml(betTypeLabel(bt))}</th><td>${items}</td></tr>`;
+  }).join("");
+  if (!rows) return "";
+  return `<h3 class="result-heading">払戻(100円あたり)</h3>
+    <table class="result-payout-table"><tbody>${rows}</tbody></table>`;
+}
+
+function renderRaceResults() {
+  if (!resultEl || !selectedRace || predictionView !== "result") return;
+  if (raceResults?.status === "loading") {
+    resultEl.innerHTML = `<p class="ticket-sub">結果を読み込んでいます…</p>`;
+    return;
+  }
+  const rows = raceResultRows();
+  const note = raceResults?.status === "error"
+    ? `<p class="ticket-sub">結果の詳細を読み込めませんでした。分かる範囲だけ表示しています。</p>`
+    : raceResults?.items?.length ? "" : rows.length ? `<p class="ticket-sub">このレースは着順だけ登録されています。</p>` : "";
+  resultEl.innerHTML = `${note}
+    ${rows.length ? raceResultTableHtml(rows) : `<p class="ticket-sub">着順はまだ登録されていません。</p>`}
+    ${raceResultPayoutsHtml()}`;
 }
 
 // 馬柱・展開・時計タブを表示している時だけ、今のレースの持ちタイムを1回取得する(両タブで共用)。
@@ -1390,6 +1515,7 @@ function applyPrediction() {
       select.value = map.get(Number(select.dataset.horseNumber)) || "";
     });
   }
+  renderRaceResults(); // 結果タブの「印」列(2026-10-14。結果タブを見ていないときは何もしない)
 }
 
 // 馬メモ(horseNotes)の取得はrenderHorses()より後に完了するため、renderHorses()内で

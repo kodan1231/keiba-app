@@ -3198,6 +3198,20 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .prediction-view-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 9px; }
 
 .prediction-umabashira { padding: 8px 0; }
+.prediction-view-tab[hidden] { display: none; }
+/* 結果タブ(2026-10-14) */
+.prediction-result { padding: 8px 0; }
+.prediction-result[hidden] { display: none; }
+.result-table td, .result-table th { white-space: nowrap; }
+.result-table .result-place { font-weight: 700; text-align: center; }
+.result-table .result-horse { font-weight: 700; }
+.result-table .result-mark { color: var(--hanko); font-weight: 700; text-align: center; }
+.result-table tr.result-top-1 .result-place { color: var(--hanko); }
+.result-heading { font-size: 15px; margin: 16px 0 8px; }
+.result-payout-table { border-collapse: collapse; width: 100%; max-width: 480px; }
+.result-payout-table th, .result-payout-table td { border-top: 1px solid var(--rule-strong); padding: 6px 8px; vertical-align: top; }
+.result-payout-table th { width: 5em; text-align: left; white-space: nowrap; }
+.result-payout-item { display: flex; justify-content: space-between; gap: 12px; font-family: "Roboto Mono", monospace; }
 /* 展開・時計タブ(2026-10-12) */
 .prediction-pace { padding: 8px 0; }
 .prediction-pace[hidden] { display: none; }
