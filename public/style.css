@@ -1604,6 +1604,12 @@ body.history-selection-mode .group-detail-actions {
   top: 2px;
 }
 .stats-tab.active { background: var(--paper-raised); color: var(--ink); font-weight: 700; top: 0; padding-top: 11px; }
+/* タブは1行に並べ、はみ出す分は横にスクロールする(2026-10-15。スマホでデータ検索の5つのタブが縦長に折り返されていた。
+   管理画面のタブ〈.admin-tabs〉と同じ考え方)。集計画面のタブにも効く */
+.stats-tabs { overflow-x: auto; scrollbar-width: none; padding-top: 2px; }
+.stats-tabs::-webkit-scrollbar { display: none; }
+.stats-tab { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 600px) { .stats-tab { padding: 8px 12px; } .stats-tab.active { padding-top: 10px; } }
 
 /* ---------- データ検索ページ ---------- */
 .ds-filters {
