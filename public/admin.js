@@ -1237,6 +1237,12 @@ function paceWeightsVisibleItems() {
   return items.filter((g) => g.schedule_md && months.has(Number(String(g.schedule_md).slice(0, 2))));
 }
 
+// 一覧の要約の行に出す最終更新日時(2026-10-14。開かなくても分かるように。比率の値は開いた中で見る)
+function paceUpdatedDateHtml(w) {
+  const text = formatDateTime(w?.updated_at);
+  return text ? ` <span class="pace-w-item-date">更新 ${escapeHtml(text)}</span>` : "";
+}
+
 function renderPaceWeightsList() {
   const list = document.getElementById("pace-weights-list");
   const count = document.getElementById("pace-weights-count");
@@ -1250,17 +1256,15 @@ function renderPaceWeightsList() {
     return;
   }
   const sourceText = (w) => (!w ? "標準" : w.source === "auto" ? "自動" : w.source === "none" ? "ペースのみ手動" : "手動");
-  const weightsText = (w) => PACE_W_KEYS.map(([k, label]) => `${label}${w[k] ?? 0}`).join("・");
   list.innerHTML = shown.map((g) => {
     const w = g.weights;
-    const common = w && w.source !== "none" ? w : std;
     const paces = PACE_W_TYPES.filter(([p]) => w?.by_pace?.[p]).map(([, label]) => label).join("・");
     const id = Number(g.graded_race_id);
     return `
       <details class="pace-w-item" data-id="${id}" ${paceWeightsOpen.has(id) ? "open" : ""}>
         <summary>
           <span class="pace-w-item-name">${escapeHtml(g.schedule_md || "—")} ${escapeHtml(g.name)} <small>${escapeHtml(g.is_jump ? "J・" + g.grade : g.grade)}</small></span>
-          <span class="pace-w-item-sub">${escapeHtml(sourceText(w))}${paces ? `(ペース別: ${escapeHtml(paces)})` : ""} ${escapeHtml(weightsText(common))}</span>
+          <span class="pace-w-item-sub">${escapeHtml(sourceText(w))}${paces ? `(ペース別: ${escapeHtml(paces)})` : ""}${paceUpdatedDateHtml(w)}</span>
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
@@ -1269,7 +1273,6 @@ function renderPaceWeightsList() {
           <div class="row-actions">
             <button type="button" class="ghost-btn pace-w-row-auto">今すぐ計算(過去10年)</button>
             ${w ? `<button type="button" class="icon-btn delete pace-w-row-clear" title="この重賞の比率を消す(次に開いたときに自動で選び直す)">×</button>` : ""}
-            ${w ? `<small class="ticket-sub">更新 ${escapeHtml(formatDateTime(w.updated_at))}</small>` : ""}
           </div>
         </div>
       </details>`;
@@ -1342,15 +1345,13 @@ function renderCourseWeightsList() {
     list.innerHTML = courses.length ? `<p class="ticket-sub">該当するコースはありません</p>` : ""; // 説明文は2026-10-14に外した
     return;
   }
-  const weightsText = (w) => PACE_W_KEYS.map(([k, label]) => `${label}${w[k] ?? 0}`).join("・");
   list.innerHTML = shown.map((c) => {
     const w = c.weights;
-    const common = w && w.source !== "none" ? w : std;
     return `
       <details class="pace-w-item" data-course-key="${escapeAttr(c.course_key)}" ${courseWeightsOpen.has(c.course_key) ? "open" : ""}>
         <summary>
           <span class="pace-w-item-name">${escapeHtml(labelOf(c))}</span>
-          <span class="pace-w-item-sub">${escapeHtml(w?.source === "auto" ? "自動" : w?.source === "none" ? "ペースのみ手動" : "手動")} ${escapeHtml(weightsText(common))}</span>
+          <span class="pace-w-item-sub">${escapeHtml(w?.source === "auto" ? "自動" : w?.source === "none" ? "ペースのみ手動" : "手動")}${paceUpdatedDateHtml(w)}</span>
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
@@ -1359,7 +1360,6 @@ function renderCourseWeightsList() {
           <div class="row-actions">
             <button type="button" class="ghost-btn course-w-auto">今すぐ計算(直近1年)</button>
             <button type="button" class="icon-btn delete course-w-clear" title="このコースの比率を消す">×</button>
-            <small class="ticket-sub">更新 ${escapeHtml(formatDateTime(w?.updated_at))}</small>
           </div>
         </div>
       </details>`;
