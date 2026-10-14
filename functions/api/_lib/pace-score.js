@@ -30,6 +30,9 @@ export const PACE_PICK_N = 3; // 相手の頭数
 export const PACE_KINDS = ["axis", "partner"];
 const GRADED_PAST_YEARS = 10; // 重賞: 過去10年(+今年)
 const COURSE_PAST_DAYS = 365; // コース: 直近1年(2026-10-14 ユーザー要望)
+// 全コース(評価点の既定値を自動で出す用。2026-10-14): 直近1年の結果のあるレースから等間隔に最大この数
+// (1年約3,400レースを全部採点すると約90万行を読むため。600レースで約16万行。管理者のボタンのときだけ)
+const ALL_SAMPLE_MAX = 600;
 export const BACKTEST_CHUNK_MAX = 6; // 採点を1回で返すレース数の上限(CPU時間対策。1レースの採点は約0.5〜1ミリ秒)
 
 // 比率の入力を検証して整数%(合計100)にする。不正なら null。
@@ -299,6 +302,19 @@ async function courseTargets(db, course) {
     .sort((a, b) => String(b.race_date).localeCompare(String(a.race_date)) || Number(b.race_number) - Number(a.race_number));
 }
 
+// 全コースの直近1年(今日より前。結果のあるレース)から、等間隔に最大 ALL_SAMPLE_MAX レース(新しい順)
+async function allCourseTargets(db) {
+  const allRaces = await getRaceIndex(db);
+  const today = todayJst();
+  const from = new Date(Date.now() + 9 * 3600 * 1000 - COURSE_PAST_DAYS * 86400000).toISOString().slice(0, 10);
+  const pool = allRaces
+    .filter((r) => r.course_type && Number(r.distance) > 0 && String(r.race_date) >= from && String(r.race_date) < today && r.has_finish_order)
+    .sort((a, b) => String(b.race_date).localeCompare(String(a.race_date)) || Number(b.id) - Number(a.id));
+  if (pool.length <= ALL_SAMPLE_MAX) return pool;
+  const step = pool.length / ALL_SAMPLE_MAX;
+  return Array.from({ length: ALL_SAMPLE_MAX }, (_, i) => pool[Math.floor(i * step)]);
+}
+
 // 重賞検索タブの「総合推奨馬の検証」用(2026-10-13)。戻り値: { error } か { master, targets, checkedRaceIds, years: [{ year, race, pace_type, runners, top3Keys }] }
 export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
   const t = await gradedTargets(db, gradedRaceId);
@@ -311,6 +327,7 @@ export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
 }
 
 // 比率の計算の材料を数レースずつ返す(2026-10-14。GET /api/admin/pace-backtest)。kind: "graded"(key=重賞ID)/ "course"(key="競馬場|芝ダ障|距離")
+//   / "all"(全コースの直近1年から最大600レース。評価点の既定値を自動で出す用。key は使わない。2026-10-14)
 // 戻り値: { error } | { kind, key, label, total, offset, missing_score, races: [{ race_id, race_date, pace_type,
 //   runners: [{ horse_number, place(1〜3。それ以外0), scores: [PACE_FACTORS の順。評価点は掛けない], adj: [初距離, 初競馬場, 継続騎乗, 前年掲示板, 前年1着](0/1) }] }] }
 export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
@@ -326,6 +343,9 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
     if (!c) return { error: "コースが不正です" };
     targets = await courseTargets(db, c);
     label = `${c.track} ${c.course_type}${c.distance}m`;
+  } else if (kind === "all") {
+    targets = await allCourseTargets(db);
+    label = "全コース(直近1年)";
   } else {
     return { error: "kind が不正です" };
   }
