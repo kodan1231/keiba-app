@@ -33,7 +33,8 @@
     { page: "data-search", href: "data-search.html", app: "search", label: "データ検索", guestOk: true, roles: ["main", "search"] },
     { page: "races", href: "races.html", app: "admin", label: "レース管理", adminOnly: true, roles: ["main", "admin"] },
     { page: "admin", href: "admin.html", app: "admin", label: "管理", adminOnly: true, roles: ["main", "admin"] },
-    { page: "main-home", href: "index.html", app: "main", label: "馬券帳へ", roles: ["admin"] },
+    // 予想・擬似購入用アプリへ戻るリンク。データ検索用にも出す(2026-10-15 ユーザー要望。ゲストにも出すので guestOk)
+    { page: "main-home", href: "index.html", app: "main", label: "馬券帳へ", guestOk: true, roles: ["admin", "search"] },
   ];
   const appRole = typeof currentAppRole === "function" ? currentAppRole() : "all";
 
@@ -41,9 +42,7 @@
   // ボタンのidは従来のHTMLと同一。イベント登録は各ページのJS(app.js/races.js等)が
   // 実行時に getElementById で行うため、ここで生成しても従来通り動作する。
   const PAGE_ACTIONS = {
-    history:
-      '<input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />' +
-      '<button id="csv-import-btn" class="ghost-btn">CSVインポート</button>',
+    // history の「CSVインポート」は 2026-10-15 に馬券履歴画面のカレンダーの並びへ移した(history.html。ヘッダーの段がずれるため)
     races:
       '<button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>' +
       '<button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>' +

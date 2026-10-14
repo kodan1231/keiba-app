@@ -28,7 +28,9 @@
   `#login-username` 等・`[data-admin-only]` 要素を参照するため、それらが生成済みである必要がある
 - ナビ項目は `shell.js` の `NAV_ITEMS` 配列で一元管理。`adminOnly: true` の項目には
   `data-admin-only hidden` が付き、`auth.js` の `applyAdminVisibility()` が表示を切り替える
-- ページ固有のヘッダーアクションボタン(`history` の「CSVインポート」、`races` の
+- 2026-10-15: 馬券履歴の「CSVインポート」はヘッダーから、カレンダーの並び(‹ 月 › 今日 選択解除)の右端へ移した
+  (`history.html`。かごと退場の間にあって、ヘッダーの段がずれていたため)。スマホ幅で隠すのは今までどおり
+- ページ固有のヘッダーアクションボタン(以前は `history` の「CSVインポート」も。`races` の
   「出走馬一覧PDFをインポート」「JRAレース結果PDFをインポート」「＋ レースを登録」)は
   `shell.js` の `PAGE_ACTIONS` で `data-page` 別に定義。ボタンのidは従来通りで、
   イベント登録は各ページのJS(`app.js`・`races.js`等)が実行時に `getElementById` で行う
