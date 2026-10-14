@@ -45,14 +45,16 @@ export const DEFAULT_MISSING_SCORE = 40; // データの無い馬の点(偏差�
 //      1800mへ換算し、実力より2秒速く出た)
 //   - 初競馬場(first_track): タイムの点から引く。今回と同じ競馬場・同じ芝ダ障を完走したことが無い馬
 //   - 継続騎乗(same_jockey): 騎手の点に足す。今回の騎手が、その馬に過去1回でも乗ったことがある(取消・除外の走は数えない)
+//   - 前年の同レース(prev_board / prev_win。2026-10-14追加): 「同コース」の点に足す。重賞で、前年の同じ重賞を1着なら prev_win、
+//     2〜5着(掲示板)なら prev_board(どちらか一方)。前年の同じ重賞のレースは呼び出し側が opts.prevRaceId で渡す(無ければ掛けない)
 //   いずれもその要素のデータがある馬だけ(データ無しの点の馬には掛けない)。値は偏差値の点。重賞・コースごとに自動で選ぶか管理者が入力し、
 //   無ければ管理画面の既定値(_lib/pace-settings.js)。どれを使うかは _lib/pace-score.js の getPaceWeights(adjust)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5 };
-const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗" };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10 };
+const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着" };
 
-// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj }(0/1)、
-// adjust: { first_distance, first_track, same_jockey }。戻り値は新しい factors(time・jockey だけ作り直す)
+// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj, pb, pw }(0/1)、
+// adjust: { first_distance, …, prev_win }(足りない項目は0)。戻り値は新しい factors(time・jockey・course だけ作り直す)
 export function applyAdjust(factors, flags, adjust) {
   if (!adjust || !flags) return factors;
   const out = { ...factors };
@@ -71,6 +73,7 @@ export function applyAdjust(factors, flags, adjust) {
   };
   mod("time", [["first_distance", -1, flags.fd], ["first_track", -1, flags.ft]]);
   mod("jockey", [["same_jockey", 1, flags.cj]]);
+  mod("course", [["prev_board", 1, flags.pb], ["prev_win", 1, flags.pw]]);
   return out;
 }
 
@@ -253,9 +256,10 @@ function convertTime(ctx, sec, run, race) {
 //   body_weight, track, course_type, distance, track_condition }])(日付はここで「このレースより前」に絞る)
 // 戻り値: { pace_type, counts: { nige, senko, unknown, n }, factors: { pace|number|jockey|time: Map(key -> {score, rank, value, missing}) } }
 // opts.missingScore: データの無い馬の点(偏差値。設定 getPaceScoreSettings の missing_score。省略時は既定40)
-// opts.adjust: 評価点 { first_distance, first_track, same_jockey }(null なら掛けない。過去の採点〈比率の計算の材料〉は掛けずに flags を渡す)
-// 戻り値の flags: Map(key -> { fd, ft, cj })(評価点の印。その要素のデータがある馬だけ 1。runsByHorse の各走に jockey が要る)
-export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null } = {}) {
+// opts.adjust: 評価点 { first_distance, …, prev_win }(null なら掛けない。過去の採点〈比率の計算の材料〉は掛けずに flags を渡す)
+// opts.prevRaceId: 前年の同じ重賞のレースID(重賞でなければ・前年が無ければ null)
+// 戻り値の flags: Map(key -> { fd, ft, cj, pb, pw })(評価点の印。その要素のデータがある馬だけ 1。runsByHorse の各走に jockey が要る)
+export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
 
@@ -272,11 +276,12 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     const weightRun = runs.find((x) => x.status !== "scratched" && x.status !== "excluded" && Number(x.body_weight) > 0);
     let boardIn = 0, boardOut = 0;
     // 評価点の印(2026-10-14): 同じ芝ダ障・距離 / 同じ競馬場・芝ダ障を完走したか、今回の騎手が乗ったことがあるか
-    let ranDistance = false, ranTrack = false, rodeBefore = false;
+    let ranDistance = false, ranTrack = false, rodeBefore = false, prevPos = null;
     const jkNow = ctx.keyOf(h.jockey);
     for (const x of runs) {
       if (jkNow && x.status !== "scratched" && x.status !== "excluded" && x.jockey && ctx.keyOf(x.jockey) === jkNow) rodeBefore = true;
       if (x.status !== "finished") continue;
+      if (prevRaceId && Number(x.race_id) === Number(prevRaceId) && Number(x.finish_position) > 0) prevPos = Number(x.finish_position);
       if (x.course_type === race.course_type) {
         if (Number(x.distance) === Number(race.distance)) ranDistance = true;
         if (x.track === race.track) ranTrack = true;
@@ -295,7 +300,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       const f = Number(x.final_furlong_time);
       if (x.final_furlong_time != null && f > 0 && tier <= l3Tier && (tier < l3Tier || f < l3)) { l3 = f; l3Tier = tier; }
     }
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore };
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -446,16 +451,20 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const flags = new Map();
   for (const x of horses) {
     const timeOk = !factors.time.get(x.key)?.missing, jkOk = !factors.jockey.get(x.key)?.missing;
-    flags.set(x.key, { fd: timeOk && !x.ranDistance ? 1 : 0, ft: timeOk && !x.ranTrack ? 1 : 0, cj: jkOk && x.rodeBefore ? 1 : 0 });
+    flags.set(x.key, {
+      fd: timeOk && !x.ranDistance ? 1 : 0, ft: timeOk && !x.ranTrack ? 1 : 0, cj: jkOk && x.rodeBefore ? 1 : 0,
+      pw: x.prevPos === 1 ? 1 : 0, pb: x.prevPos >= 2 && x.prevPos <= BOARD_POSITION ? 1 : 0,
+    });
   }
   if (adjust) {
     for (const x of horses) {
-      const one = applyAdjust({ time: factors.time.get(x.key), jockey: factors.jockey.get(x.key) }, flags.get(x.key), adjust);
+      const one = applyAdjust({ time: factors.time.get(x.key), jockey: factors.jockey.get(x.key), course: factors.course.get(x.key) }, flags.get(x.key), adjust);
       factors.time.set(x.key, one.time);
       factors.jockey.set(x.key, one.jockey);
+      factors.course.set(x.key, one.course);
     }
     // 評価点を足した後の点の順に順位を付け直す(画面の推奨馬の「騎手」等の一覧は順位で並べるため)。同じ点は同じ順位
-    for (const f of ["time", "jockey"]) {
+    for (const f of ["time", "jockey", "course"]) {
       const sorted = [...factors[f].values()].filter((v) => !v.missing).sort((a, b) => b.score - a.score);
       sorted.forEach((v, i) => { v.rank = i > 0 && v.score === sorted[i - 1].score ? sorted[i - 1].rank : i + 1; });
     }

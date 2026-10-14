@@ -1032,19 +1032,21 @@ const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", 
 const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "スロー"]];
 
 // 評価点(2026-10-14追加。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): [キー, 名前, 符号]
-const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"]];
-let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
+// 前年掲示板・前年1着(2026-10-14追加)は重賞で前年の同じ重賞を2〜5着・1着の馬の「同コース」の点に足す
+const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"],
+  ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"]];
+let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10 }; // 設定の既定値(loadPaceWeights で入れ直す)
 
 function paceAdjustText(a) {
-  return PACE_ADJ_KEYS.map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
+  return PACE_ADJ_KEYS.filter(([k]) => a[k] != null).map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
 }
 
 // 評価点の入力1行。a: その重賞・コースの評価点(無ければ null)。空欄は薄く出す既定値を使う
 function paceAdjustLineHtml(a) {
   const src = a ? (a.source === "auto" ? "自動" : "手動") : "";
-  return `<div class="pace-w-kind pace-adj-line"><span class="pace-w-admin-title">評価点(タイム・騎手の点に足し引き)</span>
+  return `<div class="pace-w-kind pace-adj-line"><span class="pace-w-admin-title">評価点(タイム・騎手・同コースの点に足し引き)</span>
     <div class="pace-w-line">
-      ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${a ? a[k] : ""}" placeholder="${paceAdjustDefault[k]}">点</label>`).join("")}
+      ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${a?.[k] ?? ""}" placeholder="${paceAdjustDefault[k]}">点</label>`).join("")}
       <small class="pace-w-line-source">${src}</small>
       <button type="button" class="ghost-btn pace-adj-save">保存</button>
       ${a ? `<button type="button" class="icon-btn delete pace-adj-clear" title="この評価点を消す(既定値を使う。次の計算で自動の値が入る)">×</button>` : ""}

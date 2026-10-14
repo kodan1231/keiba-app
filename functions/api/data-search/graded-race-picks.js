@@ -29,5 +29,5 @@ export async function onRequestGet(context) {
   ]);
   if (bt.error === "重賞が見つかりません") return jsonError(bt.error, 404);
   if (bt.error) return Response.json({ weights, years: [], message: bt.error });
-  return Response.json({ weights, years: gradedPicksOf(bt, weights, weights.adjust || settings.adjust) });
+  return Response.json({ weights, years: gradedPicksOf(bt, weights, { ...settings.adjust, ...(weights.adjust || {}) }) });
 }

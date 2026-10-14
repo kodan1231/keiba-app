@@ -4,9 +4,9 @@
 // (無料枠のCPU上限〈10ミリ秒〉に収まらないため。サーバーは採点〈/api/admin/pace-backtest〉と保存だけ)。
 // 仕様は docs/design/screens.md「軸指数・相手指数」「比率の計算(夜間・今すぐ計算)」。
 //
-// 入力 races: [{ race_id, race_date, pace_type, runners: [{ horse_number, place(1〜3。それ以外0), scores: [7要素の点], adj: [0/1 ×3] }] }]
+// 入力 races: [{ race_id, race_date, pace_type, runners: [{ horse_number, place(1〜3。それ以外0), scores: [7要素の点], adj: [0/1 ×5] }] }]
 //   scores の並びは FACTORS の順(サーバーの _lib/race-factors.js の FACTOR_KEYS と同じ)。評価点は掛けていない点。
-//   adj は評価点の印(初距離・初競馬場・継続騎乗。ADJUST_KEYS の順。2026-10-14追加。古い採点に無ければ全部0)。
+//   adj は評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着。ADJUST_KEYS の順。2026-10-14追加。古い採点で足りなければ0)。
 // 規則:
 //   - 軸指数の比率: その指数1位の馬(軸)が3着以内に入ったレースが一番多い比率(同じなら1着 → 2着以内 → 均等に近い方。1位の同点は按分)
 //   - 相手指数の比率: ①の比率で各レースの軸を決め、軸を除いた上位3頭+軸に1着馬が入ったレースが一番多い比率
@@ -14,7 +14,7 @@
 //   - ペース予想ごと: PACE_SPLIT_MIN レース以上あるペースだけ、全体で選んだ比率から探す
 //   - 探し方は山登り(各要素40%・残り10%の7通り+(20,20,20,10,10,10,10)から出発し、10%を別の要素へ移す〈最大42通り〉を最大6回)
 //   - 評価点(2026-10-14 ユーザー要望。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): 初距離・初競馬場はタイムの点から引き、
-//     継続騎乗は騎手の点に足す(偏差値の点)。全体の軸の比率(既定の評価点で選ぶ)を決めた後、その比率で軸が3着以内に入ったレースが
+//     継続騎乗は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。全体の軸の比率(既定の評価点で選ぶ)を決めた後、その比率で軸が3着以内に入ったレースが
 //     一番多い評価点を、1つずつ 0〜30(5刻み)で動かして選ぶ(最大3周。同じなら既定値に近い方)。その評価点で全体の軸から選び直し、
 //     相手・ペースごとの比率もその評価点で選ぶ
 
@@ -23,11 +23,12 @@ export const DEFAULT_WEIGHTS = { w_pace: 15, w_number: 15, w_jockey: 14, w_time:
 export const PACE_TYPES = ["high", "middle", "slow"];
 export const METHOD_VERSION = 12; // サーバー側 detail.version と同じ意味(11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ)
 // 評価点(サーバーの _lib/race-factors.js の ADJUST_KEYS・DEFAULT_ADJUST と同じ)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5 };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10 };
+const NA = ADJUST_KEYS.length;
 const ADJUST_VALUES = [0, 5, 10, 15, 20, 25, 30];
 const ADJUST_ROUNDS = 3;
-const I_JOCKEY = 2, I_TIME = 3; // FACTORS の中の位置
+const I_JOCKEY = 2, I_TIME = 3, I_COURSE = 6; // FACTORS の中の位置
 const PICK_N = 3;
 const PACE_SPLIT_MIN = 2;
 const CLIMB_MAX_STEPS = 6;
@@ -38,15 +39,15 @@ function compileRace(race) {
   const F = FACTORS.length;
   const S = new Float64Array(n * F);
   const place = new Uint8Array(n);
-  const A = new Uint8Array(n * 3);
+  const A = new Uint8Array(n * NA);
   runners.forEach((h, i) => {
     for (let k = 0; k < F; k++) S[i * F + k] = Number(h.scores[k]) || 0;
     place[i] = h.place >= 1 && h.place <= 3 ? h.place : 0;
-    for (let k = 0; k < 3; k++) A[i * 3 + k] = h.adj && h.adj[k] ? 1 : 0;
+    for (let k = 0; k < NA; k++) A[i * NA + k] = h.adj && h.adj[k] ? 1 : 0;
   });
   const placed = [];
   for (let i = 0; i < n; i++) if (place[i]) placed.push(i);
-  // adj: 掛ける評価点 [初距離, 初競馬場, 継続騎乗](null なら掛けない)。段ごとに入れ替える
+  // adj: 掛ける評価点(ADJUST_KEYS の順。null なら掛けない)。段ごとに入れ替える
   return { n, S, A, place, placed, totals: new Float64Array(n), adj: null };
 }
 
@@ -56,7 +57,11 @@ function fillTotals(r, w) {
   for (let h = 0; h < n; h++) {
     let t = 0;
     for (let k = 0; k < F; k++) t += w[k] * S[h * F + k];
-    if (adj) t += w[I_TIME] * -(adj[0] * A[h * 3] + adj[1] * A[h * 3 + 1]) + w[I_JOCKEY] * adj[2] * A[h * 3 + 2];
+    if (adj) {
+      const a = h * NA;
+      t += w[I_TIME] * -((adj[0] || 0) * A[a] + (adj[1] || 0) * A[a + 1]) + w[I_JOCKEY] * (adj[2] || 0) * A[a + 2]
+        + w[I_COURSE] * ((adj[3] || 0) * A[a + 3] + (adj[4] || 0) * A[a + 4]);
+    }
     totals[h] = Math.round(t * 1000);
   }
   return totals;
@@ -231,7 +236,8 @@ export function stepPaceSearch(races, state) {
     const rs = idx.map((i) => compileRace(usable[i]));
     const key = (kind, pace) => `${kind}|${pace || ""}`;
     // 掛ける評価点: 評価点の段より前は既定値、後は選んだ値(古い作業の続きで評価点の段が無ければ掛けない)
-    const adj = st.kind === "axis0" ? ADJUST_KEYS.map((k) => DEFAULT_ADJUST[k]) : state.out.adjust ? state.out.adjust.vals : null;
+    const fill = (v) => ADJUST_KEYS.map((k, i) => (v && v[i] != null ? v[i] : DEFAULT_ADJUST[k]));
+    const adj = st.kind === "axis0" ? fill(null) : state.out.adjust ? fill(state.out.adjust.vals) : null;
     for (const x of rs) x.adj = adj;
     if (st.kind === "adjust") {
       const a = searchAdjust(rs, state.out[key("axis0", null)].arr);
@@ -273,7 +279,7 @@ function assembleResult(usable, out) {
     byPaceDetail[p] = { races: a.races, best: sum3(a), equal: a.equal };
     partnerByPaceDetail[p] = { races: b.races, best: sum3(b), equal: b.equal };
   }
-  const adj = out.adjust ? Object.fromEntries(ADJUST_KEYS.map((k, i) => [k, out.adjust.vals[i]])) : null;
+  const adj = out.adjust ? Object.fromEntries(ADJUST_KEYS.map((k, i) => [k, out.adjust.vals[i] ?? DEFAULT_ADJUST[k]])) : null;
   return {
     weights: toW(ax.arr),
     byPace,

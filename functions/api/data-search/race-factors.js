@@ -14,6 +14,7 @@ import {
   FACTOR_KEYS,
   getPaceScoreSettings,
   getPaceWeights,
+  prevYearGradedRaceId,
   loadGradedRaceMapCached,
   gradedRaceOf,
 } from "../_shared.js";
@@ -27,7 +28,7 @@ import {
 //
 // D1の読み取り: races 1行 + 出走馬の全戦績(race_results の horse_key インデックス。18頭×数十走で数百行)+
 //   集計用キャッシュ・勝ちタイムのキャッシュ(各約20行。同じ実行環境で60秒使い回す)+ 評価点を選ぶための比率の行(主キーで最大3行。2026-10-14)
-//   + 重賞一覧(2分使い回し)。展開・時計タブを開いたときにレースごとに1回。
+//   + 重賞一覧(2分使い回し)+(重賞のときだけ)前年の同レースを探す重賞1行+レース一覧のキャッシュ約20行。展開・時計タブを開いたときにレースごとに1回。
 // 評価点(初距離・初競馬場・継続騎乗。2026-10-14)は、このレースの重賞・コースの評価点(_lib/pace-score.js の getPaceWeights の adjust)、
 //   無ければ設定の既定値を掛ける。value に「初距離−10」等を足し、タイム・騎手の順位は掛けた後の点で付け直す。
 // バインド数: 出走馬の名寄せキー(最大18頭 ×〈1+その馬のエイリアス数〉)+ 1。horse-best と同じく100バインド上限内。
@@ -56,8 +57,12 @@ export async function onRequestGet(context) {
     loadGradedRaceMapCached(db),
   ]);
   const graded = gradedRaceOf(gradedMap, race);
-  const weights = await getPaceWeights(db, graded ? graded.id : 0, race);
-  const adjust = weights.adjust || scoreSettings.adjust;
+  const [weights, prevRaceId] = await Promise.all([
+    getPaceWeights(db, graded ? graded.id : 0, race),
+    graded ? prevYearGradedRaceId(db, graded.id, race) : null,
+  ]);
+  // 重賞・コースの評価点に無い項目(後から足した前年の同レース等)は設定の既定値
+  const adjust = { ...scoreSettings.adjust, ...(weights.adjust || {}) };
   const { searchKeyToKey } = buildHorseSearchKeys(horseAliasMap, entries.map((e) => e.horse_name));
   const searchKeys = [...searchKeyToKey.keys()];
   const runsByHorse = new Map();
@@ -82,7 +87,7 @@ export async function onRequestGet(context) {
   const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
   const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null }));
   const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
-  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust });
+  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId });
 
   const horses = entries.map((e, i) => {
     const key = runners[i].key;

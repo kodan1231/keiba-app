@@ -122,11 +122,13 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
   };
 }
 
-// 列 adjust(評価点。2026-10-14追加。@STEP: pace_weights_adjust)の JSON を読む: { first_distance, first_track, same_jockey, source }。無ければ null
+// 列 adjust(評価点。2026-10-14追加。@STEP: pace_weights_adjust)の JSON を読む: { first_distance, …, prev_win, source }。無ければ null。
+// 入っている項目だけ返す(前年の同レース〈prev_*〉は後から足したため、古い行には無い。呼び出し側が設定の既定値と重ねる)
 export function parseAdjust(text) {
   const o = parseByPace(text);
-  if (!ADJUST_KEYS.every((k) => Number.isFinite(Number(o[k])))) return null;
-  return { ...Object.fromEntries(ADJUST_KEYS.map((k) => [k, Number(o[k])])), source: o.source === "auto" ? "auto" : "manual" };
+  const vals = ADJUST_KEYS.filter((k) => o[k] !== undefined && o[k] !== null && Number.isFinite(Number(o[k]))).map((k) => [k, Number(o[k])]);
+  if (!vals.length) return null;
+  return { ...Object.fromEntries(vals), source: o.source === "auto" ? "auto" : "manual" };
 }
 
 // 評価点を選ぶ(比率と同じ考え方: 重賞の手動 → コースの手動 → 重賞の自動 → コースの自動)。無ければ null(呼び出し側が設定の既定値を使う)
@@ -179,7 +181,8 @@ function resolvePaceWeights(specifics, d, pace, kind = "axis") {
 // D1の読み取り: キャッシュ(各約20行。使い回し)+ 対象レースの race_results(1レース約16行)+ その出走馬の全戦績
 //   (race_results の horse_key インデックス。1頭あたり十数行)。horse_key の IN は90件ずつ。
 // 評価点は掛けない(比率の計算で評価点も選ぶため)。各馬の flags(評価点の印)を一緒に返す。
-async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE } = {}) {
+// prevOf: Map(レースID -> 前年の同じ重賞のレースID)(重賞の採点のとき。前年の同レースの印用。2026-10-14)
+async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null } = {}) {
   if (!races.length) return [];
   // 騎手名エイリアスは使い回し版(読み取り専用。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
   const [lineups, aliasMap, raceTimes] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db)]);
@@ -223,7 +226,7 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE } = 
     const runnersAll = runnersByRace.get(Number(race.id)) || [];
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
-    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse, { missingScore });
+    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse, { missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null });
     out.push({
       race,
       pace_type: rf.pace_type,
@@ -234,7 +237,7 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE } = 
           const v = rf.factors[f].get(h.horse_key);
           return [f, { score: v.score, missing: v.missing, value: v.value }];
         })),
-        flags: rf.flags.get(h.horse_key) || { fd: 0, ft: 0, cj: 0 },
+        flags: rf.flags.get(h.horse_key) || { fd: 0, ft: 0, cj: 0, pb: 0, pw: 0 },
       })),
     });
   }
@@ -243,23 +246,46 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE } = 
 
 const todayJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
-// 重賞の過去(最大10年+今年。今日〈当日を含む〉までに行われた年。各年1レース)。戻り値: { error } | { master, targets: [races_index の行] }
-async function gradedTargets(db, gradedRaceId) {
-  const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
-  if (!master) return { error: "重賞が見つかりません" };
-  const allRaces = await getRaceIndex(db);
+// その重賞の年ごとのレース(各年1レース。同じ年に複数あれば遅い方)。戻り値: Map(年 -> races_index の行)
+function gradedRacesByYear(allRaces, master) {
   const matches = findRacesByGradedKey(allRaces, new Set([master.name_key, gradedRaceNameKey(master.name)].filter(Boolean)));
-  const today = todayJst();
-  const currentYear = jstYear();
   const byYear = new Map();
   for (const r of matches) {
     const year = Number(String(r.race_date || "").slice(0, 4));
-    if (!year || year < currentYear - GRADED_PAST_YEARS || String(r.race_date) > today) continue;
+    if (!year) continue;
     const prev = byYear.get(year);
     if (!prev || String(r.race_date) > String(prev.race_date)) byYear.set(year, r);
   }
-  const targets = [...byYear.entries()].sort((a, b) => b[0] - a[0]).map(([, r]) => r);
-  return { master, targets };
+  return byYear;
+}
+
+// 重賞の過去(最大10年+今年。今日〈当日を含む〉までに行われた年。各年1レース)。
+// 戻り値: { error } | { master, targets: [races_index の行], prevOf: Map(レースID -> 前年の同じ重賞のレースID) }
+async function gradedTargets(db, gradedRaceId) {
+  const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
+  if (!master) return { error: "重賞が見つかりません" };
+  const byYear = gradedRacesByYear(await getRaceIndex(db), master);
+  const today = todayJst();
+  const currentYear = jstYear();
+  const targets = [...byYear.entries()]
+    .filter(([year, r]) => year >= currentYear - GRADED_PAST_YEARS && String(r.race_date) <= today)
+    .sort((a, b) => b[0] - a[0]).map(([, r]) => r);
+  const prevOf = new Map();
+  for (const [year, r] of byYear) {
+    const p = byYear.get(year - 1);
+    if (p) prevOf.set(Number(r.id), Number(p.id));
+  }
+  return { master, targets, prevOf };
+}
+
+// 前年の同じ重賞のレースID(予想登録画面の推奨馬の「前年の同レース」用。2026-10-14)。race: { id, race_date }。無ければ null。
+// D1の読み取り: 重賞1行(主キー)+ レース一覧のキャッシュ(約20行)。重賞のレースの展開・時計タブを開いたときだけ
+export async function prevYearGradedRaceId(db, gradedRaceId, race) {
+  const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
+  if (!master) return null;
+  const year = Number(String(race.race_date || "").slice(0, 4));
+  const p = gradedRacesByYear(await getRaceIndex(db), master).get(year - 1);
+  return p ? Number(p.id) : null;
 }
 
 // コースの直近1年(今日より前。結果のあるレース。新しい順)。races_index_cache から絞る(D1はキャッシュ約20行)
@@ -278,7 +304,7 @@ export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
   const t = await gradedTargets(db, gradedRaceId);
   if (t.error) return t;
   if (!t.targets.length) return { error: "過去の結果が取り込まれていません" };
-  const scored = await scoreRaces(db, t.targets, scoreOpts);
+  const scored = await scoreRaces(db, t.targets, { ...scoreOpts, prevOf: t.prevOf });
   const years = scored.map((x) => ({ ...x, year: Number(String(x.race.race_date).slice(0, 4)) }));
   const checkedRaceIds = t.targets.filter((r) => r.has_finish_order).map((r) => Number(r.id));
   return { master: t.master, targets: t.targets, checkedRaceIds, years };
@@ -286,14 +312,15 @@ export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
 
 // 比率の計算の材料を数レースずつ返す(2026-10-14。GET /api/admin/pace-backtest)。kind: "graded"(key=重賞ID)/ "course"(key="競馬場|芝ダ障|距離")
 // 戻り値: { error } | { kind, key, label, total, offset, missing_score, races: [{ race_id, race_date, pace_type,
-//   runners: [{ horse_number, place(1〜3。それ以外0), scores: [PACE_FACTORS の順。評価点は掛けない], adj: [初距離, 初競馬場, 継続騎乗](0/1) }] }] }
+//   runners: [{ horse_number, place(1〜3。それ以外0), scores: [PACE_FACTORS の順。評価点は掛けない], adj: [初距離, 初競馬場, 継続騎乗, 前年掲示板, 前年1着](0/1) }] }] }
 export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
-  let targets, label;
+  let targets, label, prevOf = null;
   if (kind === "graded") {
     const t = await gradedTargets(db, Number(key));
     if (t.error) return t;
     targets = t.targets;
     label = t.master.name;
+    prevOf = t.prevOf;
   } else if (kind === "course") {
     const c = parseCourseKey(key);
     if (!c) return { error: "コースが不正です" };
@@ -303,7 +330,7 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
     return { error: "kind が不正です" };
   }
   const slice = targets.slice(offset, offset + Math.min(limit, BACKTEST_CHUNK_MAX));
-  const scored = await scoreRaces(db, slice, scoreOpts);
+  const scored = await scoreRaces(db, slice, { ...scoreOpts, prevOf });
   return {
     kind, key: String(key), label, total: targets.length, offset, missing_score: scoreOpts.missingScore,
     races: scored.map((x) => ({
@@ -312,7 +339,8 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
         horse_number: h.horse_number,
         place: h.status === "finished" && h.finish_position >= 1 && h.finish_position <= 3 ? h.finish_position : 0,
         scores: PACE_FACTORS.map((f) => Math.round(h.factors[f].score * 100) / 100),
-        adj: [h.flags.fd, h.flags.ft, h.flags.cj], // 評価点の印(初距離・初競馬場・継続騎乗。public/pace-search.js が評価点を選ぶ)
+        // 評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着。public/pace-search.js が評価点を選ぶ)
+        adj: [h.flags.fd, h.flags.ft, h.flags.cj, h.flags.pb, h.flags.pw],
       })),
     })),
   };
