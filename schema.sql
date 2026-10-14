@@ -523,6 +523,38 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- コースごとの総合推奨馬の比率(2026-10-14追加。@STEP: course_pace_weights)。列の意味は pace_weights と同じ。
+-- 重賞の比率が無いときに使う(選ぶ順: 重賞 → コース → 標準 → 既定値。_lib/pace-score.js の getPaceWeights)。
+-- 自動の比率は同コースの直近1年のレースから、夜間の定時実行・管理者の「今すぐ計算」で選ぶ(docs/design/screens.md「比率の計算」)。
+CREATE TABLE IF NOT EXISTS course_pace_weights (
+  track TEXT NOT NULL,
+  course_type TEXT NOT NULL,
+  distance INTEGER NOT NULL,
+  w_pace INTEGER NOT NULL DEFAULT 0,
+  w_number INTEGER NOT NULL DEFAULT 0,
+  w_jockey INTEGER NOT NULL DEFAULT 0,
+  w_time INTEGER NOT NULL DEFAULT 0,
+  w_sexage INTEGER NOT NULL DEFAULT 0,
+  w_weight INTEGER NOT NULL DEFAULT 0,
+  w_course INTEGER NOT NULL DEFAULT 0,
+  by_pace TEXT,
+  partner TEXT,
+  source TEXT NOT NULL DEFAULT 'auto',
+  detail TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (track, course_type, distance)
+);
+
+-- 総合推奨馬の比率の計算待ち(2026-10-14追加。@STEP: course_pace_weights)。馬番が確定した出馬表を取り込んだレースの
+-- コース(kind='course'、key='競馬場|芝ダ障|距離')と重賞(kind='graded'、key=graded_races.id)。毎晩3時の定時実行が計算して取り除く。
+CREATE TABLE IF NOT EXISTS pace_recompute_queue (
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  race_id INTEGER,
+  created_at TEXT,
+  PRIMARY KEY (kind, key)
+);
+
 -- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
 -- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。
 -- races.id ではなく重賞マスタの id と年で持つので、レースを登録する前・取り込んでいない年にも書ける。

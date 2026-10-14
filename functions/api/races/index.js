@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace, enqueuePaceRecompute } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // (以前は全件を races_cache〈2026-09-12追加〉から返していたが、2026-10-08に全件取得とともに廃止した)
@@ -129,6 +129,8 @@ export async function onRequestPost(context) {
     await linkUnregisteredImportsToRace(env.DB, raceId, race_date, track, race_number);
     // 出走馬表(馬名・騎手)が分かったので、紐付いた購入履歴のselectionsへ反映する。
     await backfillHorseNamesForRace(env.DB, raceId, normalizedEntries);
+    // 馬番が確定していれば総合推奨馬の比率の計算待ちに積む(2026-10-14。_lib/pace-queue.js)
+    await enqueuePaceRecompute(env.DB, [{ id: raceId, track, course_type, distance, race_name, class_flags: null, entries: normalizedEntries }]);
 
     return Response.json({ ok: true, id: raceId });
   } catch (e) {

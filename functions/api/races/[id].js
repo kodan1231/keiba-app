@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -121,11 +121,13 @@ export async function onRequestPut(context) {
   // 出走馬表(馬名・騎手)が更新された場合、同じレースを参照しているCSV取込データ・
   // 購入履歴のうち、馬番だけで馬名・騎手が空になっているものへ反映(バックフィル)する。
   if ("entries" in data) {
-    const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(params.id).first();
+    const race = await env.DB.prepare("SELECT id, entries, track, course_type, distance, race_name, class_flags FROM races WHERE id = ?").bind(params.id).first();
     if (race) {
       const savedEntries = JSON.parse(race.entries || "[]");
       await backfillHorseNamesForRace(env.DB, Number(params.id), savedEntries);
       await fillBlankResultJockeys(env.DB, Number(params.id), savedEntries);
+      // 馬番が確定していれば総合推奨馬の比率の計算待ちに積む(2026-10-14。_lib/pace-queue.js)
+      await enqueuePaceRecompute(env.DB, [{ ...race, entries: savedEntries }]);
     }
   }
   // 日付・競馬場・レース番号のいずれかが変わった(または初めて確定した)可能性があるため、

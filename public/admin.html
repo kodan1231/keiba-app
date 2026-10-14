@@ -301,8 +301,9 @@
         <p class="ticket-sub">
           予想登録画面「展開・時計」タブの総合推奨馬で、7つの要素の点(偏差値)に掛ける比率(%)です。全ユーザー共通です。
           重賞は重賞ごとの比率、決めていない重賞と重賞以外のレースは標準の比率を使います。比率は全ペース共通と、ペース予想(ハイ・ミドル・スロー)ごとに持てます。
-          重賞の比率は、予想登録画面でその重賞のレースが開かれたときに過去(最大10年)の結果から自動で選びます。
-          「自動算出」は今すぐ選び直します(1回で約1,500行を読みます)。手で保存した比率は自動では上書きしません(×で消すと自動に戻ります)。
+          選ぶ順は 重賞 → コース(競馬場・芝ダ・距離)→ 標準 です。重賞(過去10年)とコース(直近1年)の比率は、馬番の確定した出馬表を
+          取り込んだ日の夜3時に自動で計算します(前の計算から7日以上たっていれば)。「今すぐ計算」はこのブラウザで計算して保存します
+          (コース1年分で約1万行を読みます)。手で保存した比率は自動では上書きしません。
         </p>
         <div class="pace-w-admin" id="pace-weights-default"></div>
         <p id="pace-weights-message" class="submit-message" hidden></p>
@@ -314,6 +315,13 @@
         </div>
         <p id="pace-weights-count" class="ticket-sub"></p>
         <div id="pace-weights-list" class="pace-w-list"></div>
+        <!-- コースごとの比率(2026-10-14。重賞以外のレースで使う。計算したコースだけ) -->
+        <h3 class="pace-w-list-title">コースごとの比率</h3>
+        <div class="pace-w-filter">
+          <input type="search" id="course-weights-search" placeholder="例: 東京 芝1600" aria-label="コースで検索" />
+        </div>
+        <p id="course-weights-count" class="ticket-sub"></p>
+        <div id="course-weights-list" class="pace-w-list"></div>
       </section>
     </div>
   </main>

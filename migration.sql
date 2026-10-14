@@ -47,6 +47,7 @@
 -- 2026-10-14: pace_weights_more_factors(比率の表に性齢・馬体重・同コースの列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: guest_access(ゲスト閲覧の端末・IPブロックの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_weights_partner(比率の表に相手指数の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-14: course_pace_weights(コースごとの比率・比率の計算待ちの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -163,3 +164,32 @@ INSERT INTO schema_migrations (name) VALUES ('guest_access');
 -- 総合推奨馬の相手指数の比率の列(2026-10-14)。列を足すだけ(自動の比率は方式の版が上がったので次に開かれたときに計算し直す)。
 ALTER TABLE pace_weights ADD COLUMN partner TEXT;
 INSERT INTO schema_migrations (name) VALUES ('pace_weights_partner');
+
+-- @STEP: course_pace_weights
+-- コースごとの総合推奨馬の比率と、比率の計算待ち(2026-10-14)。空の表を2つ作るだけ。
+CREATE TABLE IF NOT EXISTS course_pace_weights (
+  track TEXT NOT NULL,
+  course_type TEXT NOT NULL,
+  distance INTEGER NOT NULL,
+  w_pace INTEGER NOT NULL DEFAULT 0,
+  w_number INTEGER NOT NULL DEFAULT 0,
+  w_jockey INTEGER NOT NULL DEFAULT 0,
+  w_time INTEGER NOT NULL DEFAULT 0,
+  w_sexage INTEGER NOT NULL DEFAULT 0,
+  w_weight INTEGER NOT NULL DEFAULT 0,
+  w_course INTEGER NOT NULL DEFAULT 0,
+  by_pace TEXT,
+  partner TEXT,
+  source TEXT NOT NULL DEFAULT 'auto',
+  detail TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (track, course_type, distance)
+);
+CREATE TABLE IF NOT EXISTS pace_recompute_queue (
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  race_id INTEGER,
+  created_at TEXT,
+  PRIMARY KEY (kind, key)
+);
+INSERT INTO schema_migrations (name) VALUES ('course_pace_weights');

@@ -10,6 +10,7 @@ import {
   jsonError,
   raceBaseNameOf,
   applyImportedTrainerNames,
+  enqueuePaceRecompute,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -344,6 +345,17 @@ export async function onRequestPost(context) {
   //    「馬情報検索タブ」参照)。既にhorses行がある馬だけを対象にする(内部でIN句を
   //    チャンク分割している)。
   await applyImportedTrainerNames(db, items.flatMap((it) => it.incomingEntries));
+
+  // 8) 馬番が確定したレースのコース・重賞を、総合推奨馬の比率の計算待ちに積む(2026-10-14。best-effort。
+  //    毎晩3時の定時実行が計算する。_lib/pace-queue.js・docs/design/screens.md「比率の計算(夜間・今すぐ計算)」)
+  await enqueuePaceRecompute(db, [
+    ...toInsert.map((it) => ({ id: it.id, track: it.track, course_type: it.course_type, distance: it.distance, race_name: it.race_name, class_flags: it.class_flags, entries: it.entries })),
+    ...toUpdate.map((it) => ({
+      id: it.existing.id, track: it.existing.track,
+      course_type: it.existing.course_type || it.course_type, distance: it.existing.distance || it.distance,
+      race_name: it.existing.race_name || it.race_name, class_flags: it.existing.class_flags || it.class_flags, entries: it.mergedEntries,
+    })),
+  ]);
 
   return Response.json({ ok: true, results });
 }
