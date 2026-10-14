@@ -43,6 +43,7 @@
 -- 2026-10-13: pace_weights(総合推奨馬の比率)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-13: race_time_cache(勝ちタイムの小さいキャッシュ+トリガー6つ)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-13: pace_weights_time(比率の表に補正タイムの列)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-14: pace_weights_by_pace(比率の表にペース予想ごとの比率の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -121,3 +122,9 @@ INSERT INTO schema_migrations (name) VALUES ('race_time_cache');
 -- 総合推奨馬の4つ目の要素「補正タイム」の比率の列(2026-10-13)。列を足すだけ(既存の行は0になる。自動の比率は次に開かれたときに計算し直す)。
 ALTER TABLE pace_weights ADD COLUMN w_time INTEGER NOT NULL DEFAULT 0;
 INSERT INTO schema_migrations (name) VALUES ('pace_weights_time');
+
+-- @STEP: pace_weights_by_pace
+-- 総合推奨馬のペース予想ごとの比率の列(2026-10-14)。列を足すだけ(表は重賞の数程度の行。自動の比率は方式の版が上がったので
+-- 次に開かれたときに計算し直す)。
+ALTER TABLE pace_weights ADD COLUMN by_pace TEXT;
+INSERT INTO schema_migrations (name) VALUES ('pace_weights_by_pace');

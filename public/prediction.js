@@ -985,11 +985,12 @@ function paceRecommendJockeyHtml() {
 // ---- 総合推奨馬(2026-10-13追加。docs/design/screens.md「総合推奨馬」) ----
 // 展開・馬番・騎手の各並びの順位を 100(1位)〜0(最下位)の等間隔の点にし(データの無い馬は50点)、
 // 重視度の比率(%)を掛けて合計する。比率は全ユーザー共通(GET /api/pace-weights)。重賞はその重賞の比率、無ければ標準の比率。
+// 比率はペース予想ごとに持てる(2026-10-14。取得結果の paces からこのレースのペース予想の比率を使う)。
 // 管理者だけ、この欄で比率を変えて保存・重賞の過去の結果から自動算出できる。
 const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム" };
 const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time"]; // サーバー側 _lib/pace-score.js の PACE_FACTORS と同じ
 let paceWeights = null; // { key, status: "loading"|"done"|"error", data }
-let paceWeightsDraft = null; // 管理者が入力中の比率(保存前の試し計算用){ key, w_pace, w_number, w_jockey, w_time }
+let paceWeightsDraft = null; // 管理者が入力中の比率(保存前の試し計算用){ key(paceWeightsDraftKey: 重賞とペース予想), w_pace, w_number, w_jockey, w_time }
 let paceWeightsMessage = "";
 
 function paceWeightsKey() {
@@ -1041,26 +1042,37 @@ function requestPaceWeightsRecompute(key, gradedId, raceId) {
     });
 }
 
-function paceWeightsSourceText(d) {
-  if (!d) return "";
-  if (d.scope === "graded") return `この重賞の比率(${d.source === "auto" ? "過去10年の結果で一番当たった比率を自動で選択" : "管理者が設定"})`;
-  if (d.scope === "default") return "標準の比率(管理者が設定)";
-  return "既定の比率";
+const PACE_TYPE_LABELS = { high: "ハイペース", middle: "ミドルペース", slow: "スローペース" };
+
+// このレースのペース予想("high"|"middle"|"slow"。まだ取得中・出せないときは null = 全ペース共通の比率を使う)
+function paceCurrentType() {
+  return raceFactorsState().data?.pace_type || null;
+}
+
+// 比率の取得結果から、このレースのペース予想に使う比率を選ぶ(2026-10-14。選ぶ順はサーバーの getPaceWeights)
+function paceEffectiveWeights(d, pace) {
+  return (pace && d.paces?.[pace]) || d;
+}
+
+function paceWeightsDraftKey() {
+  return `${paceWeightsKey()}:${paceCurrentType() || ""}`;
 }
 
 function paceWeightsAdminHtml(w) {
   if (!window.currentUser?.isAdmin) return "";
   const g = selectedRace.graded;
+  const pace = paceCurrentType();
+  const p = pace ? `の${PACE_TYPE_LABELS[pace]}` : "";
   const input = (k, label) => `<label class="pace-w-input">${label}<input type="number" min="0" max="100" step="1" data-wkey="${k}" value="${w[k]}">%</label>`;
   return `
     <div class="pace-w-admin">
       <span class="pace-w-admin-title">比率の変更(管理者)</span>
       ${PACE_FACTOR_KEYS.map(f => input(`w_${f}`, PACE_FACTOR_LABELS[f])).join("")}
       <div class="pace-w-admin-actions">
-        ${g ? `<button type="button" class="ghost-btn pace-w-btn" data-action="save-graded">この重賞の比率として保存</button>
+        ${g ? `<button type="button" class="ghost-btn pace-w-btn" data-action="save-graded">この重賞${p}の比率として保存</button>
                <button type="button" class="ghost-btn pace-w-btn" data-action="auto">過去の結果から自動算出し直す</button>
                <button type="button" class="ghost-btn pace-w-btn" data-action="clear-graded">手で決めた比率を消す(自動に戻す)</button>` : ""}
-        <button type="button" class="ghost-btn pace-w-btn" data-action="save-default">標準の比率として保存</button>
+        <button type="button" class="ghost-btn pace-w-btn" data-action="save-default">標準${p}の比率として保存</button>
       </div>
       ${paceWeightsMessage ? `<p class="pace-reco-note">${escapeHtml(paceWeightsMessage)}</p>` : ""}
     </div>`;
@@ -1071,16 +1083,11 @@ function paceTotalSectionHtml(entries) {
   const ws = paceWeights && paceWeights.key === paceWeightsKey() ? paceWeights : null;
   if (!ws || ws.status === "loading") return `${head}<p class="pace-none">読み込み中…</p>`;
   if (ws.status === "error" || !ws.data) return `${head}<p class="pace-none">比率を取得できませんでした</p>`;
-  const draft = paceWeightsDraft && paceWeightsDraft.key === ws.key ? paceWeightsDraft : null;
-  const w = draft || ws.data;
-  const weightsText = PACE_FACTOR_KEYS.map(f => `${PACE_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
-  const a = !draft && ws.data.scope === "graded" ? ws.data.auto : null;
-  const paceHitText = (b, races) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}頭` : `3着以内${b.hits}頭`) + `(上位3頭×${races}年=${races * 3}頭中)`;
-  const autoText = a
-    ? `過去${a.races}年でこの比率を試すと、総合上位3頭のうち ${paceHitText(a.best, a.races)}。均等の比率なら ${paceHitText(a.equal, a.races)}`
-    : "";
-  const recomputingText = paceRecomputing === ws.key ? "過去の結果から比率を計算し直しています…(終わると自動で切り替わります)" : "";
-  const info = `<p class="pace-reco-note">比率: <strong>${escapeHtml(weightsText)}</strong>${draft ? "(入力中・未保存)" : `(${escapeHtml(paceWeightsSourceText(ws.data))})`}</p>${autoText ? `<p class="pace-reco-note">${escapeHtml(autoText)}</p>` : ""}${recomputingText ? `<p class="pace-reco-note">${escapeHtml(recomputingText)}</p>` : ""}`;
+  const eff = paceEffectiveWeights(ws.data, paceCurrentType());
+  const draft = paceWeightsDraft && paceWeightsDraft.key === paceWeightsDraftKey() ? paceWeightsDraft : null;
+  const w = draft || eff;
+  // 比率・出どころ・過去の成績の表示は2026-10-14にユーザー要望で外した(比率は重賞検索の検証・管理画面で見る)。計算中の表示だけ残す
+  const info = paceRecomputing === ws.key ? `<p class="pace-reco-note">比率を計算し直しています…</p>` : "";
 
   const { data: rf, message } = raceFactorsState();
   if (!rf) return `${head}${info}${paceWeightsAdminHtml(w)}<p class="pace-none">${escapeHtml(message)}</p>`;
@@ -1112,15 +1119,17 @@ function paceTotalSectionHtml(entries) {
 async function paceWeightsAction(action) {
   const g = selectedRace?.graded;
   const ws = paceWeights && paceWeights.data;
-  const draft = paceWeightsDraft && paceWeightsDraft.key === paceWeightsKey() ? paceWeightsDraft : null;
-  const w = draft || ws || {};
+  const pace = paceCurrentType();
+  const draft = paceWeightsDraft && paceWeightsDraft.key === paceWeightsDraftKey() ? paceWeightsDraft : null;
+  const w = draft || (ws ? paceEffectiveWeights(ws, pace) : {});
   const body = Object.fromEntries(PACE_FACTOR_KEYS.map(f => [`w_${f}`, Number(w[`w_${f}`] ?? 0)]));
   let res;
   try {
     if (action === "save-graded" || action === "save-default") {
+      // ペース予想が出ていればそのペースの比率、出ていなければ全ペース共通の比率として保存(2026-10-14)
       res = await authedFetch("/api/admin/pace-weights", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ graded_race_id: action === "save-graded" ? g.id : 0, ...body }),
+        body: JSON.stringify({ graded_race_id: action === "save-graded" ? g.id : 0, pace_type: pace || "", ...body }),
       });
     } else if (action === "clear-graded") {
       if (!confirm("この重賞の比率を消しますか?(次に開いたときに過去の結果から自動で選び直します)")) return;
@@ -1142,7 +1151,10 @@ async function paceWeightsAction(action) {
     const d = data.detail || {};
     const pct = (v) => `${Math.round((v || 0) * 100)}%`;
     const paceHitText = (b, races) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}頭` : `3着以内${b.hits}頭`) + `(上位3頭×${races}年=${races * 3}頭中)`;
-    paceWeightsMessage = d.best ? `自動算出しました。過去${d.races}年で総合上位3頭のうち ${paceHitText(d.best, d.races)}。均等の比率なら ${paceHitText(d.equal, d.races)}` : "自動算出しました";
+    const paces = Object.keys(d.by_pace || {}).map(p => `${PACE_TYPE_LABELS[p]}${d.by_pace[p].races}年`).join("・");
+    paceWeightsMessage = d.best
+      ? `自動算出しました。過去${d.races}年で総合上位3頭のうち ${paceHitText(d.best, d.races)}。均等の比率なら ${paceHitText(d.equal, d.races)}。ペース別: ${paces || "なし"}`
+      : "自動算出しました";
   } else {
     paceWeightsMessage = action === "clear-graded" ? "この重賞の比率を消しました(過去の結果から自動で選び直します)" : "保存しました";
   }
@@ -1156,9 +1168,10 @@ function setupPaceWeightsAdmin() {
     input.addEventListener("change", () => {
       const ws = paceWeights && paceWeights.data;
       if (!ws) return;
-      const base = paceWeightsDraft && paceWeightsDraft.key === paceWeightsKey()
+      const eff = paceEffectiveWeights(ws, paceCurrentType());
+      const base = paceWeightsDraft && paceWeightsDraft.key === paceWeightsDraftKey()
         ? paceWeightsDraft
-        : { key: paceWeightsKey(), ...Object.fromEntries(PACE_FACTOR_KEYS.map(f => [`w_${f}`, Number(ws[`w_${f}`] ?? 0)])) };
+        : { key: paceWeightsDraftKey(), ...Object.fromEntries(PACE_FACTOR_KEYS.map(f => [`w_${f}`, Number(eff[`w_${f}`] ?? 0)])) };
       const v = Math.max(0, Math.min(100, Math.round(Number(input.value) || 0)));
       paceWeightsDraft = { ...base, [input.dataset.wkey]: v };
       paceWeightsMessage = "";

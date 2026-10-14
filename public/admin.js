@@ -1054,6 +1054,8 @@ function setupGradedRacesImport() {
 // 予想登録画面「展開・時計」タブの総合推奨馬で使う、展開・馬番・騎手の比率(%)。全ユーザー共通。
 // API: GET/PUT/DELETE /api/admin/pace-weights、POST /api/admin/pace-weights/auto。仕様は docs/design/screens.md「総合推奨馬」。
 const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"], ["w_time", "補正タイム"]];
+// ペース予想ごとの比率(2026-10-14追加)。"" は全ペース共通
+const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "スロー"]];
 
 function paceWeightsMsg(text, ok) {
   const el = document.getElementById("pace-weights-message");
@@ -1080,15 +1082,56 @@ function paceAutoSummaryText(detail) {
   const s = detail?.summary;
   if (!s) return "";
   if (detail.method === "backtest") {
-    const pct = (v) => `${Math.round((v || 0) * 100)}%`;
     const t = (b) => (b.win != null ? `1着${b.win}・2着以内${b.quin}・3着以内${b.show}` : `3着以内${b.hits}`);
-    return `${detail.races}年分 総合上位3頭(${detail.races * 3}頭)のうち ${t(detail.best)}頭・均等なら ${t(detail.equal)}頭`;
+    // ペース予想ごと(2026-10-14)
+    const paces = PACE_W_TYPES.filter(([p]) => detail.by_pace?.[p])
+      .map(([p, label]) => `${label}${detail.by_pace[p].races}年: ${t(detail.by_pace[p].best)}頭`).join(" / ");
+    return `${detail.races}年分 総合上位3頭(${detail.races * 3}頭)のうち ${t(detail.best)}頭・均等なら ${t(detail.equal)}頭${paces ? `。${paces}` : ""}`;
   }
   const pct = (v) => `${Math.round((v || 0) * 100)}%`;
   return `${detail.races}年分 ` + PACE_W_KEYS.map(([k, label]) => {
     const f = k.replace("w_", "");
     return `${label}${pct(s[f]?.hit_rate)}(偶然${pct(s[f]?.chance_rate)})`;
   }).join(" ");
+}
+
+// 全ペース共通+ハイ・ミドル・スローの4段の入力(2026-10-14)。w: その重賞(または標準)の比率の行(無ければ null)、
+// fallback: 未設定のときに薄く出す比率(重賞は標準、標準は既定値)
+function paceWeightsLinesHtml(w, fallback) {
+  const hasCommon = w && w.source !== "none";
+  const sourceText = (s) => (s === "auto" ? "自動" : s === "manual" ? "手動" : "");
+  const line = (pace, label, val, placeholder, source, clearable) => `
+    <div class="pace-w-line" data-pace="${pace}">
+      <span class="pace-w-line-label">${label}</span>
+      ${paceWeightsInputsHtml(val, placeholder)}
+      <small class="pace-w-line-source">${sourceText(source)}</small>
+      <button type="button" class="ghost-btn pace-w-line-save">保存</button>
+      ${clearable ? `<button type="button" class="icon-btn delete pace-w-line-clear" title="このペースの比率を消す">×</button>` : ""}
+    </div>`;
+  const common = hasCommon ? w : null;
+  return line("", "共通", common, fallback, common?.source, false)
+    + PACE_W_TYPES.map(([p, label]) => {
+      const e = w?.by_pace?.[p] || null;
+      return line(p, label, e, common || fallback, e?.source, Boolean(e));
+    }).join("");
+}
+
+// 4段の入力の「保存」「×」(container の中の [data-id] が重賞のID。標準は0)
+function setupPaceWeightsLines(container) {
+  container.querySelectorAll(".pace-w-line-save").forEach((btn) => btn.addEventListener("click", () => {
+    const line = btn.closest(".pace-w-line");
+    const id = Number(btn.closest("[data-id]").dataset.id);
+    paceWeightsRequest("/api/admin/pace-weights", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graded_race_id: id, pace_type: line.dataset.pace, ...paceWeightsReadInputs(line) }),
+    }, "保存しました");
+  }));
+  container.querySelectorAll(".pace-w-line-clear").forEach((btn) => btn.addEventListener("click", () => {
+    const line = btn.closest(".pace-w-line");
+    const id = Number(btn.closest("[data-id]").dataset.id);
+    paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(id)}&pace_type=${encodeURIComponent(line.dataset.pace)}`,
+      { method: "DELETE" }, "消しました");
+  }));
 }
 
 async function paceWeightsRequest(url, init, okText) {
@@ -1110,17 +1153,12 @@ async function loadPaceWeights() {
   const res = await authedFetch("/api/admin/pace-weights");
   if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("pace-weights-table", null); return; }
   const data = await res.json();
-  const std = data.default || data.builtin;
+  const std = data.default && data.default.source !== "none" ? data.default : data.builtin;
+  defBox.dataset.id = "0";
   defBox.innerHTML = `
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
-    ${paceWeightsInputsHtml(std)}
-    <button type="button" class="ghost-btn pace-w-btn" id="pace-weights-default-save">保存</button>`;
-  document.getElementById("pace-weights-default-save").addEventListener("click", () => {
-    paceWeightsRequest("/api/admin/pace-weights", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graded_race_id: 0, ...paceWeightsReadInputs(defBox) }),
-    }, "標準の比率を保存しました");
-  });
+    ${paceWeightsLinesHtml(data.default, data.builtin)}`;
+  setupPaceWeightsLines(defBox);
 
   const items = data.items || [];
   setCollapsibleCount("pace-weights-table", items.length);
@@ -1128,21 +1166,20 @@ async function loadPaceWeights() {
     table.innerHTML = "<tr><td>登録済みの重賞はありません</td></tr>";
     return;
   }
-  const sourceText = (w) => (!w ? "標準を使用" : w.source === "auto" ? "自動算出" : "手動");
+  const sourceText = (w) => (!w ? "標準を使用" : w.source === "auto" ? "自動算出" : w.source === "none" ? "ペースのみ手動" : "手動");
   table.innerHTML = `
-    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(展開・馬番・騎手・補正タイム %)</th><th>設定</th><th>自動算出の根拠(過去の各年で試した的中)</th><th>更新</th><th></th></tr></thead>
+    <thead><tr><th>開催月日</th><th>レース名</th><th>比率(共通・ペース予想ごと。展開・馬番・騎手・補正タイム %)</th><th>設定</th><th>自動算出の根拠(過去の各年で試した的中)</th><th>更新</th><th></th></tr></thead>
     <tbody>
       ${items.map((g) => `
         <tr data-id="${g.graded_race_id}">
           <td>${escapeHtml(g.schedule_md || "—")}</td>
           <td>${escapeHtml(g.name)} <small>${escapeHtml(g.is_jump ? "J・" + g.grade : g.grade)}</small></td>
-          <td class="pace-w-cell">${paceWeightsInputsHtml(g.weights, std)}</td>
+          <td class="pace-w-cell">${paceWeightsLinesHtml(g.weights, std)}</td>
           <td>${sourceText(g.weights)}</td>
           <td><small>${escapeHtml(g.weights?.source === "auto" ? paceAutoSummaryText(g.weights.detail) : "")}</small></td>
           <td><small>${escapeHtml(g.weights ? formatDateTime(g.weights.updated_at) : "")}</small></td>
           <td>
             <div class="row-actions">
-              <button type="button" class="ghost-btn pace-w-row-save">保存</button>
               <button type="button" class="ghost-btn pace-w-row-auto">自動算出</button>
               ${g.weights ? `<button type="button" class="icon-btn delete pace-w-row-clear" title="この重賞の比率を消す(次に開いたときに自動で選び直す)">×</button>` : ""}
             </div>
@@ -1150,13 +1187,7 @@ async function loadPaceWeights() {
         </tr>`).join("")}
     </tbody>`;
   const rowOf = (btn) => btn.closest("tr");
-  table.querySelectorAll(".pace-w-row-save").forEach((btn) => btn.addEventListener("click", () => {
-    const tr = rowOf(btn);
-    paceWeightsRequest("/api/admin/pace-weights", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graded_race_id: Number(tr.dataset.id), ...paceWeightsReadInputs(tr) }),
-    }, "保存しました");
-  }));
+  setupPaceWeightsLines(table);
   table.querySelectorAll(".pace-w-row-auto").forEach((btn) => btn.addEventListener("click", async () => {
     const tr = rowOf(btn);
     btn.disabled = true;

@@ -1,23 +1,27 @@
-import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, parseByPace } from "../../_shared.js";
 
 // 管理者向け: 総合推奨馬の重視度の比率(pace_weights。2026-10-13追加)。仕様は docs/design/screens.md「総合推奨馬」。
 //   GET    → { default: {...}|null, builtin, items: [{ graded_race_id, name, grade, is_jump, schedule_md, weights|null }] }
+//            weights: { w_*, source: "manual"|"auto"|"none", by_pace: { high|middle|slow: { w_*, source } }, detail, updated_at }
 //            (重賞マスタ全件〈年間140件前後〉+ 比率の表〈同程度〉を全件読む。管理画面を開いたときだけ)
-//   PUT    { graded_race_id(0=標準), w_pace, w_number, w_jockey, w_time } → 保存(source='manual'。合計100の%にそろえる)
-//   DELETE ?graded_race_id=N → その重賞の比率を消す(標準の比率を使うようになる)。0(標準)は消すと既定値に戻る
+//   PUT    { graded_race_id(0=標準), pace_type?, w_pace, w_number, w_jockey, w_time } → 保存(source='manual'。合計100の%にそろえる)
+//            pace_type("high"|"middle"|"slow"。2026-10-14追加)があればそのペースの比率、無ければ全ペース共通の比率
+//   DELETE ?graded_race_id=N[&pace_type=P] → その重賞の比率を消す(標準の比率を使うようになる)。0(標準)は消すと既定値に戻る。
+//            pace_type があればそのペースの比率だけ消す
 export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
   const [{ results: graded }, weightRows] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
-    db.prepare("SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at FROM pace_weights").all()
+    db.prepare("SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at FROM pace_weights").all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
   ]);
   const byId = new Map(weightRows.map((r) => [Number(r.graded_race_id), r]));
   const out = (r) => (r ? {
     w_pace: r.w_pace, w_number: r.w_number, w_jockey: r.w_jockey, w_time: r.w_time ?? 0, source: r.source, updated_at: r.updated_at,
+    by_pace: parseByPace(r.by_pace),
     detail: r.detail ? safeJson(r.detail) : null,
   } : null);
   return Response.json({
@@ -32,6 +36,12 @@ function safeJson(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+// pace_type の値を検証する。{ pace } | { error }("" や未指定は共通 = null)
+function paceTypeOf(raw) {
+  if (raw === undefined || raw === null || raw === "") return { pace: null };
+  return PACE_TYPES.includes(raw) ? { pace: raw } : { error: jsonError("pace_type が不正です", 400) };
+}
+
 export async function onRequestPut(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
@@ -40,6 +50,8 @@ export async function onRequestPut(context) {
   if (error) return error;
   const id = Number(data?.graded_race_id);
   if (!Number.isInteger(id) || id < 0) return jsonError("graded_race_id が不正です", 400);
+  const { pace, error: pErr } = paceTypeOf(data?.pace_type);
+  if (pErr) return pErr;
   const w = normalizePaceWeights(data);
   if (!w) return jsonError("比率は0以上の数で、合計が0より大きくなるように入力してください", 400);
   if (id > 0) {
@@ -47,6 +59,18 @@ export async function onRequestPut(context) {
     if (!g) return jsonError("重賞が見つかりません", 404);
   }
   const now = new Date().toISOString();
+  if (pace) {
+    // ペースの比率: by_pace の1つだけ書き換える。行が無ければ「共通は未設定(source='none')」の行を作る
+    const row = await db.prepare("SELECT by_pace FROM pace_weights WHERE graded_race_id = ?").bind(id).first();
+    const byPace = { ...parseByPace(row?.by_pace), [pace]: { ...w, source: "manual" } };
+    const d = DEFAULT_PACE_WEIGHTS;
+    await db.prepare(
+      `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'none', NULL, ?)
+       ON CONFLICT(graded_race_id) DO UPDATE SET by_pace = excluded.by_pace, updated_at = excluded.updated_at`
+    ).bind(id, d.w_pace, d.w_number, d.w_jockey, d.w_time, JSON.stringify(byPace), now).run();
+    return Response.json({ ok: true, graded_race_id: id, pace_type: pace, ...w, source: "manual", updated_at: now });
+  }
   await db.prepare(
     `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at)
      VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)
@@ -59,9 +83,29 @@ export async function onRequestPut(context) {
 export async function onRequestDelete(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
+  const db = context.env.DB;
   const url = new URL(context.request.url);
   const id = Number(url.searchParams.get("graded_race_id"));
   if (!Number.isInteger(id) || id < 0) return jsonError("graded_race_id が不正です", 400);
-  await context.env.DB.prepare("DELETE FROM pace_weights WHERE graded_race_id = ?").bind(id).run();
-  return Response.json({ ok: true, graded_race_id: id });
+  const { pace, error: pErr } = paceTypeOf(url.searchParams.get("pace_type"));
+  if (pErr) return pErr;
+  if (!pace) {
+    await db.prepare("DELETE FROM pace_weights WHERE graded_race_id = ?").bind(id).run();
+    return Response.json({ ok: true, graded_race_id: id });
+  }
+  const row = await db.prepare("SELECT by_pace, source FROM pace_weights WHERE graded_race_id = ?").bind(id).first();
+  if (!row) return Response.json({ ok: true, graded_race_id: id, pace_type: pace });
+  const byPace = parseByPace(row.by_pace);
+  delete byPace[pace];
+  if (row.source === "none" && !Object.keys(byPace).length) {
+    // 共通もペースも決めていない行は消す
+    await db.prepare("DELETE FROM pace_weights WHERE graded_race_id = ?").bind(id).run();
+  } else {
+    // 重賞の自動の比率は根拠を消して、次に開いたときにそのペースを自動で選び直させる(標準〈0〉は自動算出しない)
+    await db.prepare(
+      `UPDATE pace_weights SET by_pace = ?, detail = CASE WHEN graded_race_id > 0 AND source <> 'manual' THEN NULL ELSE detail END,
+         updated_at = ? WHERE graded_race_id = ?`
+    ).bind(JSON.stringify(byPace), new Date().toISOString(), id).run();
+  }
+  return Response.json({ ok: true, graded_race_id: id, pace_type: pace });
 }

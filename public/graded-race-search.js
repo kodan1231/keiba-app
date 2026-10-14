@@ -55,17 +55,27 @@ function grWeightsSourceText(w) {
   return "既定の比率(この重賞の比率はまだありません)";
 }
 
+function grWeightsText(w) {
+  return GR_FACTOR_KEYS.map((f) => `${GR_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
+}
+
 function grPicksHtml(data) {
   const w = data.weights || {};
-  const weightsText = GR_FACTOR_KEYS.map((f) => `${GR_FACTOR_LABELS[f]}${Number(w[`w_${f}`] ?? 0)}%`).join("・");
   const a = w.scope === "graded" ? w.auto : null;
-  const pct = (x) => `${Math.round((x || 0) * 100)}%`;
   const years = data.years || [];
   const sum = (k) => years.reduce((s, y) => s + (y[k] || 0), 0);
+  // ペース予想ごとの比率(2026-10-14)。共通と違う比率を持つペースだけ出す
+  const paceLines = ["high", "middle", "slow"].map((p) => {
+    const pw = w.paces?.[p];
+    if (!pw || !pw.pace_type) return "";
+    const pa = pw.scope === "graded" ? pw.auto : null;
+    return `<p class="stats-note">${GR_PACE_LABEL[p]}ペース予想: <strong>${escapeHtml(grWeightsText(pw))}</strong>(${escapeHtml(pw.scope === "graded" ? (pw.source === "auto" ? "自動" : "管理者が設定") : "標準")})${pa ? ` 過去の${GR_PACE_LABEL[p]}予想${pa.races}年で ${escapeHtml(grHitText(pa.best, pa.races))}` : ""}</p>`;
+  }).join("");
   const head = `
-    <p class="stats-note">比率: <strong>${escapeHtml(weightsText)}</strong>(${escapeHtml(grWeightsSourceText(w))})</p>
+    <p class="stats-note">比率(全ペース共通): <strong>${escapeHtml(grWeightsText(w))}</strong>(${escapeHtml(grWeightsSourceText(w))})</p>
     ${a ? `<p class="stats-note">自動で選んだときの成績: 過去${a.races}年で総合上位3頭のうち ${grHitText(a.best, a.races)}。均等の比率なら ${grHitText(a.equal, a.races)}</p>` : ""}
-    ${years.length ? `<p class="stats-note">この比率で各年をその年より前のデータだけで採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。比率は★の上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 の順で比べています。この比率では <strong>${grHitText({ win: sum("win"), quin: sum("quin"), show: sum("hits") }, years.length)}</strong></p>` : ""}`;
+    ${paceLines}
+    ${years.length ? `<p class="stats-note">各年をその年より前のデータだけで、その年のペース予想の比率で採点した総合点の上位5頭です(予想登録画面の総合推奨馬と同じ計算)。比率は★の上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 の順で比べています。この比率では <strong>${grHitText({ win: sum("win"), quin: sum("quin"), show: sum("hits") }, years.length)}</strong></p>` : ""}`;
   if (!years.length) return `${head}<p class="ticket-sub">${escapeHtml(data.message || "検証できる過去の結果がありません。")}</p>`;
   const cell = (x) => (x.missing ? `<span class="ticket-sub" title="データ無し">−</span>` : `<span title="${escapeAttr(x.value || "")}">${x.score}</span>`);
   const place = (p) => {
@@ -77,7 +87,7 @@ function grPicksHtml(data) {
     <div class="gr-year-card">
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>
-        <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
+        <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`, y.weights?.pace_type ? `(${GR_PACE_LABEL[y.pace_type]}の比率 ${grWeightsText(y.weights)})` : ""].filter(Boolean).join(" "))}</span>
         <span class="gr-picks-hits">★上位3頭: 1着${y.win}・2着以内${y.quin}・3着以内${y.hits}頭</span>
       </div>
       <div class="table-wrap">

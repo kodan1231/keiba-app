@@ -3358,6 +3358,12 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-admin .pace-reco-note { width: 100%; margin: 0; }
 .pace-w-cell { white-space: nowrap; }
 .pace-w-cell .pace-w-input input { width: 3.6em; font-size: 14px; }
+/* 管理画面: 共通+ペース予想ごとの4段(2026-10-14) */
+.pace-w-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; padding: 2px 0; }
+.pace-w-line + .pace-w-line { border-top: 1px dotted var(--rule-strong); }
+.pace-w-line-label { min-width: 3.2em; font-size: 12px; font-weight: 700; }
+.pace-w-line-source { min-width: 2.5em; color: var(--ink-soft, inherit); }
+.pace-w-line .ghost-btn { padding: 2px 10px; font-size: 12px; }
 
 /* データ検索「重賞検索」: 総合推奨馬の検証(2026-10-13) */
 .gr-picks-hits { font-weight: 700; color: var(--hanko); }

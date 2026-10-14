@@ -2,8 +2,10 @@ import { parsePositiveIntId, getPaceWeights, isAutoWeightsStale, raceForStaleChe
 
 // 総合推奨馬の重視度の比率(2026-10-13追加)。ログインユーザー全員が読める(比率は全ユーザー共通)。
 // GET /api/pace-weights?graded_race_id=N&race_id=R(どちらも省略可)
-//   → { w_pace, w_number, w_jockey, w_time, source, updated_at, scope: "graded"|"default"|"builtin", auto: {...}|null, stale }
-// その重賞の比率が無ければ標準の比率、標準も無ければ既定値(各25)。
+//   → { w_pace, w_number, w_jockey, w_time, source, updated_at, scope: "graded"|"default"|"builtin", pace_type, auto: {...}|null,
+//       paces: { high|middle|slow: 同じ形 }, stale }
+// その重賞の比率が無ければ標準の比率、標準も無ければ既定値(各25)。paces はペース予想ごとの比率(2026-10-14追加。
+// 画面はレースのペース予想〈race-factors の pace_type〉で選ぶ。選ぶ順は _lib/pace-score.js の getPaceWeights)。
 // stale: 重賞のレース(race_id)を開いたとき、その重賞の自動の比率が無い・古い(_lib/pace-score.js の isAutoWeightsStale)。
 //   画面はこれを見て POST /api/pace-weights/recompute で計算し直しを頼み、終わったら取り直す。
 //   2026-10-13: 当初はこの GET の中で計算し直していたが、計算(候補の採点)とキャッシュの読み込みで無料枠のCPU上限(10ミリ秒)を

@@ -510,7 +510,9 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   w_number INTEGER NOT NULL,
   w_jockey INTEGER NOT NULL,
   w_time INTEGER NOT NULL DEFAULT 0, -- 補正タイム(2026-10-13追加。@STEP: pace_weights_time)
-  source TEXT NOT NULL DEFAULT 'manual',
+  source TEXT NOT NULL DEFAULT 'manual', -- 'none' = 全ペース共通の比率は未設定(by_pace だけ。2026-10-14)
+  -- ペース予想ごとの比率(2026-10-14追加。@STEP: pace_weights_by_pace)。JSON { high|middle|slow: { w_*, source: 'manual'|'auto' } }
+  by_pace TEXT,
   detail TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
 );

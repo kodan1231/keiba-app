@@ -12,9 +12,14 @@ import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } f
 
 export const PACE_FACTORS = FACTOR_KEYS;
 export const DEFAULT_PACE_WEIGHTS = { w_pace: 25, w_number: 25, w_jockey: 25, w_time: 25 };
+// ペース予想ごとの比率(2026-10-14追加。ユーザー要望)。列 by_pace に JSON { high|middle|slow: { w_*, source: "manual"|"auto" } } で持つ。
+// 行の w_* は「全ペース共通」の比率。source='none' の行は共通の比率を決めていない(ペースの比率だけ手で入れた)。
+export const PACE_TYPES = ["high", "middle", "slow"];
+// 自動算出でペースごとの比率を作るのに要る年数(これ未満のペースは作らず、共通の比率を使う)
+const PACE_SPLIT_MIN_YEARS = 2;
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 5; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
-// 5: 同日 上位3頭の1着数→2着以内の数→3着以内の数の優先順で比べる
+const AUTO_METHOD_VERSION = 6; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
+// 5: 同日 上位3頭の1着数→2着以内の数→3着以内の数の優先順で比べる / 6: 2026-10-14 ペース予想ごとの比率も選ぶ
 export const PACE_TOP_N = 5; // 重賞検索の検証で年ごとに表示する頭数
 // 比率の比較で選ぶ頭数(2026-10-13 ユーザー要望で5→3。総合点の上位3頭のうち何頭が3着以内に入ったかで比べる)
 export const PACE_PICK_N = 3;
@@ -41,15 +46,30 @@ function toPercents(vals) {
   return Object.fromEntries(PACE_FACTORS.map((f, i) => [`w_${f}`, out[i]]));
 }
 
-// 標準(graded_race_id=0)と、その重賞の比率を読む。重賞の比率が無ければ標準、標準も無ければ既定値。
-// 読み取りは主キーで最大2行。
+// 列 by_pace の JSON を読む(壊れていれば空)。
+export function parseByPace(text) {
+  if (!text) return {};
+  try {
+    const o = JSON.parse(text);
+    return o && typeof o === "object" ? o : {};
+  } catch { return {}; }
+}
+
+const weightsOf = (w) => Object.fromEntries(PACE_FACTORS.map((f) => [`w_${f}`, Number(w?.[`w_${f}`] ?? 0)]));
+
+// 標準(graded_race_id=0)と、その重賞の比率を読む。読み取りは主キーで最大2行。
+// 戻り値: 全ペース共通の比率 { w_*, source, updated_at, scope, pace_type: null, auto } に、
+//   paces: { high|middle|slow: 同じ形(pace_type はペースの比率を使ったときだけそのペース) } を付けたもの。
+// 選ぶ順(2026-10-14 ユーザー確認済み。手で決めた比率を自動より優先):
+//   その重賞のそのペース(手動)→ その重賞の共通(手動)→ その重賞のそのペース(自動)→ その重賞の共通(自動)
+//   → 標準のそのペース → 標準の共通 → 既定値(各25)
 export async function getPaceWeights(db, gradedRaceId) {
   const ids = [0];
   if (gradedRaceId) ids.push(Number(gradedRaceId));
   let rows = [];
   try {
     const { results } = await db
-      .prepare(`SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at FROM pace_weights WHERE graded_race_id IN (${ids.map(() => "?").join(",")})`)
+      .prepare(`SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at FROM pace_weights WHERE graded_race_id IN (${ids.map(() => "?").join(",")})`)
       .bind(...ids)
       .all();
     rows = results || [];
@@ -57,18 +77,42 @@ export async function getPaceWeights(db, gradedRaceId) {
     console.error("pace_weights read failed (ignored)", e); // 表がまだ無い等。既定値で返す
   }
   const byId = new Map(rows.map((r) => [Number(r.graded_race_id), r]));
+  const g = gradedRaceId ? byId.get(Number(gradedRaceId)) || null : null;
+  const d = byId.get(0) || null;
+  return { ...resolvePaceWeights(g, d, null), paces: Object.fromEntries(PACE_TYPES.map((p) => [p, resolvePaceWeights(g, d, p)])) };
+}
+
+// g: その重賞の行、d: 標準の行(どちらも無ければ null)、pace: "high"|"middle"|"slow"|null(共通)
+function resolvePaceWeights(g, d, pace) {
   // auto: 自動算出の要約(画面に「過去の的中」を出す用。年ごとの根拠は管理画面の一覧で見る)
-  const autoOf = (r) => {
-    if (r.source !== "auto" || !r.detail) return null;
+  const autoOf = (r, p) => {
+    if (!r.detail) return null;
     try {
-      const d = JSON.parse(r.detail);
-      return d.method === "backtest" ? { races: d.races, top3: d.top3, best: d.best, equal: d.equal } : null;
+      const det = JSON.parse(r.detail);
+      if (det.method !== "backtest") return null;
+      if (p) return det.by_pace?.[p] || null;
+      return { races: det.races, top3: det.top3, best: det.best, equal: det.equal };
     } catch { return null; }
   };
-  const pick = (r, scope) => ({ w_pace: r.w_pace, w_number: r.w_number, w_jockey: r.w_jockey, w_time: r.w_time ?? 0, source: r.source, updated_at: r.updated_at, scope, auto: autoOf(r) });
-  if (gradedRaceId && byId.has(Number(gradedRaceId))) return pick(byId.get(Number(gradedRaceId)), "graded");
-  if (byId.has(0)) return pick(byId.get(0), "default");
-  return { ...DEFAULT_PACE_WEIGHTS, source: "builtin", updated_at: null, scope: "builtin", auto: null };
+  const common = (r) => (r && r.source !== "none" ? { w: r, source: r.source, p: null } : null);
+  const ofPace = (r) => {
+    const e = r && pace ? parseByPace(r.by_pace)[pace] : null;
+    return e ? { w: e, source: e.source === "auto" ? "auto" : "manual", p: pace } : null;
+  };
+  const make = (c, r, scope) => ({
+    ...weightsOf(c.w), source: c.source, updated_at: r.updated_at, scope, pace_type: c.p,
+    auto: scope === "graded" && c.source === "auto" ? autoOf(r, c.p) : null,
+  });
+  if (g) {
+    const gp = ofPace(g), gc = common(g);
+    const order = [gp?.source === "manual" && gp, gc?.source === "manual" && gc, gp, gc].filter(Boolean);
+    if (order.length) return make(order[0], g, "graded");
+  }
+  if (d) {
+    const c = ofPace(d) || common(d);
+    if (c) return make(c, d, "default");
+  }
+  return { ...DEFAULT_PACE_WEIGHTS, source: "builtin", updated_at: null, scope: "builtin", pace_type: null, auto: null };
 }
 
 // 比率の候補(10%刻み・合計100の全組み合わせ。4要素で286通り)
@@ -261,7 +305,66 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   }
   if (!factorTotal.top3) return { error: "過去の着順が取り込まれていません" };
 
-  // 比率の候補ごとに過去の全年を採点し、一番当たった比率を選ぶ
+  const rate = (h) => Math.round((h / factorTotal.top3) * 1000) / 1000;
+  const { best, equal } = searchBestWeights(years);
+  yearsOut.forEach((y, i) => {
+    y.total = best.perYear[i]; // 選んだ比率での総合上位3頭の { win, quin, show }
+    y.equal = equal.perYear[i];
+  });
+
+  // ペース予想ごと(2026-10-14追加): 各年のペース予想で分け、PACE_SPLIT_MIN_YEARS 年以上あるペースだけ選ぶ
+  const byPace = {};
+  const byPaceDetail = {};
+  for (const p of PACE_TYPES) {
+    const idx = bt.years.map((y, i) => (y.pace_type === p ? i : -1)).filter((i) => i >= 0);
+    if (idx.length < PACE_SPLIT_MIN_YEARS) continue;
+    const r = searchBestWeights(idx.map((i) => years[i]));
+    byPace[p] = { ...r.best.w };
+    byPaceDetail[p] = {
+      races: idx.length,
+      best: { win: r.best.win, quin: r.best.quin, show: r.best.show, hits: r.best.hits },
+      equal: { win: r.equal.win, quin: r.equal.quin, show: r.equal.show, hits: r.equal.hits },
+    };
+    idx.forEach((i, k) => { yearsOut[i].pace_total = r.best.perYear[k]; });
+  }
+
+  const summary = {};
+  for (const f of PACE_FACTORS) {
+    summary[f] = {
+      hits: factorTotal[f].hits,
+      hit_rate: Math.round((factorTotal[f].hits / factorTotal.top3) * 1000) / 1000,
+      chance_rate: Math.round((factorTotal[f].expected / factorTotal.top3) * 1000) / 1000,
+    };
+  }
+  const targetYear = opts.targetRace ? Number(String(opts.targetRace.race_date || "").slice(0, 4)) || null : opts.targetYear || null;
+  return {
+    weights: { ...best.w },
+    byPace,
+    detail: {
+      method: "backtest",
+      version: AUTO_METHOD_VERSION,
+      computed_at: new Date().toISOString(),
+      target_year: targetYear,
+      race_ids: yearsOut.map((y) => y.race_id),
+      // 着順のあったレース(全頭の結果がそろわず採点に使えなかった年も含む)。古いかどうかの判定に使う
+      // (着順の無かった今年のレースは入れない。結果が入ったら計算し直すため)
+      checked_race_ids: bt.checkedRaceIds,
+      races: yearsOut.length,
+      top3: factorTotal.top3,
+      // 総合上位3頭のうち 1着 / 2着以内 / 3着以内 の頭数(hits = show)。分母は年数×3
+      best: { win: best.win, quin: best.quin, show: best.show, hits: best.hits, hit_rate: rate(best.hits) },
+      equal: { win: equal.win, quin: equal.quin, show: equal.show, hits: equal.hits, hit_rate: rate(equal.hits) },
+      // ペースごとの { races, best, equal }(年数が足りず作らなかったペースは無し)
+      by_pace: byPaceDetail,
+      summary,
+      years: yearsOut,
+    },
+  };
+}
+
+// 年ごとの採点(compileYear)の並びから、一番当たった比率を選ぶ。戻り値: { best: { w, win, quin, show, hits, posSum, perYear }, equal }
+// 比率の候補ごとに全年を採点する。
+function searchBestWeights(years) {
   const r2 = (x) => Math.round(x * 100) / 100;
   const evalWeights = (w) => {
     const wArr = PACE_FACTORS.map((f) => w[`w_${f}`]);
@@ -276,6 +379,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   const distFromEqual = (w) => PACE_FACTORS.reduce((a, f) => a + Math.abs(w[`w_${f}`] - DEFAULT_PACE_WEIGHTS[`w_${f}`]), 0);
   // 2段階で探す(CPU時間対策): 20%刻み(56通り)で一番当たった比率を見つけ、その周り(各要素±10%)を10%刻みで探す。
   // 10%刻みの全通り(286通り)を試すと採点だけで約6ミリ秒かかり、キャッシュの読み込みと合わせて無料枠の上限(10ミリ秒)を超えうるため。
+  // ペースごとの探索(2026-10-14)は年を分けて行うので、採点する年の延べ数は共通の分と合わせて全年の2倍になる。
   // 比べ方(2026-10-13 ユーザー要望): 総合上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 が多い方。
   // それも同じなら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等に近い方
   let best = null;
@@ -295,50 +399,17 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   for (const w of weightCandidates(10)) {
     if (PACE_FACTORS.every((f) => Math.abs(w[`w_${f}`] - coarse[`w_${f}`]) <= 10) && PACE_FACTORS.some((f) => w[`w_${f}`] % 20 !== 0)) consider(w);
   }
-  const equal = evalWeights(DEFAULT_PACE_WEIGHTS);
-  yearsOut.forEach((y, i) => {
-    y.total = best.perYear[i]; // 選んだ比率での総合上位3頭の { win, quin, show }
-    y.equal = equal.perYear[i];
-  });
-
-  const summary = {};
-  for (const f of PACE_FACTORS) {
-    summary[f] = {
-      hits: factorTotal[f].hits,
-      hit_rate: Math.round((factorTotal[f].hits / factorTotal.top3) * 1000) / 1000,
-      chance_rate: Math.round((factorTotal[f].expected / factorTotal.top3) * 1000) / 1000,
-    };
-  }
-  const rate = (h) => Math.round((h / factorTotal.top3) * 1000) / 1000;
-  const targetYear = opts.targetRace ? Number(String(opts.targetRace.race_date || "").slice(0, 4)) || null : opts.targetYear || null;
-  return {
-    weights: { ...best.w },
-    detail: {
-      method: "backtest",
-      version: AUTO_METHOD_VERSION,
-      computed_at: new Date().toISOString(),
-      target_year: targetYear,
-      race_ids: yearsOut.map((y) => y.race_id),
-      // 着順のあったレース(全頭の結果がそろわず採点に使えなかった年も含む)。古いかどうかの判定に使う
-      // (着順の無かった今年のレースは入れない。結果が入ったら計算し直すため)
-      checked_race_ids: bt.checkedRaceIds,
-      races: yearsOut.length,
-      top3: factorTotal.top3,
-      // 総合上位3頭のうち 1着 / 2着以内 / 3着以内 の頭数(hits = show)。分母は年数×3
-      best: { win: best.win, quin: best.quin, show: best.show, hits: best.hits, hit_rate: rate(best.hits) },
-      equal: { win: equal.win, quin: equal.quin, show: equal.show, hits: equal.hits, hit_rate: rate(equal.hits) },
-      summary,
-      years: yearsOut,
-    },
-  };
+  return { best, equal: evalWeights(DEFAULT_PACE_WEIGHTS) };
 }
 
 // 重賞検索タブの「過去の上位5頭」(2026-10-13追加): 過去の各年を、指定の比率で採点した総合点の上位5頭と実際の着順。
 // 総合点 = Σ 比率 × 点 ÷ 比率の合計(画面の総合推奨馬と同じ)。同点は同順位。
-export function gradedPicksOf(bt, w) {
-  const wOf = (f) => Number(w[`w_${f}`] ?? 0);
-  const wSum = PACE_FACTORS.reduce((a, f) => a + wOf(f), 0) || 1;
+// weights は getPaceWeights の戻り値。各年はその年のペース予想の比率(weights.paces)で採点する(2026-10-14)。
+export function gradedPicksOf(bt, weights) {
   return bt.years.map((y) => {
+    const w = (y.pace_type && weights.paces?.[y.pace_type]) || weights;
+    const wOf = (f) => Number(w[`w_${f}`] ?? 0);
+    const wSum = PACE_FACTORS.reduce((a, f) => a + wOf(f), 0) || 1;
     const totals = y.runners.map((h) => ({ h, total: Math.round((PACE_FACTORS.reduce((a, f) => a + wOf(f) * h.factors[f].score, 0) / wSum) * 10) / 10 }));
     totals.sort((a, b) => b.total - a.total);
     let rank = 0;
@@ -363,6 +434,7 @@ export function gradedPicksOf(bt, w) {
     return {
       year: y.year, race_id: y.race.id, race_date: y.race.race_date, track: y.race.track, course_type: y.race.course_type, distance: y.race.distance,
       field_size: y.runners.length, pace_type: y.pace_type, win, quin, hits, top3, picks,
+      weights: { ...weightsOf(w), pace_type: w.pace_type ?? null }, // この年の採点に使った比率
     };
   });
 }
@@ -370,10 +442,11 @@ export function gradedPicksOf(bt, w) {
 // 自動の比率が古くなっていないか(画面で開いたレース race で判定)。
 //   - そのレースの結果が入っているのに、計算に含まれていない → 古い(結果を含めて計算し直し、翌年に活かす)
 //   - そのレースの年より前の年のために計算したもの → 古い(今年の出走馬が登録されたら、過去10年で計算し直す)
-// 管理者が手で保存した比率(source='manual')は自動で上書きしない。
+// 管理者が手で保存した共通の比率(source='manual')があれば自動で計算し直さない(手動が自動より優先されるため使われない)。
+// ペースの比率だけ手で入れた行(source='none')は、共通と残りのペースを自動で埋める。
 export function isAutoWeightsStale(row, race) {
   if (!row) return true;
-  if (row.source !== "auto") return false;
+  if (row.source === "manual") return false;
   let detail = null;
   try { detail = row.detail ? JSON.parse(row.detail) : null; } catch { /* 壊れていれば計算し直す */ }
   if (!detail || detail.method !== "backtest" || detail.version !== AUTO_METHOD_VERSION) return true;
@@ -391,15 +464,26 @@ export function raceForStaleCheck(race) {
 }
 
 // 自動算出して保存する(画面から呼ばれたとき・管理者のボタン)。戻り値は autoPaceWeights と同じ(保存したら saved: true)。
+// 共通の比率は自動の値で上書きする。ペースの比率は、手で決めたもの(source='manual')を残し、それ以外を自動の値に置き換える
+// (年数が足りず作らなかったペースの古い自動の値は消す)。
 export async function computeAndSaveAutoPaceWeights(db, gradedRaceId, opts = {}) {
   const result = await autoPaceWeights(db, gradedRaceId, opts);
   if (result.error) return result;
+  const row = await db.prepare("SELECT by_pace FROM pace_weights WHERE graded_race_id = ?").bind(gradedRaceId).first();
+  const prev = parseByPace(row?.by_pace);
+  const byPace = {};
+  for (const p of PACE_TYPES) {
+    if (prev[p]?.source === "manual") byPace[p] = prev[p];
+    else if (result.byPace[p]) byPace[p] = { ...result.byPace[p], source: "auto" };
+  }
   const now = new Date().toISOString();
   await db.prepare(
-    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'auto', ?, ?)
+    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'auto', ?, ?)
      ON CONFLICT(graded_race_id) DO UPDATE SET w_pace = excluded.w_pace, w_number = excluded.w_number,
-       w_jockey = excluded.w_jockey, w_time = excluded.w_time, source = 'auto', detail = excluded.detail, updated_at = excluded.updated_at`
-  ).bind(gradedRaceId, result.weights.w_pace, result.weights.w_number, result.weights.w_jockey, result.weights.w_time, JSON.stringify(result.detail), now).run();
-  return { ...result, saved: true, updated_at: now };
+       w_jockey = excluded.w_jockey, w_time = excluded.w_time, by_pace = excluded.by_pace, source = 'auto', detail = excluded.detail,
+       updated_at = excluded.updated_at`
+  ).bind(gradedRaceId, result.weights.w_pace, result.weights.w_number, result.weights.w_jockey, result.weights.w_time,
+    JSON.stringify(byPace), JSON.stringify(result.detail), now).run();
+  return { ...result, byPace, saved: true, updated_at: now };
 }
