@@ -55,12 +55,18 @@ function grPicksHtml(data) {
     if (label) return label;
     return p.finish_position ? `${p.finish_position}着` : "—";
   };
+  // 相手の判定(2026-10-14 ユーザー要望で変更): 軸を除いた相手3頭が取った3着以内の着順を並べる(例「相手1,3着」。無ければ「相手×」)。
+  // 以前は「軸を含めた4頭に1着から順にそろって入ったか」(比率の自動計算のものさし。partner_win/quin/show)を出していたが、
+  // 軸が1着でも「相手1着」、相手が2着でも1着がいなければ「相手×」となり分かりにくかった
+  const partnerHits = (y) => y.picks
+    .filter((p) => p.role === "partner" && p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3)
+    .map((p) => p.finish_position).sort((a, b) => a - b);
   return years.map((y) => `
     <div class="gr-year-card">
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>
         <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
-        <span class="gr-picks-hits">軸${y.axis_show ? (y.axis_win ? "1着" : "3着以内") : "×"} / 相手${y.partner_show ? "1-3着とも" : y.partner_quin ? "1-2着" : y.partner_win ? "1着" : "×"}</span>
+        <span class="gr-picks-hits">軸${y.axis_show ? (y.axis_win ? "1着" : "3着以内") : "×"} / 相手${partnerHits(y).length ? `${partnerHits(y).join(",")}着` : "×"}</span>
       </div>
       <div class="table-wrap">
         <table class="horse-history-table gr-picks-table">
