@@ -987,8 +987,9 @@ function paceRecommendJockeyHtml() {
 // 重視度の比率(%)を掛けて合計する。比率は全ユーザー共通(GET /api/pace-weights)。重賞はその重賞の比率、無ければ標準の比率。
 // 比率はペース予想ごとに持てる(2026-10-14。取得結果の paces からこのレースのペース予想の比率を使う)。
 // 管理者だけ、この欄で比率を変えて保存・重賞の過去の結果から自動算出できる。
-const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム" };
-const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time"]; // サーバー側 _lib/pace-score.js の PACE_FACTORS と同じ
+const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム", sexage: "性齢", weight: "馬体重", course: "同コース" };
+// サーバー側 _lib/pace-score.js の PACE_FACTORS と同じ(後ろ3つは2026-10-14追加)
+const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
 let paceWeights = null; // { key, status: "loading"|"done"|"error", data }
 let paceWeightsDraft = null; // 管理者が入力中の比率(保存前の試し計算用){ key(paceWeightsDraftKey: 重賞とペース予想), w_pace, w_number, w_jockey, w_time }
 let paceWeightsMessage = "";

@@ -2,7 +2,7 @@ import { jsonError, parsePositiveIntId, getPaceWeights, loadGradedBacktest, grad
 
 // データ検索「重賞検索」タブの「総合推奨馬の比率と過去の上位5頭」(2026-10-13追加)。
 // GET /api/data-search/graded-race-picks?id=<graded_races.id>
-//   → { weights: { w_pace, w_number, w_jockey, w_time, source, scope, auto, paces }, years: [{ year, race_id, race_date, field_size, pace_type,
+//   → { weights: { w_*(7要素), source, scope, auto, paces }, years: [{ year, race_id, race_date, field_size, pace_type,
 //        hits, weights(その年のペース予想の比率。2026-10-14), top3: [{ finish_position, horse_name, horse_number, total_rank }],
 //        picks: [{ rank, total, horse_name, horse_number, status, finish_position, factors }] }] }
 // 過去の各年を、その年より前のデータだけで採点し(_lib/pace-score.js の loadGradedBacktest。比率の自動算出と同じ)、

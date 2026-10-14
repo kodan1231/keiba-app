@@ -1053,7 +1053,9 @@ function setupGradedRacesImport() {
 // ---------- 総合推奨馬の比率(2026-10-13追加) ----------
 // 予想登録画面「展開・時計」タブの総合推奨馬で使う、展開・馬番・騎手の比率(%)。全ユーザー共通。
 // API: GET/PUT/DELETE /api/admin/pace-weights、POST /api/admin/pace-weights/auto。仕様は docs/design/screens.md「総合推奨馬」。
-const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"], ["w_time", "補正タイム"]];
+// 2026-10-14: 性齢・馬体重・同コースを追加
+const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"], ["w_time", "補正タイム"],
+  ["w_sexage", "性齢"], ["w_weight", "馬体重"], ["w_course", "同コース"]];
 // ペース予想ごとの比率(2026-10-14追加)。"" は全ペース共通
 const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "スロー"]];
 

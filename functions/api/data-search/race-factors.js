@@ -17,7 +17,7 @@ import {
 // 予想登録画面「展開・時計」タブの総合推奨馬・推奨馬(2026-10-13追加)。
 // GET /api/data-search/race-factors?race_id=N
 //   → { pace_type, counts: { nige, senko, unknown, n }, horses: [{ horse_name, horse_number, waku_number, jockey,
-//        factors: { pace|number|jockey|time: { score, rank, value, missing } } }] }
+//        factors: { pace|number|jockey|time|sexage|weight|course: { score, rank, value, missing } } }] }(後ろ3つは2026-10-14追加)
 // 点数の規則は _lib/race-factors.js(重賞の比率の自動算出と同じ1か所)。仕様は docs/design/screens.md「総合推奨馬」。
 // /api/data-search/ の下なので、使用量が多い日の自動一時停止(データ検索)の対象。
 //
@@ -52,8 +52,8 @@ export async function onRequestGet(context) {
   if (searchKeys.length) {
     const { results } = await db
       .prepare(
-        `SELECT rr.horse_key, rr.race_id, rr.status, rr.corner_positions, rr.time_text, rr.final_furlong_time,
-                r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
+        `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
+                rr.body_weight, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
            FROM race_results rr JOIN races r ON r.id = rr.race_id
           WHERE rr.horse_key IN (${searchKeys.map(() => "?").join(",")}) AND r.race_date < ?`
       )
@@ -68,7 +68,7 @@ export async function onRequestGet(context) {
   }
 
   const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
-  const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null }));
+  const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null }));
   const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
   const rf = computeRaceFactors(ctx, race, runners, runsByHorse);
 

@@ -11,16 +11,19 @@ import { getRaceTimes } from "./race-time-cache.js";
 import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } from "./race-factors.js";
 
 export const PACE_FACTORS = FACTOR_KEYS;
-export const DEFAULT_PACE_WEIGHTS = { w_pace: 25, w_number: 25, w_jockey: 25, w_time: 25 };
+// 既定の比率(ほぼ均等)。2026-10-14 に7要素(性齢・馬体重・同コースを追加)にした。それまでは4要素とも25
+export const DEFAULT_PACE_WEIGHTS = { w_pace: 15, w_number: 15, w_jockey: 14, w_time: 14, w_sexage: 14, w_weight: 14, w_course: 14 };
+// pace_weights の比率の列(SQL 用。PACE_FACTORS の順)
+export const PACE_WEIGHT_COLUMNS = PACE_FACTORS.map((f) => `w_${f}`);
 // ペース予想ごとの比率(2026-10-14追加。ユーザー要望)。列 by_pace に JSON { high|middle|slow: { w_*, source: "manual"|"auto" } } で持つ。
 // 行の w_* は「全ペース共通」の比率。source='none' の行は共通の比率を決めていない(ペースの比率だけ手で入れた)。
 export const PACE_TYPES = ["high", "middle", "slow"];
 // 自動算出でペースごとの比率を作るのに要る年数(これ未満のペースは作らず、共通の比率を使う)
 const PACE_SPLIT_MIN_YEARS = 2;
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 7; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
+const AUTO_METHOD_VERSION = 8; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
 // 5: 同日 上位3頭の1着数→2着以内の数→3着以内の数の優先順で比べる / 6: 2026-10-14 ペース予想ごとの比率も選ぶ /
-// 7: 同日 馬番の点を3頭ずつの馬番帯で数える(race-factors.js)
+// 7: 同日 馬番の点を3頭ずつの馬番帯で数える(race-factors.js) / 8: 同日 性齢・馬体重・同コースを追加し、探し方を山登りに変更
 export const PACE_TOP_N = 5; // 重賞検索の検証で年ごとに表示する頭数
 // 比率の比較で選ぶ頭数(2026-10-13 ユーザー要望で5→3。総合点の上位3頭のうち何頭が3着以内に入ったかで比べる)
 export const PACE_PICK_N = 3;
@@ -70,7 +73,7 @@ export async function getPaceWeights(db, gradedRaceId) {
   let rows = [];
   try {
     const { results } = await db
-      .prepare(`SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at FROM pace_weights WHERE graded_race_id IN (${ids.map(() => "?").join(",")})`)
+      .prepare(`SELECT graded_race_id, ${PACE_WEIGHT_COLUMNS.join(", ")}, by_pace, source, detail, updated_at FROM pace_weights WHERE graded_race_id IN (${ids.map(() => "?").join(",")})`)
       .bind(...ids)
       .all();
     rows = results || [];
@@ -116,21 +119,12 @@ function resolvePaceWeights(g, d, pace) {
   return { ...DEFAULT_PACE_WEIGHTS, source: "builtin", updated_at: null, scope: "builtin", pace_type: null, auto: null };
 }
 
-// 比率の候補(10%刻み・合計100の全組み合わせ。4要素で286通り)
-function weightCandidates(step = 10) {
-  const out = [];
-  for (let p = 0; p <= 100; p += step)
-    for (let n = 0; n <= 100 - p; n += step)
-      for (let j = 0; j <= 100 - p - n; j += step) out.push({ w_pace: p, w_number: n, w_jockey: j, w_time: 100 - p - n - j });
-  return out;
-}
-
 // 1年分を、ある比率で採点したときの { hits(総合上位3頭〈PACE_PICK_N〉のうち3着以内に入った頭数), posSum(3着以内の馬の総合の位置の合計) }。
 // 総合点 = Σ 比率 × 点(データ無しは50点)÷ 100。
 // 同点の馬が上位3頭の境目をまたぐときは、残りの枠を同点の馬で按分して数える(例: 3位以下に4頭が同点で残り1枠なら1頭あたり1/4)。
 // 2026-10-13: 当初は同点を同順位にして全員をベスト5に数えており、ある要素のデータが全頭に無い(全頭50点で同点)と
 // 全頭がベスト5扱いになって当たりが多く数えられ、その要素の比率が不当に高く選ばれた。位置も同点の中の平均にする。
-// CPU時間対策(2026-10-13): 候補286通り×最大11年を採点するため、年ごとの点を先に数値の配列にしておき(compileYear)、
+// CPU時間対策(2026-10-13): 候補(2026-10-14〜 山登りで最大約260通り)×最大11年を採点するため、年ごとの点を先に数値の配列にしておき(compileYear)、
 // 採点ではオブジェクトを作らない。Map を引く素朴な書き方だと手元で約46ミリ秒かかり、無料枠のCPU上限(10ミリ秒)を超えた。
 // placeOf: Map(key -> 着順 1/2/3。それ以外は無し)
 function compileYear(keys, placeOf, scores) {
@@ -145,41 +139,40 @@ function compileYear(keys, placeOf, scores) {
     });
     place[h] = placeOf.get(key) || 0;
   });
-  return { n, S, place, totals: new Float64Array(n), order: Array.from({ length: n }, (_, i) => i) };
+  const placed = [];
+  for (let h = 0; h < n; h++) if (place[h]) placed.push(h);
+  return { n, S, place, placed, totals: new Float64Array(n) };
 }
 
 // w: 比率の配列(PACE_FACTORS の順)
 // 戻り値: { win, quin, show(総合上位3頭のうち 1着 / 2着以内 / 3着以内 の頭数。同点の境目は按分), hits(= show), posSum }
 // 2026-10-13 ユーザー要望: 比率の比較は 1着の数 → 2着以内の数 → 3着以内の数 の優先順(autoPaceWeights の consider)
+// CPU時間対策(2026-10-14。要素が7つになり試す比率が増えたため): 全頭を並べ替えず、3着以内の馬ごとに
+// 「総合点が上の馬の数」と「同点の馬の数」を数えて位置を出す(並べ替えて同点の組ごとに数えるのと同じ結果)。
 function evaluateYear(year, w) {
-  const { n, S, place, totals, order } = year;
+  const { n, S, place, placed, totals } = year;
   const F = w.length;
   for (let h = 0; h < n; h++) {
     let t = 0;
     for (let k = 0; k < F; k++) t += w[k] * S[h * F + k];
     totals[h] = Math.round(t * 1000); // 浮動小数の誤差で同点が崩れないよう整数にする
   }
-  order.sort((a, b) => totals[b] - totals[a]);
   let win = 0, quin = 0, show = 0;
   let posSum = 0;
-  for (let i = 0; i < n; ) {
-    let j = i;
-    while (j + 1 < n && totals[order[j + 1]] === totals[order[i]]) j++;
-    let w1 = 0, w2 = 0, w3 = 0;
-    for (let x = i; x <= j; x++) {
-      const p = place[order[x]];
-      if (p === 1) w1++;
-      if (p >= 1 && p <= 2) w2++;
-      if (p >= 1 && p <= 3) w3++;
+  for (const h of placed) {
+    const t = totals[h];
+    let above = 0, same = 0;
+    for (let x = 0; x < n; x++) {
+      if (totals[x] > t) above++;
+      else if (totals[x] === t) same++;
     }
-    if (w3) {
-      const share = Math.max(0, Math.min(j + 1, PACE_PICK_N) - i) / (j - i + 1); // この同点の組に残っている上位3頭の枠を按分
-      win += w1 * share;
-      quin += w2 * share;
-      show += w3 * share;
-      posSum += w3 * ((i + j) / 2 + 1);
-    }
-    i = j + 1;
+    // この馬の同点の組は位置 above〜above+same-1(0始まり)。組に残っている上位3頭の枠を按分
+    const share = Math.max(0, Math.min(above + same, PACE_PICK_N) - above) / same;
+    const p = place[h];
+    if (p === 1) win += share;
+    if (p <= 2) quin += share;
+    show += share;
+    posSum += (above + (above + same - 1)) / 2 + 1;
   }
   return { win, quin, show, hits: show, posSum };
 }
@@ -213,7 +206,7 @@ export async function loadGradedBacktest(db, gradedRaceId) {
   const targetIds = targets.map((t) => Number(t.race.id));
   const { results: rrRows } = await db
     .prepare(
-      `SELECT race_id, horse_key, horse_name, horse_number, jockey, status, finish_position
+      `SELECT race_id, horse_key, horse_name, horse_number, jockey, sex_age, status, finish_position
          FROM race_results WHERE race_id IN (${targetIds.map(() => "?").join(",")})`
     )
     .bind(...targetIds)
@@ -232,8 +225,8 @@ export async function loadGradedBacktest(db, gradedRaceId) {
     const keys = horseKeys.slice(i, i + 90);
     const { results } = await db
       .prepare(
-        `SELECT rr.horse_key, rr.race_id, rr.status, rr.corner_positions, rr.time_text, rr.final_furlong_time,
-                r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
+        `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
+                rr.body_weight, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
            FROM race_results rr JOIN races r ON r.id = rr.race_id
           WHERE rr.horse_key IN (${keys.map(() => "?").join(",")})`
       )
@@ -251,7 +244,7 @@ export async function loadGradedBacktest(db, gradedRaceId) {
     const runnersAll = runnersByRace.get(Number(race.id)) || [];
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
-    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey })), runsByHorse);
+    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse);
     years.push({
       year,
       race,
@@ -319,7 +312,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
   for (const p of PACE_TYPES) {
     const idx = bt.years.map((y, i) => (y.pace_type === p ? i : -1)).filter((i) => i >= 0);
     if (idx.length < PACE_SPLIT_MIN_YEARS) continue;
-    const r = searchBestWeights(idx.map((i) => years[i]));
+    const r = searchBestWeights(idx.map((i) => years[i]), best.arr);
     byPace[p] = { ...r.best.w };
     byPaceDetail[p] = {
       races: idx.length,
@@ -365,7 +358,8 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
 
 // 年ごとの採点(compileYear)の並びから、一番当たった比率を選ぶ。戻り値: { best: { w, win, quin, show, hits, posSum, perYear }, equal }
 // 比率の候補ごとに全年を採点する。
-function searchBestWeights(years) {
+// start(比率の配列)があれば、そこだけを出発点にする(ペースごとの探索は全年で選んだ比率から始める。CPU時間対策)
+function searchBestWeights(years, start = null) {
   const r2 = (x) => Math.round(x * 100) / 100;
   const evalWeights = (w) => {
     const wArr = PACE_FACTORS.map((f) => w[`w_${f}`]);
@@ -378,12 +372,8 @@ function searchBestWeights(years) {
     return { win: r2(win), quin: r2(quin), show: r2(show), hits: r2(show), posSum, perYear };
   };
   const distFromEqual = (w) => PACE_FACTORS.reduce((a, f) => a + Math.abs(w[`w_${f}`] - DEFAULT_PACE_WEIGHTS[`w_${f}`]), 0);
-  // 2段階で探す(CPU時間対策): 20%刻み(56通り)で一番当たった比率を見つけ、その周り(各要素±10%)を10%刻みで探す。
-  // 10%刻みの全通り(286通り)を試すと採点だけで約6ミリ秒かかり、キャッシュの読み込みと合わせて無料枠の上限(10ミリ秒)を超えうるため。
-  // ペースごとの探索(2026-10-14)は年を分けて行うので、採点する年の延べ数は共通の分と合わせて全年の2倍になる。
   // 比べ方(2026-10-13 ユーザー要望): 総合上位3頭の 1着の数 → 2着以内の数 → 3着以内の数 が多い方。
   // それも同じなら3着以内の馬の総合の位置の合計が小さい方、それも同じなら均等に近い方
-  let best = null;
   const better = (r, b) => {
     if (r.win !== b.win) return r.win > b.win;
     if (r.quin !== b.quin) return r.quin > b.quin;
@@ -391,14 +381,44 @@ function searchBestWeights(years) {
     if (r.posSum !== b.posSum) return r.posSum < b.posSum;
     return distFromEqual(r.w) < distFromEqual(b.w);
   };
-  const consider = (w) => {
-    const r = { w, ...evalWeights(w) };
-    if (!best || better(r, best)) best = r;
+  // 山登りで探す(2026-10-14。要素が7つになり、10%刻みの全通り〈8,008通り〉は試せないため。それまでは4要素の全通りを2段階で探していた):
+  //   出発点 = 各要素を40%・残りを10%ずつにした7通り+(20,20,20,10,10,10,10)のうち一番当たったもの。
+  //   そこから「ある要素の10%を別の要素へ移す」(最大42通り)のうち一番良いものへ動き、良くならなくなるか CLIMB_MAX_STEPS 回で止める。
+  //   試すのは最大 8 + 42×CLIMB_MAX_STEPS 通り。必ず一番当たる比率が見つかるとは限らない(近くで一番良い比率)
+  const CLIMB_MAX_STEPS = 6;
+  const tried = new Map();
+  const consider = (wArr) => {
+    const key = wArr.join(",");
+    let r = tried.get(key);
+    if (!r) {
+      const w = Object.fromEntries(PACE_FACTORS.map((f, i) => [`w_${f}`, wArr[i]]));
+      tried.set(key, (r = { w, arr: wArr, ...evalWeights(w) }));
+    }
+    return r;
   };
-  for (const w of weightCandidates(20)) consider(w);
-  const coarse = best.w;
-  for (const w of weightCandidates(10)) {
-    if (PACE_FACTORS.every((f) => Math.abs(w[`w_${f}`] - coarse[`w_${f}`]) <= 10) && PACE_FACTORS.some((f) => w[`w_${f}`] % 20 !== 0)) consider(w);
+  const F = PACE_FACTORS.length;
+  const seeds = start ? [start] : PACE_FACTORS.map((_, i) => PACE_FACTORS.map((__, k) => (k === i ? 100 - 10 * (F - 1) : 10)));
+  if (!start) seeds.push(PACE_FACTORS.map((_, k) => (k < 100 / 10 - F ? 20 : 10))); // 合計100になるよう先頭から20
+  let best = null;
+  for (const s of seeds) {
+    const r = consider(s);
+    if (!best || better(r, best)) best = r;
+  }
+  for (let step = 0; step < CLIMB_MAX_STEPS; step++) {
+    let next = null;
+    for (let i = 0; i < F; i++) {
+      if (best.arr[i] < 10) continue;
+      for (let j = 0; j < F; j++) {
+        if (i === j) continue;
+        const a = [...best.arr];
+        a[i] -= 10;
+        a[j] += 10;
+        const r = consider(a);
+        if (!next || better(r, next)) next = r;
+      }
+    }
+    if (!next || !better(next, best)) break;
+    best = next;
   }
   return { best, equal: evalWeights(DEFAULT_PACE_WEIGHTS) };
 }
@@ -478,13 +498,12 @@ export async function computeAndSaveAutoPaceWeights(db, gradedRaceId, opts = {})
     else if (result.byPace[p]) byPace[p] = { ...result.byPace[p], source: "auto" };
   }
   const now = new Date().toISOString();
+  const cols = PACE_WEIGHT_COLUMNS;
   await db.prepare(
-    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'auto', ?, ?)
-     ON CONFLICT(graded_race_id) DO UPDATE SET w_pace = excluded.w_pace, w_number = excluded.w_number,
-       w_jockey = excluded.w_jockey, w_time = excluded.w_time, by_pace = excluded.by_pace, source = 'auto', detail = excluded.detail,
-       updated_at = excluded.updated_at`
-  ).bind(gradedRaceId, result.weights.w_pace, result.weights.w_number, result.weights.w_jockey, result.weights.w_time,
-    JSON.stringify(byPace), JSON.stringify(result.detail), now).run();
+    `INSERT INTO pace_weights (graded_race_id, ${cols.join(", ")}, by_pace, source, detail, updated_at)
+     VALUES (?, ${cols.map(() => "?").join(", ")}, ?, 'auto', ?, ?)
+     ON CONFLICT(graded_race_id) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(", ")},
+       by_pace = excluded.by_pace, source = 'auto', detail = excluded.detail, updated_at = excluded.updated_at`
+  ).bind(gradedRaceId, ...cols.map((c) => result.weights[c]), JSON.stringify(byPace), JSON.stringify(result.detail), now).run();
   return { ...result, byPace, saved: true, updated_at: now };
 }

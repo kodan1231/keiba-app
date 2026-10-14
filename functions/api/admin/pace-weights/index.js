@@ -1,10 +1,12 @@
-import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, parseByPace } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS, parseByPace } from "../../_shared.js";
+
+const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
 
 // 管理者向け: 総合推奨馬の重視度の比率(pace_weights。2026-10-13追加)。仕様は docs/design/screens.md「総合推奨馬」。
 //   GET    → { default: {...}|null, builtin, items: [{ graded_race_id, name, grade, is_jump, schedule_md, weights|null }] }
 //            weights: { w_*, source: "manual"|"auto"|"none", by_pace: { high|middle|slow: { w_*, source } }, detail, updated_at }
 //            (重賞マスタ全件〈年間140件前後〉+ 比率の表〈同程度〉を全件読む。管理画面を開いたときだけ)
-//   PUT    { graded_race_id(0=標準), pace_type?, w_pace, w_number, w_jockey, w_time } → 保存(source='manual'。合計100の%にそろえる)
+//   PUT    { graded_race_id(0=標準), pace_type?, w_*(7要素) } → 保存(source='manual'。合計100の%にそろえる)
 //            pace_type("high"|"middle"|"slow"。2026-10-14追加)があればそのペースの比率、無ければ全ペース共通の比率
 //   DELETE ?graded_race_id=N[&pace_type=P] → その重賞の比率を消す(標準の比率を使うようになる)。0(標準)は消すと既定値に戻る。
 //            pace_type があればそのペースの比率だけ消す
@@ -14,13 +16,13 @@ export async function onRequestGet(context) {
   const db = context.env.DB;
   const [{ results: graded }, weightRows] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
-    db.prepare("SELECT graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at FROM pace_weights").all()
+    db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, source, detail, updated_at FROM pace_weights`).all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
   ]);
   const byId = new Map(weightRows.map((r) => [Number(r.graded_race_id), r]));
   const out = (r) => (r ? {
-    w_pace: r.w_pace, w_number: r.w_number, w_jockey: r.w_jockey, w_time: r.w_time ?? 0, source: r.source, updated_at: r.updated_at,
+    ...Object.fromEntries(COLS.map((c) => [c, r[c] ?? 0])), source: r.source, updated_at: r.updated_at,
     by_pace: parseByPace(r.by_pace),
     detail: r.detail ? safeJson(r.detail) : null,
   } : null);
@@ -65,18 +67,18 @@ export async function onRequestPut(context) {
     const byPace = { ...parseByPace(row?.by_pace), [pace]: { ...w, source: "manual" } };
     const d = DEFAULT_PACE_WEIGHTS;
     await db.prepare(
-      `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, by_pace, source, detail, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'none', NULL, ?)
+      `INSERT INTO pace_weights (graded_race_id, ${COLS.join(", ")}, by_pace, source, detail, updated_at)
+       VALUES (?, ${COLS.map(() => "?").join(", ")}, ?, 'none', NULL, ?)
        ON CONFLICT(graded_race_id) DO UPDATE SET by_pace = excluded.by_pace, updated_at = excluded.updated_at`
-    ).bind(id, d.w_pace, d.w_number, d.w_jockey, d.w_time, JSON.stringify(byPace), now).run();
+    ).bind(id, ...COLS.map((c) => d[c]), JSON.stringify(byPace), now).run();
     return Response.json({ ok: true, graded_race_id: id, pace_type: pace, ...w, source: "manual", updated_at: now });
   }
   await db.prepare(
-    `INSERT INTO pace_weights (graded_race_id, w_pace, w_number, w_jockey, w_time, source, detail, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)
-     ON CONFLICT(graded_race_id) DO UPDATE SET w_pace = excluded.w_pace, w_number = excluded.w_number,
-       w_jockey = excluded.w_jockey, w_time = excluded.w_time, source = 'manual', detail = NULL, updated_at = excluded.updated_at`
-  ).bind(id, w.w_pace, w.w_number, w.w_jockey, w.w_time, now).run();
+    `INSERT INTO pace_weights (graded_race_id, ${COLS.join(", ")}, source, detail, updated_at)
+     VALUES (?, ${COLS.map(() => "?").join(", ")}, 'manual', NULL, ?)
+     ON CONFLICT(graded_race_id) DO UPDATE SET ${COLS.map((c) => `${c} = excluded.${c}`).join(", ")},
+       source = 'manual', detail = NULL, updated_at = excluded.updated_at`
+  ).bind(id, ...COLS.map((c) => w[c]), now).run();
   return Response.json({ ok: true, graded_race_id: id, ...w, source: "manual", updated_at: now });
 }
 
