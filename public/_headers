@@ -10,5 +10,8 @@
 /*.css
   Cache-Control: no-cache
 
+# JS は文字コードを明示する(2026-10-15。無いと iPhone の Safari でユーザースクリプト〈jra-result-importer.user.js〉を
+# 開いたとき日本語が文字化けして表示された)
 /*.js
   Cache-Control: no-cache
+  Content-Type: application/javascript; charset=utf-8
