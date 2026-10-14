@@ -1281,7 +1281,118 @@ async function onReady() {
   setupRaceBaseNameRecomputeButton();
   setupTrainerAliasForm();
   setupPaceWeightsFilter();
+  setupGuestIpForm();
   setupAdminTabs();
+}
+
+// ---------- ゲスト閲覧(2026-10-14。docs/design/guest.md。API: /api/admin/guest) ----------
+function guestMsg(text, ok) {
+  const el = document.getElementById("guest-message");
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || "";
+  el.className = `submit-message ${ok ? "success" : "error"}`;
+}
+
+async function guestRequest(method, body, okText) {
+  const res = await authedFetch("/api/admin/guest", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { guestMsg(data.error || "失敗しました", false); return false; }
+  guestMsg(okText, true);
+  await loadGuestAdmin();
+  return true;
+}
+
+async function loadGuestAdmin() {
+  const box = document.getElementById("guest-settings");
+  const table = document.getElementById("guest-devices-table");
+  const ipTable = document.getElementById("guest-ips-table");
+  if (!box || !table || !ipTable) return;
+  const res = await authedFetch("/api/admin/guest");
+  if (!res.ok) { box.innerHTML = `<p class="ticket-sub">読み込みに失敗しました</p>`; return; }
+  const data = await res.json();
+  const s = data.settings || {};
+  const url = s.path ? `${location.origin}${s.path}` : "";
+  box.innerHTML = `
+    <p><label><input type="checkbox" id="guest-enabled" ${s.enabled ? "checked" : ""} /> ゲスト閲覧を公開する</label></p>
+    ${s.enabled && url ? `
+      <p class="guest-url" id="guest-url">${escapeHtml(url)}</p>
+      <div class="row-actions">
+        <button type="button" class="ghost-btn" id="guest-copy-btn">URLをコピー</button>
+        <button type="button" class="ghost-btn" id="guest-regenerate-btn">URLを作り直す</button>
+      </div>` : `<p class="ticket-sub">公開すると、ゲスト用のURLがここに出ます。</p>`}
+    <p class="ticket-sub">今見られるレース: ${escapeHtml(formatDateMdW(data.window.from))} 〜 ${escapeHtml(formatDateMdW(data.window.to))} の中央のレース</p>`;
+  document.getElementById("guest-enabled").addEventListener("change", (e) => {
+    guestRequest("PUT", { enabled: e.target.checked }, e.target.checked ? "公開しました" : "公開を止めました");
+  });
+  document.getElementById("guest-copy-btn")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(url); guestMsg("コピーしました", true); } catch { guestMsg("コピーできませんでした。URLを選択してコピーしてください", false); }
+  });
+  document.getElementById("guest-regenerate-btn")?.addEventListener("click", () => {
+    if (!confirm("URLを作り直しますか?(古いURLと、そこから入った端末は使えなくなります)")) return;
+    guestRequest("POST", { action: "regenerate" }, "URLを作り直しました");
+  });
+
+  const devices = data.devices || [];
+  table.innerHTML = devices.length ? `
+    <thead><tr><th>最終アクセス</th><th>回数</th><th>IP</th><th>ブラウザ</th><th>初回</th><th>メモ</th><th></th></tr></thead>
+    <tbody>${devices.map((d) => `
+      <tr data-device="${escapeAttr(d.device_id)}" data-ip="${escapeAttr(d.ip || "")}" class="${d.blocked ? "guest-device-blocked" : ""}">
+        <td>${escapeHtml(formatDateTime(d.last_seen))}</td>
+        <td>${Number(d.hits || 0)}</td>
+        <td>${escapeHtml(d.ip || "")}</td>
+        <td title="${escapeAttr(d.user_agent || "")}"><small>${escapeHtml(guestUaLabel(d.user_agent))}</small></td>
+        <td><small>${escapeHtml(formatDateTime(d.first_seen))}</small></td>
+        <td><input type="text" class="guest-note-input" value="${escapeAttr(d.note || "")}" placeholder="誰の端末か等" style="width:9em" /></td>
+        <td><div class="row-actions">
+          <button type="button" class="ghost-btn guest-block-btn">${d.blocked ? "解除" : "ブロック"}</button>
+          ${d.ip ? `<button type="button" class="ghost-btn guest-block-ip-btn">IPをブロック</button>` : ""}
+        </div></td>
+      </tr>`).join("")}
+    </tbody>` : `<tr><td>まだアクセスはありません</td></tr>`;
+  const rowOf = (el) => el.closest("tr");
+  table.querySelectorAll(".guest-block-btn").forEach((btn) => btn.addEventListener("click", () => {
+    const tr = rowOf(btn);
+    const block = !tr.classList.contains("guest-device-blocked");
+    guestRequest("POST", { action: block ? "block_device" : "unblock_device", device_id: tr.dataset.device }, block ? "ブロックしました(反映まで最大1分)" : "解除しました(反映まで最大1分)");
+  }));
+  table.querySelectorAll(".guest-block-ip-btn").forEach((btn) => btn.addEventListener("click", () => {
+    const tr = rowOf(btn);
+    if (!confirm(`IP ${tr.dataset.ip} をブロックしますか?(同じIPの他の端末も使えなくなります)`)) return;
+    guestRequest("POST", { action: "block_ip", ip: tr.dataset.ip }, "IPをブロックしました(反映まで最大1分)");
+  }));
+  table.querySelectorAll(".guest-note-input").forEach((input) => input.addEventListener("change", () => {
+    guestRequest("POST", { action: "note_device", device_id: rowOf(input).dataset.device, note: input.value }, "メモを保存しました");
+  }));
+
+  const ips = data.ip_blocks || [];
+  ipTable.innerHTML = ips.length ? `
+    <thead><tr><th>IP</th><th>ブロックした日時</th><th></th></tr></thead>
+    <tbody>${ips.map((x) => `
+      <tr data-ip="${escapeAttr(x.ip)}"><td>${escapeHtml(x.ip)}</td><td><small>${escapeHtml(formatDateTime(x.created_at))}</small></td>
+        <td><button type="button" class="ghost-btn guest-unblock-ip-btn">解除</button></td></tr>`).join("")}
+    </tbody>` : `<tr><td>ブロックしたIPはありません</td></tr>`;
+  ipTable.querySelectorAll(".guest-unblock-ip-btn").forEach((btn) => btn.addEventListener("click", () => {
+    guestRequest("POST", { action: "unblock_ip", ip: rowOf(btn).dataset.ip }, "IPのブロックを解除しました(反映まで最大1分)");
+  }));
+}
+
+// ブラウザの表示を短くする(端末の見分け用)
+function guestUaLabel(ua) {
+  const s = String(ua || "");
+  const os = /iPhone|iPad/.test(s) ? "iOS" : /Android/.test(s) ? "Android" : /Windows/.test(s) ? "Windows" : /Mac OS/.test(s) ? "Mac" : "";
+  const br = /Edg\//.test(s) ? "Edge" : /CriOS|Chrome\//.test(s) ? "Chrome" : /Firefox|FxiOS/.test(s) ? "Firefox" : /Safari\//.test(s) ? "Safari" : "";
+  return [os, br].filter(Boolean).join(" ") || s.slice(0, 30);
+}
+
+function setupGuestIpForm() {
+  document.getElementById("guest-ip-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("guest-ip-input");
+    const ip = input.value.trim();
+    if (!ip) return;
+    guestRequest("POST", { action: "block_ip", ip }, "IPをブロックしました(反映まで最大1分)").then((ok) => { if (ok) input.value = ""; });
+  });
 }
 
 // ---------- タブ(2026-10-14。docs/design/screens.md「管理画面」) ----------
@@ -1293,6 +1404,7 @@ const ADMIN_TAB_LOADERS = {
   alias: () => [loadJockeyAliases(), loadHorseAliases(), setupHorseIndex(), loadTrainerAliases()],
   graded: () => [loadGradedRaces(), loadPaceWeights()],
   users: () => [loadUsers()],
+  guest: () => [loadGuestAdmin()],
 };
 const ADMIN_TAB_STORAGE_KEY = "admin_tab";
 const adminTabLoaded = new Set();

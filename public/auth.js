@@ -18,7 +18,14 @@
 // イベントを合図にヘッダーバッジの初期描画を行う。ログアウト時はカゴのパネルを
 // 閉じる(パネルはdocument.body直下に生成され#app-screenの外側にあるため)。
 
-window.currentUser = { username: null, isAdmin: false, passwordResetPending: false };
+window.currentUser = { username: null, isAdmin: false, isGuest: false, passwordResetPending: false };
+
+// ゲスト(ゲスト用URLから入った閲覧専用の利用者。2026-10-14。docs/design/guest.md)が見られる画面(body の data-page)
+const GUEST_PAGES = ["guest", "data-search"];
+const GUEST_ERROR_TEXT = {
+  guest_invalid: "このURLは使えなくなりました。URLを教えてくれた人に新しいURLを確認してください。",
+  guest_blocked: "この端末からは利用できません。",
+};
 
 function setupAuth(onReady) {
   const loginScreen = document.getElementById("login-screen");
@@ -100,29 +107,40 @@ function setupAuth(onReady) {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
-      window.currentUser = { username: null, isAdmin: false, passwordResetPending: false };
+      window.currentUser = { username: null, isAdmin: false, isGuest: false, passwordResetPending: false };
       removePasswordResetBanner();
       showLogin();
       document.dispatchEvent(new CustomEvent("keiba-logout"));
     });
   }
 
+  let lastAuthError = null; // ゲストのURLが無効・ブロック等("guest_invalid" 等)
   async function refreshCurrentUser() {
     const res = await fetch("/api/auth/check");
+    lastAuthError = null;
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
       window.currentUser = {
         username: data.username || null,
         isAdmin: Boolean(data.is_admin),
+        isGuest: Boolean(data.is_guest),
         passwordResetPending: Boolean(data.password_reset_pending),
       };
       applyAdminVisibility();
       renderPasswordResetBanner();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      lastAuthError = data.error || null;
     }
     return res.ok;
   }
 
   function applyAdminVisibility() {
+    const isGuest = Boolean(window.currentUser.isGuest);
+    document.body.classList.toggle("guest-mode", isGuest);
+    document.querySelectorAll("[data-guest-only]").forEach((el) => {
+      el.hidden = !isGuest;
+    });
     document.querySelectorAll("[data-admin-only]").forEach((el) => {
       el.hidden = !window.currentUser.isAdmin;
     });
@@ -146,7 +164,15 @@ function setupAuth(onReady) {
   (async function init() {
     const ok = await refreshCurrentUser();
     if (ok) {
+      // ゲストは閲覧用の画面だけ(それ以外の画面を開いたらゲスト用のレース一覧へ)
+      if (window.currentUser.isGuest && !GUEST_PAGES.includes(document.body.dataset.page)) {
+        location.replace("guest.html");
+        return;
+      }
       showApp();
+    } else if (GUEST_ERROR_TEXT[lastAuthError]) {
+      loginScreen.innerHTML = `<div class="ticket"><h1 class="ticket-title">馬券帳</h1><p class="ticket-sub">${GUEST_ERROR_TEXT[lastAuthError]}</p></div>`;
+      showLogin();
     } else {
       showLogin();
     }

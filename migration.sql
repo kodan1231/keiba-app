@@ -45,6 +45,7 @@
 -- 2026-10-13: pace_weights_time(比率の表に補正タイムの列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_weights_by_pace(比率の表にペース予想ごとの比率の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_weights_more_factors(比率の表に性齢・馬体重・同コースの列)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-14: guest_access(ゲスト閲覧の端末・IPブロックの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -137,3 +138,22 @@ ALTER TABLE pace_weights ADD COLUMN w_sexage INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE pace_weights ADD COLUMN w_weight INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE pace_weights ADD COLUMN w_course INTEGER NOT NULL DEFAULT 0;
 INSERT INTO schema_migrations (name) VALUES ('pace_weights_more_factors');
+
+-- @STEP: guest_access
+-- ゲスト閲覧(2026-10-14)。空の表を2つ作るだけ。docs/design/guest.md
+CREATE TABLE IF NOT EXISTS guest_devices (
+  device_id TEXT PRIMARY KEY,
+  first_seen TEXT,
+  last_seen TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  hits INTEGER NOT NULL DEFAULT 0,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  note TEXT
+);
+CREATE TABLE IF NOT EXISTS guest_ip_blocks (
+  ip TEXT PRIMARY KEY,
+  created_at TEXT,
+  note TEXT
+);
+INSERT INTO schema_migrations (name) VALUES ('guest_access');

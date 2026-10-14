@@ -5,8 +5,14 @@
 // 全画面共通のバナーで「パスワードを変更してください」と促すためのフラグ。本人が
 // 自分でパスワードを変更すると0へ戻る。詳細はdocs/design/auth-multiuser.md
 // 「管理者によるパスワードリセット」参照。
+//
+// is_guest(2026-10-14追加): ゲスト用URLから入った閲覧専用の利用者(docs/design/guest.md)。
 export async function onRequestGet(context) {
   const { env } = context;
+
+  if (context.data?.isGuest) {
+    return Response.json({ ok: true, username: null, is_admin: false, is_guest: true, password_reset_pending: false });
+  }
 
   let passwordResetPending = false;
   try {
@@ -23,6 +29,7 @@ export async function onRequestGet(context) {
     ok: true,
     username: context.data?.username || null,
     is_admin: Boolean(context.data?.isAdmin),
+    is_guest: false,
     password_reset_pending: passwordResetPending,
   });
 }

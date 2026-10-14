@@ -21,11 +21,14 @@
   // ナビ項目。順序=表示順。page はHTML側 <body data-page="..."> と一致させる。
   // adminOnly:true の項目には data-admin-only hidden を付け、auth.js が
   // ログインユーザーの管理者判定に応じて表示/非表示を切り替える。
+  // guestOnly: ゲスト(ゲスト用URLから入った閲覧専用の利用者。2026-10-14。docs/design/guest.md)にだけ出す。
+  // guestOk: ゲストにも出す(それ以外はゲストには出さない。body.guest-mode の CSS で隠す)。
   const NAV_ITEMS = [
+    { page: "guest", href: "guest.html", label: "今週のレース", guestOnly: true, guestOk: true },
     { page: "buy", href: "index.html", label: "馬券購入" },
     { page: "history", href: "history.html", label: "馬券履歴" },
     { page: "stats", href: "stats.html", label: "集計" },
-    { page: "data-search", href: "data-search.html", label: "データ検索" },
+    { page: "data-search", href: "data-search.html", label: "データ検索", guestOk: true },
     { page: "races", href: "races.html", label: "レース管理", adminOnly: true },
     { page: "admin", href: "admin.html", label: "管理", adminOnly: true },
   ];
@@ -63,7 +66,8 @@
   const navHtml = NAV_ITEMS.map((item) => {
     const cls = "nav-link" + (item.page === currentPage ? " active" : "");
     const adminAttr = item.adminOnly ? " data-admin-only hidden" : "";
-    return `<a href="${item.href}" class="${cls}"${adminAttr}>${item.label}</a>`;
+    const guestAttr = (item.guestOnly ? " data-guest-only hidden" : "") + (item.guestOk ? " data-guest-ok" : "");
+    return `<a href="${item.href}" class="${cls}"${adminAttr}${guestAttr}>${item.label}</a>`;
   }).join("");
 
   const mastheadHtml = `

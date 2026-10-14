@@ -29,7 +29,27 @@
         <button type="button" class="stats-tab" data-admin-tab-btn="alias" role="tab">名寄せ</button>
         <button type="button" class="stats-tab" data-admin-tab-btn="graded" role="tab">重賞・予想</button>
         <button type="button" class="stats-tab" data-admin-tab-btn="users" role="tab">ユーザー</button>
+        <button type="button" class="stats-tab" data-admin-tab-btn="guest" role="tab">ゲスト</button>
       </nav>
+
+      <!-- ゲスト閲覧(2026-10-14。docs/design/guest.md) -->
+      <section class="stats-section" data-admin-tab="guest" hidden>
+        <h2 class="stats-section-title">ゲスト閲覧</h2>
+        <p class="ticket-sub">
+          下のURLを知っている人は、ログインせずに「次の開催週末の中央のレース」(出馬表・馬柱・展開・時計)と「データ検索」を見られます。
+          予想印・メモ・馬券購入・集計は使えません。URLが広まりすぎたら「URLを作り直す」と、古いURLとそこから入った端末は使えなくなります。
+        </p>
+        <div id="guest-settings"><p class="ticket-sub">読み込み中…</p></div>
+        <p id="guest-message" class="submit-message" hidden></p>
+        <h3 class="pace-w-list-title">アクセスした端末(最終アクセスの新しい順)</h3>
+        <div class="table-wrap"><table class="stats-table" id="guest-devices-table"></table></div>
+        <h3 class="pace-w-list-title">ブロックしたIP</h3>
+        <form id="guest-ip-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+          <label style="flex:1;min-width:160px">IP<input type="text" id="guest-ip-input" placeholder="例: 203.0.113.5" required /></label>
+          <button type="submit" class="ghost-btn">ブロックする</button>
+        </form>
+        <div class="table-wrap"><table class="stats-table" id="guest-ips-table"></table></div>
+      </section>
 
       <!-- D1の使用量(2026-10-08。管理者のみ。docs/design/ops.md「D1の使用量の確認」) -->
       <section class="stats-section" data-admin-tab="status" hidden>

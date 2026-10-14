@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // (以前は全件を races_cache〈2026-09-12追加〉から返していたが、2026-10-08に全件取得とともに廃止した)
@@ -21,7 +21,13 @@ export async function onRequestGet(context) {
   // GET /api/races/:id で取る。races_cache(約10MB)の解析・全出走馬の送信をやめるため
   // (CPU時間上限超過と利用者の通信量の対策。docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
   if (params.get("index") === "1") {
-    const rows = await getRaceIndexRows(env.DB);
+    let rows = await getRaceIndexRows(env.DB);
+    // ゲスト(2026-10-14。docs/design/guest.md)は次の開催週末の中央のレースだけ
+    if (context.data?.isGuest) {
+      const win = guestRaceWindow();
+      const di = RACE_INDEX_FIELDS.indexOf("race_date"), ti = RACE_INDEX_FIELDS.indexOf("track");
+      rows = rows.filter((r) => isGuestRace({ race_date: r[di], track: r[ti] }, win));
+    }
     // 内容のハッシュを ETag にし、ブラウザが前回と同じ値を送ってきたら 304(本文なし)を返す(2026-10-08)。
     // 一覧は約39万文字あり、開くたびに送り直していた。読み取りはキャッシュ約20行のままで変わらない。
     const body = JSON.stringify({ fields: RACE_INDEX_FIELDS, rows });

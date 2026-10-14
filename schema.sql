@@ -655,3 +655,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT
 );
+
+-- ============================================================
+-- 17. ゲスト閲覧(2026-10-14追加。@STEP: guest_access。docs/design/guest.md)
+-- ============================================================
+-- ゲスト用URL(/g/<合言葉>)を開いた端末。端末IDは署名つきCookie(kbg)に入れて渡す。
+-- 最終アクセス・回数の更新は1端末につき10分に1回まで(_lib/guest.js の recordGuestAccess)。
+-- blocked=1 の端末はゲストのAPIを使えない。
+CREATE TABLE IF NOT EXISTS guest_devices (
+  device_id TEXT PRIMARY KEY,
+  first_seen TEXT,
+  last_seen TEXT,
+  ip TEXT,          -- 最後にアクセスしたIP(CF-Connecting-IP)
+  user_agent TEXT,  -- 最後のブラウザ(先頭200文字)
+  hits INTEGER NOT NULL DEFAULT 0, -- APIへのアクセス回数(おおよそ)
+  blocked INTEGER NOT NULL DEFAULT 0,
+  note TEXT         -- 管理者のメモ(誰の端末か等)
+);
+-- ブロックしたIP(Cookieを消して端末IDを変えられても止めるため)
+CREATE TABLE IF NOT EXISTS guest_ip_blocks (
+  ip TEXT PRIMARY KEY,
+  created_at TEXT,
+  note TEXT
+);

@@ -712,7 +712,8 @@ async function grLoadDetail(id) {
   grEls.title.innerHTML = `<span class="gr-grade gr-grade-${escapeAttr(m.is_jump ? "J" : m.grade)}">${escapeHtml(grGradeLabel(m))}</span> ${escapeHtml(m.name)}`;
   grEls.sub.textContent = [m.track, formatCourseText(m.course_type, m.distance), m.age_condition].filter(Boolean).join(" ");
 
-  grNotesView = mountGradedRaceNotes(grEls.notes, { gradedRaceId: m.id, year: data.current_year });
+  // ゲスト(2026-10-14。docs/design/guest.md)は重賞メモを使えない(自分用の書き込みのため。見出しごと CSS で隠す)
+  if (!window.currentUser?.isGuest) grNotesView = mountGradedRaceNotes(grEls.notes, { gradedRaceId: m.id, year: data.current_year });
   grRenderCurrent(data);
   grRenderPast(data);
   grRenderTrends(data);

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>今週のレース - 馬券帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body data-page="guest" class="guest-page">
+<div id="login-screen" class="screen" hidden></div>
+<div id="app-screen" class="screen" hidden>
+<header class="masthead"></header>
+<main class="prediction-main">
+<section id="prediction-empty" class="empty-state" hidden></section>
+<!-- ゲスト用のレース一覧(2026-10-14。guest.js。docs/design/guest.md) -->
+<section id="guest-race-list" class="guest-race-list" hidden></section>
+<section id="prediction-panel" class="prediction-panel" hidden>
+<div id="prediction-race-header" class="prediction-race-header"></div>
+<!-- 出馬表/馬柱の切り替えタブ(2026-10-03追加。docs/design/screens.md「予想登録画面」の「馬柱表示」参照) -->
+<nav class="prediction-view-tabs" role="tablist">
+  <button type="button" class="prediction-view-tab active" data-view="card" role="tab" aria-selected="true">出馬表</button>
+  <button type="button" class="prediction-view-tab" data-view="umabashira" role="tab" aria-selected="false">馬柱(近5走)</button>
+  <button type="button" class="prediction-view-tab" data-view="pace" role="tab" aria-selected="false">展開・時計</button>
+</nav>
+<div id="prediction-horses" class="prediction-horses"></div>
+<div id="prediction-umabashira" class="prediction-umabashira" hidden></div>
+<!-- 展開・時計タブ(2026-10-12追加): 前走の脚質と、同場・同距離の持ちタイム順位 -->
+<div id="prediction-pace" class="prediction-pace" hidden></div>
+<div id="prediction-tickets" class="prediction-tickets" hidden></div>
+</section>
+</main></div>
+<!-- 馬メモダイアログ(各馬の「メモ」ボタンから開く。入力は自動保存) -->
+<div id="horse-memo-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="horse-memo-title">馬メモ</h2>
+    <textarea id="horse-memo-text" rows="8" maxlength="5000" style="width:100%" aria-label="この馬についてのメモ"></textarea>
+    <span id="horse-memo-status" class="horse-note-status" hidden></span>
+    <div class="modal-actions">
+      <button type="button" id="horse-memo-close-btn" class="stamp-btn">閉じる</button>
+    </div>
+  </div>
+</div>
+<!-- 重賞メモダイアログ(重賞のレースのとき、ヘッダーの「重賞メモ」ボタンから開く。入力は自動保存。2026-10-12) -->
+<div id="graded-memo-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="graded-memo-title">重賞メモ</h2>
+    <div id="graded-memo-body"></div>
+    <div class="modal-actions">
+      <button type="button" id="graded-memo-close-btn" class="stamp-btn">閉じる</button>
+    </div>
+  </div>
+</div>
+<script src="utils.js"></script><script src="shell.js"></script><script src="auth.js"></script><script src="bettypes.js"></script><script src="payout.js"></script><script src="ticket-view.js"></script><script src="graded-race-notes.js"></script><script src="guest.js"></script><script src="prediction.js"></script>
+</body></html>

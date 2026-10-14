@@ -21,7 +21,7 @@
 // Cloudflare Pagesの標準挙動(「/」には index.html を返す)がそのまま働き、
 // 追加のリダイレクト処理は一切不要になった。詳細はdocs/DESIGN.md
 // 「トップページ(/)の表示について」参照。
-import { verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse } from "./api/_shared.js";
+import { verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse, resolveGuest } from "./api/_shared.js";
 
 export async function onRequest(context) {
   const { request, env, next } = context;
@@ -57,15 +57,31 @@ export async function onRequest(context) {
       }
     }
 
+    // ゲスト閲覧(2026-10-14。_lib/guest.js・docs/design/guest.md): ログインしていなくても、ゲスト用URLで渡した
+    // Cookie(kbg)があれば、決まった読み取りのAPIだけ通す。ログインしている人はセッションを優先する。
+    let guest = null;
     if (!session) {
+      guest = await resolveGuest(context);
+      if (guest instanceof Response) return guest;
+    }
+
+    if (!session && !guest) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     }
-    context.data.userId = session.userId;
-    context.data.username = session.username;
-    context.data.isAdmin = isAdminUsername(env, session.username);
+    if (guest) {
+      context.data.isGuest = true;
+      context.data.guestDeviceId = guest.deviceId;
+      context.data.userId = null;
+      context.data.username = null;
+      context.data.isAdmin = false;
+    } else {
+      context.data.userId = session.userId;
+      context.data.username = session.username;
+      context.data.isAdmin = isAdminUsername(env, session.username);
+    }
 
     // D1 の使用量が増えたときの重い機能の自動一時停止(2026-10-08。_lib/service-guard.js)。
     // 止める対象の機能へのリクエストのときだけ判定する(それ以外の操作には影響しない)。判定に失敗したら止めない。

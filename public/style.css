@@ -3391,3 +3391,30 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .gr-picks-table { font-size: 12px; }
 .gr-picks-table td.gr-picks-horse { text-align: left; }
 .gr-picks-hit { background: rgba(176, 48, 40, .08); font-weight: 700; }
+
+/* ---------- ゲスト閲覧(2026-10-14。docs/design/guest.md) ---------- */
+/* ゲストには「今週のレース」「データ検索」だけを出し、かご・退場・ユーザー名・重賞メモは隠す */
+body.guest-mode .masthead-nav .nav-link:not([data-guest-ok]) { display: none; }
+body.guest-mode #cart-badge-btn,
+body.guest-mode #logout-btn,
+body.guest-mode #current-username,
+body.guest-mode .gr-notes-heading,
+body.guest-mode #gr-notes { display: none; }
+.guest-race-list { padding: 8px 12px 24px; }
+.guest-race-list[hidden] { display: none; }
+.guest-list-title { font-family: var(--font-display); font-size: 18px; margin: 8px 0 12px; }
+.guest-day { margin-bottom: 18px; }
+.guest-day-title { font-size: 16px; border-bottom: 2px solid var(--rule-strong); padding-bottom: 4px; margin: 0 0 8px; }
+.guest-tracks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.guest-track { background: var(--paper-raised); border: 1px solid var(--rule-strong); }
+.guest-track-title { font-size: 14px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+.guest-race-items { list-style: none; margin: 0; padding: 0; }
+.guest-race-items li + li { border-top: 1px solid var(--rule); }
+.guest-race-link { display: grid; grid-template-columns: 2.6em 1fr; gap: 0 8px; padding: 8px 10px; color: inherit; text-decoration: none; }
+.guest-race-link:hover { background: rgba(28, 27, 24, 0.05); }
+.guest-race-num { grid-row: span 2; font-weight: 700; font-family: var(--font-mono); }
+.guest-race-name { font-weight: 700; }
+.guest-race-sub { font-size: 12px; color: var(--ink-soft); }
+/* 管理画面「ゲスト」タブ */
+.guest-url { word-break: break-all; font-family: var(--font-mono); font-size: 13px; }
+.guest-device-blocked td { color: var(--ink-soft); text-decoration: line-through; }

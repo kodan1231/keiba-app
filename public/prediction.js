@@ -23,6 +23,9 @@ const raceHeader = document.getElementById("prediction-race-header");
 const horsesEl = document.getElementById("prediction-horses");
 const ticketsEl = document.getElementById("prediction-tickets");
 const MARKS = ["◎", "○", "▲", "△", "☆", "消"];
+// ゲスト閲覧(2026-10-14。guest.html。docs/design/guest.md): 予想印・馬メモ・重賞メモ・勝負レース・購入・購入馬券を出さず、
+// それらの取得もしない(サーバー側でもゲストには使えない)。レース未指定なら次の開催週末のレース一覧(guest.js)を出す。
+const GUEST_VIEW = document.body.dataset.page === "guest";
 
 // 2026-10-07: レース一覧は軽い一覧(GET /api/races?index=1。日付・競馬場・R等だけ)を取り、
 // 出走馬・着順・払戻は開いたレース1件ぶんだけ GET /api/races/:id で取る。以前は GET /api/races で
@@ -46,6 +49,7 @@ async function loadRaces() {
   races = list;
   const raceId = Number(new URLSearchParams(location.search).get("race"));
   if (!Number.isInteger(raceId) || raceId <= 0) {
+    if (GUEST_VIEW) return showGuestRaceList(races);
     showEmpty("レースが指定されていません。レース一覧から対象レースを選択してください。");
     return;
   }
@@ -53,9 +57,11 @@ async function loadRaces() {
   const detail = races.some(r => Number(r.id) === raceId) ? await fetchRaceDetail(raceId) : null;
   if (token !== raceLoadToken) return;
   if (!detail) {
+    if (GUEST_VIEW) return showGuestRaceList(races, "指定されたレースは表示できません(次の開催週末の中央のレースだけ見られます)。");
     showEmpty("指定されたレースが見つかりません。");
     return;
   }
+  if (GUEST_VIEW) hideGuestRaceList();
   selectedRace = detail;
   await selectRace();
 }
@@ -237,6 +243,16 @@ async function selectRace() {
   renderRaceHeader();
   renderHorses();
 
+  if (GUEST_VIEW) {
+    // ゲストは自分の予想・メモ・購入を持たない。過去成績(馬柱・展開・時計の元)だけ読む
+    prediction = { marks: [] };
+    horseNotes = {};
+    horseHistory = {};
+    applyHorseHistory();
+    loadHorseHistory().catch(() => {});
+    return;
+  }
+
   const [predRes, noteRes] = await Promise.all([
     authedFetch(`/api/predictions?race_id=${selectedRace.id}`),
     authedFetch(`/api/horse-notes?race_id=${selectedRace.id}`),
@@ -351,7 +367,7 @@ async function switchToRace(raceId) {
   const detail = await fetchRaceDetail(raceId); // 出走馬等は切り替え先の1件ぶんだけ取る(2026-10-07)
   if (token !== raceLoadToken || !detail) return;
   selectedRace = detail;
-  history.replaceState(null, "", `prediction.html?race=${encodeURIComponent(raceId)}`);
+  history.replaceState(null, "", `${GUEST_VIEW ? "guest.html" : "prediction.html"}?race=${encodeURIComponent(raceId)}`);
   selectRace();
 }
 
@@ -403,17 +419,17 @@ function renderRaceHeader() {
       <select id="prediction-racenum-select" class="prediction-select" aria-label="レース番号を選択">
         ${racesForTrack.map(r => `<option value="${r.id}" ${Number(r.id) === Number(selectedRace.id) ? "selected" : ""}>${r.race_number}R</option>`).join("")}
       </select>
-      <a id="buy-race-btn" class="stamp-btn" href="#">投票</a>
+      ${GUEST_VIEW ? `<a class="ghost-btn" href="guest.html">一覧へ</a>` : `<a id="buy-race-btn" class="stamp-btn" href="#">投票</a>`}
     </div>
     <div class="prediction-race-meta">
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
-      <button type="button" id="key-race-toggle-btn" class="race-cond-badge key-race-toggle ${isKeyRace ? "active" : ""}" aria-pressed="${isKeyRace}" title="勝負レース(ONにすると馬券購入画面のレース一覧にも★が表示されます)">${isKeyRace ? "★ 勝負レース" : "☆ 勝負レース"}</button>
+      ${GUEST_VIEW ? "" : `<button type="button" id="key-race-toggle-btn" class="race-cond-badge key-race-toggle ${isKeyRace ? "active" : ""}" aria-pressed="${isKeyRace}" title="勝負レース(ONにすると馬券購入画面のレース一覧にも★が表示されます)">${isKeyRace ? "★ 勝負レース" : "☆ 勝負レース"}</button>`}
       ${formatCourseText(selectedRace.course_type, selectedRace.distance) ? `<span class="race-course">${escapeHtml(formatCourseText(selectedRace.course_type, selectedRace.distance))}</span>` : ""}
       <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
       ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
       ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
-      ${selectedRace.graded ? `<button type="button" id="graded-memo-btn" class="race-cond-badge graded-memo-btn ${gradedNotesHaveMemo() ? "has-memo" : ""}" title="この重賞の年ごとのメモ(予想の根拠・結果の振り返り。自分だけに表示)">重賞メモ</button>` : ""}
+      ${selectedRace.graded && !GUEST_VIEW ? `<button type="button" id="graded-memo-btn" class="race-cond-badge graded-memo-btn ${gradedNotesHaveMemo() ? "has-memo" : ""}" title="この重賞の年ごとのメモ(予想の根拠・結果の振り返り。自分だけに表示)">重賞メモ</button>` : ""}
     </div>
     <span id="prediction-message" class="submit-message" hidden></span>
   `;
@@ -427,7 +443,7 @@ function renderRaceHeader() {
   document.getElementById("prediction-racenum-select").addEventListener("change", (e) => {
     switchToRace(Number(e.target.value));
   });
-  document.getElementById("key-race-toggle-btn").addEventListener("click", toggleKeyRace);
+  document.getElementById("key-race-toggle-btn")?.addEventListener("click", toggleKeyRace);
   document.getElementById("graded-memo-btn")?.addEventListener("click", openGradedMemo);
   // ボタンは作り直されたばかりで初期状態なので、毎回ここで状態を設定し直す。
   applyBuyButtonState();
@@ -493,13 +509,13 @@ function renderHorses() {
               return meta ? `<small>${meta}</small>` : "";
             })()}
           </span>
-          <span class="prediction-mark-inline" aria-label="予想印">
+          ${GUEST_VIEW ? "" : `<span class="prediction-mark-inline" aria-label="予想印">
             <button type="button" class="horse-memo-btn ${note.memo ? "has-memo" : ""}" ${e.horse_name ? `title="${note.memo ? "この馬のメモがあります" : "この馬のメモを入力"}"` : 'disabled title="馬名が未登録のためメモは使えません"'}>メモ</button>
             <select class="prediction-mark-select" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
               <option value="">−</option>
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
             </select>
-          </span>
+          </span>`}
         </div>
         <div class="horse-note-editor" hidden>
           <div class="horse-history"></div>
@@ -716,10 +732,10 @@ function renderUmabashira() {
         <th class="ub-horse" scope="row">
           <div class="ub-horse-top">
             <span class="prediction-horse-number waku-tint waku-${e.waku_number || 0}">${n !== null ? n : "-"}</span>
-            <select class="prediction-mark-select ub-mark-select" data-horse-number="${n !== null ? n : ""}" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
+            ${GUEST_VIEW ? "" : `<select class="prediction-mark-select ub-mark-select" data-horse-number="${n !== null ? n : ""}" aria-label="予想印を選択" ${hasNumber ? "" : 'disabled title="枠番・馬番確定後に選択できます"'}>
               <option value="">−</option>
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
-            </select>
+            </select>`}
           </div>
           <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>
           ${meta ? `<small class="ub-horse-meta">${meta}</small>` : ""}
@@ -1027,7 +1043,7 @@ const paceRecomputeRequested = new Set();
 let paceRecomputing = null; // 計算中の重賞のキー
 
 function requestPaceWeightsRecompute(key, gradedId, raceId) {
-  if (paceRecomputeRequested.has(key)) return;
+  if (GUEST_VIEW || paceRecomputeRequested.has(key)) return; // ゲストは計算し直しを頼めない(書き込みのため)
   paceRecomputeRequested.add(key);
   paceRecomputing = key;
   authedFetch("/api/pace-weights/recompute", {

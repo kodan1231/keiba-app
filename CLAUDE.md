@@ -41,6 +41,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |
 | 認証・ユーザー管理 | `functions/api/auth/*`, `functions/api/_lib/auth.js`, `public/auth.js` |
+| ゲスト閲覧(ログイン不要。次の開催週末の中央のレース+データ検索だけ。2026-10-14) | `public/guest.html`, `public/guest.js`, `public/prediction.js`(`GUEST_VIEW`), `functions/g/[key].js`(ゲスト用URL), `functions/api/_lib/guest.js`(使えるAPI・期間・ブロック), `functions/_middleware.js`, `functions/api/admin/guest/index.js` |
 | 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
@@ -83,6 +84,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |
 | `_lib/race-time-cache.js` | `getRaceTimes`(勝ちタイムの小さいキャッシュ race_time_cache。競馬場・芝ダ障・距離・馬場・クラス・勝ちタイムだけ。範囲ごと。60秒使い回し。競馬場傾向タブ・補正タイム用。2026-10-13追加。集計用キャッシュは読み込みが約9.7ミリ秒と重いため分けた) |
 | `_lib/track-trends.js` | `buildTrackTrends` `trendDistanceOptions` `trackTimeOffsets` `correctRunTime` `TREND_MIN_RACES`(競馬場傾向タブ・補正タイム。DB不使用。2026-10-12追加。クラス判定は `_lib/race-classification.js` の `raceClassOf`) |
+| `_lib/guest.js` | `resolveGuest`(ミドルウェアから。ゲストのCookie〈kbg〉を確かめ、使えるAPI・期間内の中央のレースだけ通す) `guestRaceWindow` `isGuestRace` `getGuestSettings` `getGuestBlocks` `recordGuestAccess`(10分に1回まで書く)。**ゲストに新しいAPIを見せるときは `GUEST_API_RULES` に足す**(2026-10-14追加。docs/design/guest.md) |
 | `_lib/jockey-stats.js` | `forEachJockeyRide`(集計用の小さいキャッシュ race_lineup_cache から全騎乗を走査) `emptyRideCounts` `addRide` `finalizeRideCounts`(騎手検索タブ。2026-10-03追加) |
 
 ## 絶対に破ってはいけない不変条件

@@ -41,6 +41,7 @@
 | `docs/design/netkeiba-bookmarklet.md` | netkeibaページ(馬柱5走・結果、中央/地方)をPCのChromeのブックマークレットでレース管理画面へ渡して取り込む |
 | `docs/design/graded-races.md` | 重賞マスタ(`graded_races`)・レース分類(重賞/条件戦/その他)判定ロジック・突き合わせキー・管理画面「重賞管理」・JRA重賞一覧PDFインポート・集計画面のフィルタ連携 |
 | `docs/design/graded-race-search.md` | データ検索画面「重賞検索」タブ・今年の出走馬一覧/未発表判定・出走馬詳細(過去5走・持ちタイム・着別度数・脚質・騎手成績)・過去10年の成績と傾向・`graded_races.schedule_md` |
+| `docs/design/guest.md` | **ゲスト閲覧**(ログイン不要のゲスト用URL・次の開催週末の中央のレースとデータ検索だけ・使えるAPIの制限・端末/IPのブロック・管理画面「ゲスト」タブ) |
 | `docs/design/ops.md` | CSSキャッシュ対策・DBマイグレーションの運用・DBファイルの役割 |
 
 機能→コードの対応、共有ヘルパー(`functions/api/_lib/`)の構成、絶対不変条件は
