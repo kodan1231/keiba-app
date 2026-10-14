@@ -3,8 +3,11 @@
 // 両方がこの1か所を使う(以前は画面〈prediction.js〉とサーバーに同じ規則を二重に持っていた)。仕様は docs/design/screens.md「総合推奨馬」。
 //
 // 規則(ユーザー確認済み。2026-10-13):
-//   - 各要素の順位を 100(1位)〜0(最下位)の等間隔の点にする(同値同順位)。データの無い馬は 25点(MISSING_SCORE)。
-//     以前は「データ無し=50点(真ん中)」だったが、記録の無い馬が多く不自然だったため、近い条件で補い、それでも無い馬(新馬など)は25点にした
+//   - 点は偏差値(2026-10-14 ユーザー要望で変更): 要素ごとに、データのある馬の元の値から 50 + 10 ×(値 − 平均)÷ 標準偏差。
+//     全頭が同じ値なら全員50。データの無い馬は設定の点(既定40。管理画面で変更。_lib/pace-settings.js)。
+//     元の値: 展開=ハイは補正タイム・スローは上がり3F(速いほど高い)・ミドルは両方の偏差値の平均、補正タイム=速いほど高い、
+//     馬番・性齢・馬体重=帯の複勝率、騎手=平均に寄せた複勝率、同コース=掲示板内+1・外−1の合計。順位(rank)は表示用に残す。
+//     以前(〜2026-10-14)は順位を100(1位)〜0(最下位)の等間隔にした点で、データ無しは25点(さらに前は50点)だった
 //   - タイム(補正タイム): このレースより前の完走した走を、次の順で探して一番近い段の中の最速を使う
 //       ①同じ芝ダ障・同じ距離 ②同じ芝ダ障・±200m ③同じ芝ダ障・全距離 ④芝⇔ダートの違い(障害は除く)
 //     換算: 元のタイム − 走った競馬場の補正値 − 走った日の馬場の補正値(その走の芝ダ・距離の値)→ 距離が違えば
@@ -35,7 +38,16 @@ import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 // 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加
 export const FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
 const BOARD_POSITION = 5; // 同コース: 掲示板(5着以内)
-export const MISSING_SCORE = 25;
+export const DEFAULT_MISSING_SCORE = 40; // データの無い馬の点(偏差値)の既定値。実際の値は設定(_lib/pace-settings.js)
+
+// 値(大きいほど良い)の配列 → 偏差値の配列。全員同じ・1頭だけなら50
+function deviations(vals) {
+  const n = vals.length;
+  if (!n) return [];
+  const mean = vals.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+  return vals.map((v) => (sd > 1e-9 ? 50 + (10 * (v - mean)) / sd : 50));
+}
 const NUMBER_MIN_RIDES = 20;
 const JOCKEY_PRIOR_RIDES = 10;
 const NEAR_DISTANCE = 200;
@@ -206,7 +218,8 @@ function convertTime(ctx, sec, run, race) {
 // runsByHorse: Map(key -> [{ race_id, race_date, race_number, status, finish_position, corner_positions, time_text, final_furlong_time,
 //   body_weight, track, course_type, distance, track_condition }])(日付はここで「このレースより前」に絞る)
 // 戻り値: { pace_type, counts: { nige, senko, unknown, n }, factors: { pace|number|jockey|time: Map(key -> {score, rank, value, missing}) } }
-export function computeRaceFactors(ctx, race, runners, runsByHorse) {
+// opts.missingScore: データの無い馬の点(偏差値。設定 getPaceScoreSettings の missing_score。省略時は既定40)
+export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
 
@@ -348,38 +361,41 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse) {
     });
   };
 
-  // 並び
+  // 並び(rank は表示用)と偏差値の元の値 v(大きいほど良い。2026-10-14〜)
   const withTime = horses.filter((x) => x.time != null);
   const withL3 = horses.filter((x) => x.l3 != null);
   let paceRanked;
-  if (paceType === "high") paceRanked = rankBy(withTime, (x) => x.time).map((x) => ({ ...x, value: timeText(x) }));
-  else if (paceType === "slow") paceRanked = rankBy(withL3, (x) => x.l3).map((x) => ({ ...x, value: l3Text(x) }));
+  if (paceType === "high") paceRanked = rankBy(withTime, (x) => x.time).map((x) => ({ ...x, v: -x.time, value: timeText(x) }));
+  else if (paceType === "slow") paceRanked = rankBy(withL3, (x) => x.l3).map((x) => ({ ...x, v: -x.l3, value: l3Text(x) }));
   else {
+    // ミドル: 補正タイムと上がり3Fそれぞれの偏差値の平均(両方ある馬)
     const both = horses.filter((x) => x.time != null && x.l3 != null);
-    const tr = new Map(rankBy(both, (x) => x.time).map((x) => [x.key, x.rank]));
-    const lr = new Map(rankBy(both, (x) => x.l3).map((x) => [x.key, x.rank]));
-    paceRanked = rankBy(both.map((x) => ({ ...x, sum: tr.get(x.key) + lr.get(x.key) })), (x) => x.sum)
+    const dt = deviations(both.map((x) => -x.time)), dl = deviations(both.map((x) => -x.l3));
+    paceRanked = rankBy(both.map((x, i) => ({ ...x, v: (dt[i] + dl[i]) / 2, direct: true })), (x) => -x.v)
       .map((x) => ({ ...x, value: `${timeText(x)} ${l3Text(x)}` }));
   }
   const ranked = {
     pace: paceRanked,
-    time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, value: timeText(x) })),
-    number: rateRank(numberList).map((x) => ({ ...x, value: `${numberGroupLabel(x.group)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
-    jockey: rateRank(jockeyList).map((x) => ({ ...x, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
-    sexage: rateRank(sexList).map((x) => ({ ...x, value: `${sexAgeLabelOf(x.sa)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
-    weight: rateRank(weightList).map((x) => ({ ...x, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, v: -x.time, value: timeText(x) })),
+    number: rateRank(numberList).map((x) => ({ ...x, v: x.show, value: `${numberGroupLabel(x.group)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    jockey: rateRank(jockeyList).map((x) => ({ ...x, v: x.show, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    sexage: rateRank(sexList).map((x) => ({ ...x, v: x.show, value: `${sexAgeLabelOf(x.sa)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    weight: rateRank(weightList).map((x) => ({ ...x, v: x.show, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     // 同コース: 全頭を並べる(走っていない馬は0)。多い順
     course: rankBy(horses.map((x) => ({ ...x, sum: x.boardIn - x.boardOut })), (x) => -x.sum).map((x) => ({
       ...x,
+      v: x.sum,
       value: x.boardIn || x.boardOut ? `同コース 5着以内${x.boardIn}回・6着以下${x.boardOut}回(${x.sum > 0 ? "+" : ""}${x.sum})` : "同コース未出走(0)",
     })),
   };
   const factors = {};
   for (const f of FACTOR_KEYS) {
-    const m = ranked[f].length;
+    const list = ranked[f];
+    // direct: 値がすでに偏差値(ミドルの展開)
+    const dev = list.length && list[0].direct ? list.map((x) => x.v) : deviations(list.map((x) => x.v));
     const map = new Map();
-    for (const x of ranked[f]) map.set(x.key, { score: m > 1 ? (100 * (m - x.rank)) / (m - 1) : 100, rank: x.rank, value: x.value, missing: false });
-    for (const h of runners) if (!map.has(h.key)) map.set(h.key, { score: MISSING_SCORE, rank: null, value: null, missing: true });
+    list.forEach((x, i) => map.set(x.key, { score: dev[i], rank: x.rank, value: x.value, missing: false }));
+    for (const h of runners) if (!map.has(h.key)) map.set(h.key, { score: missingScore, rank: null, value: null, missing: true });
     factors[f] = map;
   }
   return { pace_type: paceType, counts: { nige, senko, unknown, n }, factors };

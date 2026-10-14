@@ -891,7 +891,7 @@ function paceJockeySectionHtml() {
 //   - 展開が有利な馬: ハイは補正タイム順、スローは上がり3F順、ミドルは両方の順位の合計順。記録は同距離→±200m→全距離→芝ダ違いの順に補う
 //   - 有利な馬番: 同コースの馬番帯(3頭ずつ。1-3, 4-6 …)別の複勝率順(騎乗が少なければ同場→全場。2026-10-14 馬番ごと→馬番帯)
 //   - 騎手: 同コースの複勝率を騎乗が少ないほど平均に寄せた値の順(同コースに騎乗が無ければ同場→全成績)
-//   - データの無い馬は25点
+//   - 点は偏差値(2026-10-14〜。それまでは順位を100〜0の等間隔)。データの無い馬は管理画面で決めた点(既定40)
 const PACE_TOP_N = 5;
 
 // 値の小さい順に並べ、同じ値は同じ順位にする(1, 2, 2, 4 …)。
@@ -1094,13 +1094,14 @@ function paceTotalSectionHtml(entries) {
   if (!rf) return `${head}${info}${paceWeightsAdminHtml(w)}<p class="pace-none">${escapeHtml(message)}</p>`;
   const wOf = (f) => Number(w[`w_${f}`] ?? 0);
   const wSum = PACE_FACTOR_KEYS.reduce((a, f) => a + wOf(f), 0) || 1;
-  // 点数はサーバー(race-factors)で計算済み。データの無い要素は25点で入っている(missing)
+  // 点数(偏差値)はサーバー(race-factors)で計算済み。データの無い要素は設定の点で入っている(missing)
   const rows = rf.horses.map(h => {
     const total = PACE_FACTOR_KEYS.reduce((acc, f) => acc + wOf(f) * h.factors[f].score, 0) / wSum;
     return { e: h, f: h.factors, total: Math.round(total * 10) / 10 };
   });
   const ranked = paceRanked(rows, x => -x.total);
-  const cell = (x) => (x.missing ? `<span class="pace-none" title="データ無し">−(25)</span>` : `<span title="${escapeAttr(x.value || "")}">${Math.round(x.score)}</span>`);
+  // 点は偏差値(2026-10-14〜)。データ無しの点は管理画面の設定(サーバーで入っている)
+  const cell = (x) => (x.missing ? `<span class="pace-none" title="データ無し">−(${Math.round(x.score)})</span>` : `<span title="${escapeAttr(x.value || "")}">${Math.round(x.score)}</span>`);
   const body = ranked.map(x => `
     <tr class="${x.rank <= 3 ? "pace-total-top" : ""}">
       <td>${x.rank}</td>

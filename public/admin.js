@@ -1157,9 +1157,22 @@ async function loadPaceWeights() {
   const data = await res.json();
   const std = data.default && data.default.source !== "none" ? data.default : data.builtin;
   defBox.dataset.id = "0";
+  // データの無い馬の点(偏差値。2026-10-14追加。API: PUT /api/admin/pace-weights/settings)
+  const missing = data.score_settings?.missing_score ?? 40;
   defBox.innerHTML = `
+    <div class="pace-w-line">
+      <span class="pace-w-admin-title">データ無しの点(偏差値)</span>
+      <label class="pace-w-input"><input type="number" min="0" max="100" step="1" id="pace-missing-score" value="${missing}">点</label>
+      <button type="button" class="ghost-btn" id="pace-missing-score-save">保存</button>
+    </div>
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
     ${paceWeightsLinesHtml(data.default, data.builtin)}`;
+  document.getElementById("pace-missing-score-save").addEventListener("click", () => {
+    paceWeightsRequest("/api/admin/pace-weights/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ missing_score: Number(document.getElementById("pace-missing-score").value) }),
+    }, "データ無しの点を保存しました(重賞の自動の比率は、次に開いたときにこの点で計算し直します)");
+  });
   setupPaceWeightsLines(defBox);
 
   const items = data.items || [];

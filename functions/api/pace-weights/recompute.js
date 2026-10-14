@@ -1,4 +1,4 @@
-import { readJsonBody, parsePositiveIntId, isAutoWeightsStale, computeAndSaveAutoPaceWeights, raceForStaleCheck } from "../_shared.js";
+import { readJsonBody, parsePositiveIntId, isAutoWeightsStale, computeAndSaveAutoPaceWeights, raceForStaleCheck, getPaceScoreSettings } from "../_shared.js";
 
 // 総合推奨馬の重賞の比率を、過去の結果から計算し直して保存する(2026-10-13追加)。ログインユーザー全員が呼べる
 // (予想登録画面が GET /api/pace-weights の stale を見て、裏で呼ぶ。結果は全ユーザー共通の比率として保存される)。
@@ -20,11 +20,12 @@ export async function onRequestPost(context) {
   if (rErr) return rErr;
   if (Date.now() - (failedAt.get(gradedId) || 0) < RETRY_MS) return Response.json({ ok: true, recomputed: false, skipped: "recent_failure" });
 
-  const [race, row] = await Promise.all([
+  const [race, row, scoreSettings] = await Promise.all([
     db.prepare("SELECT id, race_date, finish_order FROM races WHERE id = ?").bind(raceId).first(),
     db.prepare("SELECT source, detail FROM pace_weights WHERE graded_race_id = ?").bind(gradedId).first(),
+    getPaceScoreSettings(db),
   ]);
-  if (!race || !isAutoWeightsStale(row, raceForStaleCheck(race))) return Response.json({ ok: true, recomputed: false });
+  if (!race || !isAutoWeightsStale(row, raceForStaleCheck(race), scoreSettings.missing_score)) return Response.json({ ok: true, recomputed: false });
 
   try {
     const r = await computeAndSaveAutoPaceWeights(db, gradedId, { targetRace: race });

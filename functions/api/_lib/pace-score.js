@@ -8,7 +8,8 @@ import { getRaceIndex } from "./races-index-cache.js";
 import { getRaceLineups } from "./race-lineup-cache.js";
 import { loadJockeyAliasMapCached } from "./jockey-alias.js";
 import { getRaceTimes } from "./race-time-cache.js";
-import { FACTOR_KEYS, MISSING_SCORE, createFactorContext, computeRaceFactors } from "./race-factors.js";
+import { FACTOR_KEYS, DEFAULT_MISSING_SCORE, createFactorContext, computeRaceFactors } from "./race-factors.js";
+import { getPaceScoreSettings } from "./pace-settings.js";
 
 export const PACE_FACTORS = FACTOR_KEYS;
 // 既定の比率(ほぼ均等)。2026-10-14 に7要素(性齢・馬体重・同コースを追加)にした。それまでは4要素とも25
@@ -21,9 +22,10 @@ export const PACE_TYPES = ["high", "middle", "slow"];
 // 自動算出でペースごとの比率を作るのに要る年数(これ未満のペースは作らず、共通の比率を使う)
 const PACE_SPLIT_MIN_YEARS = 2;
 // 自動算出の方式の版。変えたら上げる(古い版で保存した自動の比率は、次に開かれたときに計算し直す)
-const AUTO_METHOD_VERSION = 8; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
+const AUTO_METHOD_VERSION = 9; // 3: 2026-10-13 データの無い馬を25点・近い条件で補う(race-factors.js) / 4: 同日 評価を総合上位3頭に変更 /
 // 5: 同日 上位3頭の1着数→2着以内の数→3着以内の数の優先順で比べる / 6: 2026-10-14 ペース予想ごとの比率も選ぶ /
-// 7: 同日 馬番の点を3頭ずつの馬番帯で数える(race-factors.js) / 8: 同日 性齢・馬体重・同コースを追加し、探し方を山登りに変更
+// 7: 同日 馬番の点を3頭ずつの馬番帯で数える(race-factors.js) / 8: 同日 性齢・馬体重・同コースを追加し、探し方を山登りに変更 /
+// 9: 同日 点を偏差値に変更(データ無しの点は設定。変えたら detail.missing_score と違うので計算し直す)
 export const PACE_TOP_N = 5; // 重賞検索の検証で年ごとに表示する頭数
 // 比率の比較で選ぶ頭数(2026-10-13 ユーザー要望で5→3。総合点の上位3頭のうち何頭が3着以内に入ったかで比べる)
 export const PACE_PICK_N = 3;
@@ -135,7 +137,7 @@ function compileYear(keys, placeOf, scores) {
   keys.forEach((key, h) => {
     PACE_FACTORS.forEach((f, k) => {
       const s = scores[f].get(key);
-      S[h * F + k] = s == null ? MISSING_SCORE : s;
+      S[h * F + k] = s == null ? DEFAULT_MISSING_SCORE : s; // 点は race-factors で必ず入っている(念のため)
     });
     place[h] = placeOf.get(key) || 0;
   });
@@ -184,7 +186,8 @@ function evaluateYear(year, w) {
 //   status, finish_position, factors: { f: { score, missing, value } } }], top3Keys }] }(新しい年から)
 // D1の読み取り: 一覧用キャッシュ・集計用キャッシュ・勝ちタイムのキャッシュ(各約20行)+ 対象レースの race_results(約200行)+
 //   その出走馬の全戦績(race_results の horse_key インデックス。毎日王冠で約800行)。
-export async function loadGradedBacktest(db, gradedRaceId) {
+// missingScore: データの無い馬の点(偏差値。設定の missing_score。2026-10-14)
+export async function loadGradedBacktest(db, gradedRaceId, { missingScore = DEFAULT_MISSING_SCORE } = {}) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
   if (!master) return { error: "重賞が見つかりません" };
 
@@ -245,7 +248,7 @@ export async function loadGradedBacktest(db, gradedRaceId) {
     const runnersAll = runnersByRace.get(Number(race.id)) || [];
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
-    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse);
+    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse, { missingScore });
     years.push({
       year,
       race,
@@ -272,7 +275,8 @@ export async function loadGradedBacktest(db, gradedRaceId) {
 // 富士S・秋華賞が騎手100%になった(展開のデータが少なく、馬番が偶然をわずかに下回ったため)。要素ごとの的中率は参考として detail に残す。
 // opts.targetRace(画面で開いたレース)があれば、その年を detail.target_year に記録する。
 export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
-  const bt = await loadGradedBacktest(db, gradedRaceId);
+  const { missing_score: missingScore } = await getPaceScoreSettings(db);
+  const bt = await loadGradedBacktest(db, gradedRaceId, { missingScore });
   if (bt.error) return { error: bt.error };
 
   const factorTotal = { top3: 0 };
@@ -338,6 +342,7 @@ export async function autoPaceWeights(db, gradedRaceId, opts = {}) {
     detail: {
       method: "backtest",
       version: AUTO_METHOD_VERSION,
+      missing_score: missingScore, // この点で採点した(設定が変わったら計算し直す。isAutoWeightsStale)
       computed_at: new Date().toISOString(),
       target_year: targetYear,
       race_ids: yearsOut.map((y) => y.race_id),
@@ -466,12 +471,14 @@ export function gradedPicksOf(bt, weights) {
 //   - そのレースの年より前の年のために計算したもの → 古い(今年の出走馬が登録されたら、過去10年で計算し直す)
 // 管理者が手で保存した共通の比率(source='manual')があれば自動で計算し直さない(手動が自動より優先されるため使われない)。
 // ペースの比率だけ手で入れた行(source='none')は、共通と残りのペースを自動で埋める。
-export function isAutoWeightsStale(row, race) {
+// missingScore: 今の設定のデータ無しの点(2026-10-14)。計算したときの点と違えば古い。
+export function isAutoWeightsStale(row, race, missingScore = DEFAULT_MISSING_SCORE) {
   if (!row) return true;
   if (row.source === "manual") return false;
   let detail = null;
   try { detail = row.detail ? JSON.parse(row.detail) : null; } catch { /* 壊れていれば計算し直す */ }
   if (!detail || detail.method !== "backtest" || detail.version !== AUTO_METHOD_VERSION) return true;
+  if (Number(detail.missing_score) !== Number(missingScore)) return true;
   const year = Number(String(race.race_date || "").slice(0, 4));
   // 計算の対象(過去10年)より前のレースを開いたときは、計算し直さない(含められないため、毎回古いと判定されてしまう)
   if (!year || year < jstYear() - AUTO_PAST_YEARS) return false;

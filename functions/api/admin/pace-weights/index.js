@@ -1,9 +1,9 @@
-import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS, parseByPace } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS, parseByPace, getPaceScoreSettings } from "../../_shared.js";
 
 const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
 
 // 管理者向け: 総合推奨馬の重視度の比率(pace_weights。2026-10-13追加)。仕様は docs/design/screens.md「総合推奨馬」。
-//   GET    → { default: {...}|null, builtin, items: [{ graded_race_id, name, grade, is_jump, schedule_md, weights|null }] }
+//   GET    → { default: {...}|null, builtin, score_settings: { missing_score }, items:[{ graded_race_id, name, grade, is_jump, schedule_md, weights|null }] }
 //            weights: { w_*, source: "manual"|"auto"|"none", by_pace: { high|middle|slow: { w_*, source } }, detail, updated_at }
 //            (重賞マスタ全件〈年間140件前後〉+ 比率の表〈同程度〉を全件読む。管理画面を開いたときだけ)
 //   PUT    { graded_race_id(0=標準), pace_type?, w_*(7要素) } → 保存(source='manual'。合計100の%にそろえる)
@@ -14,11 +14,12 @@ export async function onRequestGet(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
-  const [{ results: graded }, weightRows] = await Promise.all([
+  const [{ results: graded }, weightRows, scoreSettings] = await Promise.all([
     db.prepare("SELECT id, name, grade, is_jump, schedule_md FROM graded_races ORDER BY schedule_md IS NULL, schedule_md, name").all(),
     db.prepare(`SELECT graded_race_id, ${COLS.join(", ")}, by_pace, source, detail, updated_at FROM pace_weights`).all()
       .then((r) => r.results || [])
       .catch(() => []), // 表がまだ無い
+    getPaceScoreSettings(db, { fresh: true }), // 点数の設定(2026-10-14。変更は ./settings.js)
   ]);
   const byId = new Map(weightRows.map((r) => [Number(r.graded_race_id), r]));
   const out = (r) => (r ? {
@@ -29,6 +30,7 @@ export async function onRequestGet(context) {
   return Response.json({
     ok: true,
     builtin: DEFAULT_PACE_WEIGHTS,
+    score_settings: scoreSettings,
     default: out(byId.get(0)),
     items: (graded || []).map((g) => ({ graded_race_id: g.id, name: g.name, grade: g.grade, is_jump: g.is_jump, schedule_md: g.schedule_md, weights: out(byId.get(Number(g.id))) })),
   });

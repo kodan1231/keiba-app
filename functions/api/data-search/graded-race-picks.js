@@ -1,4 +1,4 @@
-import { jsonError, parsePositiveIntId, getPaceWeights, loadGradedBacktest, gradedPicksOf, memoized } from "../_shared.js";
+import { jsonError, parsePositiveIntId, getPaceWeights, loadGradedBacktest, gradedPicksOf, memoized, getPaceScoreSettings } from "../_shared.js";
 
 // データ検索「重賞検索」タブの「総合推奨馬の比率と過去の上位5頭」(2026-10-13追加)。
 // GET /api/data-search/graded-race-picks?id=<graded_races.id>
@@ -20,9 +20,11 @@ export async function onRequestGet(context) {
   const { id, error } = parsePositiveIntId(url.searchParams.get("id"), "id");
   if (error) return error;
 
+  // 採点の使い回しはデータ無しの点ごと(設定を変えたら作り直す。2026-10-14)
+  const { missing_score: missingScore } = await getPaceScoreSettings(db);
   const [weights, bt] = await Promise.all([
     getPaceWeights(db, id),
-    memoized(`graded_backtest_${id}`, () => loadGradedBacktest(db, id), BT_MEMO_MS),
+    memoized(`graded_backtest_${id}_${missingScore}`, () => loadGradedBacktest(db, id, { missingScore }), BT_MEMO_MS),
   ]);
   if (bt.error === "重賞が見つかりません") return jsonError(bt.error, 404);
   if (bt.error) return Response.json({ weights, years: [], message: bt.error });

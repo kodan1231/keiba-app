@@ -1,4 +1,4 @@
-import { parsePositiveIntId, getPaceWeights, isAutoWeightsStale, raceForStaleCheck } from "../_shared.js";
+import { parsePositiveIntId, getPaceWeights, isAutoWeightsStale, raceForStaleCheck, getPaceScoreSettings } from "../_shared.js";
 
 // 総合推奨馬の重視度の比率(2026-10-13追加)。ログインユーザー全員が読める(比率は全ユーザー共通)。
 // GET /api/pace-weights?graded_race_id=N&race_id=R(どちらも省略可)
@@ -10,7 +10,7 @@ import { parsePositiveIntId, getPaceWeights, isAutoWeightsStale, raceForStaleChe
 //   画面はこれを見て POST /api/pace-weights/recompute で計算し直しを頼み、終わったら取り直す。
 //   2026-10-13: 当初はこの GET の中で計算し直していたが、計算(候補の採点)とキャッシュの読み込みで無料枠のCPU上限(10ミリ秒)を
 //   超えうるため分けた(超えても表示は今ある比率のまま壊れない)。
-// 読み取り: 比率の表を主キーで最大2行+(race_id があれば)レース1行・比率1行。
+// 読み取り: 比率の表を主キーで最大2行+(race_id があれば)レース1行・比率1行・点の設定1行(2分使い回し)。
 // 変更は管理者のみ(/api/admin/pace-weights)。仕様は docs/design/screens.md「総合推奨馬」。
 export async function onRequestGet(context) {
   const db = context.env.DB;
@@ -23,11 +23,12 @@ export async function onRequestGet(context) {
     const { id: raceId, error } = parsePositiveIntId(url.searchParams.get("race_id"), "race_id");
     if (error) return error;
     try {
-      const [race, row] = await Promise.all([
+      const [race, row, scoreSettings] = await Promise.all([
         db.prepare("SELECT id, race_date, finish_order FROM races WHERE id = ?").bind(raceId).first(),
         db.prepare("SELECT source, detail FROM pace_weights WHERE graded_race_id = ?").bind(gradedId).first(),
+        getPaceScoreSettings(db),
       ]);
-      stale = Boolean(race && isAutoWeightsStale(row, raceForStaleCheck(race)));
+      stale = Boolean(race && isAutoWeightsStale(row, raceForStaleCheck(race), scoreSettings.missing_score));
     } catch (e) {
       console.error("pace_weights stale check failed (ignored)", e);
     }

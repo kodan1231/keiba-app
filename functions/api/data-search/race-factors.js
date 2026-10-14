@@ -12,6 +12,7 @@ import {
   createFactorContext,
   computeRaceFactors,
   FACTOR_KEYS,
+  getPaceScoreSettings,
 } from "../_shared.js";
 
 // 予想登録画面「展開・時計」タブの総合推奨馬・推奨馬(2026-10-13追加)。
@@ -40,11 +41,12 @@ export async function onRequestGet(context) {
     return Response.json({ pace_type: null, counts: null, horses: [] });
   }
 
-  const [horseAliasMap, jockeyAliasMap, lineups, raceTimes] = await Promise.all([
+  const [horseAliasMap, jockeyAliasMap, lineups, raceTimes, scoreSettings] = await Promise.all([
     loadHorseAliasMapCached(db),
     loadJockeyAliasMapCached(db),
     getRaceLineups(db),
     getRaceTimes(db),
+    getPaceScoreSettings(db), // データ無しの点(2026-10-14。app_settings 1行。2分使い回し)
   ]);
   const { searchKeyToKey } = buildHorseSearchKeys(horseAliasMap, entries.map((e) => e.horse_name));
   const searchKeys = [...searchKeyToKey.keys()];
@@ -70,7 +72,7 @@ export async function onRequestGet(context) {
   const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
   const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null }));
   const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
-  const rf = computeRaceFactors(ctx, race, runners, runsByHorse);
+  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score });
 
   const horses = entries.map((e, i) => {
     const key = runners[i].key;
