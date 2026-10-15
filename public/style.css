@@ -3458,3 +3458,38 @@ body.guest-mode #gr-notes { display: none; }
 /* 管理画面「ゲスト」タブ */
 .guest-url { word-break: break-all; font-family: var(--font-mono); font-size: 13px; }
 .guest-device-blocked td { color: var(--ink-soft); text-decoration: line-through; }
+
+/* 馬券購入: チェックボックス・ラジオボタンを大きくして押しやすくする(2026-10-15 ユーザー要望)。
+   購入ダイアログ内のすべてのチェック・ラジオ(馬の選択・流しの固定・マルチ・買い目の確認)が対象。
+   `.bet-horse-control` はブレークポイントごとに何重にも上書きされているため、ファイル末尾に置いて後勝ちにする。
+   馬の選択欄は label ごと押せるので、label にも余白を持たせて押せる範囲を広げる(馬名列は省略表示で幅を吸収)。 */
+.purchase-dialog-modern input[type="checkbox"],
+.purchase-dialog-modern input[type="radio"] {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.purchase-dialog-modern label:has(> input[type="checkbox"]),
+.purchase-dialog-modern label:has(> input[type="radio"]) { cursor: pointer; }
+.bet-horse-control .check-inline,
+.bet-horse-control .control-label,
+.bet-horse-control .radio-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+}
+.bet-horse-row { min-height: 40px; }
+@media(max-width:430px) {
+  .purchase-dialog-modern input[type="checkbox"],
+  .purchase-dialog-modern input[type="radio"] { width: 20px; height: 20px; }
+  .bet-horse-control .check-inline,
+  .bet-horse-control .control-label,
+  .bet-horse-control .radio-inline { min-width: 28px; min-height: 30px; }
+  .bet-horse-control { gap: 2px; }
+  .bet-horse-row.axis2-row .check-inline,
+  .bet-horse-row.axis2-row-3col .check-inline { min-width: 30px; }
+}
