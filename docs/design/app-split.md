@@ -20,7 +20,7 @@
   今の画面を止める危険があるため採らなかった。
 - **画面**(`pageRedirect`): 他のアプリの画面を開いたら、そのアプリの同じ画面へ移す(302。`?` 以降も渡す)。
   `/` はアプリの最初の画面(search は `/guest`、admin は `/admin`、main は `index.html`)。以前のゲスト用URL `/g/<合言葉>` は
-  search の `/guest` へ。
+  search の `/guest` へ(受け口の `functions/g/[key].js` は2026-10-15に削除。手元の all では `/guest` を開くとゲストの Cookie を渡す)。
 - **API**:
   - main: `/api/admin/*`・`/api/cron/*`・取り込み(`entries-import` `results-import`)・レースの編集(`POST /api/races`、
     `PUT/DELETE /api/races/:id`、`PUT /api/races/:id/results`)・データ検索(予想登録画面が使う `race-factors` `jockey-course` を除く)は 404

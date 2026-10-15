@@ -3406,6 +3406,9 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 /* 管理画面: 軸指数・相手指数の入力のかたまり(2026-10-14) */
 .pace-w-kind { width: 100%; padding: 4px 0; }
 .pace-w-kind + .pace-w-kind { border-top: 1px dashed var(--rule-strong); margin-top: 4px; }
+/* 管理画面: 評価点の入力欄の開閉(2026-10-15) */
+.pace-adj-fold > summary { cursor: pointer; padding: 2px 0; }
+.pace-adj-fold > summary .pace-w-line-source { margin-left: 6px; }
 /* 管理画面: 共通+ペース予想ごとの4段(2026-10-14) */
 .pace-w-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; padding: 2px 0; }
 .pace-w-line + .pace-w-line { border-top: 1px dotted var(--rule-strong); }

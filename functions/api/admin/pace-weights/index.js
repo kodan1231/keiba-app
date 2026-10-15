@@ -1,6 +1,6 @@
 import {
   requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS,
-  parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey, parseAdjust, normalizeAdjust,
+  parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey, parseAdjust, normalizeAdjust, ADJUST_KEYS, GLOBAL_ADJUST_KEYS,
 } from "../../_shared.js";
 
 const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
@@ -18,7 +18,7 @@ const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・
 //   相手指数の共通の比率は DELETE ?kind=partner(pace_type なし)で消せる(軸指数に戻る)。
 // 2026-10-14: 比率の自動算出は夜間の定時実行・管理者の「今すぐ計算」(ブラウザ)で行い、結果は ./auto-result.js で保存する。
 // 評価点(2026-10-14追加。列 adjust の JSON { first_distance, first_track, same_jockey, source }。重賞・コースだけ。標準は設定の既定値〈./settings.js〉):
-//   PUT { graded_race_id(1以上) | course_key, kind: "adjust", first_distance, first_track, same_jockey } → 手動で保存
+//   PUT { graded_race_id(1以上) | course_key, kind: "adjust", first_distance, first_track, same_jockey, prev_board, prev_win, position } → 手動で保存
 //   DELETE ?graded_race_id=N | ?course_key=K &kind=adjust → 評価点だけ消す(次の計算で自動の値が入る)
 //   GET の weights.adjust に入る(無ければ null)
 export async function onRequestGet(context) {
@@ -177,8 +177,10 @@ export async function onRequestDelete(context) {
 // 評価点を手で保存する(2026-10-14)。行が無ければ「比率は未設定(source='none')」の行を作る
 async function putAdjust(db, t, data) {
   if (t.table === "pace_weights" && Number(t.keyBinds[0]) === 0) return jsonError("標準の評価点は「評価点の既定値」で変更してください", 400);
-  const a = normalizeAdjust({ first_distance: data.first_distance, first_track: data.first_track, same_jockey: data.same_jockey });
+  // 2026-10-15: 画面が送る全項目(前年の同レース・位置取りも)を保存する。以前は3項目だけ読み、前年の同レースの入力が保存されていなかった
+  const a = normalizeAdjust(Object.fromEntries(ADJUST_KEYS.map((k) => [k, data[k]])));
   if (!a) return jsonError("評価点は0〜50の数で入力してください", 400);
+  for (const k of GLOBAL_ADJUST_KEYS) delete a[k]; // 間隔(2026-10-15)は全レース共通の既定値だけ
   const keyList = t.keyCols.join(", ");
   const now = new Date().toISOString();
   await db.prepare(

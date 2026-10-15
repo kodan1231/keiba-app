@@ -12,7 +12,7 @@ import { getRaceIndex } from "./races-index-cache.js";
 import { getRaceLineups } from "./race-lineup-cache.js";
 import { loadJockeyAliasMapCached } from "./jockey-alias.js";
 import { getRaceTimes } from "./race-time-cache.js";
-import { FACTOR_KEYS, DEFAULT_MISSING_SCORE, ADJUST_KEYS, applyAdjust, createFactorContext, computeRaceFactors } from "./race-factors.js";
+import { FACTOR_KEYS, DEFAULT_MISSING_SCORE, ADJUST_KEYS, GLOBAL_ADJUST_KEYS, applyAdjust, totalAdjustOf, createFactorContext, computeRaceFactors } from "./race-factors.js";
 import { parseCourseKey } from "./pace-queue.js";
 import { memoized } from "./memo-cache.js";
 
@@ -133,9 +133,11 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
 
 // 列 adjust(評価点。2026-10-14追加。@STEP: pace_weights_adjust)の JSON を読む: { first_distance, …, prev_win, source }。無ければ null。
 // 入っている項目だけ返す(前年の同レース〈prev_*〉は後から足したため、古い行には無い。呼び出し側が設定の既定値と重ねる)
+// 全レース共通の項目(間隔。GLOBAL_ADJUST_KEYS。2026-10-15)は行に入っていても読まない
+const ROW_ADJUST_KEYS = ADJUST_KEYS.filter((k) => !GLOBAL_ADJUST_KEYS.includes(k));
 export function parseAdjust(text) {
   const o = parseByPace(text);
-  const vals = ADJUST_KEYS.filter((k) => o[k] !== undefined && o[k] !== null && Number.isFinite(Number(o[k]))).map((k) => [k, Number(o[k])]);
+  const vals = ROW_ADJUST_KEYS.filter((k) => o[k] !== undefined && o[k] !== null && Number.isFinite(Number(o[k]))).map((k) => [k, Number(o[k])]);
   if (!vals.length) return null;
   return { ...Object.fromEntries(vals), source: o.source === "auto" ? "auto" : "manual" };
 }
@@ -365,8 +367,8 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
         horse_number: h.horse_number,
         place: h.status === "finished" && h.finish_position >= 1 && h.finish_position <= 3 ? h.finish_position : 0,
         scores: PACE_FACTORS.map((f) => Math.round(h.factors[f].score * 100) / 100),
-        // 評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着。public/pace-search.js が評価点を選ぶ)
-        adj: [h.flags.fd, h.flags.ft, h.flags.cj, h.flags.pb, h.flags.pw],
+        // 評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・位置取り〈±1〉・間隔〈2026-10-15〉。public/pace-search.js が評価点を選ぶ)
+        adj: [h.flags.fd, h.flags.ft, h.flags.cj, h.flags.pb, h.flags.pw, h.flags.po || 0, h.flags.lo || 0],
       })),
     })),
   };
@@ -415,8 +417,8 @@ export async function saveAutoPaceResult(db, kind, key, result) {
     by_pace: mergePaces(prevPartner.by_pace, autoPartnerByPace),
   };
   const prevAdjust = parseAdjust(row?.adjust);
-  const autoAdjust = result.adjust && ADJUST_KEYS.every((k) => Number.isFinite(Number(result.adjust[k])))
-    ? { ...Object.fromEntries(ADJUST_KEYS.map((k) => [k, Number(result.adjust[k])])), source: "auto" } : null;
+  const autoAdjust = result.adjust && ROW_ADJUST_KEYS.every((k) => Number.isFinite(Number(result.adjust[k])))
+    ? { ...Object.fromEntries(ROW_ADJUST_KEYS.map((k) => [k, Number(result.adjust[k])])), source: "auto" } : null;
   const adjust = prevAdjust?.source === "manual" ? prevAdjust : autoAdjust;
   const now = new Date().toISOString();
   const cols = PACE_WEIGHT_COLUMNS;
@@ -459,7 +461,9 @@ export function gradedPicksOf(bt, weights, adjust = null) {
     const wa = (y.pace_type && weights.paces?.[y.pace_type]) || weights;
     const pw = weights.partner || weights;
     const wp = (y.pace_type && pw.paces?.[y.pace_type]) || pw;
-    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa), partner: paceIndexOf(h.factors, wp) }));
+    // 間隔(2026-10-15)は総合点から直接引く
+    const extra = (h) => (adjust ? totalAdjustOf(h.flags, adjust).value : 0);
+    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa) + extra(h), partner: paceIndexOf(h.factors, wp) + extra(h) }));
     const { axis, partners } = pickAxisPartners(horses);
     const finished = (x) => (x && x.h.status === "finished" && x.h.finish_position >= 1 ? x.h.finish_position : null);
     const axisPos = finished(axis);

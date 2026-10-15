@@ -41,7 +41,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |
 | 認証・ユーザー管理 | `functions/api/auth/*`, `functions/api/_lib/auth.js`, `public/auth.js` |
-| ゲスト閲覧(ログイン不要。次の開催週末の中央のレース+データ検索だけ。2026-10-14) | `public/guest.html`, `public/guest.js`, `public/prediction.js`(`GUEST_VIEW`), `functions/g/[key].js`(ゲスト用URL), `functions/api/_lib/guest.js`(使えるAPI・期間・ブロック), `functions/_middleware.js`, `functions/api/admin/guest/index.js` |
+| ゲスト閲覧(ログイン不要。次の開催週末の中央のレース+データ検索だけ。2026-10-14) | `public/guest.html`, `public/guest.js`, `public/prediction.js`(`GUEST_VIEW`), `functions/api/_lib/guest.js`(使えるAPI・期間・ブロック), `functions/_middleware.js`, `functions/api/admin/guest/index.js` |
 | アプリの入口の分離(予想・擬似購入用 keiba-yosou-app / データ検索用 keiba-search / 管理者用 keiba-admin。同じ D1。2026-10-14。**APIや画面を足したら、どのアプリで使うかを `_lib/app-role.js` に反映**) | `functions/api/_lib/app-role.js`(判定・画面の振り分け・main で使えないAPI), `functions/_middleware.js`, `public/utils.js`(`currentAppRole` `appUrl`), `public/shell.js`(アプリごとのナビ), `docs/design/app-split.md` |
 | 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |

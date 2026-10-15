@@ -11,7 +11,7 @@ import {
   getRaceTimes,
   createFactorContext,
   computeRaceFactors,
-  FACTOR_KEYS,
+  FACTOR_KEYS, GLOBAL_ADJUST_KEYS,
   getPaceScoreSettings,
   getPaceWeights,
   prevYearGradedRaceId,
@@ -62,7 +62,9 @@ export async function onRequestGet(context) {
     graded ? prevYearGradedRaceId(db, graded.id, race) : null,
   ]);
   // 重賞・コースの評価点に無い項目(後から足した前年の同レース等)は設定の既定値
+  // 間隔(2026-10-15)など全レース共通の項目は、いつも設定の既定値
   const adjust = { ...scoreSettings.adjust, ...(weights.adjust || {}) };
+  for (const k of GLOBAL_ADJUST_KEYS) adjust[k] = scoreSettings.adjust[k];
   const { searchKeyToKey } = buildHorseSearchKeys(horseAliasMap, entries.map((e) => e.horse_name));
   const searchKeys = [...searchKeyToKey.keys()];
   const runsByHorse = new Map();
@@ -96,7 +98,9 @@ export async function onRequestGet(context) {
       const v = rf.factors[f].get(key);
       factors[f] = { score: Math.round(v.score * 10) / 10, rank: v.rank, value: v.value, missing: v.missing };
     }
-    return { horse_name: e.horse_name, horse_number: e.horse_number ?? null, waku_number: e.waku_number ?? null, jockey: e.jockey || null, factors };
+    // total_adjust: 総合点(軸指数・相手指数)へ直接足す点と内訳(間隔。2026-10-15。無ければ value 0)
+    const ta = rf.totalAdjust.get(key) || { value: 0, note: "" };
+    return { horse_name: e.horse_name, horse_number: e.horse_number ?? null, waku_number: e.waku_number ?? null, jockey: e.jockey || null, factors, total_adjust: ta };
   });
   return Response.json({ pace_type: rf.pace_type, counts: rf.counts, horses });
 }

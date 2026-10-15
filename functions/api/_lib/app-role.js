@@ -43,7 +43,8 @@ function pageNameOf(pathname) {
 // 画面の振り分け。移す必要があれば 302 の Response、無ければ null
 export function pageRedirect(role, url) {
   if (role === "all") return null;
-  // 以前のゲスト用URL(/g/<合言葉>)はデータ検索用アプリの今週のレースへ(合言葉は2026-10-14に廃止)
+  // 以前のゲスト用URL(/g/<合言葉>)はデータ検索用アプリの今週のレースへ(合言葉は2026-10-14に廃止。
+  // 受け口の functions/g/[key].js は 2026-10-15 に削除。手元の all では /guest を開く)
   if (url.pathname.startsWith("/g/")) return redirect(`${APP_URLS.search}/guest`);
   const name = pageNameOf(url.pathname);
   if (name === null || !(name in PAGE_APP)) return null;

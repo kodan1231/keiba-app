@@ -1,13 +1,13 @@
 import {
-  requireAdmin, readJsonBody, jsonError, getGuestSettings, saveGuestSettings, randomToken, guestRaceWindow,
+  requireAdmin, readJsonBody, jsonError, getGuestSettings, saveGuestSettings, guestRaceWindow,
   invalidateGuestBlocks,
 } from "../../_shared.js";
 
 // 管理者向け: ゲスト閲覧の設定・端末・IPブロック(2026-10-14追加)。仕様は docs/design/guest.md。
-//   GET  → { settings: { enabled, version, path }, window: { from, to }, devices: [...], ip_blocks: [...] }
+//   GET  → { settings: { enabled, version }, window: { from, to }, devices: [...], ip_blocks: [...] }
 //          devices は最終アクセスの新しい順に最大200件(guest_devices は端末の数だけの小さな表)
 //   PUT  { enabled } → 公開する/止める
-//   POST { action: "regenerate" } → 合言葉を作り直す(古いURL・古いURLで入った端末の Cookie は使えなくなる)
+//   2026-10-15: 合言葉の作り直し(POST { action: "regenerate" })と GET の path(/g/<合言葉>)は合言葉の廃止で削除した
 //   POST { action: "block_device"|"unblock_device", device_id } / { action: "note_device", device_id, note }
 //   POST { action: "block_ip", ip, note? } / { action: "unblock_ip", ip }
 export async function onRequestGet(context) {
@@ -22,7 +22,7 @@ export async function onRequestGet(context) {
   ]);
   return Response.json({
     ok: true,
-    settings: { enabled: settings.enabled, version: settings.version, path: settings.key ? `/g/${settings.key}` : null },
+    settings: { enabled: settings.enabled, version: settings.version },
     window: guestRaceWindow(),
     devices,
     ip_blocks: ips,
@@ -36,10 +36,7 @@ export async function onRequestPut(context) {
   const { data, error } = await readJsonBody(context.request);
   if (error) return error;
   const s = await getGuestSettings(db, { fresh: true });
-  // 初めて公開するときは合言葉を作る
-  const next = { ...s, enabled: Boolean(data?.enabled) };
-  if (next.enabled && !next.key) next.key = randomToken(18);
-  await saveGuestSettings(db, next);
+  await saveGuestSettings(db, { ...s, enabled: Boolean(data?.enabled) });
   return Response.json({ ok: true });
 }
 
@@ -53,11 +50,6 @@ export async function onRequestPost(context) {
   const deviceId = String(data?.device_id || "");
   const ip = String(data?.ip || "").trim();
   switch (data?.action) {
-    case "regenerate": {
-      const s = await getGuestSettings(db, { fresh: true });
-      await saveGuestSettings(db, { ...s, key: randomToken(18), version: s.version + 1 });
-      return Response.json({ ok: true });
-    }
     case "block_device":
     case "unblock_device":
       if (!deviceId) return jsonError("device_id を指定してください", 400);

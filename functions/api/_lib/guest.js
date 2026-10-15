@@ -1,10 +1,13 @@
 // ゲスト閲覧(2026-10-14追加。ユーザー要望)。仕様は docs/design/guest.md。
-// ログインせずに、ゲスト用URL(/g/<合言葉>)を知っている人が「次の開催週末の中央のレース」と「データ検索」を見られる。
-//   - /g/<合言葉> を開くと端末ID入りの署名つきCookie(kbg)を渡す(functions/g/[key].js)。
+// ログインせずに「次の開催週末の中央のレース」と「データ検索」を見られる。
+//   - データ検索用アプリ(search)の画面を開くと、端末ID入りの署名つきCookie(kbg)を渡す(functions/_middleware.js の issueGuestCookie。
+//     手元の開発環境〈all〉では /guest を開いたときだけ)。
+//     2026-10-15: 以前の合言葉つきURL(/g/<合言葉>。functions/g/[key].js)と合言葉の作り直しは削除した(2026-10-14 のアプリ分離で
+//     本番では使われなくなっていたため)。本番の /g/... は _lib/app-role.js の pageRedirect が search の /guest へ移す。
 //   - /api/* ではセッションが無く kbg があればゲストとして扱う(functions/_middleware.js → resolveGuest)。
 //     使えるのは読み取りの決まったAPIだけ(GUEST_API_RULES)。レース単位のAPIは期間内の中央のレースだけ。
-//   - 設定は app_settings の key='guest': { enabled, key(合言葉), version }。合言葉を作り直すと version が上がり、
-//     古いURLから入った端末の Cookie は使えなくなる。
+//   - 設定は app_settings の key='guest': { enabled, version }(以前の合言葉 key が残っていても読まない)。
+//     version は Cookie に入れる版(今は変える操作は無い)。
 //   - 端末ごと・IPごとにブロックできる(guest_devices.blocked / guest_ip_blocks)。
 // D1: 設定とブロックの一覧は同じ実行環境で1分使い回す。アクセスの記録は1端末につき10分に1回まで書く。
 import { memoized, invalidateMemo } from "./memo-cache.js";
@@ -34,7 +37,7 @@ export function randomToken(bytes = 18) {
   return toB64url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
-// Cookie の値を作る: { d: 端末ID, v: 合言葉の版 }
+// Cookie の値を作る: { d: 端末ID, v: 設定の版 }
 export async function createGuestCookie(env, deviceId, version) {
   const payload = toB64url(new TextEncoder().encode(JSON.stringify({ d: deviceId, v: version, exp: Date.now() + GUEST_COOKIE_DAYS * 86400000 })));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(env.APP_PASSWORD, "sign"), new TextEncoder().encode(payload));
@@ -63,7 +66,6 @@ export async function readGuestCookie(env, cookieHeader) {
 function normalizeSettings(raw) {
   return {
     enabled: Boolean(raw?.enabled),
-    key: typeof raw?.key === "string" && raw.key ? raw.key : null,
     version: Number.isInteger(raw?.version) ? raw.version : 0,
   };
 }

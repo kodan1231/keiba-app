@@ -1211,7 +1211,9 @@ function paceTotalSectionHtml(entries) {
   const { data: rf, message } = raceFactorsState();
   if (!rf) return `${head}<p class="pace-none">${escapeHtml(message)}</p>`;
   // 点数(偏差値)はサーバー(race-factors)で計算済み。データの無い要素は設定の点で入っている(missing)
-  const rows = rf.horses.map(h => ({ e: h, f: h.factors, axis: paceIndexOf(h.factors, kw.axis), partner: paceIndexOf(h.factors, kw.partner) }));
+  // 総合点へ直接足す評価点(間隔。2026-10-15。サーバーの total_adjust)
+  const extraOf = (h) => Number(h.total_adjust?.value) || 0;
+  const rows = rf.horses.map(h => ({ e: h, f: h.factors, extra: h.total_adjust, axis: paceIndexOf(h.factors, kw.axis) + extraOf(h), partner: paceIndexOf(h.factors, kw.partner) + extraOf(h) }));
   const { axis, partners } = paceAxisPartner(rows);
   const markOf = (x) => (x === axis ? "◎" : partners.includes(x) ? "○" : "");
   const pickHtml = `
@@ -1231,7 +1233,7 @@ function paceTotalSectionHtml(entries) {
     <tr class="${markOf(x) ? "pace-total-top" : ""}">
       <td class="pace-total-mark">${markOf(x)}</td>
       <td>${x.rank}</td>
-      <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
+      <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}${x.extra?.note ? ` <small class="pace-none" title="軸指数・相手指数から直接引いた点">${escapeHtml(x.extra.note)}</small>` : ""}</td>
       <td>${sortKey === "axis" ? `<strong>${x.axis.toFixed(1)}</strong>` : x.axis.toFixed(1)}</td>
       <td>${sortKey === "partner" ? `<strong>${x.partner.toFixed(1)}</strong>` : x.partner.toFixed(1)}</td>
       ${PACE_FACTOR_KEYS.map(f => `<td>${cell(x.f[f])}</td>`).join("")}

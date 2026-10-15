@@ -10,6 +10,13 @@
   `functions/_middleware.js` の `searchPage`)。以前の `/g/<合言葉>` はどのアプリでも `https://keiba-search.pages.dev/guest` へ移す。
   管理画面「ゲスト閲覧」には合言葉付きURLの代わりにデータ検索用アプリのURLを出し、「URLを作り直す」は外した(止めたい端末はブロック)。
   以下の合言葉の説明は経緯(手元の開発環境〈all〉では今も `/g/<合言葉>` で入れる)。
+- **2026-10-15 変更(ユーザー承認)**: 合言葉の仕組みを削除した。`functions/g/[key].js`・管理APIの合言葉の作り直し
+  (`POST /api/admin/guest { action: "regenerate" }`)と GET の `path`・設定の `key` をなくし、設定は `{ enabled, version }` だけ
+  (本番に残っている `key` は読まず、次に公開を切り替えたときに消える)。ゲストの Cookie は `functions/_middleware.js` の
+  `issueGuestCookie` が渡す: search では画面を開いたとき、**手元の開発環境(all)では `/guest` を開いたときだけ**
+  (ログインしている人はセッションが優先されるので変わらない)。端末の行は最初に API を使ったときに `recordGuestAccess` が作る。
+  本番の `/g/...` は引き続き `_lib/app-role.js` の `pageRedirect` が search の `/guest` へ移す。端末・IPのブロックとアクセス履歴はそのまま。
+  以下の `/g/<合言葉>`・URLの作り直し・`key` の説明は経緯。
 
 - 管理画面「ユーザー」タブの「ゲスト閲覧」(2026-10-14 当初は「ゲスト」タブ。ユーザー管理と同じ意味合いのためユーザータブへ移した)で公開すると、ゲスト用URL `/g/<合言葉>` が出る(合言葉は推測できないランダムな文字列)。
   URLを知っていれば誰でも見られる(ログイン不要)。

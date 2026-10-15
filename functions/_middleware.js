@@ -46,6 +46,14 @@ export async function onRequest(context) {
     const moved = pageRedirect(role, url);
     if (moved) return moved;
     if (role === "search") return searchPage(context, url);
+    // 手元の開発環境(all): ゲストの画面(/guest)を開いたときだけゲストの Cookie を渡す(2026-10-15。以前の /g/<合言葉> の代わり)。
+    // ログインしている人はセッションが優先されるので、見え方は変わらない
+    if (role === "all" && /^\/guest(\.html)?$/.test(url.pathname)) {
+      const res = await next();
+      const out = new Response(res.body, res);
+      await issueGuestCookie(context, out);
+      return out;
+    }
     return next();
   }
   if (role === "main" && blockedOnMain(request, url)) return notFoundJson();
@@ -97,7 +105,8 @@ export async function onRequest(context) {
 
     // ゲスト閲覧(2026-10-14。_lib/guest.js・docs/design/guest.md): ログインしていなくても、ゲスト用URLで渡した
     // Cookie(kbg)があれば、決まった読み取りのAPIだけ通す。ログインしている人はセッションを優先する。
-    // 2026-10-14: ゲストはデータ検索用アプリ(search。下の searchApi)だけ。main・admin ではゲストの Cookie を見ない(手元の all は以前どおり)
+    // 2026-10-14: ゲストはデータ検索用アプリ(search。下の searchApi)だけ。main・admin ではゲストの Cookie を見ない
+    // (手元の all は以前どおり。Cookie は /guest を開いたときに渡す)
     let guest = null;
     if (!session && role === "all") {
       guest = await resolveGuest(context);
@@ -145,21 +154,26 @@ const NO_INDEX = "noindex, nofollow";
 // 画面: ゲストの Cookie(今の版)が無ければ渡す(DB には書かない。端末の行はAPIを使ったときに _lib/guest.js の recordGuestAccess が作る)。
 // 検索エンジンには載せない(robots.txt と X-Robots-Tag)
 async function searchPage(context, url) {
-  const { request, env, next } = context;
+  const { next } = context;
   if (url.pathname === "/robots.txt") {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "Content-Type": "text/plain", "X-Robots-Tag": NO_INDEX } });
   }
   const res = await next();
   const out = new Response(res.body, res);
   out.headers.set("X-Robots-Tag", NO_INDEX);
-  if (/\.html$|^\/[a-z-]*$/.test(url.pathname) && env.APP_PASSWORD) {
-    const settings = await getGuestSettings(env.DB);
-    const cookie = await readGuestCookie(env, request.headers.get("Cookie"));
-    if (settings.enabled && (!cookie || cookie.version !== settings.version)) {
-      out.headers.append("Set-Cookie", await createGuestCookie(env, cookie?.deviceId || randomToken(16), settings.version));
-    }
-  }
+  if (/\.html$|^\/[a-z-]*$/.test(url.pathname)) await issueGuestCookie(context, out);
   return out;
+}
+
+// ゲストの Cookie(今の版)が無ければ応答に付ける(公開中のときだけ。端末IDは持っていればそのまま)
+async function issueGuestCookie(context, out) {
+  const { request, env } = context;
+  if (!env.APP_PASSWORD) return;
+  const settings = await getGuestSettings(env.DB);
+  const cookie = await readGuestCookie(env, request.headers.get("Cookie"));
+  if (settings.enabled && (!cookie || cookie.version !== settings.version)) {
+    out.headers.append("Set-Cookie", await createGuestCookie(env, cookie?.deviceId || randomToken(16), settings.version));
+  }
 }
 
 // API: 全員ゲスト(ログインの Cookie・トークンは見ない)。ログイン・登録・夜間計算は無い

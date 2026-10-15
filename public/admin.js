@@ -1034,23 +1034,33 @@ const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "ス
 // 評価点(2026-10-14追加。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): [キー, 名前, 符号]
 // 前年掲示板・前年1着(2026-10-14追加)は重賞で前年の同じ重賞を2〜5着・1着の馬の「同コース」の点に足す
 const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"],
-  ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"]];
-let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10 }; // 設定の既定値(loadPaceWeights で入れ直す)
+  ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"], ["position", "位置取り", "±"], ["layoff", "間隔", "−"]];
+// 位置取り(2026-10-15追加)は展開の点に、スローなら前走で前の馬+・後ろの馬−、ハイなら逆
+// 間隔(2026-10-15追加)は前走から6か月以上空いた馬の総合点から引く。全レース共通なので「評価点の既定値」だけに出す
+const PACE_ADJ_GLOBAL = ["layoff"];
+const PACE_ADJ_ROW_KEYS = PACE_ADJ_KEYS.filter(([k]) => !PACE_ADJ_GLOBAL.includes(k));
+// 評価点の入力欄は開閉できる(2026-10-15 ユーザー要望)。開いている欄のキー(保存後の読み直しでも開いたままにする)
+const paceAdjOpen = new Set();
+let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, position: 5, layoff: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
 
 function paceAdjustText(a) {
   return PACE_ADJ_KEYS.filter(([k]) => a[k] != null).map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
 }
 
-// 評価点の入力1行。a: その重賞・コースの評価点(無ければ null)。空欄は薄く出す既定値を使う
-function paceAdjustLineHtml(a) {
+// 評価点の入力1行。a: その重賞・コースの評価点(無ければ null)。空欄は薄く出す既定値を使う。openKey: 開閉の状態を覚えるキー
+// 閉じているときは見出しに今の値(無ければ「既定値」)を出す(2026-10-15)
+function paceAdjustLineHtml(a, openKey) {
   const src = a ? (a.source === "auto" ? "自動" : "手動") : "";
-  return `<div class="pace-w-kind pace-adj-line"><span class="pace-w-admin-title">評価点(タイム・騎手・同コースの点に足し引き)</span>
+  const rowText = (x) => PACE_ADJ_ROW_KEYS.filter(([k]) => x[k] != null).map(([k, label, sign]) => `${label}${sign}${x[k]}`).join("・");
+  return `<details class="pace-w-kind pace-adj-line pace-adj-fold" data-open-key="${escapeAttr(openKey)}" ${paceAdjOpen.has(openKey) ? "open" : ""}>
+    <summary><span class="pace-w-admin-title">評価点(展開・タイム・騎手・同コースの点に足し引き)</span>
+      <small class="pace-w-line-source">${a ? `${escapeHtml(rowText(a))}(${src})` : "既定値"}</small></summary>
     <div class="pace-w-line">
-      ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${a?.[k] ?? ""}" placeholder="${paceAdjustDefault[k]}">点</label>`).join("")}
+      ${PACE_ADJ_ROW_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${a?.[k] ?? ""}" placeholder="${paceAdjustDefault[k]}">点</label>`).join("")}
       <small class="pace-w-line-source">${src}</small>
       <button type="button" class="ghost-btn pace-adj-save">保存</button>
       ${a ? `<button type="button" class="icon-btn delete pace-adj-clear" title="この評価点を消す(既定値を使う。次の計算で自動の値が入る)">×</button>` : ""}
-    </div></div>`;
+    </div></details>`;
 }
 
 // 評価点の成績の表示(並びの一致〈2026-10-14〜〉があればそれ、古い結果は軸の3着以内の数)
@@ -1159,6 +1169,11 @@ function setupPaceWeightsLines(container) {
       body: JSON.stringify({ ...targetOf(btn), pace_type: line.dataset.pace, kind: kindOf(btn), ...paceWeightsReadInputs(line) }),
     }, "保存しました");
   }));
+  // 評価点の欄の開閉を覚える(2026-10-15)
+  container.querySelectorAll("details.pace-adj-fold").forEach((d) => d.addEventListener("toggle", () => {
+    if (d.open) paceAdjOpen.add(d.dataset.openKey);
+    else paceAdjOpen.delete(d.dataset.openKey);
+  }));
   // 評価点(2026-10-14)
   container.querySelectorAll(".pace-adj-save").forEach((btn) => btn.addEventListener("click", () => {
     paceWeightsRequest("/api/admin/pace-weights", {
@@ -1207,13 +1222,16 @@ async function loadPaceWeights() {
       <label class="pace-w-input"><input type="number" min="0" max="100" step="1" id="pace-missing-score" value="${missing}">点</label>
       <button type="button" class="ghost-btn" id="pace-missing-score-save">保存</button>
     </div>
+    <details class="pace-adj-fold" data-open-key="default" ${paceAdjOpen.has("default") ? "open" : ""}>
+    <summary><span class="pace-w-admin-title">評価点の既定値</span> <small class="pace-w-line-source">${escapeHtml(paceAdjustText(paceAdjustDefault))}</small></summary>
     <div class="pace-w-line" id="pace-adjust-default">
-      <span class="pace-w-admin-title">評価点の既定値</span>
       ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${paceAdjustDefault[k]}">点</label>`).join("")}
       <button type="button" class="ghost-btn" id="pace-adjust-default-save">保存</button>
       <button type="button" class="ghost-btn" id="pace-adjust-default-auto" title="全コースの直近1年(最大600レース)から評価点を選び、そのまま保存します">自動で計算</button>
     </div>
     <p class="ticket-sub" id="pace-adjust-auto-info">${escapeHtml(paceAdjustAutoText(data.score_settings?.adjust_auto))}</p>
+    <p class="ticket-sub">間隔は全レース共通(前走から6か月以上空いた馬の軸指数・相手指数から引く)。重賞・コースごとの評価点には出ません</p>
+    </details>
     <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
     ${paceWeightsLinesHtml(data.default, data.builtin)}
     ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}`;
@@ -1270,8 +1288,8 @@ async function paceAdjustDefaultAuto(btn) {
     }
     paceAdjustAutoMsg("計算できました。保存しています…", null);
     const d = result.detail.adjust;
-    const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey };
-    // 前年の同レースは今の既定値のまま、3つだけ置き換えて保存する
+    const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey, position: result.adjust.position, layoff: result.adjust.layoff };
+    // 前年の同レースは今の既定値のまま、5つだけ置き換えて保存する(位置取り・間隔は 2026-10-15 追加)
     const saved = await paceWeightsRequest("/api/admin/pace-weights/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1389,7 +1407,7 @@ function renderPaceWeightsList() {
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
           ${paceWeightsLinesHtml(w, std, "partner")}
-          ${paceAdjustLineHtml(w?.adjust || null)}
+          ${paceAdjustLineHtml(w?.adjust || null, `g${id}`)}
           ${w?.source === "auto" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
             <button type="button" class="ghost-btn pace-w-row-auto">今すぐ計算(過去10年)</button>
@@ -1473,7 +1491,7 @@ function renderCourseWeightsList() {
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
           ${paceWeightsLinesHtml(w, std, "partner")}
-          ${paceAdjustLineHtml(w?.adjust || null)}
+          ${paceAdjustLineHtml(w?.adjust || null, `c${c.course_key}`)}
           ${w?.detail?.method === "backtest" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
             <button type="button" class="ghost-btn course-w-auto">今すぐ計算(直近1年)</button>
