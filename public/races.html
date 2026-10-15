@@ -78,9 +78,15 @@
         <label>距離(m・任意)<input type="number" id="r-distance" placeholder="例: 2000" min="0" step="1" /></label>
       </div>
 
-      <label>出走頭数
-        <select id="r-horse-count"></select>
-      </label>
+      <div class="entries-count-row">
+        <!-- 2026-10-15: 重賞の特別登録を手で入れるため、5〜18頭の選択から数字の入力へ(上限なし。打ち間違い防止に99まで) -->
+        <label>出走頭数
+          <input type="number" id="r-horse-count" min="1" max="99" step="1" inputmode="numeric" />
+        </label>
+        <label class="inline-check" title="特別登録など、枠番・馬番がまだ決まっていないとき。19頭以上は自動で入る">
+          <input type="checkbox" id="r-unnumbered" /> 馬番未確定(特別登録など)
+        </label>
+      </div>
 
       <div class="paste-box">
         <div class="paste-box-actions">

@@ -69,15 +69,18 @@ export async function onRequestGet(context) {
   const { searchKeyToKey } = buildHorseSearchKeys(horseAliasMap, entries.map((e) => e.horse_name));
   const searchKeys = [...searchKeyToKey.keys()];
   const runsByHorse = new Map();
-  if (searchKeys.length) {
+  // IN句のキー数: 出走馬の馬名+逆引きエイリアス。重賞の特別登録を手で入れると頭数に上限が無く(2026-10-15)、
+  // 100バインドを超えうるため90件ずつ(+日付1)に分ける
+  for (let i = 0; i < searchKeys.length; i += 90) {
+    const keys = searchKeys.slice(i, i + 90);
     const { results } = await db
       .prepare(
         `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
                 rr.body_weight, rr.jockey, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
            FROM race_results rr JOIN races r ON r.id = rr.race_id
-          WHERE rr.horse_key IN (${searchKeys.map(() => "?").join(",")}) AND r.race_date < ?`
+          WHERE rr.horse_key IN (${keys.map(() => "?").join(",")}) AND r.race_date < ?`
       )
-      .bind(...searchKeys, race.race_date)
+      .bind(...keys, race.race_date)
       .all();
     for (const row of results || []) {
       const key = searchKeyToKey.get(row.horse_key);

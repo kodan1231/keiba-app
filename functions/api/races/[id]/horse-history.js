@@ -83,35 +83,41 @@ export async function onRequestGet(context) {
   if (!keyMap.size) return Response.json({});
 
   const searchKeys = [...searchKeyToEntryKey.keys()];
-  const placeholders = searchKeys.map(() => "?").join(",");
-
   // 出走各馬について、直近5走(欠番なく)だけをSQL側で確定する。
-  const { results: rankedRows } = await env.DB.prepare(
-    `WITH ranked AS (
-       SELECT rr.horse_key, rr.horse_name, rr.status, rr.finish_position, rr.win_popularity,
-              rr.jockey, rr.weight_carried, rr.body_weight, rr.body_weight_change,
-              rr.time_text, rr.margin, rr.final_furlong_time, rr.corner_positions, rr.sex_age, rr.race_id,
-              rr.horse_number,
-              r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance,
-              r.track_condition, r.weather,
-              ROW_NUMBER() OVER (
-                PARTITION BY rr.horse_key
-                ORDER BY r.race_date DESC, r.race_number DESC
-              ) AS rn
-         FROM race_results rr
-         JOIN races r ON r.id = rr.race_id
-        WHERE rr.horse_key IN (${placeholders})
-          AND rr.race_id <> ?
-     )
-     SELECT * FROM ranked WHERE rn <= ${MAX_PAST_RACES_PER_HORSE}
-     ORDER BY horse_key, race_date DESC, race_number DESC`
-  ).bind(...searchKeys, raceId).all();
+  // IN句のキー数は出走馬の馬名+逆引きエイリアス。重賞の特別登録を手で入れると頭数に上限が無い(2026-10-15)ため、
+  // 90件ずつ(+レースID 1)に分ける。直近5走は馬ごと(PARTITION BY horse_key)なので分けても結果は同じ
+  const rankedRows = [];
+  for (const keysChunk of chunk(searchKeys, 90)) {
+    if (!keysChunk.length) continue;
+    const placeholders = keysChunk.map(() => "?").join(",");
+    const { results: chunkRows } = await env.DB.prepare(
+      `WITH ranked AS (
+         SELECT rr.horse_key, rr.horse_name, rr.status, rr.finish_position, rr.win_popularity,
+                rr.jockey, rr.weight_carried, rr.body_weight, rr.body_weight_change,
+                rr.time_text, rr.margin, rr.final_furlong_time, rr.corner_positions, rr.sex_age, rr.race_id,
+                rr.horse_number,
+                r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance,
+                r.track_condition, r.weather,
+                ROW_NUMBER() OVER (
+                  PARTITION BY rr.horse_key
+                  ORDER BY r.race_date DESC, r.race_number DESC
+                ) AS rn
+           FROM race_results rr
+           JOIN races r ON r.id = rr.race_id
+          WHERE rr.horse_key IN (${placeholders})
+            AND rr.race_id <> ?
+       )
+       SELECT * FROM ranked WHERE rn <= ${MAX_PAST_RACES_PER_HORSE}
+       ORDER BY horse_key, race_date DESC, race_number DESC`
+    ).bind(...keysChunk, raceId).all();
+    rankedRows.push(...(chunkRows || []));
+  }
 
-  const rows = rankedRows || [];
+  const rows = rankedRows;
 
   // field_size(出走頭数)と、勝ち馬・2着馬(馬柱表示の「勝ち馬/2着馬名」用)を、
-  // 対象レースぶんだけ一括で引く。race_id の数は「出走馬数(最大18)× 5走」= 最大90で、
-  // 下の90件チャンクに収まる(CLAUDE.md「IN句のバインド数」)。
+  // 対象レースぶんだけ一括で引く。race_id の数は「出走馬数 × 5走」(18頭なら最大90。特別登録ではそれ以上)で、
+  // 下の90件チャンクで分ける(CLAUDE.md「IN句のバインド数」)。
   // 2026-10-03: 以前は COUNT(*) ... GROUP BY race_id で頭数だけを数えていたが、馬柱表示の
   // 追加で勝ち馬名も要るため、同じ行(対象レースの race_results 全頭)を読んでメモリで
   // 数える形に変えた。読む行は COUNT のときと同じ(race_id インデックスで該当レースの全頭)。

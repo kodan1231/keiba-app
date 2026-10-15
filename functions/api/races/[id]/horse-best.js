@@ -63,13 +63,18 @@ export async function onRequestGet(context) {
 
   // 父・母(馬柱の馬の列に出す。2026-10-03追加)。horses(馬情報マスタ)に保存済みの分だけを返し、
   // netkeiba への取得はしない(未登録は画面側で「不明」)。horses.horse_key は正しい馬名の
-  // horseAliasKeyOf で、canonByKey のキーと同じ。キー数は出走頭数(最大18)で100バインド内。
+  // horseAliasKeyOf で、canonByKey のキーと同じ。キー数は出走頭数。重賞の特別登録を手で入れると上限が無い(2026-10-15)ため90件ずつ。
   const pedigree = {};
   const masterKeys = [...canonByKey.keys()];
-  const { results: masterRows } = await env.DB.prepare(
-    `SELECT horse_key, sire, dam FROM horses WHERE horse_key IN (${masterKeys.map(() => "?").join(",")})`
-  ).bind(...masterKeys).all();
-  for (const r of masterRows || []) {
+  const masterRows = [];
+  for (let i = 0; i < masterKeys.length; i += 90) {
+    const keys = masterKeys.slice(i, i + 90);
+    const { results } = await env.DB.prepare(
+      `SELECT horse_key, sire, dam FROM horses WHERE horse_key IN (${keys.map(() => "?").join(",")})`
+    ).bind(...keys).all();
+    masterRows.push(...(results || []));
+  }
+  for (const r of masterRows) {
     const name = keyMap.get(r.horse_key);
     if (name) pedigree[name] = { sire: r.sire || null, dam: r.dam || null };
   }
@@ -81,18 +86,24 @@ export async function onRequestGet(context) {
   const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
 
   const searchKeys = [...searchKeyToKey.keys()];
-  const placeholders = searchKeys.map(() => "?").join(",");
-  const { results } = await env.DB.prepare(
-    `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position, rr.weight_carried, rr.jockey,
-            r.race_date, r.track, r.race_name, r.track_condition
-       FROM race_results rr
-       JOIN races r ON r.id = rr.race_id
-      WHERE rr.horse_key IN (${placeholders})
-        AND rr.status = 'finished'
-        AND r.course_type = ?
-        AND r.distance = ?
-        AND r.race_date < ?`
-  ).bind(...searchKeys, race.course_type, race.distance, race.race_date).all();
+  // 出走馬の馬名+逆引きエイリアス。特別登録では頭数に上限が無いため90件ずつ(+3)
+  const results = [];
+  for (let i = 0; i < searchKeys.length; i += 90) {
+    const keysChunk = searchKeys.slice(i, i + 90);
+    const placeholders = keysChunk.map(() => "?").join(",");
+    const { results: chunkRows } = await env.DB.prepare(
+      `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position, rr.weight_carried, rr.jockey,
+              r.race_date, r.track, r.race_name, r.track_condition
+         FROM race_results rr
+         JOIN races r ON r.id = rr.race_id
+        WHERE rr.horse_key IN (${placeholders})
+          AND rr.status = 'finished'
+          AND r.course_type = ?
+          AND r.distance = ?
+          AND r.race_date < ?`
+    ).bind(...keysChunk, race.course_type, race.distance, race.race_date).all();
+    results.push(...(chunkRows || []));
+  }
 
   // 騎手名は表示用なのでエイリアスを2分使い回す版で正しい表記へ寄せる(_lib/memo-cache.js)。
   const jockeyAliasMap = await loadJockeyAliasMapCached(env.DB);

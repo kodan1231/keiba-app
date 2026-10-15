@@ -4,6 +4,8 @@
 // ESモジュールを使わないクラシックスクリプトのため races.js とグローバルスコープを
 // 共有する。races.html では races.js の後に読み込む必要がある(本ファイル冒頭の
 // HORSE_COUNT_OPTIONS 参照のため)。分割によって挙動・DOM構造・APIは変更していない。
+// 2026-10-15: 出走頭数は数字の入力(上限なし。打ち間違い防止に MAX_ENTRY_ROWS まで)にし、「馬番未確定」のチェックを追加
+// (重賞の特別登録を手で入れるため。19頭以上は自動で馬番未確定。docs/design/entries-import.md「特別登録の手入力」)。
 
 let currentEntriesHorseCount = 8; // 出走馬表モーダル内の頭数(entry-rows描画用)
 
@@ -13,11 +15,26 @@ const entriesForm = document.getElementById("race-entries-form");
 const entriesModalTitle = document.getElementById("race-entries-modal-title");
 const entryRows = document.getElementById("entry-rows");
 const horseCountSelect = document.getElementById("r-horse-count");
+const unnumberedCheck = document.getElementById("r-unnumbered");
+const MAX_NUMBERED_HORSES = 18; // 馬番を付けられる頭数(JRA のフルゲート)。これを超えたら馬番未確定
+const MAX_ENTRY_ROWS = 99;      // 打ち間違いで数百行にならないための上限
+
+function clampHorseCount(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(MAX_ENTRY_ROWS, Math.max(1, n)) : 8;
+}
+
+// 馬番未確定の表示(枠・馬番の欄を隠す)。19頭以上ならチェックを入れて外せなくする
+function syncUnnumbered(count) {
+  const over = count > MAX_NUMBERED_HORSES;
+  if (over) unnumberedCheck.checked = true;
+  unnumberedCheck.disabled = over;
+  entryRows.classList.toggle("entries-unnumbered", unnumberedCheck.checked);
+}
 const raceNumberSelect = document.getElementById("r-race-number");
 
 // ---------- 初期化: セレクトの選択肢を用意 ----------
 raceNumberSelect.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}R</option>`).join("");
-horseCountSelect.innerHTML = HORSE_COUNT_OPTIONS;
 
 // 出走頭数から、枠番の初期値を計算する。JRAの正式な枠番決定ルール(抽選)とは異なるが、
 // 「頭数が決まればおおよその枠番の目安はつく」という簡易な初期値であり、
@@ -47,10 +64,12 @@ function renderEntryRows(entries, horseCount) {
   for (let i = 0; i < horseCount; i++) {
     // 既存データ(entries[i])に枠番があればそれを尊重し、無い新規行だけ初期値を自動設定する。
     const existing = entries[i];
+    // 馬番の無い馬(特別登録・馬番確定前の取り込み)は、行の順番を馬番の初期値にする(馬番未確定のチェックを外したときの入力の手間を減らす)
+    const horse_number = (existing?.horse_number ?? null) !== null ? existing.horse_number : i + 1;
     const waku_number = (existing?.waku_number ?? null) !== null
       ? existing.waku_number
-      : defaultWakuNumber(i + 1, horseCount);
-    rows.push(existing ? { ...existing, waku_number } : { waku_number, horse_number: i + 1, horse_name: "", jockey: "" });
+      : defaultWakuNumber(horse_number, Math.min(horseCount, MAX_NUMBERED_HORSES));
+    rows.push(existing ? { ...existing, horse_number, waku_number } : { waku_number, horse_number, horse_name: "", jockey: "" });
   }
   entryRows.innerHTML = rows
     .map((e, i) => {
@@ -78,19 +97,24 @@ function renderEntryRows(entries, horseCount) {
 }
 
 horseCountSelect.addEventListener("change", () => {
-  const newCount = Number(horseCountSelect.value);
+  const newCount = clampHorseCount(horseCountSelect.value);
+  horseCountSelect.value = newCount;
   const current = readEntryRows();
   renderEntryRows(current, newCount);
+  syncUnnumbered(newCount);
 });
+unnumberedCheck.addEventListener("change", () => syncUnnumbered(currentEntriesHorseCount));
 
 function readEntryRows() {
+  // 馬番未確定なら枠番・馬番は空(null)で保存する(2026-10-15)
+  const unnumbered = unnumberedCheck.checked;
   return Array.from(entryRows.querySelectorAll(".entry-form-row")).map((row) => {
     let extra = {};
     try { extra = JSON.parse(row.dataset.extra || "{}") || {}; } catch { extra = {}; }
     return {
       ...extra,
-      waku_number: row.querySelector(".e-waku").value ? Number(row.querySelector(".e-waku").value) : null,
-      horse_number: Number(row.querySelector(".e-horse-number").value),
+      waku_number: !unnumbered && row.querySelector(".e-waku").value ? Number(row.querySelector(".e-waku").value) : null,
+      horse_number: unnumbered ? null : Number(row.querySelector(".e-horse-number").value),
       horse_name: row.querySelector(".e-horse-name").value,
       jockey: row.querySelector(".e-jockey").value || null,
       ...(row.querySelector(".e-scratched").checked ? { scratched: true } : {}),
@@ -123,14 +147,17 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     alert("読み取れる行が見つかりませんでした。書式をご確認のうえ、直接入力欄で修正してください。");
     return;
   }
-  const count = Math.max(parsed.length, currentEntriesHorseCount, 5);
+  const count = clampHorseCount(Math.max(parsed.length, currentEntriesHorseCount, 5));
   horseCountSelect.value = count;
   // 馬番が読み取れていればその番号順に、読み取れなければ出現順に並べる
   const withNumbers = parsed.filter((p) => p.horse_number);
   const ordered = withNumbers.length === parsed.length
     ? [...parsed].sort((a, b) => a.horse_number - b.horse_number)
     : parsed.map((p, i) => ({ ...p, horse_number: p.horse_number || i + 1 }));
+  // 馬番の無い行があれば馬番未確定(特別登録の一覧の貼り付け等)、全行にあれば外す
+  unnumberedCheck.checked = withNumbers.length !== parsed.length;
   renderEntryRows(ordered, count);
+  syncUnnumbered(count);
   document.getElementById("paste-area").hidden = true;
 });
 
@@ -157,9 +184,12 @@ function openEntriesModal(race, prefill) {
     document.getElementById("r-course-type").value = race.course_type || "";
     document.getElementById("r-distance").value = race.distance || "";
 
-    const count = Math.max(race.entries.length, 5);
+    const count = clampHorseCount(Math.max(race.entries.length, 5));
     horseCountSelect.value = count;
+    // 馬番の無い馬がいれば馬番未確定で開く(以前は馬番の欄に1が入り、そのまま保存すると全頭1番になった)
+    unnumberedCheck.checked = race.entries.some((e) => e && (e.horse_number === null || e.horse_number === undefined));
     renderEntryRows(race.entries, count);
+    syncUnnumbered(count);
   } else {
     // admin.html の「未登録レース一覧」から遷移してきた場合、日付・競馬場・レース番号を
     // 事前入力しておく(?new_date=&new_track=&new_race_number= のクエリパラメータ経由)。
@@ -169,7 +199,9 @@ function openEntriesModal(race, prefill) {
     document.getElementById("r-course-type").value = "";
     document.getElementById("r-distance").value = "";
     horseCountSelect.value = "8";
+    unnumberedCheck.checked = false;
     renderEntryRows([], 8);
+    syncUnnumbered(8);
   }
 
   entriesModal.hidden = false;
@@ -502,9 +534,11 @@ async function applyUmabashira() {
         weight_carried: p.weight_carried ?? cur.weight_carried ?? null,
       };
     });
-  const count = Math.max(entries.length, ...entries.map((e) => e.horse_number || 0), 5);
+  const count = clampHorseCount(Math.max(entries.length, ...entries.map((e) => e.horse_number || 0), 5));
   horseCountSelect.value = count;
+  unnumberedCheck.checked = entries.some((e) => !e.horse_number);
   renderEntryRows(entries, count);
+  syncUnnumbered(count);
 
   const applied = data.horses || [];
   const n = (k) => applied.filter((h) => h.applied === k).length;

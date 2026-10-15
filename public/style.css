@@ -909,6 +909,13 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
   padding: 6px;
 }
 .entry-form-row input, .entry-form-row select { padding: 6px; font-size: 12.5px; }
+/* 出走馬表: 頭数の入力と馬番未確定(特別登録の手入力。2026-10-15) */
+.entries-count-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.entries-count-row #r-horse-count { width: 6em; }
+.entries-count-row .inline-check { display: flex; align-items: center; gap: 4px; cursor: pointer; padding-bottom: 6px; }
+.entries-unnumbered .e-waku, .entries-unnumbered .e-horse-number { display: none; }
+.entries-unnumbered .entry-form-row { grid-template-columns: 1fr 100px auto; }
+@media(max-width:700px) { .entries-unnumbered .entry-form-row { grid-template-columns: 1fr 60px 44px; } }
 /* 出走取消(2026-10-15) */
 .scratched-badge { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; line-height: 1.6; color: #fff; background: #8a2b2b; border-radius: 3px; vertical-align: middle; }
 .prediction-horse.is-scratched { opacity: 0.55; }
