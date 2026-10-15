@@ -1034,14 +1034,13 @@ const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "ス
 // 評価点(2026-10-14追加。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): [キー, 名前, 符号]
 // 前年掲示板・前年1着(2026-10-14追加)は重賞で前年の同じ重賞を2〜5着・1着の馬の「同コース」の点に足す
 const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"],
-  ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"], ["position", "位置取り", "±"], ["layoff", "間隔", "−"]];
-// 位置取り(2026-10-15追加)は展開の点に、スローなら前走で前の馬+・後ろの馬−、ハイなら逆
+  ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"], ["layoff", "間隔", "−"]];
 // 間隔(2026-10-15追加)は前走から6か月以上空いた馬の総合点から引く。全レース共通なので「評価点の既定値」だけに出す
 const PACE_ADJ_GLOBAL = ["layoff"];
 const PACE_ADJ_ROW_KEYS = PACE_ADJ_KEYS.filter(([k]) => !PACE_ADJ_GLOBAL.includes(k));
 // 評価点の入力欄は開閉できる(2026-10-15 ユーザー要望)。開いている欄のキー(保存後の読み直しでも開いたままにする)
 const paceAdjOpen = new Set();
-let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, position: 5, layoff: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
+let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
 
 function paceAdjustText(a) {
   return PACE_ADJ_KEYS.filter(([k]) => a[k] != null).map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
@@ -1288,8 +1287,8 @@ async function paceAdjustDefaultAuto(btn) {
     }
     paceAdjustAutoMsg("計算できました。保存しています…", null);
     const d = result.detail.adjust;
-    const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey, position: result.adjust.position, layoff: result.adjust.layoff };
-    // 前年の同レースは今の既定値のまま、5つだけ置き換えて保存する(位置取り・間隔は 2026-10-15 追加)
+    const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey, layoff: result.adjust.layoff };
+    // 前年の同レースは今の既定値のまま、4つだけ置き換えて保存する(間隔は 2026-10-15 追加)
     const saved = await paceWeightsRequest("/api/admin/pace-weights/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -15,6 +15,10 @@
 //       → 今回の競馬場の補正値を足す(_lib/track-trends.js)
 //   - 上がり3F: 同じ順で探し、一番近い段の中の最速(換算はしない。競馬場別の補正は今後)
 //   - 展開: 前走の脚質でペースを予想(predictPace)し、ハイ=タイム順、スロー=上がり3F順、ミドル=両方の順位の合計順(両方ある馬)
+//     2026-10-15 変更(ユーザー要望・仕様確認済み): ハイは「差し・追込」、スローは「逃げ・先行」を**必ず上**にし、その組の中を
+//     タイム(スローは上がり3F)の速い順、有利でない組(脚質が分からない馬を含む)はその下で同じく速い順(paceFavoredRank)。
+//     脚質は、取消・除外・中止を除きコーナーの通過順がある一番新しい走の最初のコーナー(runningStyleOf。前走が中止・直線なら遡る)。
+//     ミドルは変えない。タイム(上がり)が無い馬は従来どおりデータ無し
 //   - 馬番: 同コース(競馬場・芝ダ障・距離)の馬番帯別の複勝率順。その馬番帯の騎乗が20回未満なら、同じ競馬場・芝ダ障の全距離、
 //     それも20回未満なら全競馬場の同じ芝ダ障。馬番帯は3頭ずつ(1-3, 4-6, 7-9, 10-12, 13-15, 16-18。numberGroupOf)。
 //     2026-10-14 ユーザー要望で馬番ごと→馬番帯に変更(馬番ごとでは騎乗が少なく揺れが大きいため。枠番は頭数で
@@ -47,21 +51,17 @@ export const DEFAULT_MISSING_SCORE = 40; // データの無い馬の点(偏差�
 //   - 継続騎乗(same_jockey): 騎手の点に足す。今回の騎手が、その馬に過去1回でも乗ったことがある(取消・除外の走は数えない)
 //   - 前年の同レース(prev_board / prev_win。2026-10-14追加): 「同コース」の点に足す。重賞で、前年の同じ重賞を1着なら prev_win、
 //     2〜5着(掲示板)なら prev_board(どちらか一方)。前年の同じ重賞のレースは呼び出し側が opts.prevRaceId で渡す(無ければ掛けない)
-//   - 位置取り(position。2026-10-15 ユーザー要望・仕様確認済み): 「展開」の点に足し引きする。前走の最初のコーナーの
-//     通過順が、その走の頭数の半分以内(位置 ≤ 頭数÷2。15頭なら7番手まで)なら「前」、それより後ろなら「後ろ」。
-//     スローの予想なら 前+・後ろ−、ハイなら 前−・後ろ+、ミドルは掛けない。印 po は +1(足す)/ −1(引く)/ 0。
-//     「前走」は取消・除外・中止を除き、コーナーの通過順がある一番新しい走(前走が中止や直線1000m等なら、その前の走へ遡る。
-//     2026-10-15 ユーザー要望で変更。当初は前走に通過順が無ければ掛けなかった)。どの走にも通過順が無い馬(初出走等)は掛けない
+//   - 位置取り(position)は 2026-10-15 に追加した後、同日に展開の点へ脚質を入れたため削除した(ユーザー判断。二重になるため)
 //   - 間隔(layoff。2026-10-15 ユーザー要望・仕様確認済み): 前走(取消・除外を除く一番新しい走。中止は含む)の6か月後の同じ日以降のレース
 //     (例: 前走 4/20 → 10/20 以降。月末は短い月に合わせる)なら、**総合点(軸指数・相手指数)から直接**引く。どの要素の点も変えない。
 //     **全レース共通**の値だけ(管理画面「評価点の既定値」。重賞・コースごとには持たない = GLOBAL_ADJUST_KEYS)。初出走の馬には掛けない。印 lo は 1/0
 //   いずれもその要素のデータがある馬だけ(データ無しの点の馬には掛けない)。値は偏差値の点。重賞・コースごとに自動で選ぶか管理者が入力し、
 //   無ければ管理画面の既定値(_lib/pace-settings.js)。どれを使うかは _lib/pace-score.js の getPaceWeights(adjust)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "position", "layoff"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, position: 5, layoff: 5 };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 };
 // 全レース共通の評価点(重賞・コースごとの評価点には持たない。設定の既定値だけ使う)
 export const GLOBAL_ADJUST_KEYS = ["layoff"];
-const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", position: "位置取り", layoff: "間隔" };
+const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", layoff: "間隔" };
 const LAYOFF_MONTHS = 6;
 
 // "YYYY-MM-DD" の months か月後の同じ日(無い日は月末)
@@ -82,15 +82,26 @@ export function totalAdjustOf(flags, adjust) {
   return { value: -v, note: `${ADJUST_LABEL.layoff}−${v}` };
 }
 
-// 前走の位置取りの印(+1 足す / −1 引く / 0 掛けない)。pos: 最初のコーナーの通過順、field: その走の頭数
-export function positionFlagOf(paceType, pos, field) {
-  if (!(pos > 0) || !(field > 0) || (paceType !== "slow" && paceType !== "high")) return 0;
-  const front = pos <= field / 2;
-  return paceType === "slow" ? (front ? 1 : -1) : (front ? -1 : 1);
+// 展開に有利な脚質か(ハイ=差し・追込、スロー=逃げ・先行。ミドル・脚質不明は false)
+export function isFavoredStyle(paceType, style) {
+  if (paceType === "high") return style === "差し" || style === "追込";
+  if (paceType === "slow") return style === "逃げ" || style === "先行";
+  return false;
 }
 
-// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj, pb, pw }(0/1)・po(+1/−1/0)、
-// adjust: { first_distance, …, position }(足りない項目は0)。戻り値は新しい factors(pace・time・jockey・course だけ作り直す)
+// 有利な脚質を必ず上にし、組の中は速い順に並べる。list の各要素に fav(有利か)と t(小さいほど速い)。
+// 戻り値は各要素に rank と v(大きいほど良い。偏差値の元の値)を付けたもの。v は「速さの偏差値 + 有利なら速さの幅より大きい底上げ」で、
+// 有利な組の最下位が有利でない組の最上位より必ず上になる
+export function paceFavoredRank(list) {
+  if (!list.length) return [];
+  const dev = deviations(list.map((x) => -x.t));
+  const lift = Math.max(...dev) - Math.min(...dev) + 1;
+  const withV = list.map((x, i) => ({ ...x, v: dev[i] + (x.fav ? lift : 0) }));
+  return rankBy(withV, (x) => -x.v);
+}
+
+// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj, pb, pw }(0/1)、
+// adjust: { first_distance, …, prev_win }(足りない項目は0)。戻り値は新しい factors(pace・time・jockey・course だけ作り直す)
 export function applyAdjust(factors, flags, adjust) {
   if (!adjust || !flags) return factors;
   const out = { ...factors };
@@ -107,7 +118,6 @@ export function applyAdjust(factors, flags, adjust) {
     }
     if (d) out[f] = { ...x, score: x.score + d, value: `${x.value || ""} ${notes.join(" ")}`.trim() };
   };
-  mod("pace", [["position", flags.po || 0, flags.po]]);
   mod("time", [["first_distance", -1, flags.fd], ["first_track", -1, flags.ft]]);
   mod("jockey", [["same_jockey", 1, flags.cj]]);
   mod("course", [["prev_board", 1, flags.pb], ["prev_win", 1, flags.pw]]);
@@ -309,10 +319,9 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       .sort((a, b) => String(b.race_date).localeCompare(String(a.race_date)) || b.race_number - a.race_number);
     const last = runs.find((x) => x.status !== "scratched" && x.status !== "excluded");
     styles.push(last ? runningStyleOf(last.corner_positions, ctx.fieldSizeByRace.get(Number(last.race_id))) : null);
-    // 位置取りの評価点(2026-10-15): 取消・除外・中止を除き、通過順のある一番新しい走
+    // 展開の脚質(2026-10-15): 取消・除外・中止を除き、通過順のある一番新しい走の最初のコーナー
     const posRun = runs.find((x) => x.status !== "scratched" && x.status !== "excluded" && x.status !== "stopped" && firstCornerPosition(x.corner_positions));
-    const lastCorner = posRun ? firstCornerPosition(posRun.corner_positions) : null;
-    const lastField = posRun ? ctx.fieldSizeByRace.get(Number(posRun.race_id)) : null;
+    const paceStyle = posRun ? runningStyleOf(posRun.corner_positions, ctx.fieldSizeByRace.get(Number(posRun.race_id))) : null;
     // 間隔の評価点(2026-10-15): 前走(中止を含む)の6か月後の同じ日以降
     const layoffFrom = last ? addMonthsIso(last.race_date, LAYOFF_MONTHS) : null;
     const layoff = Boolean(layoffFrom && layoffFrom <= date);
@@ -345,7 +354,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       const f = Number(x.final_furlong_time);
       if (x.final_furlong_time != null && f > 0 && tier <= l3Tier && (tier < l3Tier || f < l3)) { l3 = f; l3Tier = tier; }
     }
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, lastCorner, lastField, layoff };
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -459,9 +468,15 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const withTime = horses.filter((x) => x.time != null);
   const withL3 = horses.filter((x) => x.l3 != null);
   let paceRanked;
-  if (paceType === "high") paceRanked = rankBy(withTime, (x) => x.time).map((x) => ({ ...x, v: -x.time, value: timeText(x) }));
-  else if (paceType === "slow") paceRanked = rankBy(withL3, (x) => x.l3).map((x) => ({ ...x, v: -x.l3, value: l3Text(x) }));
-  else {
+  // ハイ・スロー: 有利な脚質の組が必ず上、組の中は速い順(2026-10-15。paceFavoredRank)
+  const styleText = (x) => x.paceStyle || "脚質不明";
+  if (paceType === "high") {
+    paceRanked = paceFavoredRank(withTime.map((x) => ({ ...x, t: x.time, fav: isFavoredStyle("high", x.paceStyle) })))
+      .map((x) => ({ ...x, value: `${styleText(x)} ${timeText(x)}` }));
+  } else if (paceType === "slow") {
+    paceRanked = paceFavoredRank(withL3.map((x) => ({ ...x, t: x.l3, fav: isFavoredStyle("slow", x.paceStyle) })))
+      .map((x) => ({ ...x, value: `${styleText(x)} ${l3Text(x)}` }));
+  } else {
     // ミドル: 補正タイムと上がり3Fそれぞれの偏差値の平均(両方ある馬)
     const both = horses.filter((x) => x.time != null && x.l3 != null);
     const dt = deviations(both.map((x) => -x.time)), dl = deviations(both.map((x) => -x.l3));
@@ -496,11 +511,9 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const flags = new Map();
   for (const x of horses) {
     const timeOk = !factors.time.get(x.key)?.missing, jkOk = !factors.jockey.get(x.key)?.missing;
-    const paceOk = !factors.pace.get(x.key)?.missing;
     flags.set(x.key, {
       fd: timeOk && !x.ranDistance ? 1 : 0, ft: timeOk && !x.ranTrack ? 1 : 0, cj: jkOk && x.rodeBefore ? 1 : 0,
       pw: x.prevPos === 1 ? 1 : 0, pb: x.prevPos >= 2 && x.prevPos <= BOARD_POSITION ? 1 : 0,
-      po: paceOk ? positionFlagOf(paceType, x.lastCorner, x.lastField) : 0,
       lo: x.layoff ? 1 : 0,
     });
   }

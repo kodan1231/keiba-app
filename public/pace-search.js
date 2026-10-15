@@ -4,10 +4,10 @@
 // (無料枠のCPU上限〈10ミリ秒〉に収まらないため。サーバーは採点〈/api/admin/pace-backtest〉と保存だけ)。
 // 仕様は docs/design/screens.md「軸指数・相手指数」「比率の計算(夜間・今すぐ計算)」。
 //
-// 入力 races: [{ race_id, race_date, pace_type, runners: [{ horse_number, place(1〜3。それ以外0), scores: [7要素の点], adj: [0/1 ×5, 位置取り ±1] }] }]
+// 入力 races: [{ race_id, race_date, pace_type, runners: [{ horse_number, place(1〜3。それ以外0), scores: [7要素の点], adj: [0/1 ×6] }] }]
 //   scores の並びは FACTORS の順(サーバーの _lib/race-factors.js の FACTOR_KEYS と同じ)。評価点は掛けていない点。
-//   adj は評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・位置取り。ADJUST_KEYS の順。2026-10-14追加。古い採点で足りなければ0)。
-//   位置取り(2026-10-15)だけは +1(展開の点に足す)/ −1(引く)/ 0。間隔(2026-10-15)は総合点から直接引く(1/0)。
+//   adj は評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・間隔。ADJUST_KEYS の順。2026-10-14追加。古い採点で足りなければ0)。
+//   間隔(2026-10-15)は総合点から直接引く(1/0)。同日に足した位置取りは、展開の点に脚質を入れたため同日に削除
 // 規則:
 //   - 軸指数の比率: その指数1位の馬(軸)が3着以内に入ったレースが一番多い比率(同じなら1着 → 2着以内 → 均等に近い方。1位の同点は按分)
 //   - 相手指数の比率: ①の比率で各レースの軸を決め、軸を除いた上位3頭+軸に1着馬が入ったレースが一番多い比率
@@ -15,7 +15,7 @@
 //   - ペース予想ごと: PACE_SPLIT_MIN レース以上あるペースだけ、全体で選んだ比率から探す
 //   - 探し方は山登り(各要素40%・残り10%の7通り+(20,20,20,10,10,10,10)から出発し、10%を別の要素へ移す〈最大42通り〉を最大6回)
 //   - 評価点(2026-10-14 ユーザー要望。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): 初距離・初競馬場はタイムの点から引き、
-//     継続騎乗は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。位置取り(2026-10-15)は展開の点に±、間隔(同日)は総合点から直接引く。
+//     継続騎乗は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。間隔(2026-10-15)は総合点から直接引く。
 //     間隔は全レース共通(GLOBAL_ADJUST_KEYS)で、重賞・コースの計算では動かさず既定値のまま。「評価点の既定値」の自動計算(採点の kind="all")だけ選ぶ。全体の軸の比率(既定の評価点で選ぶ)を決めた後、
 //     その比率のまま評価点を1つずつ 0〜30(5刻み)で動かして選ぶ(最大3周)。ものさし(2026-10-14 変更。ユーザー確認済み)は
 //     「並びの一致」= 各レースで、3着以内の馬と3着外の馬の組のうち、3着以内の馬の指数が上だった割合(同じなら半分)の平均。
@@ -27,10 +27,10 @@
 export const FACTORS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
 export const DEFAULT_WEIGHTS = { w_pace: 15, w_number: 15, w_jockey: 14, w_time: 14, w_sexage: 14, w_weight: 14, w_course: 14 };
 export const PACE_TYPES = ["high", "middle", "slow"];
-export const METHOD_VERSION = 14; // サーバー側 detail.version と同じ意味(14: 2026-10-15 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
+export const METHOD_VERSION = 15; // サーバー側 detail.version と同じ意味(15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
 // 評価点(サーバーの _lib/race-factors.js の ADJUST_KEYS・DEFAULT_ADJUST と同じ)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "position", "layoff"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, position: 5, layoff: 5 };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 };
 export const GLOBAL_ADJUST_KEYS = ["layoff"];
 const I_LAYOFF = ADJUST_KEYS.indexOf("layoff");
 const NA = ADJUST_KEYS.length;
@@ -38,7 +38,7 @@ const ADJUST_VALUES = [0, 5, 10, 15, 20, 25, 30];
 const ADJUST_ROUNDS = 3;
 // 既定値から動かすのに要る良くなり幅(並びの一致の平均で0.5%。それ未満はたまたまの差とみなす)
 export const ADJUST_MIN_GAIN = 0.005;
-const I_PACE = 0, I_JOCKEY = 2, I_TIME = 3, I_COURSE = 6; // FACTORS の中の位置
+const I_JOCKEY = 2, I_TIME = 3, I_COURSE = 6; // FACTORS の中の位置
 const PICK_N = 3;
 const PACE_SPLIT_MIN = 2;
 const CLIMB_MAX_STEPS = 6;
@@ -49,11 +49,11 @@ function compileRace(race) {
   const F = FACTORS.length;
   const S = new Float64Array(n * F);
   const place = new Uint8Array(n);
-  const A = new Int8Array(n * NA); // 位置取りは ±1
+  const A = new Uint8Array(n * NA);
   runners.forEach((h, i) => {
     for (let k = 0; k < F; k++) S[i * F + k] = Number(h.scores[k]) || 0;
     place[i] = h.place >= 1 && h.place <= 3 ? h.place : 0;
-    for (let k = 0; k < NA; k++) A[i * NA + k] = h.adj ? Math.sign(Number(h.adj[k]) || 0) : 0;
+    for (let k = 0; k < NA; k++) A[i * NA + k] = h.adj && Number(h.adj[k]) > 0 ? 1 : 0;
   });
   const placed = [];
   for (let i = 0; i < n; i++) if (place[i]) placed.push(i);
@@ -72,7 +72,7 @@ function fillTotals(r, w) {
     if (adj) {
       const a = h * NA;
       t += w[I_TIME] * -((adj[0] || 0) * A[a] + (adj[1] || 0) * A[a + 1]) + w[I_JOCKEY] * (adj[2] || 0) * A[a + 2]
-        + w[I_COURSE] * ((adj[3] || 0) * A[a + 3] + (adj[4] || 0) * A[a + 4]) + w[I_PACE] * (adj[5] || 0) * A[a + 5]
+        + w[I_COURSE] * ((adj[3] || 0) * A[a + 3] + (adj[4] || 0) * A[a + 4])
         - wSum * (adj[I_LAYOFF] || 0) * A[a + I_LAYOFF]; // 間隔: 総合点(Σ比率×点 ÷ Σ比率)から直接引くので Σ比率 を掛ける
     }
     totals[h] = Math.round(t * 1000);

@@ -367,8 +367,8 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
         horse_number: h.horse_number,
         place: h.status === "finished" && h.finish_position >= 1 && h.finish_position <= 3 ? h.finish_position : 0,
         scores: PACE_FACTORS.map((f) => Math.round(h.factors[f].score * 100) / 100),
-        // 評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・位置取り〈±1〉・間隔〈2026-10-15〉。public/pace-search.js が評価点を選ぶ)
-        adj: [h.flags.fd, h.flags.ft, h.flags.cj, h.flags.pb, h.flags.pw, h.flags.po || 0, h.flags.lo || 0],
+        // 評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・間隔〈2026-10-15〉。public/pace-search.js が評価点を選ぶ)
+        adj: [h.flags.fd, h.flags.ft, h.flags.cj, h.flags.pb, h.flags.pw, h.flags.lo || 0],
       })),
     })),
   };

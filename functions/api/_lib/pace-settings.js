@@ -4,8 +4,8 @@
 //   adjust: 評価点の既定値 { first_distance(初距離の減点), first_track(初競馬場の減点), same_jockey(継続騎乗の加点) }(偏差値の点。
 //     2026-10-14追加。重賞・コースごとの評価点〈自動・手動〉が無いときに使う。_lib/race-factors.js の DEFAULT_ADJUST が初期値)
 //   adjust_auto: 最後に「評価点の既定値」を自動で計算した結果(表示用。2026-10-14追加)
-//     { computed_at, races, values: { first_distance, first_track, same_jockey, position, layoff }, best: { agree, show }, base: { agree, show } }
-//     (位置取り position・間隔 layoff は 2026-10-15 追加。古い結果には無い)
+//     { computed_at, races, values: { first_distance, first_track, same_jockey, layoff }, best: { agree, show }, base: { agree, show } }
+//     (間隔 layoff は 2026-10-15 追加。古い結果には無い。同日に足した位置取り position は同日に削除)
 //   間隔 layoff(2026-10-15)は全レース共通で、ここの既定値だけを使う(重賞・コースごとには持たない)
 // 仕様は docs/design/screens.md「総合推奨馬」の「点数を偏差値に変更」「評価点(初距離・初競馬場・継続騎乗)」。
 import { memoized, invalidateMemo } from "./memo-cache.js";
@@ -39,7 +39,7 @@ function normalizeAdjustAuto(raw) {
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
   const stat = (x) => ({ agree: num(x?.agree), show: num(x?.show) });
   const values = {};
-  for (const k of ["first_distance", "first_track", "same_jockey", "position", "layoff"]) values[k] = num(raw.values?.[k]);
+  for (const k of ["first_distance", "first_track", "same_jockey", "layoff"]) values[k] = num(raw.values?.[k]);
   return { computed_at: raw.computed_at.slice(0, 40), races: num(raw.races), values, best: stat(raw.best), base: stat(raw.base) };
 }
 
