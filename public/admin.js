@@ -1027,7 +1027,7 @@ function setupGradedRacesImport() {
 // API: GET/PUT/DELETE /api/admin/pace-weights、POST /api/admin/pace-weights/auto。仕様は docs/design/screens.md「総合推奨馬」。
 // 2026-10-14: 性齢・馬体重・同コースを追加
 const PACE_W_KEYS = [["w_pace", "展開"], ["w_number", "馬番"], ["w_jockey", "騎手"], ["w_time", "補正タイム"],
-  ["w_sexage", "性齢"], ["w_weight", "馬体重"], ["w_course", "同コース"]];
+  ["w_sexage", "性齢"], ["w_weight", "馬体重"], ["w_course", "同コース"], ["w_week", "週目"]]; // 週目は2026-10-15追加
 // ペース予想ごとの比率(2026-10-14追加)。"" は全ペース共通
 const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "スロー"]];
 
@@ -1213,6 +1213,8 @@ async function loadPaceWeights() {
   defBox.dataset.id = "0";
   // データの無い馬の点(偏差値。2026-10-14追加。API: PUT /api/admin/pace-weights/settings)
   const missing = data.score_settings?.missing_score ?? 40;
+  // 補正タイムの斤量の補正(1kgあたりの秒数。2026-10-15追加)
+  const secPerKg = data.score_settings?.weight_sec_per_kg ?? 0.1;
   // 評価点の既定値(2026-10-14追加): 重賞・コースの評価点(自動・手動)が無いときに使う
   paceAdjustDefault = { ...paceAdjustDefault, ...(data.score_settings?.adjust || {}) };
   defBox.innerHTML = `
@@ -1220,6 +1222,11 @@ async function loadPaceWeights() {
       <span class="pace-w-admin-title">データ無しの点(偏差値)</span>
       <label class="pace-w-input"><input type="number" min="0" max="100" step="1" id="pace-missing-score" value="${missing}">点</label>
       <button type="button" class="ghost-btn" id="pace-missing-score-save">保存</button>
+    </div>
+    <div class="pace-w-line">
+      <span class="pace-w-admin-title" title="補正タイムに、今回とその走の斤量の差 × この秒数を足します(重くなれば遅く)。総合推奨馬と補正タイム順位の両方">斤量の補正(1kgあたり)</span>
+      <label class="pace-w-input"><input type="number" min="0" max="1" step="0.01" id="pace-sec-per-kg" value="${secPerKg}">秒</label>
+      <button type="button" class="ghost-btn" id="pace-sec-per-kg-save">保存</button>
     </div>
     <details class="pace-adj-fold" data-open-key="default" ${paceAdjOpen.has("default") ? "open" : ""}>
     <summary><span class="pace-w-admin-title">評価点の既定値</span> <small class="pace-w-line-source">${escapeHtml(paceAdjustText(paceAdjustDefault))}</small></summary>
@@ -1239,6 +1246,12 @@ async function loadPaceWeights() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ missing_score: Number(document.getElementById("pace-missing-score").value) }),
     }, "データ無しの点を保存しました(保存済みの比率は、次の計算からこの点で採点します)");
+  });
+  document.getElementById("pace-sec-per-kg-save").addEventListener("click", () => {
+    paceWeightsRequest("/api/admin/pace-weights/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weight_sec_per_kg: Number(document.getElementById("pace-sec-per-kg").value) }),
+    }, "斤量の補正を保存しました(推奨馬・補正タイム順位に2分以内に反映。保存済みの比率は次の計算からこの値で採点します)");
   });
   document.getElementById("pace-adjust-default-auto").addEventListener("click", (e) => paceAdjustDefaultAuto(e.currentTarget));
   document.getElementById("pace-adjust-default-save").addEventListener("click", () => {

@@ -7,9 +7,11 @@
 //     { computed_at, races, values: { first_distance, first_track, same_jockey, layoff }, best: { agree, show }, base: { agree, show } }
 //     (間隔 layoff は 2026-10-15 追加。古い結果には無い。同日に足した位置取り position は同日に削除)
 //   間隔 layoff(2026-10-15)は全レース共通で、ここの既定値だけを使う(重賞・コースごとには持たない)
+//   weight_sec_per_kg: 補正タイムの斤量の補正(1kgあたりの秒数。0〜1。既定0.1。2026-10-15追加)。総合推奨馬の補正タイム・展開と、
+//     予想登録画面の補正タイム順位(horse-best)の両方で使う
 // 仕様は docs/design/screens.md「総合推奨馬」の「点数を偏差値に変更」「評価点(初距離・初競馬場・継続騎乗)」。
 import { memoized, invalidateMemo } from "./memo-cache.js";
-import { DEFAULT_MISSING_SCORE, DEFAULT_ADJUST, ADJUST_KEYS } from "./race-factors.js";
+import { DEFAULT_MISSING_SCORE, DEFAULT_ADJUST, ADJUST_KEYS, DEFAULT_WEIGHT_SEC_PER_KG } from "./race-factors.js";
 
 const PACE_SCORE_KEY = "pace_score";
 const MEMO_PACE_SCORE = "pace_score_settings";
@@ -48,7 +50,15 @@ function normalize(raw) {
     missing_score: clampNum(raw?.missing_score, DEFAULT_MISSING_SCORE, 100),
     adjust: normalizeAdjust(raw?.adjust) || { ...DEFAULT_ADJUST },
     adjust_auto: normalizeAdjustAuto(raw?.adjust_auto),
+    weight_sec_per_kg: normalizeSecPerKg(raw?.weight_sec_per_kg) ?? DEFAULT_WEIGHT_SEC_PER_KG,
   };
+}
+
+// 斤量1kgあたりの秒数(0〜1。小数2桁)。不正なら null
+function normalizeSecPerKg(raw) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? Math.round(v * 100) / 100 : null;
 }
 
 // 設定を読む(表が無い・読めないときは既定値)。fresh=false なら同じ実行環境で2分使い回す。
@@ -79,6 +89,11 @@ export async function savePaceScoreSettings(db, input) {
     next.adjust = a;
   }
   if (input?.adjust_auto !== undefined) next.adjust_auto = normalizeAdjustAuto(input.adjust_auto);
+  if (input?.weight_sec_per_kg !== undefined) {
+    const v = normalizeSecPerKg(input.weight_sec_per_kg);
+    if (v === null) return null;
+    next.weight_sec_per_kg = v;
+  }
   const s = normalize(next);
   await db
     .prepare(

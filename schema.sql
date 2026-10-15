@@ -513,6 +513,7 @@ CREATE TABLE IF NOT EXISTS pace_weights (
   w_sexage INTEGER NOT NULL DEFAULT 0, -- 性齢(2026-10-14追加。@STEP: pace_weights_more_factors)
   w_weight INTEGER NOT NULL DEFAULT 0, -- 馬体重(同上)
   w_course INTEGER NOT NULL DEFAULT 0, -- 同コース(同上)
+  w_week INTEGER NOT NULL DEFAULT 0, -- 週目(2026-10-15追加。@STEP: pace_weights_week)
   source TEXT NOT NULL DEFAULT 'manual', -- 'none' = 全ペース共通の比率は未設定(by_pace だけ。2026-10-14)
   -- ペース予想ごとの比率(2026-10-14追加。@STEP: pace_weights_by_pace)。JSON { high|middle|slow: { w_*, source: 'manual'|'auto' } }
   by_pace TEXT,
@@ -540,6 +541,7 @@ CREATE TABLE IF NOT EXISTS course_pace_weights (
   w_sexage INTEGER NOT NULL DEFAULT 0,
   w_weight INTEGER NOT NULL DEFAULT 0,
   w_course INTEGER NOT NULL DEFAULT 0,
+  w_week INTEGER NOT NULL DEFAULT 0, -- 週目(2026-10-15追加。@STEP: pace_weights_week)
   by_pace TEXT,
   partner TEXT,
   -- 評価点(2026-10-14追加。@STEP: pace_weights_adjust)。JSON { first_distance, first_track, same_jockey, source: 'manual'|'auto' }。

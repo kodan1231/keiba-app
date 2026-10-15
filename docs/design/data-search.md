@@ -395,6 +395,10 @@ docs/design/umabashira-paste.md)と、管理者の手入力で登録する。馬
   頭数 `size` もそのまま持つ。**全レースを見ない処理は、競馬場・芝ダ・距離で絞ってから `.lineup` を読む**(jockey-course・
   graded-race-horses はそうした)。総合推奨馬の採点(`_lib/race-factors.js`)は `flat` を直接数え、全場の補いは種類ごとに要るものだけ数える。
   本番データで読み込み 12.6→9.9ミリ秒、300レースの採点 268→163ミリ秒(結果は変更前と全レース一致)
+- **2026-10-15**: 総合推奨馬の「週目」用に、各馬を6つ組にし、6つ目に**脚質の組**(1=逃げ・先行、2=差し・追込、0=不明)を足した(v を 5 に。
+  作り直しは1回だけで races 約5千行+race_results 約6万行+払戻の展開を読む〈1日の上限の約2%〉)。脚質の組は最初のコーナーの通過順 ÷
+  出走した頭数(取消・除外を除く。`runningStyleOf` と同じ。`styleGroupOf`)。race_results の `corner_positions` も group_concat に足した。
+  entries で補うレースは0。仕様は `docs/design/screens.md`「8つ目の要素「週目」」
 
 (2026-10-08〜: races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直す。docs/design/data-model.md
 「キャッシュを範囲ごとに作り直す」。以下の「1行=チャンク」「トリガーで全行削除」の記述はそれ以前のもの)
@@ -522,6 +526,8 @@ Cloudflare Workers のCPU時間上限超過(`exceededResources`。当日23件、
   - 既知の限界: クラス構成の違い(上級条件が多い競馬場は速く見える)、コース形態(内外回り)、開催時期の違いは補正していない
 - **予想登録画面での利用**: 「展開・時計」タブの「補正タイム順位」。`GET /api/races/:id/horse-best` が全場・同距離の各走を換算し、
   換算後が最速の走を `corrected` で返す(`docs/design/screens.md`「予想登録画面」)
+  - 2026-10-15: 斤量の補正(今回とその走の斤量の差 × 1kgあたりの秒数。既定0.1)も足す(`kg_adj`。`docs/design/screens.md`「斤量の補正」)。
+    競馬場傾向タブの補正値(勝ちタイムの平均)には入れない
 - **API**: `GET /api/data-search/track-trends`(距離の選択肢だけ)/ `?course_type=芝&distance=1600&class=all`
   → `{ distances, condition, conditions, min_races, overall: { all: {n, avg}, 良: {...}, ... }, tracks: [{ track, all, 良, 稍重, 重, 不良 }] }`
 - **D1の読み取り**: 勝ちタイムの小さいキャッシュ `race_time_cache`(`_lib/race-time-cache.js`。約20行)だけ。

@@ -76,7 +76,7 @@ export async function onRequestGet(context) {
     const { results } = await db
       .prepare(
         `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
-                rr.body_weight, rr.jockey, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
+                rr.body_weight, rr.jockey, rr.weight_carried, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
            FROM race_results rr JOIN races r ON r.id = rr.race_id
           WHERE rr.horse_key IN (${keys.map(() => "?").join(",")}) AND r.race_date < ?`
       )
@@ -91,9 +91,9 @@ export async function onRequestGet(context) {
   }
 
   const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
-  const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null }));
+  const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null, weight_carried: e.weight_carried ?? null }));
   const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
-  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId });
+  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId, weightSecPerKg: scoreSettings.weight_sec_per_kg });
 
   const horses = entries.map((e, i) => {
     const key = runners[i].key;

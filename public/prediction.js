@@ -1133,9 +1133,9 @@ function paceRecommendJockeyHtml() {
 // 展開・馬番・騎手の各並びの順位を 100(1位)〜0(最下位)の等間隔の点にし(データの無い馬は50点)、
 // 重視度の比率(%)を掛けて合計する。比率は全ユーザー共通(GET /api/pace-weights)。重賞はその重賞の比率、無ければ標準の比率。
 // 比率はペース予想ごとに持てる(2026-10-14。取得結果の paces からこのレースのペース予想の比率を使う)。
-const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム", sexage: "性齢", weight: "馬体重", course: "同コース" };
+const PACE_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム", sexage: "性齢", weight: "馬体重", course: "同コース", week: "週目" };
 // サーバー側 _lib/pace-score.js の PACE_FACTORS と同じ(後ろ3つは2026-10-14追加)
-const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
+const PACE_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"]; // 週目は2026-10-15追加
 let paceWeights = null; // { key, status: "loading"|"done"|"error", data }
 
 // 比率の取得のキー(重賞+コース。2026-10-14 からコースの比率もあるため、コースが違えば取り直す)
@@ -1310,7 +1310,7 @@ function paceCorrectedSectionHtml(entries) {
         <td>${escapeHtml(x.c.track_condition || "—")}</td>
         <td>${adjText(x.c.adj)}</td>
         <td>${x.c.run_last3f != null ? Number(x.c.run_last3f).toFixed(1) : "—"}</td>
-        <td>${x.c.weight_carried != null ? Number(x.c.weight_carried).toFixed(1) : "—"}</td>
+        <td>${x.c.weight_carried != null ? Number(x.c.weight_carried).toFixed(1) : "—"}${x.c.kg_adj ? ` <small title="今回の斤量${x.c.today_weight != null ? Number(x.c.today_weight).toFixed(1) : ""}kgとの差の補正(補正タイムに含む)">(${adjText(x.c.kg_adj)})</small>` : ""}</td>
         <td>${escapeHtml(x.c.jockey || "—")}</td>
         <td title="${escapeAttr(x.c.race_name || "")}">${escapeHtml([formatDateMd(x.c.race_date), x.c.finish_position != null ? `${x.c.finish_position}着` : null].filter(Boolean).join(" "))}</td>
       </tr>`).join("");

@@ -40,8 +40,8 @@ function grNorm(s) {
 // ---------- 総合推奨馬の検証(2026-10-13追加。docs/design/graded-race-search.md「総合推奨馬の検証」) ----------
 // この重賞の比率(予想登録画面「展開・時計」タブの総合推奨馬と同じ)と、過去の各年をその年より前のデータだけで採点したときの
 // 総合点の上位5頭・実際の着順。API: GET /api/data-search/graded-race-picks?id=N
-const GR_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム", sexage: "性齢", weight: "馬体重", course: "同コース" };
-const GR_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"]; // 後ろ3つは2026-10-14追加
+const GR_FACTOR_LABELS = { pace: "展開", number: "馬番", jockey: "騎手", time: "補正タイム", sexage: "性齢", weight: "馬体重", course: "同コース", week: "週目" };
+const GR_FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"]; // 性齢〜同コースは2026-10-14、週目は2026-10-15追加
 const GR_PACE_LABEL = { high: "ハイ", slow: "スロー", middle: "ミドル" };
 
 // 2026-10-14 ユーザー要望: 上の説明(軸指数・相手指数の比率と出どころ、自動で選んだときの成績、全年の当たりの合計)は出さない。

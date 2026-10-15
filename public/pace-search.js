@@ -14,6 +14,7 @@
 //     (同じなら1・2着馬とも → 1〜3着馬とも → 均等に近い方。境目の同点は按分)
 //   - ペース予想ごと: PACE_SPLIT_MIN レース以上あるペースだけ、全体で選んだ比率から探す
 //   - 探し方は山登り(各要素40%・残り10%の7通り+(20,20,20,10,10,10,10)から出発し、10%を別の要素へ移す〈最大42通り〉を最大6回)
+//     2026-10-15 に8要素(週目)になり、出発点は各要素30%・残り10%の8通り+(20,20,10,…)、移し方は最大56通り
 //   - 評価点(2026-10-14 ユーザー要望。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): 初距離・初競馬場はタイムの点から引き、
 //     継続騎乗は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。間隔(2026-10-15)は総合点から直接引く。
 //     間隔は全レース共通(GLOBAL_ADJUST_KEYS)で、重賞・コースの計算では動かさず既定値のまま。「評価点の既定値」の自動計算(採点の kind="all")だけ選ぶ。全体の軸の比率(既定の評価点で選ぶ)を決めた後、
@@ -24,8 +25,8 @@
 //     既定値は管理画面の「評価点の既定値」(採点の応答の adjust_default。無ければ DEFAULT_ADJUST)。
 //     その評価点で全体の軸から選び直し、相手・ペースごとの比率もその評価点で選ぶ
 
-export const FACTORS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
-export const DEFAULT_WEIGHTS = { w_pace: 15, w_number: 15, w_jockey: 14, w_time: 14, w_sexage: 14, w_weight: 14, w_course: 14 };
+export const FACTORS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"]; // week(週目)は2026-10-15追加
+export const DEFAULT_WEIGHTS = { w_pace: 13, w_number: 13, w_jockey: 13, w_time: 13, w_sexage: 12, w_weight: 12, w_course: 12, w_week: 12 };
 export const PACE_TYPES = ["high", "middle", "slow"];
 export const METHOD_VERSION = 15; // サーバー側 detail.version と同じ意味(15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
 // 評価点(サーバーの _lib/race-factors.js の ADJUST_KEYS・DEFAULT_ADJUST と同じ)

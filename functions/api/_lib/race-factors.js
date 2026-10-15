@@ -13,6 +13,9 @@
 //     換算: 元のタイム − 走った競馬場の補正値 − 走った日の馬場の補正値(その走の芝ダ・距離の値)→ 距離が違えば
 //       「今回の芝ダ・距離の平均勝ちタイム ÷ 走った芝ダ・距離の平均勝ちタイム」を掛ける(平均が出せなければ距離の比)
 //       → 今回の競馬場の補正値を足す(_lib/track-trends.js)
+//       → 斤量の補正(2026-10-15追加。ユーザー要望・仕様確認済み): (今回の斤量 − その走の斤量)× 1kgあたりの秒数(距離に関係なく一定。
+//         既定0.1秒。管理画面で変更。_lib/pace-settings.js の weight_sec_per_kg)を足す(重くなれば遅く、軽くなれば速く)。
+//         どちらかの斤量が分からなければ補正しない。斤量の補正込みのタイムで最速の走を選ぶ(weightAdjOf)
 //   - 上がり3F: 同じ順で探し、一番近い段の中の最速(換算はしない。競馬場別の補正は今後)
 //   - 展開: 前走の脚質でペースを予想(predictPace)し、ハイ=タイム順、スロー=上がり3F順、ミドル=両方の順位の合計順(両方ある馬)
 //     2026-10-15 変更(ユーザー要望・仕様確認済み): ハイは「差し・追込」、スローは「逃げ・先行」を**必ず上**にし、その組の中を
@@ -32,17 +35,42 @@
 //     複勝率順(騎乗が20回未満なら同場→全場)。今回の馬体重は発走前に無いため前走を使う
 //   - 同コース: その馬の同コース(競馬場・芝ダ障・距離)の過去の走ごとに、5着以内(掲示板)なら+1、6着以下なら−1 の合計の順。
 //     同コースを走っていない馬は0(データ無しにはしない)。完走した走だけ数える
+//   - 週目(week。2026-10-15追加。ユーザー要望・仕様確認済み): 開幕から何週目かで前有利・差し有利が変わるのを、過去の結果から数える。
+//     週目は日付から推定する: 同じ競馬場で前の開催日から MEETING_GAP_DAYS(14日)以上空いたら開幕とみなし、開幕日からの日数 ÷ 7 で週を数える
+//     (連続する開催〈4回東京→5回東京〉は続けて数える = 芝の傷みが続く「連続開催の何週目」)。週は2週ずつの帯にまとめる
+//     (1-2週=1、3-4週=2、5-6週=3、7週〜=4。weekBandOf)。その馬の脚質の組(展開と同じ走の脚質。逃げ・先行=1/差し・追込=2)について、
+//     同じ競馬場・芝ダ障の「今回と同じ週の帯」の複勝率 ÷ 「全部の週」の複勝率(1より大きいほど、この週はその脚質が普段より有利)。
+//     同じ週の帯の騎乗が20回未満なら全競馬場の同じ芝ダ障で数える。脚質の分からない馬はデータ無し。過去の各馬の脚質は集計用キャッシュの
+//     6つ目(脚質の組。_lib/race-lineup-cache.js の v5)
 // 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
 //   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
 import { runningStyleOf, firstCornerPosition, timeTextToSeconds } from "./graded-race-search.js";
 import { buildTrackTrends, trackTimeOffsets, TREND_MIN_RACES } from "./track-trends.js";
-import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE } from "./race-lineup-cache.js";
+import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 
-// 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加
-export const FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course"];
+// 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加。2026-10-15: week(週目)を追加
+export const FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"];
+// 週目(2026-10-15)
+const MEETING_GAP_DAYS = 14;
+export const WEEK_BAND_LABELS = ["", "開幕1-2週", "3-4週", "5-6週", "7週〜"];
+const DAY_MS = 86400000;
+const dayNumOf = (iso) => Math.floor(Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / DAY_MS);
+// 開幕日(日の通し番号)と対象日から週の帯(1〜4)
+export function weekBandFrom(startDay, day) {
+  const week = Math.floor((day - startDay) / 7) + 1;
+  return Math.min(4, Math.max(1, Math.ceil(week / 2)));
+}
 const BOARD_POSITION = 5; // 同コース: 掲示板(5着以内)
-export const DEFAULT_MISSING_SCORE = 40; // データの無い馬の点(偏差値)の既定値。実際の値は設定(_lib/pace-settings.js)
+export const DEFAULT_MISSING_SCORE = 40;
+export const DEFAULT_WEIGHT_SEC_PER_KG = 0.1; // 斤量1kgあたりの補正の秒数の既定値(2026-10-15)
+
+// 斤量の補正(秒)。今回・その走の斤量のどちらかが無ければ0
+export function weightAdjOf(todayKg, runKg, secPerKg = DEFAULT_WEIGHT_SEC_PER_KG) {
+  const a = Number(todayKg), b = Number(runKg);
+  if (!(a > 0) || !(b > 0) || !Number.isFinite(Number(secPerKg))) return 0;
+  return Math.round((a - b) * Number(secPerKg) * 100) / 100;
+} // データの無い馬の点(偏差値)の既定値。実際の値は設定(_lib/pace-settings.js)
 // 評価点(2026-10-14 ユーザー要望。仕様は docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」):
 //   - 初距離(first_distance): タイムの点から引く。今回と同じ芝ダ障・同じ距離を完走したことが無い馬
 //     (他の距離・芝ダの走を換算すると、馬場・距離の補正が大きくずれることがある。例: 不良と記録された速い決着の1600mを
@@ -200,18 +228,53 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     if (!a) dictKeys.set(dict, (a = dict.map(keyOf)));
     return a;
   };
+  // 週目(2026-10-15): 競馬場ごとの開催日(日の通し番号。昇順)と、各開催日の開幕日。前の開催日から MEETING_GAP_DAYS 未満なら同じ開催
+  const daysByTrack = new Map(); // 競馬場 -> { days: [...], starts: [...] }
+  {
+    const sets = new Map();
+    for (const r of lineups) {
+      if (!r.track || !r.race_date) continue;
+      if (!sets.has(r.track)) sets.set(r.track, new Set());
+      sets.get(r.track).add(dayNumOf(r.race_date));
+    }
+    for (const [t, set] of sets) {
+      const days = [...set].filter(Number.isFinite).sort((a, b) => a - b);
+      const starts = [];
+      days.forEach((d, i) => starts.push(i > 0 && d - days[i - 1] < MEETING_GAP_DAYS ? starts[i - 1] : d));
+      daysByTrack.set(t, { days, starts });
+    }
+  }
+  const weekMemo = new Map();
+  // 競馬場・日付 → 週の帯(1〜4)。結果の無い今後の日付は、その前の開催日から続いていればその開催の週
+  const weekBandOf = (track, iso) => {
+    const mk = `${track}|${iso}`;
+    let v = weekMemo.get(mk);
+    if (v !== undefined) return v;
+    const d = dayNumOf(iso);
+    const t = daysByTrack.get(track);
+    let start = d;
+    if (t && Number.isFinite(d)) {
+      let lo = 0, hi = t.days.length - 1, j = -1; // 最後の「d 以下」の開催日
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (t.days[mid] <= d) { j = mid; lo = mid + 1; } else hi = mid - 1; }
+      if (j >= 0 && (t.days[j] === d || d - t.days[j] < MEETING_GAP_DAYS)) start = t.starts[j];
+    }
+    v = Number.isFinite(d) ? weekBandFrom(start, d) : 0;
+    weekMemo.set(mk, v);
+    return v;
+  };
   const fieldSizeByRace = new Map();
-  const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, flat, jk }]
+  const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, flat, jk, week }]
   for (const r of lineups) {
     if (!r.flat) continue;
     fieldSizeByRace.set(Number(r.id), r.size);
     const g = `${r.track}|${r.course_type}`;
     if (!byTrackCt.has(g)) byTrackCt.set(g, []);
-    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict) });
+    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)) });
   }
   // 全競馬場の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、初めて必要になったときに
   // 種類ごとに数える(2026-10-14: 4種類まとめて数えると本番の6.3万騎乗で約14ミリ秒かかったため、要る種類だけにした)。
   //   numberAllByCt / sexAllByCt / weightAllByCt: 芝ダ障 -> Map(馬番帯 / 性齢コード / 体重帯 -> counts)、jockeyAll: 騎手キー -> counts
+  //   weekAllByCt(2026-10-15): 芝ダ障 -> Map("週の帯|脚質の組" と "a|脚質の組"〈全部の週〉 -> counts)
   const allCounts = {};
   const allOf = (kind) => {
     if (allCounts[kind]) return allCounts[kind];
@@ -230,6 +293,16 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
       }
       let m = out.get(r.course_type);
       if (!m) out.set(r.course_type, (m = new Map()));
+      if (kind === "weekAllByCt") {
+        const wk = weekBandOf(r.track, String(r.race_date));
+        for (let i = 0; i < flat.length; i += S) {
+          const sg = flat[i + 5];
+          if (!sg) continue;
+          addRide(m, `a|${sg}`, flat[i + 2]);
+          if (wk) addRide(m, `${wk}|${sg}`, flat[i + 2]);
+        }
+        continue;
+      }
       for (let i = 0; i < flat.length; i += S) {
         const k = kind === "numberAllByCt" ? (flat[i] > 0 ? numberGroupOf(flat[i]) : 0) : kind === "sexAllByCt" ? flat[i + 3] : flat[i + 4];
         if (k) addRide(m, k, flat[i + 2]);
@@ -259,7 +332,7 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     return v;
   };
 
-  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf };
+  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf, weekBandOf };
   contextCache.set(lineups, { raceTimes, aliasMap, ctx });
   return ctx;
 }
@@ -298,7 +371,7 @@ function convertTime(ctx, sec, run, race) {
 }
 
 // race: { id, race_date, track, course_type, distance }
-// runners: [{ key, horse_number, jockey, sex_age }](key は馬の名寄せキー。runsByHorse のキーと同じ)
+// runners: [{ key, horse_number, jockey, sex_age, weight_carried }](key は馬の名寄せキー。runsByHorse のキーと同じ。weight_carried は今回の斤量〈2026-10-15〉)
 // runsByHorse: Map(key -> [{ race_id, race_date, race_number, status, finish_position, corner_positions, time_text, final_furlong_time,
 //   body_weight, track, course_type, distance, track_condition }])(日付はここで「このレースより前」に絞る)
 // 戻り値: { pace_type, counts: { nige, senko, unknown, n }, factors: { pace|number|jockey|time: Map(key -> {score, rank, value, missing}) } }
@@ -307,7 +380,8 @@ function convertTime(ctx, sec, run, race) {
 // opts.prevRaceId: 前年の同じ重賞のレースID(重賞でなければ・前年が無ければ null)
 // 戻り値の flags: Map(key -> { fd, ft, cj, pb, pw, po, lo })(評価点の印。その要素のデータがある馬だけ 1〈po は ±1〉。runsByHorse の各走に jockey が要る)
 // 戻り値の totalAdjust: Map(key -> { value, note })(総合点へ直接足す点。間隔。adjust があるときだけ)
-export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null } = {}) {
+// opts.weightSecPerKg: 斤量1kgあたりの補正の秒数(設定 getPaceScoreSettings の weight_sec_per_kg。省略時は既定0.1)。runsByHorse の各走に weight_carried が要る
+export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
 
@@ -325,7 +399,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 間隔の評価点(2026-10-15): 前走(中止を含む)の6か月後の同じ日以降
     const layoffFrom = last ? addMonthsIso(last.race_date, LAYOFF_MONTHS) : null;
     const layoff = Boolean(layoffFrom && layoffFrom <= date);
-    let time = null, timeTier = 9, timeRun = null, l3 = null, l3Tier = 9;
+    let time = null, timeTier = 9, timeRun = null, timeKgAdj = 0, l3 = null, l3Tier = 9;
     // 前走の馬体重(体重のある一番新しい走)と、同コースの掲示板(5着以内)の数
     const weightRun = runs.find((x) => x.status !== "scratched" && x.status !== "excluded" && Number(x.body_weight) > 0);
     let boardIn = 0, boardOut = 0;
@@ -348,13 +422,14 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       if (!tier) continue;
       const sec = timeTextToSeconds(x.time_text);
       if (sec != null && tier <= timeTier) {
-        const c = convertTime(ctx, sec, x, race);
-        if (tier < timeTier || c < time) { time = c; timeTier = tier; timeRun = x; }
+        const kgAdj = weightAdjOf(h.weight_carried, x.weight_carried, weightSecPerKg);
+        const c = convertTime(ctx, sec, x, race) + kgAdj;
+        if (tier < timeTier || c < time) { time = c; timeTier = tier; timeRun = x; timeKgAdj = kgAdj; }
       }
       const f = Number(x.final_furlong_time);
       if (x.final_furlong_time != null && f > 0 && tier <= l3Tier && (tier < l3Tier || f < l3)) { l3 = f; l3Tier = tier; }
     }
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff };
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff, timeKgAdj };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -363,13 +438,17 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     else if (s === "先行") senko++;
   }
   const paceType = predictPace(styles, n);
-  const timeText = (x) => `補${fmtSec(x.time)}${TIER_LABEL[x.timeTier] ? `(${x.timeRun.course_type}${x.timeRun.distance}m・${TIER_LABEL[x.timeTier]})` : ""}`;
+  const kgText = (x) => (x.timeKgAdj ? ` 斤量${x.timeKgAdj > 0 ? "+" : "−"}${Math.abs(x.timeKgAdj).toFixed(1)}` : "");
+  const timeText = (x) => `補${fmtSec(x.time)}${TIER_LABEL[x.timeTier] ? `(${x.timeRun.course_type}${x.timeRun.distance}m・${TIER_LABEL[x.timeTier]})` : ""}${kgText(x)}`;
   const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
 
   // 馬番・騎手: 同コース・同場(芝ダ障が同じ)の成績(このレースより前)
   // 騎手は今回乗る騎手だけ数え、平均用に全騎乗の合計を別に数える(2026-10-14 CPU時間対策。結果は同じ)
   const numCourse = new Map(), numTrack = new Map(), jkCourse = new Map(), jkTrack = new Map();
   const sexCourse = new Map(), sexTrack = new Map(), wtCourse = new Map(), wtTrack = new Map();
+  // 週目(2026-10-15): 今回の週の帯と、同じ競馬場・芝ダ障の脚質の組ごとの成績(今回と同じ週の帯 / 全部の週)
+  const weekBand = ctx.weekBandOf(race.track, date);
+  const weekSame = new Map(), weekAll = new Map();
   const runnerJk = new Set(runners.map((h) => ctx.keyOf(h.jockey)).filter(Boolean));
   const jkTotal = { course: newCounts(), track: newCounts() };
   const addTotal = (c, pos) => { c.rides++; if (pos === 1) c.first++; if (pos >= 1 && pos <= 3) c.show++; };
@@ -379,7 +458,11 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     const same = r.distance === Number(race.distance);
     const flat = r.flat;
     for (let i = 0; i < flat.length; i += S) {
-      const hn = flat[i], ji = flat[i + 1], pos = flat[i + 2], sa = flat[i + 3], wb = flat[i + 4];
+      const hn = flat[i], ji = flat[i + 1], pos = flat[i + 2], sa = flat[i + 3], wb = flat[i + 4], sg = flat[i + 5];
+      if (sg) {
+        addRide(weekAll, sg, pos);
+        if (r.week === weekBand) addRide(weekSame, sg, pos);
+      }
       if (hn > 0) {
         const g = numberGroupOf(hn);
         addRide(numTrack, g, pos);
@@ -411,7 +494,21 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf(allKey).get(race.course_type) || new Map()).get(k); scope = "all"; }
     return c && c.rides ? { show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope } : null;
   };
-  const numberList = [], sexList = [], weightList = [];
+  const numberList = [], sexList = [], weightList = [], weekList = [];
+  // 週目: 同じ週の帯の複勝率 ÷ 全部の週の複勝率(同場で同じ週の帯の騎乗が NUMBER_MIN_RIDES 未満なら全場)
+  const rateOf = (c) => (c && c.rides ? c.show / c.rides : null);
+  for (const x of horses) {
+    const sg = styleGroupOf(x.paceStyle);
+    if (!sg || !weekBand) continue;
+    let same = weekSame.get(sg), all = weekAll.get(sg), scope = "track";
+    if (!same || same.rides < NUMBER_MIN_RIDES || !rateOf(all)) {
+      const m = ctx.allOf("weekAllByCt").get(race.course_type) || new Map();
+      same = m.get(`${weekBand}|${sg}`); all = m.get(`a|${sg}`); scope = "all";
+    }
+    const rs = rateOf(same), ra = rateOf(all);
+    if (rs == null || !ra) continue;
+    weekList.push({ key: x.key, sg, show: rs, base: ra, ratio: rs / ra, rides: same.rides, scope });
+  }
   for (const h of runners) {
     const hn = Number(h.horse_number);
     if (!(hn > 0)) continue;
@@ -489,6 +586,10 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     number: rateRank(numberList).map((x) => ({ ...x, v: x.show, value: `${numberGroupLabel(x.group)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     jockey: rateRank(jockeyList).map((x) => ({ ...x, v: x.show, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     sexage: rateRank(sexList).map((x) => ({ ...x, v: x.show, value: `${sexAgeLabelOf(x.sa)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    week: rankBy(weekList, (x) => -x.ratio).map((x) => ({
+      ...x, v: x.ratio,
+      value: `${WEEK_BAND_LABELS[weekBand]} ${STYLE_GROUP_LABELS[x.sg]} 複${pct(x.show)}(全週${pct(x.base)}・${x.rides}騎乗・${SCOPE_LABEL[x.scope]})`,
+    })),
     weight: rateRank(weightList).map((x) => ({ ...x, v: x.show, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     // 同コース: 全頭を並べる(走っていない馬は0)。多い順
     course: rankBy(horses.map((x) => ({ ...x, sum: x.boardIn - x.boardOut })), (x) => -x.sum).map((x) => ({

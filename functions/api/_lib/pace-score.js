@@ -15,6 +15,7 @@ import { getRaceTimes } from "./race-time-cache.js";
 import { FACTOR_KEYS, DEFAULT_MISSING_SCORE, ADJUST_KEYS, GLOBAL_ADJUST_KEYS, applyAdjust, totalAdjustOf, createFactorContext, computeRaceFactors } from "./race-factors.js";
 import { parseCourseKey } from "./pace-queue.js";
 import { memoized } from "./memo-cache.js";
+import { getPaceScoreSettings } from "./pace-settings.js";
 
 // レース一覧(races_index_cache)を同じ実行環境で60秒使い回す(2026-10-14)。読み込み〈約90万文字の解析〉に10ミリ秒以上かかり、
 // 比率の計算で6レースずつ採点を呼ぶたびに読み直すと、それだけで無料枠のCPU時間の上限(10ミリ秒)を超えて 503 になったため
@@ -23,7 +24,8 @@ const paceRaceIndex = (db) => memoized("pace_race_index", () => getRaceIndex(db)
 
 export const PACE_FACTORS = FACTOR_KEYS;
 // 既定の比率(ほぼ均等)。2026-10-14 に7要素(性齢・馬体重・同コースを追加)にした。それまでは4要素とも25。public/pace-search.js と同じ
-export const DEFAULT_PACE_WEIGHTS = { w_pace: 15, w_number: 15, w_jockey: 14, w_time: 14, w_sexage: 14, w_weight: 14, w_course: 14 };
+// 2026-10-15: 8つ目の要素「週目」(w_week)を追加し、ほぼ均等に配り直した
+export const DEFAULT_PACE_WEIGHTS = { w_pace: 13, w_number: 13, w_jockey: 13, w_time: 13, w_sexage: 12, w_weight: 12, w_course: 12, w_week: 12 };
 // pace_weights / course_pace_weights の比率の列(SQL 用。PACE_FACTORS の順)
 export const PACE_WEIGHT_COLUMNS = PACE_FACTORS.map((f) => `w_${f}`);
 // ペース予想ごとの比率(2026-10-14追加。ユーザー要望)。列 by_pace に JSON { high|middle|slow: { w_*, source: "manual"|"auto" } } で持つ。
@@ -196,12 +198,13 @@ function resolvePaceWeights(specifics, d, pace, kind = "axis") {
 async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null } = {}) {
   if (!races.length) return [];
   // 騎手名エイリアスは使い回し版(読み取り専用。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
-  const [lineups, aliasMap, raceTimes] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db)]);
+  // 斤量の補正の秒数(2026-10-15)は設定から(app_settings 1行。2分使い回し)
+  const [lineups, aliasMap, raceTimes, scoreSettings] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db), getPaceScoreSettings(db)]);
   // 対象レースは呼び出し側で最大 BACKTEST_CHUNK_MAX(6)件または重賞の11件に絞る(100バインド上限に届かない)
   const ids = races.map((r) => Number(r.id));
   const { results: rrRows } = await db
     .prepare(
-      `SELECT race_id, horse_key, horse_name, horse_number, jockey, sex_age, status, finish_position
+      `SELECT race_id, horse_key, horse_name, horse_number, jockey, sex_age, weight_carried, status, finish_position
          FROM race_results WHERE race_id IN (${ids.map(() => "?").join(",")})`
     )
     .bind(...ids)
@@ -220,7 +223,7 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
     const { results } = await db
       .prepare(
         `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
-                rr.body_weight, rr.jockey, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
+                rr.body_weight, rr.jockey, rr.weight_carried, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
            FROM race_results rr JOIN races r ON r.id = rr.race_id
           WHERE rr.horse_key IN (${keys.map(() => "?").join(",")})`
       )
@@ -237,7 +240,9 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
     const runnersAll = runnersByRace.get(Number(race.id)) || [];
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
-    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age })), runsByHorse, { missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null });
+    const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age, weight_carried: h.weight_carried })), runsByHorse, {
+      missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null, weightSecPerKg: scoreSettings.weight_sec_per_kg,
+    });
     out.push({
       race,
       pace_type: rf.pace_type,

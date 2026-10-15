@@ -12,6 +12,10 @@ import {
   trackTimeOffsets,
   correctRunTime,
   normalizeTrackConditionText,
+  applyHorseAliasMap,
+  horseAliasKeyOf,
+  getPaceScoreSettings,
+  weightAdjOf,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -114,6 +118,14 @@ export async function onRequestGet(context) {
   // 2026-10-13: 当初は集計用の小さいキャッシュ race_lineup_cache を読んでいたが、読み込みのCPU時間が約9ミリ秒と
   // 無料枠の上限(10ミリ秒)に近かったため、必要な列だけの別キャッシュにした。
   const offsets = trackTimeOffsets(buildTrackTrends(await getRaceTimes(env.DB), { courseType: race.course_type, distance: race.distance }));
+  // 斤量の補正(2026-10-15。_lib/race-factors.js の weightAdjOf): (今回の斤量 − その走の斤量)× 1kgあたりの秒数(設定。既定0.1)。
+  // 今回の斤量は出走馬表の weight_carried。どちらかが無ければ補正しない
+  const { weight_sec_per_kg: secPerKg } = await getPaceScoreSettings(env.DB);
+  const todayKgByName = new Map();
+  for (const e of entries) {
+    const n = e?.horse_name ? keyMap.get(horseAliasKeyOf(applyHorseAliasMap(aliasMap, e.horse_name))) : null;
+    if (n && e.weight_carried != null) todayKgByName.set(n, e.weight_carried);
+  }
 
   // そのタイムを出した走の情報。run_last3f・weight_carried・jockey は2026-10-12追加(展開・時計タブの表で表示)
   const timeInfo = (row, sec, base) => {
@@ -160,9 +172,13 @@ export async function onRequestGet(context) {
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && race.track) {
       const c = correctRunTime(sec, { runTrack: row.track, runCondition: normalizeTrackConditionText(row.track_condition), targetTrack: race.track }, offsets);
+      const kgAdj = weightAdjOf(todayKgByName.get(name), row.weight_carried, secPerKg);
+      const corrected = Math.round((c.seconds + kgAdj) * 100) / 100;
       const cur = horses[name].corrected;
-      if (!cur || c.seconds < cur.corrected_seconds) {
-        horses[name].corrected = { ...timeInfo(row, sec, base), corrected_seconds: c.seconds, adj: c.adj, partial: c.partial };
+      if (!cur || corrected < cur.corrected_seconds) {
+        // kg_adj: 斤量の補正(秒。重くなれば+)、today_weight: 今回の斤量(2026-10-15)
+        horses[name].corrected = { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial,
+          kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null };
       }
     }
   }

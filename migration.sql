@@ -50,6 +50,7 @@
 -- 2026-10-14: course_pace_weights(コースごとの比率・比率の計算待ちの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_jobs(比率の計算の途中の状態)・pace_weights_adjust(評価点の列)を追加。同日本番適用済み
 --  (schema_migrations に記録済み。2026-10-15 に確認)。未適用のマイグレーションは無い。
+-- 2026-10-15: pace_weights_week(比率の表に週目の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -218,3 +219,10 @@ INSERT INTO schema_migrations (name) VALUES ('pace_jobs');
 ALTER TABLE pace_weights ADD COLUMN adjust TEXT;
 ALTER TABLE course_pace_weights ADD COLUMN adjust TEXT;
 INSERT INTO schema_migrations (name) VALUES ('pace_weights_adjust');
+
+-- @STEP: pace_weights_week
+-- 総合推奨馬の8つ目の要素「週目」の比率の列(2026-10-15)。列を足すだけ(既存の行は0 = 次に計算し直すまで週目は使わない)。
+-- **コードの反映より前に適用すること**(2026-10-15 に本番適用済み)(比率の読み取りが w_week を SELECT するため、列が無いと総合推奨馬が出なくなる)。
+ALTER TABLE pace_weights ADD COLUMN w_week INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE course_pace_weights ADD COLUMN w_week INTEGER NOT NULL DEFAULT 0;
+INSERT INTO schema_migrations (name) VALUES ('pace_weights_week');
