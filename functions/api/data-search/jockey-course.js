@@ -42,7 +42,7 @@ export async function onRequestGet(context) {
     .first();
   if (!target) return jsonError("レースが見つかりません", 404);
 
-  const entries = (parseJsonSafe(target.entries, []) || []).filter((e) => e && e.horse_name);
+  const entries = (parseJsonSafe(target.entries, []) || []).filter((e) => e && e.horse_name && !e.scratched); // 出走取消(2026-10-15)は外す
   if (!target.track || !target.course_type || !target.distance) {
     return Response.json({ condition: null, jockeys: [] });
   }

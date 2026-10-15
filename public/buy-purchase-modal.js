@@ -362,13 +362,14 @@ function renderMethodOptions() {
   };
 }
 
+// 出走取消の印(entries[].scratched。2026-10-15)の馬は行を薄くし、選択欄を押せなくする(disableScratchedInputs)
 function horseRow(e, controlHtml, extraRowClass) {
   const mark = (predictionMarks.get(Number(e.horse_number)) || []).join(" ");
   return `
-    <div class="bet-horse-row ${mark ? "has-prediction-mark" : ""} ${extraRowClass || ""}">
+    <div class="bet-horse-row ${mark ? "has-prediction-mark" : ""} ${extraRowClass || ""} ${e.scratched ? "is-scratched" : ""}">
       <span class="mini-waku waku-${e.waku_number||0}">${e.waku_number||"-"}</span>
       <span class="bet-horse-num">${e.horse_number}</span>
-      <span class="bet-horse-name">${escapeHtml(e.horse_name||"馬名未登録")}</span>
+      <span class="bet-horse-name">${escapeHtml(e.horse_name||"馬名未登録")}${e.scratched ? `<span class="scratched-badge">取消</span>` : ""}</span>
       <span class="bet-horse-jockey">${escapeHtml(e.jockey||"")}</span>
       <span class="bet-horse-mark">${mark || ""}</span>
       <span class="bet-horse-control">${controlHtml}</span>
@@ -399,9 +400,11 @@ function wakuGroups(race) {
 
 function frameRow(g, controlHtml) {
   const marks = g.entries.flatMap((e) => predictionMarks.get(Number(e.horse_number)) || []).join(" ");
-  const horses = g.entries.map((e) => `${e.horse_number} ${escapeHtml(e.horse_name || "")}`).join(" / ");
+  const horses = g.entries.map((e) => `${e.horse_number} ${escapeHtml(e.horse_name || "")}${e.scratched ? "(取消)" : ""}`).join(" / ");
+  // 枠の馬が全頭取消なら、その枠は選べない(2026-10-15)
+  const allScratched = g.entries.length > 0 && g.entries.every((e) => e.scratched);
   return `
-    <div class="bet-horse-row ${marks ? "has-prediction-mark" : ""}">
+    <div class="bet-horse-row ${marks ? "has-prediction-mark" : ""} ${allScratched ? "is-scratched" : ""}">
       <span class="mini-waku waku-${g.waku}">${g.waku}</span>
       <span class="bet-horse-num">${g.waku}枠</span>
       <span class="bet-horse-name" title="${horses}">${horses}</span>
@@ -446,8 +449,14 @@ function renderWakurenPicker() {
     </div>
     <div class="bet-horse-list">${html}</div>
   `;
+  disableScratchedInputs();
   bindPicker();
   renderPreview();
+}
+
+// 取消の馬(枠連は全頭取消の枠)の行の選択欄を押せなくする(2026-10-15)
+function disableScratchedInputs() {
+  pickerArea.querySelectorAll(".bet-horse-row.is-scratched input").forEach((i) => { i.disabled = true; i.checked = false; });
 }
 
 // 枠連の組み合わせ生成。a,bを枠番とし、同枠(a===b)は出走馬が2頭以上の枠のみ有効。
@@ -455,7 +464,8 @@ function renderWakurenPicker() {
 function currentWakurenCombos() {
   const groups = wakuGroups(selectedRace);
   if (!groups) return [];
-  const size = new Map(groups.map((g) => [g.waku, g.entries.length]));
+  // 同枠(a===b)は取消を除いて2頭以上いる枠だけ(2026-10-15)
+  const size = new Map(groups.map((g) => [g.waku, g.entries.filter((e) => !e.scratched).length]));
   const pairs = (as, bs) => {
     const seen = new Set();
     const out = [];
@@ -617,6 +627,7 @@ function renderPicker() {
     <div class="bet-horse-list">${html}</div>
   `;
 
+  disableScratchedInputs();
   bindPicker();
   renderPreview();
 }

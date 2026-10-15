@@ -668,7 +668,7 @@ textarea { resize: vertical; }
   .selection-row { grid-template-columns: 1fr 1fr; }
 
   .entry-form-row {
-    grid-template-columns: 46px 50px 1fr 60px 50px;
+    grid-template-columns: 46px 50px 1fr 60px 44px;
     gap: 4px;
   }
   .entry-form-row input, .entry-form-row select { padding: 5px 3px; font-size: 11px; }
@@ -901,7 +901,7 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
 
 .entry-form-row {
   display: grid;
-  grid-template-columns: 60px 70px 1fr 100px;
+  grid-template-columns: 60px 70px 1fr 100px auto;
   gap: 6px;
   align-items: center;
   background: #fff;
@@ -909,6 +909,16 @@ button.settled-badge.done:hover { background: var(--win); opacity: 0.85; }
   padding: 6px;
 }
 .entry-form-row input, .entry-form-row select { padding: 6px; font-size: 12.5px; }
+/* 出走取消(2026-10-15) */
+.scratched-badge { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; line-height: 1.6; color: #fff; background: #8a2b2b; border-radius: 3px; vertical-align: middle; }
+.prediction-horse.is-scratched { opacity: 0.55; }
+.bet-horse-row.is-scratched { opacity: 0.5; }
+.bet-horse-row.is-scratched .bet-horse-name { text-decoration: line-through; }
+.prediction-horse.is-scratched .prediction-horse-name strong { text-decoration: line-through; }
+.e-scratched-label { display: flex; align-items: center; gap: 2px; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.entry-form-row .e-scratched { padding: 0; width: auto; }
+.entry-form-row.entry-scratched { background: #f1eeee; }
+.entry-form-row.entry-scratched .e-horse-name { text-decoration: line-through; color: var(--muted, #888); }
 
 .finish-top3-box {
   background: var(--paper-raised);

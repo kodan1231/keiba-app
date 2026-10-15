@@ -57,9 +57,10 @@ function renderEntryRows(entries, horseCount) {
       // 入力欄の無い項目(性齢・斤量・調教師等。PDF取込や馬柱貼り付け由来)は行に保持し、
       // readEntryRows() で送り返す(2026-10-06。それまでは入力欄の4項目だけを送っており、
       // モーダルで保存するとこれらが消えていた)。
-      const { waku_number: _w, horse_number: _n, horse_name: _h, jockey: _j, ...extra } = e;
+      // 出走取消(2026-10-15。entries[].scratched = true。docs/design/entries-import.md「出走取消の印」)
+      const { waku_number: _w, horse_number: _n, horse_name: _h, jockey: _j, scratched, ...extra } = e;
       return `
-        <div class="entry-form-row" data-row="${i}" data-extra="${escapeAttr(JSON.stringify(extra))}">
+        <div class="entry-form-row${scratched ? " entry-scratched" : ""}" data-row="${i}" data-extra="${escapeAttr(JSON.stringify(extra))}">
           <select class="e-waku">
             <option value="">枠-</option>
             ${[1,2,3,4,5,6,7,8].map((n) => `<option value="${n}" ${e.waku_number == n ? "selected" : ""}>${n}</option>`).join("")}
@@ -69,6 +70,7 @@ function renderEntryRows(entries, horseCount) {
           </select>
           <input type="text" class="e-horse-name" placeholder="馬名" value="${escapeAttr(e.horse_name ?? "")}" />
           <input type="text" class="e-jockey" placeholder="騎手" value="${escapeAttr(e.jockey ?? "")}" />
+          <label class="e-scratched-label" title="出走取消(予想・購入の対象から外し、払戻の返還に使う)"><input type="checkbox" class="e-scratched" ${scratched ? "checked" : ""} />取消</label>
         </div>
       `;
     })
@@ -91,9 +93,16 @@ function readEntryRows() {
       horse_number: Number(row.querySelector(".e-horse-number").value),
       horse_name: row.querySelector(".e-horse-name").value,
       jockey: row.querySelector(".e-jockey").value || null,
+      ...(row.querySelector(".e-scratched").checked ? { scratched: true } : {}),
     };
   });
 }
+
+// 取消のチェックで行の見た目を変える
+entryRows.addEventListener("change", (e) => {
+  if (!e.target.classList.contains("e-scratched")) return;
+  e.target.closest(".entry-form-row").classList.toggle("entry-scratched", e.target.checked);
+});
 
 // ---------- テキスト貼り付けで出走馬を一括入力(出走馬表モーダル) ----------
 document.getElementById("toggle-paste-btn").addEventListener("click", () => {

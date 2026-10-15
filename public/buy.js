@@ -272,7 +272,9 @@ function renderGrid() {
             const infoParts = [];
             if (r.post_time) infoParts.push(escapeHtml(r.post_time));
             if (courseText) infoParts.push(escapeHtml(courseText));
-            infoParts.push(r.entries.length ? `${r.entries.length}頭` : "出走馬未登録");
+            // 出走取消の印(2026-10-15)の馬は頭数から引く
+            const scratchedN = r.entries.filter((e) => e && e.scratched).length;
+            infoParts.push(r.entries.length ? `${r.entries.length - scratchedN}頭${scratchedN ? `(取消${scratchedN})` : ""}` : "出走馬未登録");
             // 勝負レースの★/☆トグルは行ボタン(予想画面へ遷移)の中に入れられない
             // (ボタンの入れ子は不正)ため、ラッパー内で行ボタンの右端に重ねて置く。
             const isKey = myKeyRaceIds.has(Number(r.id));

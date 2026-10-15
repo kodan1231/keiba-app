@@ -426,7 +426,11 @@ function renderRaceHeader() {
       ${selectedRace.race_name ? `<span class="race-name">${escapeHtml(selectedRace.race_name)}</span>` : ""}
       ${GUEST_VIEW ? "" : `<button type="button" id="key-race-toggle-btn" class="race-cond-badge key-race-toggle ${isKeyRace ? "active" : ""}" aria-pressed="${isKeyRace}" title="勝負レース(ONにすると馬券購入画面のレース一覧にも★が表示されます)">${isKeyRace ? "★ 勝負レース" : "☆ 勝負レース"}</button>`}
       ${formatCourseText(selectedRace.course_type, selectedRace.distance) ? `<span class="race-course">${escapeHtml(formatCourseText(selectedRace.course_type, selectedRace.distance))}</span>` : ""}
-      <span class="prediction-entry-count">${selectedRace.entries.length}頭</span>
+      <span class="prediction-entry-count">${(() => {
+        // 出走取消の印(2026-10-15)の馬は頭数から引いて「取消N」を添える
+        const k = selectedRace.entries.filter(e => e && e.scratched).length;
+        return k ? `${selectedRace.entries.length - k}頭(取消${k})` : `${selectedRace.entries.length}頭`;
+      })()}</span>
       ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
       ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
       ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="${appUrl("search", `data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}`)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
@@ -491,13 +495,13 @@ function renderHorses() {
     // 表示されない」不具合があった(docs/DESIGN.md参照)。
     const note = horseNotes[normalizeHorseName(e.horse_name)] || {};
     return `
-      <article class="prediction-horse horse-note-card"
+      <article class="prediction-horse horse-note-card${e.scratched ? " is-scratched" : ""}"
         data-horse-number="${n !== null ? n : ""}"
         data-horse-name="${escapeAttr(e.horse_name || "")}">
         <div class="horse-note-toggle" role="button" tabindex="0">
           <span class="prediction-horse-number waku-tint waku-${e.waku_number || 0}">${n !== null ? n : "-"}</span>
           <span class="prediction-horse-name">
-            <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+            <strong>${escapeHtml(e.horse_name || "馬名未登録")}</strong>${e.scratched ? `<span class="scratched-badge">取消</span>` : ""}
             ${(() => {
               // 性齢(sex_age)・負担重量(weight_carried)は出走馬一覧/結果PDFインポートでのみ
               // 入る(手動登録レースには無い)。値がある項目だけを「・」で連結し、馬名の下段に表示する。
@@ -862,7 +866,7 @@ function renderUmabashira() {
               ${MARKS.map(m => `<option value="${m}">${m}</option>`).join("")}
             </select>`}
           </div>
-          <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>
+          <strong class="ub-horse-name">${escapeHtml(e.horse_name || "馬名未登録")}</strong>${e.scratched ? `<span class="scratched-badge">取消</span>` : ""}
           ${meta ? `<small class="ub-horse-meta">${meta}</small>` : ""}
           ${ubPedigreeHtml(normalizeHorseName(e.horse_name))}
         </th>
@@ -915,8 +919,9 @@ function paceStyleOf(run) {
   return { style, pos, fieldSize, ratio };
 }
 
+// 出走取消の印(2026-10-15)の馬は展開・時計タブの対象から外す(サーバーの採点も外している)
 function paceEntries() {
-  return (selectedRace.entries || []).filter(e => e && e.horse_name);
+  return (selectedRace.entries || []).filter(e => e && e.horse_name && !e.scratched);
 }
 
 function paceHorseLabelHtml(e) {

@@ -156,6 +156,10 @@ function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
 //     頭数から機械的に決まるため、上記のような頭数の誤りで保存された誤った枠番もここで直る
 //   結果PDFインポート(results-import.js)は取消馬の情報を渡さず頭数が不正確になるため
 //   このオプションを使わない
+//
+// opts.cancelledNames(2026-10-15追加。出走馬一覧PDFで「取消」と印字されていた馬の馬名。除外は含めない):
+//   既存の entries に同名で**馬番がある**項目があれば、出走取消の印 scratched: true を付ける
+//   (馬番確定後・レース前の取消。docs/design/entries-import.md「出走取消の印」)。印は外さない(手で外す)
 export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratchedNames = [], opts = {}) {
   const scratchedSet = new Set(
     (Array.isArray(scratchedNames) ? scratchedNames : []).map(normalizeHorseNameForMerge).filter(Boolean)
@@ -178,6 +182,10 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratc
     });
   const merged = cleanedExisting.map((e) => ({ ...e }));
   const byName = new Map(merged.map((e, i) => [normalizeHorseNameForMerge(e.horse_name), i]));
+  for (const raw of (Array.isArray(opts.cancelledNames) ? opts.cancelledNames : [])) {
+    const idx = byName.get(normalizeHorseNameForMerge(raw));
+    if (idx !== undefined && Number.isInteger(merged[idx].horse_number)) merged[idx].scratched = true;
+  }
   const conflicts = [];
 
   for (const incoming of (Array.isArray(incomingEntries) ? incomingEntries : [])) {

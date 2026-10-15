@@ -142,7 +142,10 @@ export async function onRequestPost(context) {
       } catch {
         currentEntries = [];
       }
-      const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name), { authoritative: true });
+      const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name), {
+        authoritative: true,
+        cancelledNames: it.scratched.filter((x) => x.label === "取消").map((x) => x.horse_name), // 出走取消の印(2026-10-15)
+      });
       toUpdate.push({ ...it, existing, mergedEntries, conflicts, removed });
     }
   }

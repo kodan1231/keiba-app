@@ -43,7 +43,8 @@ export async function onRequestGet(context) {
     .bind(raceId)
     .first();
   if (!race) return jsonError("レースが見つかりません", 404);
-  const entries = (parseJsonSafe(race.entries, []) || []).filter((e) => e && e.horse_name);
+  // 出走取消の印(entries[].scratched。2026-10-15)の馬は採点・ペース予想から外す
+  const entries = (parseJsonSafe(race.entries, []) || []).filter((e) => e && e.horse_name && !e.scratched);
   if (!entries.length || !race.course_type || !race.distance || !race.race_date) {
     return Response.json({ pace_type: null, counts: null, horses: [] });
   }

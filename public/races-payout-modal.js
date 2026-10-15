@@ -446,9 +446,12 @@ function openPayoutModal(race) {
   payoutHorseCountSelect.value = count;
   renderFinishSelects(count, race.finish_order);
   currentRacePayouts = race.payouts || {};
-  currentScratchedHorseNumbers = new Set(
-    ((race.payouts && race.payouts.refunds) || []).flatMap((r) => r.horse_numbers || [])
-  );
+  // 出走馬表で出走取消の印(entries[].scratched。2026-10-15)を付けた馬も最初から選んでおく
+  // (保存すると返還の対象になる。印を外したいときは出走馬表の編集画面で外す)
+  currentScratchedHorseNumbers = new Set([
+    ...((race.payouts && race.payouts.refunds) || []).flatMap((r) => r.horse_numbers || []),
+    ...(race.entries || []).filter((e) => e && e.scratched && Number.isInteger(Number(e.horse_number)) && e.horse_number !== null).map((e) => Number(e.horse_number)),
+  ]);
   updateScratchedButtonLabel();
   payoutImportStatus.hidden = true;
   loadTicketsForRace(race.id);
