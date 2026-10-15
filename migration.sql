@@ -48,6 +48,8 @@
 -- 2026-10-14: guest_access(ゲスト閲覧の端末・IPブロックの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: pace_weights_partner(比率の表に相手指数の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
 -- 2026-10-14: course_pace_weights(コースごとの比率・比率の計算待ちの表)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-14: pace_jobs(比率の計算の途中の状態)・pace_weights_adjust(評価点の列)を追加。同日本番適用済み
+--  (schema_migrations に記録済み。2026-10-15 に確認)。未適用のマイグレーションは無い。
 
 PRAGMA foreign_keys=ON;
 
