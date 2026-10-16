@@ -124,7 +124,12 @@ export function trackTimeOffsets(trends) {
 // 同じ競馬場の中での距離の比(2026-10-16): その競馬場の「換算先の距離の平均 ÷ 走った距離の平均」(良が TREND_MIN_RACES 以上ならその平均、
 // 無ければ馬場を問わない平均)。trendsFrom / trendsTo は buildTrackTrends の結果(同じ芝ダの、走った距離 / 換算先の距離)。出せなければ null。
 // 全場の平均どうしの比は、距離ごとに競馬場の混ざり方が違う(例: ダ1400 は中央中心、ダ1500 は地方中心)と偏るため、同じ競馬場の中で比べる
-export function sameTrackDistanceRatio(trendsFrom, trendsTo, track) {
+// 2026-10-16 変更(ユーザー指摘・仕様確認済み): 勝ちタイムの平均の比だけでは、距離ごとのクラスの混ざり方で偏った
+//   (川崎ダ1400→1500 が ×1.0517。同じ馬が両方を走った126組の比の中央値は ×1.0619、距離の比は ×1.0714)。
+//   当面は「勝ちタイムの平均の比」と「距離の比」の平均にする(blendDistanceRatio。川崎の例で ×1.0616)。
+//   fromDist / toDist を渡すと平均にした値、渡さなければ勝ちタイムの平均の比だけ。
+//   今後: 同じ馬の組の比を夜間に計算して置き換える予定(docs/design/screens.md「同じ競馬場の ±200m の走も使う」)
+export function sameTrackDistanceRatio(trendsFrom, trendsTo, track, fromDist = null, toDist = null) {
   const avgOf = (tr) => {
     const t = (tr?.tracks || []).find((x) => x.track === track);
     if (!t) return null;
@@ -133,7 +138,15 @@ export function sameTrackDistanceRatio(trendsFrom, trendsTo, track) {
     return null;
   };
   const a = avgOf(trendsFrom), b = avgOf(trendsTo);
-  return a && b ? b / a : null;
+  if (!a || !b) return null;
+  return fromDist && toDist ? blendDistanceRatio(b / a, fromDist, toDist) : b / a;
+}
+
+// 勝ちタイムの平均の比と距離の比の平均(2026-10-16)。timeRatio が無ければ距離の比
+export function blendDistanceRatio(timeRatio, fromDist, toDist) {
+  const distRatio = Number(toDist) / Number(fromDist);
+  if (!Number.isFinite(distRatio) || distRatio <= 0) return timeRatio;
+  return timeRatio ? (timeRatio + distRatio) / 2 : distRatio;
 }
 
 // 走った競馬場・馬場の補正値: その競馬場の値(レースが十分あるとき)→ 無ければ競馬場の差を除いた全場の値。出せなければ null

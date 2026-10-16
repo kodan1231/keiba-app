@@ -17,10 +17,12 @@ import {
   getPaceScoreSettings,
   weightAdjOf,
   pickTimeRuns,
-  condOffOf,
-  sameTrackDistanceRatio,
+  getDistanceRatios,
+  convertTime,
+  makeCourseOf,
   addMonthsIso,
   TIME_RECENT_MONTHS,
+  PAST_RUNS_FOR_NEW_COURSE,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -95,9 +97,10 @@ export async function onRequestGet(context) {
   const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
 
   const searchKeys = [...searchKeyToKey.keys()];
-  // 出走馬の馬名+逆引きエイリアス。特別登録では頭数に上限が無いため90件ずつ(+6)
-  // 2026-10-16: 同じ距離(全場)に加えて、今回と同じ競馬場の ±200m の走も読む(補正タイム順位で距離を換算して一緒に使う)。
-  // 読む行は変わらない(どちらも horse_key のインデックスで出走馬の走を引いてから、レースの列で絞る)
+  // 出走馬の馬名+逆引きエイリアス。特別登録では頭数に上限が無いため90件ずつ(+2)
+  // 2026-10-16: 同じ芝ダの走をすべて読む(以前は同じ距離だけ → 同じ距離+同じ競馬場の ±200m)。初コースの馬は過去5走を換算して使うため。
+  // 読む行は変わらない(horse_key のインデックスで出走馬の走を引いてから、レースの列で絞る)。並びは JS で付ける
+  // (ORDER BY を付けると別のインデックスが選ばれて絞り込みが効かなくなることがあるため。CLAUDE.md「D1の問い合わせ」)
   const results = [];
   const d = Number(race.distance);
   for (let i = 0; i < searchKeys.length; i += 90) {
@@ -105,15 +108,14 @@ export async function onRequestGet(context) {
     const placeholders = keysChunk.map(() => "?").join(",");
     const { results: chunkRows } = await env.DB.prepare(
       `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position, rr.weight_carried, rr.jockey,
-              r.race_date, r.track, r.race_name, r.track_condition, r.distance
+              r.race_date, r.race_number, r.track, r.race_name, r.track_condition, r.distance
          FROM race_results rr
          JOIN races r ON r.id = rr.race_id
         WHERE rr.horse_key IN (${placeholders})
           AND rr.status = 'finished'
           AND r.course_type = ?
-          AND (r.distance = ? OR (r.track = ? AND r.distance BETWEEN ? AND ?))
           AND r.race_date < ?`
-    ).bind(...keysChunk, race.course_type, d, race.track || "", d - 200, d + 200, race.race_date).all();
+    ).bind(...keysChunk, race.course_type, race.race_date).all();
     results.push(...(chunkRows || []));
   }
 
@@ -125,19 +127,11 @@ export async function onRequestGet(context) {
   // 補正値は勝ちタイムの小さいキャッシュ(race_time_cache。約20行。同じ実行環境で60秒使い回す)から全クラスの勝ちタイムで出す。
   // 2026-10-13: 当初は集計用の小さいキャッシュ race_lineup_cache を読んでいたが、読み込みのCPU時間が約9ミリ秒と
   // 無料枠の上限(10ミリ秒)に近かったため、必要な列だけの別キャッシュにした。
-  const raceTimes = await getRaceTimes(env.DB);
+  const [raceTimes, distanceRatios] = await Promise.all([getRaceTimes(env.DB), getDistanceRatios(env.DB)]);
   const targetTrends = buildTrackTrends(raceTimes, { courseType: race.course_type, distance: race.distance });
   const offsets = trackTimeOffsets(targetTrends);
-  // 同じ競馬場の ±200m の走の距離の換算(2026-10-16): その競馬場の中の距離の比(_lib/track-trends.js の sameTrackDistanceRatio)。
-  // 比が出せなければ距離の比。馬場の補正はその走の距離の補正値。距離ごとに1回だけ作る
-  const byDistance = new Map();
-  const distInfo = (dist) => {
-    if (!byDistance.has(dist)) {
-      const tr = buildTrackTrends(raceTimes, { courseType: race.course_type, distance: dist });
-      byDistance.set(dist, { trends: tr, offsets: trackTimeOffsets(tr) });
-    }
-    return byDistance.get(dist);
-  };
+  // 距離が違う走の換算(2026-10-16): 総合推奨馬と同じ convertTime に、芝ダ・距離ごとの補正値を作る courseOf だけを渡す
+  const timeCtx = { courseOf: makeCourseOf(raceTimes) };
   // 斤量の補正(2026-10-15。_lib/race-factors.js の weightAdjOf): (今回の斤量 − その走の斤量)× 1kgあたりの秒数(設定。既定0.1)。
   // 今回の斤量は出走馬表の weight_carried。どちらかが無ければ補正しない
   const { weight_sec_per_kg: secPerKg } = await getPaceScoreSettings(env.DB);
@@ -198,34 +192,41 @@ export async function onRequestGet(context) {
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && race.track) {
       const cond = normalizeTrackConditionText(row.track_condition);
+      const sameTrack = row.track === race.track;
       let c;
       if (sameDistance) {
         c = correctRunTime(sec, { runTrack: row.track, runCondition: cond, targetTrack: race.track }, offsets);
       } else {
-        // 同じ競馬場の ±200m: 馬場はその距離の補正値で良に直し、その競馬場の中の距離の比で今回の距離にする
-        const src = distInfo(runDist);
-        const condOff = condOffOf(src.offsets, row.track, cond);
-        const ratio = sameTrackDistanceRatio(src.trends, targetTrends, race.track) ?? d / runDist;
-        const seconds = Math.round((sec - (condOff ?? 0)) * ratio * 100) / 100;
-        c = { seconds, adj: Math.round((seconds - sec) * 100) / 100, partial: cond != null && condOff == null };
+        // 距離が違う走: 総合推奨馬と同じ換算(_lib/race-factors.js の convertTime。同じ競馬場なら同じ馬の組の比
+        // → 勝ちタイムの平均の比と距離の比の平均、ほかの競馬場は競馬場・馬場の補正と全場の比)
+        const seconds = Math.round(convertTime(timeCtx, sec, { track: row.track, course_type: race.course_type, distance: runDist, track_condition: row.track_condition }, race, distanceRatios) * 100) / 100;
+        c = { seconds, adj: Math.round((seconds - sec) * 100) / 100, partial: false };
       }
       const kgAdj = weightAdjOf(todayKgByName.get(name), row.weight_carried, secPerKg);
       const corrected = Math.round((c.seconds + kgAdj) * 100) / 100;
-      // 候補として持っておき、最後に選ぶ(2026-10-16。下の pickTimeRuns)。同じ距離(全場)と同じ競馬場の ±200m は同じ扱いで段は1
-      // run_distance: 距離を換算した走ならその距離(画面で「1500m換算」と出す)
+      // 候補として持っておき、最後に選ぶ(下の pickTimeRuns)。
+      //   pool: 同じ距離(全場)と同じ競馬場の ±200m は "course"(経験のある馬に使う)、それ以外は "other"(初コースの馬の過去5走だけで使う)
+      //   run_distance: 距離を換算した走ならその距離、run_track_converted: ほかの競馬場の別の距離を換算した走(画面の表示用)
       (candsByName.get(name) || candsByName.set(name, []).get(name)).push({
-        tier: 1, c: corrected, date: String(row.race_date), kgAdj,
+        tier: 1, c: corrected, date: String(row.race_date), num: Number(row.race_number) || 0, kgAdj,
+        pool: sameDistance || (sameTrack && Math.abs(runDist - d) <= 200) ? "course" : "other",
+        sameCourse: sameTrack && sameDistance,
         info: { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial, kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null,
           run_distance: sameDistance ? null : runDist },
       });
     }
   }
-  // 補正タイム(2026-10-16 変更。ユーザー要望・仕様確認済み。_lib/race-factors.js の pickTimeRuns): 直近1年の走だけ(無ければ全部)→
-  // 最速と最遅を1走ずつ除いた平均(2走以下はそのまま平均)。以前は最速の1走。
+  // 補正タイム(_lib/race-factors.js の pickTimeRuns。総合推奨馬と同じ選び方):
+  //   今回の競馬場で今回の距離を走ったことがある馬 → 直近1年の「同じ距離(全場)+同じ競馬場の ±200m」(無ければ全期間)の
+  //     最速と最遅を除いた平均(2026-10-16)
+  //   ない馬(初コース) → 同じ芝ダの過去5走(期間は問わない)をすべて換算し、最速と最遅を除いた平均(2026-10-16 ユーザー要望)
   // corrected_seconds は平均、そのほかの項目(元のタイム・競馬場・馬場・補正・斤量・その走)は使った中の最速の走。
-  // runs_used: 平均に使った走数、runs_total: 対象の走数(直近1年に無ければ全期間)、recent_only: 直近1年だけで出したか
+  // runs_used: 平均に使った走数、runs_total: 対象の走数、recent_only: 直近1年だけで出したか、mode: "course" | "last"(初コース)
   for (const [name, cands] of candsByName) {
-    const sel = pickTimeRuns(cands, race.race_date);
+    const ranCourse = cands.some((r) => r.sameCourse);
+    const last = ranCourse ? [] : [...cands].sort((a, b) => b.date.localeCompare(a.date) || b.num - a.num).slice(0, PAST_RUNS_FOR_NEW_COURSE);
+    const pool = ranCourse ? cands.filter((r) => r.pool === "course") : last;
+    const sel = ranCourse ? pickTimeRuns(pool, race.race_date) : pickTimeRuns(pool, race.race_date, { recent: false });
     if (!sel) continue;
     const fastest = sel.runs[0].info;
     const from = addMonthsIso(race.race_date, -TIME_RECENT_MONTHS);
@@ -234,7 +235,8 @@ export async function onRequestGet(context) {
       corrected_seconds: Math.round(sel.time * 100) / 100,
       fastest_seconds: fastest.corrected_seconds,
       runs_used: sel.used, runs_total: sel.total,
-      recent_only: cands.some((r) => r.date >= from),
+      recent_only: ranCourse && pool.some((r) => r.date >= from),
+      mode: ranCourse ? "course" : "last",
     };
   }
 

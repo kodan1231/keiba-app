@@ -28,10 +28,11 @@ export const SERVICE_GUARD_FEATURES = {
     match: (req, url) => url.pathname.startsWith("/api/data-search/"),
   },
   admin_bulk: {
-    label: "一括補正・再計算(騎手名・馬名の一括補正、ベース名の再計算)",
+    label: "一括補正・再計算(騎手名・馬名の一括補正、ベース名の再計算、距離の換算の比の今すぐ計算)",
     match: (req, url) =>
       /^\/api\/admin\/(jockey-aliases|horse-aliases)\/normalize-existing$/.test(url.pathname) ||
-      url.pathname === "/api/admin/races/recompute-base-names",
+      url.pathname === "/api/admin/races/recompute-base-names" ||
+      (req.method === "POST" && url.pathname === "/api/admin/distance-ratios"), // 2026-10-16。1回で約13万行を読む
   },
   imports: {
     label: "取り込み(出走馬一覧・結果のPDF/HTML/netkeiba、購入履歴CSV、馬柱)",

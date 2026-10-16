@@ -24,7 +24,8 @@ const dropJob = (db, kind, key) => db.prepare("DELETE FROM pace_jobs WHERE kind 
 
 // 1歩進める。戻り値: { idle: true }(やることが無い)か { did: "..." }
 export async function paceJobStep(db) {
-  let job = await db.prepare("SELECT kind, key, phase, offset, total, races, state, missing_score FROM pace_jobs ORDER BY updated_at LIMIT 1").first();
+  // 距離の換算の比の作業(kind='distance'。2026-10-16。_lib/distance-ratios.js)は比率の作業とは別に扱う
+  let job = await db.prepare("SELECT kind, key, phase, offset, total, races, state, missing_score FROM pace_jobs WHERE kind <> 'distance' ORDER BY updated_at LIMIT 1").first();
   const now = new Date().toISOString();
 
   if (!job) {

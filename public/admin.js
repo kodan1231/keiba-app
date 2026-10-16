@@ -1228,6 +1228,12 @@ async function loadPaceWeights() {
       <label class="pace-w-input"><input type="number" min="0" max="1" step="0.01" id="pace-sec-per-kg" value="${secPerKg}">秒</label>
       <button type="button" class="ghost-btn" id="pace-sec-per-kg-save">保存</button>
     </div>
+    <!-- 同じ馬の組から出す距離の換算の比(2026-10-16。夜間に自動で計算し直す。ここでは状態の確認と今すぐ計算) -->
+    <div class="pace-w-line">
+      <span class="pace-w-admin-title" title="同じ競馬場で距離が200m以内の2つの距離を走った同じ馬の組から、距離の換算の比を出します(20組以上ある組み合わせだけ使う)。結果を取り込んだ日の夜に自動で計算し直します">距離の換算の比(同じ馬の組)</span>
+      <small class="pace-w-line-source" id="distance-ratios-info">読み込み中…</small>
+      <button type="button" class="ghost-btn" id="distance-ratios-run" title="約13万行を読みます。1〜2分かかります">今すぐ計算</button>
+    </div>
     <details class="pace-adj-fold" data-open-key="default" ${paceAdjOpen.has("default") ? "open" : ""}>
     <summary><span class="pace-w-admin-title">評価点の既定値</span> <small class="pace-w-line-source">${escapeHtml(paceAdjustText(paceAdjustDefault))}</small></summary>
     <div class="pace-w-line" id="pace-adjust-default">
@@ -1255,6 +1261,35 @@ async function loadPaceWeights() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ weight_sec_per_kg: Number(document.getElementById("pace-sec-per-kg").value) }),
     }, "斤量の補正を保存しました(推奨馬・補正タイム順位に2分以内に反映。保存済みの比率は次の計算からこの値で採点します)");
+  });
+  // 距離の換算の比(2026-10-16): 状態を出し、「今すぐ計算」で計算し直す
+  const drInfo = document.getElementById("distance-ratios-info");
+  const drText = (s) => (s.computed_at
+    ? `最後の計算 ${formatDateTime(s.computed_at)}・${s.usable}/${s.count}組み合わせで使用${s.running ? "(計算中)" : s.stale ? "(新しい結果あり。今夜計算し直します)" : ""}`
+    : s.running ? "計算中です" : "まだ計算していません(今夜計算します)");
+  authedFetch("/api/admin/distance-ratios").then((r) => (r.ok ? r.json() : null)).then((s) => { if (drInfo) drInfo.textContent = s ? drText(s) : "読み込みに失敗しました"; })
+    .catch(() => { if (drInfo) drInfo.textContent = "読み込みに失敗しました"; });
+  document.getElementById("distance-ratios-run").addEventListener("click", async (e) => {
+    if (!(await confirmHeavyOperation("同じ馬の組から距離の換算の比を計算し直します(結果の表を一通り読むので約13万行を読みます。1〜2分かかります)。実行しますか？"))) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    drInfo.textContent = "計算中…";
+    // 1歩ずつ(約2,000走ずつ)終わるまで呼ぶ(1回のサーバーの処理を無料枠のCPU時間に収めるため。夜間の定時実行と同じ処理)
+    try {
+      for (let guard = 0; guard < 500; guard++) {
+        const r = await authedFetch("/api/admin/distance-ratios", { method: "POST" });
+        const s = await r.json().catch(() => ({}));
+        if (!r.ok) { drInfo.textContent = s.error || "計算できませんでした"; break; }
+        if (s.did === "done") {
+          drInfo.textContent = `今計算しました: ${s.usable}/${s.count}組み合わせで使用(${s.read}走を読みました。推奨馬・補正タイム順位に10分以内に反映)`;
+          break;
+        }
+        drInfo.textContent = `計算中…(${Number(s.read || 0).toLocaleString()}走)`;
+      }
+    } catch {
+      drInfo.textContent = "計算できませんでした(続きは今夜の定時実行で進みます)";
+    }
+    btn.disabled = false;
   });
   document.getElementById("pace-adjust-default-auto").addEventListener("click", (e) => paceAdjustDefaultAuto(e.currentTarget));
   document.getElementById("pace-adjust-default-save").addEventListener("click", () => {
