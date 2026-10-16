@@ -3417,6 +3417,10 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-item > summary { cursor: pointer; padding: 8px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pace-w-item-name { font-weight: 700; }
 .pace-w-item-sub { font-size: 12px; color: var(--ink-soft); }
+/* コースの比率: 閉じた行の右に「今すぐ計算」(2026-10-16) */
+.pace-w-item > summary.pace-w-summary-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
+.pace-w-summary-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pace-w-summary-btn { flex-shrink: 0; white-space: nowrap; }
 .pace-w-item-date { white-space: nowrap; margin-left: 4px; } /* 要約の行の最終更新日(2026-10-14) */
 .pace-w-item-body { padding: 4px 4px 12px; }
 .pace-w-item-body .pace-w-input input { width: 3.6em; font-size: 16px; }

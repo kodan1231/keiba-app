@@ -1496,9 +1496,13 @@ function renderCourseWeightsList() {
     const w = c.weights;
     return `
       <details class="pace-w-item" data-course-key="${escapeAttr(c.course_key)}" ${courseWeightsOpen.has(c.course_key) ? "open" : ""}>
-        <summary>
-          <span class="pace-w-item-name">${escapeHtml(labelOf(c))}</span>
-          <span class="pace-w-item-sub">${escapeHtml(w?.source === "auto" ? "自動" : w?.source === "none" ? "ペースのみ手動" : "手動")}${paceUpdatedDateHtml(w)}</span>
+        <summary class="pace-w-summary-row">
+          <span class="pace-w-summary-text">
+            <span class="pace-w-item-name">${escapeHtml(labelOf(c))}</span>
+            <span class="pace-w-item-sub">${escapeHtml(w?.source === "auto" ? "自動" : w?.source === "none" ? "ペースのみ手動" : "手動")}${paceUpdatedDateHtml(w)}</span>
+          </span>
+          <!-- 開かずに計算し直せるよう、閉じた行にもボタンを置く(2026-10-16 ユーザー要望) -->
+          <button type="button" class="ghost-btn course-w-auto pace-w-summary-btn" title="このコースの直近1年から比率を計算して保存します">今すぐ計算</button>
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
@@ -1518,7 +1522,12 @@ function renderCourseWeightsList() {
   }));
   setupPaceWeightsLines(list);
   const keyOf = (btn) => btn.closest(".pace-w-item").dataset.courseKey;
-  list.querySelectorAll(".course-w-auto").forEach((btn) => btn.addEventListener("click", () => paceComputeAdmin("course", keyOf(btn), btn)));
+  // 閉じた行(summary)のボタンも同じ処理。押しても行は開閉しない(summary の既定の動きを止める)
+  list.querySelectorAll(".course-w-auto").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    paceComputeAdmin("course", keyOf(btn), btn);
+  }));
   list.querySelectorAll(".course-w-clear").forEach((btn) => btn.addEventListener("click", () => {
     if (!confirm("このコースの比率を消しますか?(標準の比率を使うようになります)")) return;
     paceWeightsRequest(`/api/admin/pace-weights?course_key=${encodeURIComponent(keyOf(btn))}`, { method: "DELETE" }, "消しました");
