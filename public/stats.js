@@ -425,7 +425,8 @@ function renderJockeyTable(items) {
 // 出走馬表〈馬名エイリアスを通して保存〉から入るため、エイリアスは画面では通さない)。表示名はその馬の一番新しい購入の馬名。
 // 枠連(selections の馬番は枠番)と、馬名の無い選択は対象外。購入回数 = その馬を含む馬券を買ったレースの数(BOX等の組数で増えないように)。
 const HORSE_TOP_N = 10;
-const HORSE_RATE_MIN_RACES = 3; // 回収率の順位に入れる最低の購入回数(1回の大当たりだけの馬が並ばないように)
+// 回収率の順位に入れる最低の購入回数。2026-10-15: 当初3回以上にしたが、1回だけの大当たりの馬も見たいとのユーザー要望で1にした
+const HORSE_RATE_MIN_RACES = 1;
 const HORSE_SEARCH_MAX = 50;
 let horseGroups = []; // [{ key, name, stats, races }]
 
@@ -465,7 +466,7 @@ function renderHorseTables(items) {
   renderHorseTable("horse-rate-table", byRate.slice(0, HORSE_TOP_N), true);
   renderHorseTable("horse-count-table", byCount.slice(0, HORSE_TOP_N), true);
   const note = document.getElementById("horse-rate-note");
-  if (note) note.textContent = `購入回数が${HORSE_RATE_MIN_RACES}回以上の馬だけ(1回の大当たりだけの馬が並ばないように)。`;
+  if (note) note.textContent = "購入1回だけの馬も含みます(購入回数の列で確かめてください)。回収率が同じなら購入額の多い順。";
   renderHorseSearch();
 }
 
