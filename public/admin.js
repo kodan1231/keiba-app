@@ -1412,9 +1412,13 @@ function renderPaceWeightsList() {
     const id = Number(g.graded_race_id);
     return `
       <details class="pace-w-item" data-id="${id}" ${paceWeightsOpen.has(id) ? "open" : ""}>
-        <summary>
-          <span class="pace-w-item-name">${escapeHtml(g.schedule_md || "—")} ${escapeHtml(g.name)} <small>${escapeHtml(g.is_jump ? "J・" + g.grade : g.grade)}</small></span>
-          <span class="pace-w-item-sub">${escapeHtml(sourceText(w))}${paces ? `(ペース別: ${escapeHtml(paces)})` : ""}${paceUpdatedDateHtml(w)}</span>
+        <summary class="pace-w-summary-row">
+          <span class="pace-w-summary-text">
+            <span class="pace-w-item-name">${escapeHtml(g.schedule_md || "—")} ${escapeHtml(g.name)} <small>${escapeHtml(g.is_jump ? "J・" + g.grade : g.grade)}</small></span>
+            <span class="pace-w-item-sub">${escapeHtml(sourceText(w))}${paces ? `(ペース別: ${escapeHtml(paces)})` : ""}${paceUpdatedDateHtml(w)}</span>
+          </span>
+          <!-- 開かずに計算し直せるよう、閉じた行にもボタンを置く(2026-10-16 ユーザー要望。コースの一覧と同じ) -->
+          <button type="button" class="ghost-btn pace-w-row-auto pace-w-summary-btn" title="この重賞の過去10年から比率を計算して保存します">今すぐ計算</button>
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
@@ -1435,7 +1439,12 @@ function renderPaceWeightsList() {
   }));
   setupPaceWeightsLines(list);
   const itemOf = (btn) => btn.closest(".pace-w-item");
-  list.querySelectorAll(".pace-w-row-auto").forEach((btn) => btn.addEventListener("click", () => paceComputeAdmin("graded", itemOf(btn).dataset.id, btn)));
+  // 閉じた行(summary)のボタンも同じ処理。押しても行は開閉しない(summary の既定の動きを止める)
+  list.querySelectorAll(".pace-w-row-auto").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    paceComputeAdmin("graded", itemOf(btn).dataset.id, btn);
+  }));
   list.querySelectorAll(".pace-w-row-clear").forEach((btn) => btn.addEventListener("click", () => {
     if (!confirm("この重賞の比率を消しますか?(コース・標準の比率を使うようになります。次に出馬表を取り込んだ夜に計算し直します)")) return;
     paceWeightsRequest(`/api/admin/pace-weights?graded_race_id=${encodeURIComponent(itemOf(btn).dataset.id)}`, { method: "DELETE" }, "消しました");
