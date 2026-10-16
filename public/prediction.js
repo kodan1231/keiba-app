@@ -1278,7 +1278,8 @@ function paceRecommendSectionHtml(entries) {
 //    補正値で「今回の競馬場・良馬場」に換算したタイム(horse-best の corrected)の速い順。補正値の元はデータ検索「競馬場傾向」。
 function paceCorrectedSectionHtml(entries) {
   const course = formatCourseText(selectedRace.course_type, selectedRace.distance);
-  const heading = `<h3 class="pace-heading">補正タイム順位(全場・${escapeHtml(course || "同距離")})</h3>`;
+  // 2026-10-16: 全場の同じ距離に加えて、同じ競馬場の ±200m の走も距離を換算して使う
+  const heading = `<h3 class="pace-heading">補正タイム順位(全場の${escapeHtml(course || "同距離")}+${escapeHtml(selectedRace.track || "同場")}の±200m)</h3>`;
   const st = horseBest && horseBest.raceId === selectedRace.id ? horseBest : null;
   if (!st || st.status === "loading") return `${heading}<p class="pace-none">読み込み中…</p>`;
   if (st.status === "error" || !st.data) return `${heading}<p class="pace-none">取得に失敗しました</p>`;
@@ -1307,7 +1308,7 @@ function paceCorrectedSectionHtml(entries) {
           // 何走の平均か(2026-10-16。直近1年の走〈無ければ全期間〉の、最速と最遅を除いた平均)。右の列は使った中の最速の走
           x.c.runs_used > 1 ? `<br><small class="pace-none" title="${escapeAttr(`${x.c.recent_only ? "直近1年" : "全期間"}の${x.c.runs_total}走${x.c.runs_total > 2 ? "から最速と最遅を除いた" : "の"}平均。最速は ${secText(x.c.fastest_seconds)}`)}">${x.c.runs_used}走平均</small>` : ""}</td>
         <td>${i === 0 ? "—" : `+${(x.c.corrected_seconds - top).toFixed(1)}`}</td>
-        <td>${escapeHtml(x.c.time_text)}</td>
+        <td>${escapeHtml(x.c.time_text)}${x.c.run_distance ? `<br><small class="pace-none" title="同じ競馬場の${x.c.run_distance}mの走を、この競馬場の中の距離の比で換算(補正の列は馬場と距離の換算の合計)">${x.c.run_distance}m換算</small>` : ""}</td>
         <td>${escapeHtml(x.c.track || "—")}</td>
         <td>${escapeHtml(x.c.track_condition || "—")}</td>
         <td>${adjText(x.c.adj)}</td>

@@ -17,6 +17,8 @@ import {
   getPaceScoreSettings,
   weightAdjOf,
   pickTimeRuns,
+  condOffOf,
+  sameTrackDistanceRatio,
   addMonthsIso,
   TIME_RECENT_MONTHS,
 } from "../../_shared.js";
@@ -93,22 +95,25 @@ export async function onRequestGet(context) {
   const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
 
   const searchKeys = [...searchKeyToKey.keys()];
-  // 出走馬の馬名+逆引きエイリアス。特別登録では頭数に上限が無いため90件ずつ(+3)
+  // 出走馬の馬名+逆引きエイリアス。特別登録では頭数に上限が無いため90件ずつ(+6)
+  // 2026-10-16: 同じ距離(全場)に加えて、今回と同じ競馬場の ±200m の走も読む(補正タイム順位で距離を換算して一緒に使う)。
+  // 読む行は変わらない(どちらも horse_key のインデックスで出走馬の走を引いてから、レースの列で絞る)
   const results = [];
+  const d = Number(race.distance);
   for (let i = 0; i < searchKeys.length; i += 90) {
     const keysChunk = searchKeys.slice(i, i + 90);
     const placeholders = keysChunk.map(() => "?").join(",");
     const { results: chunkRows } = await env.DB.prepare(
       `SELECT rr.horse_key, rr.time_text, rr.final_furlong_time, rr.finish_position, rr.weight_carried, rr.jockey,
-              r.race_date, r.track, r.race_name, r.track_condition
+              r.race_date, r.track, r.race_name, r.track_condition, r.distance
          FROM race_results rr
          JOIN races r ON r.id = rr.race_id
         WHERE rr.horse_key IN (${placeholders})
           AND rr.status = 'finished'
           AND r.course_type = ?
-          AND r.distance = ?
+          AND (r.distance = ? OR (r.track = ? AND r.distance BETWEEN ? AND ?))
           AND r.race_date < ?`
-    ).bind(...keysChunk, race.course_type, race.distance, race.race_date).all();
+    ).bind(...keysChunk, race.course_type, d, race.track || "", d - 200, d + 200, race.race_date).all();
     results.push(...(chunkRows || []));
   }
 
@@ -120,7 +125,19 @@ export async function onRequestGet(context) {
   // 補正値は勝ちタイムの小さいキャッシュ(race_time_cache。約20行。同じ実行環境で60秒使い回す)から全クラスの勝ちタイムで出す。
   // 2026-10-13: 当初は集計用の小さいキャッシュ race_lineup_cache を読んでいたが、読み込みのCPU時間が約9ミリ秒と
   // 無料枠の上限(10ミリ秒)に近かったため、必要な列だけの別キャッシュにした。
-  const offsets = trackTimeOffsets(buildTrackTrends(await getRaceTimes(env.DB), { courseType: race.course_type, distance: race.distance }));
+  const raceTimes = await getRaceTimes(env.DB);
+  const targetTrends = buildTrackTrends(raceTimes, { courseType: race.course_type, distance: race.distance });
+  const offsets = trackTimeOffsets(targetTrends);
+  // 同じ競馬場の ±200m の走の距離の換算(2026-10-16): その競馬場の中の距離の比(_lib/track-trends.js の sameTrackDistanceRatio)。
+  // 比が出せなければ距離の比。馬場の補正はその走の距離の補正値。距離ごとに1回だけ作る
+  const byDistance = new Map();
+  const distInfo = (dist) => {
+    if (!byDistance.has(dist)) {
+      const tr = buildTrackTrends(raceTimes, { courseType: race.course_type, distance: dist });
+      byDistance.set(dist, { trends: tr, offsets: trackTimeOffsets(tr) });
+    }
+    return byDistance.get(dist);
+  };
   // 斤量の補正(2026-10-15。_lib/race-factors.js の weightAdjOf): (今回の斤量 − その走の斤量)× 1kgあたりの秒数(設定。既定0.1)。
   // 今回の斤量は出走馬表の weight_carried。どちらかが無ければ補正しない
   const { weight_sec_per_kg: secPerKg } = await getPaceScoreSettings(env.DB);
@@ -170,18 +187,36 @@ export async function onRequestGet(context) {
       track_condition: row.track_condition || null,
       finish_position: row.finish_position ?? null,
     };
-    consider(horses[name].all, row, base);
-    if (race.track && row.track === race.track) consider(horses[name].track, row, base);
+    const runDist = Number(row.distance);
+    const sameDistance = runDist === d;
+    // 持ちタイム(馬柱の列)は同じ距離の走だけ(2026-10-16 に同じ競馬場の ±200m の走も読むようにしたため)
+    if (sameDistance) {
+      consider(horses[name].all, row, base);
+      if (race.track && row.track === race.track) consider(horses[name].track, row, base);
+    }
 
     const sec = timeTextToSeconds(row.time_text);
     if (sec != null && race.track) {
-      const c = correctRunTime(sec, { runTrack: row.track, runCondition: normalizeTrackConditionText(row.track_condition), targetTrack: race.track }, offsets);
+      const cond = normalizeTrackConditionText(row.track_condition);
+      let c;
+      if (sameDistance) {
+        c = correctRunTime(sec, { runTrack: row.track, runCondition: cond, targetTrack: race.track }, offsets);
+      } else {
+        // 同じ競馬場の ±200m: 馬場はその距離の補正値で良に直し、その競馬場の中の距離の比で今回の距離にする
+        const src = distInfo(runDist);
+        const condOff = condOffOf(src.offsets, row.track, cond);
+        const ratio = sameTrackDistanceRatio(src.trends, targetTrends, race.track) ?? d / runDist;
+        const seconds = Math.round((sec - (condOff ?? 0)) * ratio * 100) / 100;
+        c = { seconds, adj: Math.round((seconds - sec) * 100) / 100, partial: cond != null && condOff == null };
+      }
       const kgAdj = weightAdjOf(todayKgByName.get(name), row.weight_carried, secPerKg);
       const corrected = Math.round((c.seconds + kgAdj) * 100) / 100;
-      // 候補として持っておき、最後に選ぶ(2026-10-16。下の pickTimeRuns)。同じ距離の走だけなので段は1
+      // 候補として持っておき、最後に選ぶ(2026-10-16。下の pickTimeRuns)。同じ距離(全場)と同じ競馬場の ±200m は同じ扱いで段は1
+      // run_distance: 距離を換算した走ならその距離(画面で「1500m換算」と出す)
       (candsByName.get(name) || candsByName.set(name, []).get(name)).push({
         tier: 1, c: corrected, date: String(row.race_date), kgAdj,
-        info: { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial, kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null },
+        info: { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial, kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null,
+          run_distance: sameDistance ? null : runDist },
       });
     }
   }

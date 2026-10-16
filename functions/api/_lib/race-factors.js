@@ -45,7 +45,7 @@
 // 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
 //   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
 import { runningStyleOf, firstCornerPosition, timeTextToSeconds } from "./graded-race-search.js";
-import { buildTrackTrends, trackTimeOffsets, condOffOf, TREND_MIN_RACES } from "./track-trends.js";
+import { buildTrackTrends, trackTimeOffsets, condOffOf, sameTrackDistanceRatio, TREND_MIN_RACES } from "./track-trends.js";
 import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 
@@ -349,7 +349,7 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
       const trends = buildTrackTrends(timesByCourse.get(k) || [], { courseType: ct, distance: d });
       const ov = trends.overall;
       const avg = ov["良"].n >= TREND_MIN_RACES ? ov["良"].avg : ov.all.n >= TREND_MIN_RACES ? ov.all.avg : null;
-      v = { offsets: trackTimeOffsets(trends), avg };
+      v = { offsets: trackTimeOffsets(trends), avg, trends };
       courseInfo.set(k, v);
     }
     return v;
@@ -375,6 +375,8 @@ const SCOPE_LABEL = { course: "同コース", track: "同場", all: "全場" };
 function tierOf(run, race) {
   if (run.course_type === race.course_type) {
     const diff = Math.abs(Number(run.distance) - Number(race.distance));
+    // 2026-10-16: 今回と同じ競馬場の ±200m の走も1段目(同じ距離と同じ扱い。ユーザー要望・仕様確認済み)
+    if (diff > 0 && diff <= NEAR_DISTANCE && run.track === race.track) return 1;
     return diff === 0 ? 1 : diff <= NEAR_DISTANCE ? 2 : 3;
   }
   const flat = (ct) => ct === "芝" || ct === "ダート";
@@ -385,6 +387,12 @@ function tierOf(run, race) {
 function convertTime(ctx, sec, run, race) {
   const src = ctx.courseOf(run.course_type, run.distance);
   const off = (m, k) => (k != null && m.get(k) != null ? m.get(k) : 0);
+  // 同じ競馬場・同じ芝ダで距離だけ違う走(2026-10-16): その競馬場の中の距離の比で換算する(全場の比は競馬場の混ざり方で偏るため)。
+  // 競馬場の補正は要らない(同じ競馬場)。比が出せなければ下の全場の比
+  if (run.track === race.track && run.course_type === race.course_type && Number(run.distance) !== Number(race.distance)) {
+    const ratio = sameTrackDistanceRatio(src.trends, ctx.courseOf(race.course_type, race.distance).trends, race.track);
+    if (ratio) return (sec - (condOffOf(src.offsets, run.track, normalizeTrackConditionText(run.track_condition)) ?? 0)) * ratio;
+  }
   // 馬場の補正は走った競馬場ごと(レースが十分あれば)→ 競馬場の差を除いた全場の値(2026-10-16。_lib/track-trends.js の condOffOf)
   let base = sec - off(src.offsets.trackOff, run.track) - (condOffOf(src.offsets, run.track, normalizeTrackConditionText(run.track_condition)) ?? 0);
   const tgt = ctx.courseOf(race.course_type, race.distance);
@@ -469,10 +477,15 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const paceType = predictPace(styles, n);
   const kgText = (x) => (x.timeKgAdj ? ` 斤量${x.timeKgAdj > 0 ? "+" : "−"}${Math.abs(x.timeKgAdj).toFixed(1)}` : "");
   // 何走の平均か(2026-10-16): 「3走平均〈5走中・最速最遅を除く〉」。1走ならその走の芝ダ・距離
-  const usedText = (x) => (x.timeUsed > 1 ? `${x.timeUsed}走平均${x.timeTotal > x.timeUsed ? `〈${x.timeTotal}走中・最速最遅を除く〉` : ""}` : `${x.timeRun.course_type}${x.timeRun.distance}m`);
+  //   1走だけで距離が違えば、その走の芝ダ・距離と「同場換算」(同じ競馬場の ±200m。2026-10-16)か段の名前
+  const usedText = (x) => {
+    if (x.timeTotal > 1) return `${x.timeUsed > 1 ? `${x.timeUsed}走平均` : "中央の1走"}${x.timeTotal > x.timeUsed ? `〈${x.timeTotal}走中・最速最遅を除く〉` : ""}`;
+    return Number(x.timeRun.distance) !== Number(race.distance) || x.timeRun.course_type !== race.course_type ? `${x.timeRun.course_type}${x.timeRun.distance}m` : "";
+  };
+  const tierText = (x) => TIER_LABEL[x.timeTier] || (x.timeTotal === 1 && Number(x.timeRun.distance) !== Number(race.distance) ? "同場換算" : "");
   const timeText = (x) => {
-    const parts = [usedText(x), TIER_LABEL[x.timeTier]].filter(Boolean);
-    return `補${fmtSec(x.time)}${x.timeUsed > 1 || TIER_LABEL[x.timeTier] ? `(${parts.join("・")})` : ""}${kgText(x)}`;
+    const parts = [usedText(x), tierText(x)].filter(Boolean);
+    return `補${fmtSec(x.time)}${parts.length ? `(${parts.join("・")})` : ""}${kgText(x)}`;
   };
   const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
 

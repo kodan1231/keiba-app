@@ -121,6 +121,21 @@ export function trackTimeOffsets(trends) {
   return { trackOff, condOff, condOffByTrack };
 }
 
+// 同じ競馬場の中での距離の比(2026-10-16): その競馬場の「換算先の距離の平均 ÷ 走った距離の平均」(良が TREND_MIN_RACES 以上ならその平均、
+// 無ければ馬場を問わない平均)。trendsFrom / trendsTo は buildTrackTrends の結果(同じ芝ダの、走った距離 / 換算先の距離)。出せなければ null。
+// 全場の平均どうしの比は、距離ごとに競馬場の混ざり方が違う(例: ダ1400 は中央中心、ダ1500 は地方中心)と偏るため、同じ競馬場の中で比べる
+export function sameTrackDistanceRatio(trendsFrom, trendsTo, track) {
+  const avgOf = (tr) => {
+    const t = (tr?.tracks || []).find((x) => x.track === track);
+    if (!t) return null;
+    if (t["良"] && t["良"].n >= TREND_MIN_RACES && t["良"].avg != null) return t["良"].avg;
+    if (t.all && t.all.n >= TREND_MIN_RACES && t.all.avg != null) return t.all.avg;
+    return null;
+  };
+  const a = avgOf(trendsFrom), b = avgOf(trendsTo);
+  return a && b ? b / a : null;
+}
+
 // 走った競馬場・馬場の補正値: その競馬場の値(レースが十分あるとき)→ 無ければ競馬場の差を除いた全場の値。出せなければ null
 export function condOffOf(offsets, track, condition) {
   if (!condition) return null;
