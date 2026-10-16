@@ -18,6 +18,8 @@ import {
   prevYearGradedRaceId,
   loadGradedRaceMapCached,
   gradedRaceOf,
+  memoizedKeyed,
+  textFingerprint,
 } from "../_shared.js";
 
 // 予想登録画面「展開・時計」タブの総合推奨馬・推奨馬(2026-10-13追加)。
@@ -50,6 +52,15 @@ export async function onRequestGet(context) {
     return Response.json({ pace_type: null, counts: null, horses: [] });
   }
 
+  // 同じ実行環境で60秒、同じレース・同じ出走馬表の結果を使い回す(2026-10-16。D1 の負荷軽減)。週末は同じレースを
+  // 何人も(ゲストを含む)開き、1回あたり数百行の戦績を読んでいた。出走馬表やコースが変われば名前が変わるので、
+  // 出馬表の取り込み直しはすぐ反映される。他のレースの結果の取り込み・比率の変更は最大60秒遅れる
+  const memoName = `race_factors:${raceId}:${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}:${textFingerprint(race.entries)}`;
+  const body = await memoizedKeyed(memoName, () => computeResponse(db, race, entries), 60 * 1000);
+  return Response.json(body);
+}
+
+async function computeResponse(db, race, entries) {
   const [horseAliasMap, jockeyAliasMap, lineups, raceTimes, scoreSettings, gradedMap, distanceRatios] = await Promise.all([
     loadHorseAliasMapCached(db),
     loadJockeyAliasMapCached(db),
@@ -108,5 +119,5 @@ export async function onRequestGet(context) {
     const ta = rf.totalAdjust.get(key) || { value: 0, note: "" };
     return { horse_name: e.horse_name, horse_number: e.horse_number ?? null, waku_number: e.waku_number ?? null, jockey: e.jockey || null, factors, total_adjust: ta };
   });
-  return Response.json({ pace_type: rf.pace_type, counts: rf.counts, horses });
+  return { pace_type: rf.pace_type, counts: rf.counts, horses };
 }

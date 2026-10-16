@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -66,8 +66,10 @@ export async function onRequestPut(context) {
   const { data, error } = await readJsonBody(request);
   if (error) return error;
 
-  const fields = [];
-  const values = [];
+  const { id: raceId, error: idError } = parsePositiveIntId(params.id);
+  if (idError) return idError;
+
+  const pairs = []; // [列, 値]
 
   for (const key of [
     "race_date", "track", "race_number", "race_name", "course_type", "distance",
@@ -75,15 +77,9 @@ export async function onRequestPut(context) {
     // PDFインポート以外の経路(将来のUI等)からも更新できるよう受け付けておく。
     "weight_type", "class_flags", "course_direction", "weather", "track_condition",
   ]) {
-    if (key in data) {
-      fields.push(`${key} = ?`);
-      values.push(data[key]);
-    }
+    if (key in data) pairs.push([key, data[key]]);
   }
-  if ("race_name" in data) {
-    fields.push("race_base_name = ?");
-    values.push(raceBaseNameOf(data.race_name));
-  }
+  if ("race_name" in data) pairs.push(["race_base_name", raceBaseNameOf(data.race_name)]);
   if ("entries" in data) {
     if (!Array.isArray(data.entries)) {
       return jsonError("entriesの形式が不正です", 400);
@@ -97,26 +93,27 @@ export async function onRequestPut(context) {
       horseAliasMap,
       applyJockeyAliasesToEntries(aliasMap, data.entries)
     );
-    fields.push("entries = ?");
-    values.push(JSON.stringify(normalizedEntries));
+    pairs.push(["entries", JSON.stringify(normalizedEntries)]);
   }
-  if ("finish_order" in data) {
-    fields.push("finish_order = ?");
-    values.push(data.finish_order ? JSON.stringify(data.finish_order) : null);
-  }
-  if ("payouts" in data) {
-    fields.push("payouts = ?");
-    values.push(data.payouts ? JSON.stringify(data.payouts) : null);
-  }
+  if ("finish_order" in data) pairs.push(["finish_order", data.finish_order ? JSON.stringify(data.finish_order) : null]);
+  if ("payouts" in data) pairs.push(["payouts", data.payouts ? JSON.stringify(data.payouts) : null]);
 
-  if (fields.length === 0) {
+  if (pairs.length === 0) {
     return jsonError("更新する項目がありません", 400);
   }
 
-  values.push(params.id);
-  await env.DB.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  // 値が変わった列だけ書く(2026-10-16。D1 の負荷軽減)。races には「UPDATE されたら」キャッシュの範囲を消すトリガーと
+  // 購入履歴の版数を上げるトリガーがあり、値が同じでも SET に列があれば動く。編集画面で何も変えずに保存しただけでも
+  // キャッシュの作り直し(1回で数千行の読み取り)と全員の購入履歴の取り直しが起きていた。読むのは主キーで1行。
+  // 列名は上の決まった一覧からだけ作る(利用者の入力を列名にしない)
+  const existing = await env.DB.prepare(`SELECT ${pairs.map(([c]) => c).join(", ")} FROM races WHERE id = ?`).bind(raceId).first();
+  if (!existing) return jsonError("レースが見つかりません", 404);
+  const changed = changedPairs(existing, pairs);
+  if (changed.length) {
+    await env.DB.prepare(`UPDATE races SET ${changed.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`)
+      .bind(...changed.map(([, v]) => v), raceId)
+      .run();
+  }
 
   // 出走馬表(馬名・騎手)が更新された場合、同じレースを参照しているCSV取込データ・
   // 購入履歴のうち、馬番だけで馬名・騎手が空になっているものへ反映(バックフィル)する。

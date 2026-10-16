@@ -310,13 +310,25 @@ function resetUmabashiraPreview() {
   }
 }
 
+// 騎手名エイリアスの対応表(突き合わせキー → 正しい騎手名)。2026-10-16: 一覧(並べ替えつき)ではなく軽い対応表(?map=1)を取り、
+// 同じ画面の中では2分使い回す(ブックマークレットで何レースも続けて取り込むたびに取りに行っていた)。
+// エイリアスを登録したら invalidateJockeyAliasMapForPaste() で捨てる
+// 登録の直後は、サーバーの使い回し(別の実行環境では最大2分古い)を避けて一覧(毎回読む)から作る
+let jockeyAliasMapForPaste = null; // { at, map }
+let jockeyAliasMapNeedsFresh = false;
+function invalidateJockeyAliasMapForPaste() { jockeyAliasMapForPaste = null; jockeyAliasMapNeedsFresh = true; }
 async function loadJockeyAliasMapForPaste() {
+  if (jockeyAliasMapForPaste && Date.now() - jockeyAliasMapForPaste.at < 2 * 60 * 1000) return jockeyAliasMapForPaste.map;
   const map = new Map();
   try {
-    const res = await authedFetch("/api/admin/jockey-aliases");
+    const fresh = jockeyAliasMapNeedsFresh;
+    const res = await authedFetch(fresh ? "/api/admin/jockey-aliases" : "/api/admin/jockey-aliases?map=1");
     if (res.ok) {
       const data = await res.json();
-      for (const a of data.items || []) map.set(a.alias_key, a.canonical_name);
+      if (fresh) for (const a of data.items || []) map.set(a.alias_key, a.canonical_name);
+      else for (const [k, v] of Object.entries(data.map || {})) map.set(k, v);
+      jockeyAliasMapForPaste = { at: Date.now(), map };
+      jockeyAliasMapNeedsFresh = false;
     }
   } catch { /* 取得できなくても略称のまま進める */ }
   return map;
@@ -490,6 +502,7 @@ async function registerUniqueAliases(containerEl) {
     });
     if (res.ok) done++;
   }
+  if (done) invalidateJockeyAliasMapForPaste();
   if (done < forms.length) alert(`${forms.length - done}件の登録に失敗しました(既に登録済み等)。`);
   return done;
 }
@@ -507,6 +520,7 @@ async function registerUmabashiraAlias(formEl) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { alert(data.error || "エイリアスの登録に失敗しました"); return; }
+  if (kind === "jockey") invalidateJockeyAliasMapForPaste();
   // 登録した変換を反映して照合し直す(他の馬の同じ略称にも効く)
   await startUmabashiraPreview(umabashiraParsed);
 }

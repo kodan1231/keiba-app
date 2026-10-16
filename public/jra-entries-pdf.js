@@ -546,7 +546,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
   jraEntriesImportFile.disabled = true;
   jraEntriesImportMessage.hidden = false;
 
-  let created = 0, updated = 0;
+  let created = 0, updated = 0, unchanged = 0; // unchanged: 内容が同じで書き換えなかったレース(2026-10-16〜)
   const allConflicts = [];
   const allScratched = [];
   const allRemoved = [];
@@ -564,6 +564,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
       if (!res.ok) throw new Error(data.error || "登録に失敗しました");
       created += (data.results || []).filter((x) => x.status === "created").length;
       updated += (data.results || []).filter((x) => x.status === "updated").length;
+      unchanged += (data.results || []).filter((x) => x.status === "unchanged").length;
       for (const x of data.results || []) {
         for (const c of x.conflicts || []) allConflicts.push({ key: x.key, ...c });
         for (const sc of x.scratched || []) allScratched.push({ key: x.key, ...sc });
@@ -575,7 +576,7 @@ jraEntriesImportSubmit?.addEventListener("click", async () => {
     }
   }
 
-  let message = `出走馬一覧を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース`;
+  let message = `出走馬一覧を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース${unchanged ? `\n変更なし：${unchanged}レース` : ""}`;
   if (allConflicts.length) {
     const lines = allConflicts.map((c) =>
       `  ${c.key} / ${c.horse_name}: 既存${c.field === "waku_number" ? "枠番" : "馬番"}=${c.existing} → 取込値=${c.incoming}(競合のため更新していません)`

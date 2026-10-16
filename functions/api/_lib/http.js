@@ -67,3 +67,12 @@ export async function runBatchInChunks(db, statements, chunkSize = 200) {
     await db.batch(statements.slice(i, i + chunkSize));
   }
 }
+
+// 更新する列のうち、今の行と値が違うものだけを返す(2026-10-16)。pairs: [[列名, 新しい値], ...]、existing: 今の行(SELECT した行)。
+// races 等には「どの列が UPDATE されても」キャッシュの範囲を消すトリガーがあり、SQLite のトリガーは値が同じでも SET に列があれば動く。
+// 同じ内容の取り込み直しのたびにキャッシュが消えて作り直し(数千〜数万行の読み取り)になっていたため、変わった列だけ更新する。
+// 比べ方: null と undefined は同じ、それ以外は文字列にして比べる(JSON の列は同じ組み立てなら同じ文字列になる)
+export function changedPairs(existing, pairs) {
+  const same = (a, b) => (a === null || a === undefined ? b === null || b === undefined : b !== null && b !== undefined && String(a) === String(b));
+  return pairs.filter(([col, val]) => !same(existing ? existing[col] : undefined, val));
+}

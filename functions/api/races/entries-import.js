@@ -11,6 +11,8 @@ import {
   raceBaseNameOf,
   applyImportedTrainerNames,
   enqueuePaceRecompute,
+  changedPairs,
+  runBatchInChunks,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -183,48 +185,30 @@ export async function onRequestPost(context) {
   }
 
   // 3) 既存レースをまとめてUPDATEする。
+  // 2026-10-16: 今の行と値が違う列だけを更新し、何も変わらないレースは更新しない(_lib/http.js の changedPairs)。
+  // 同じ出走馬一覧の取り込み直しでも races の更新が起きると、レース一覧・集計用・馬名ごとのレース数のキャッシュの範囲が消えて
+  // 作り直し(数千〜数万行の読み取り)になっていたため
   if (toUpdate.length) {
-    const stmts = toUpdate.map((it) => {
-      const fields = ["entries = ?"];
-      const values = [JSON.stringify(it.mergedEntries)];
-      if (!it.existing.race_name && it.race_name) {
-        fields.push("race_name = ?");
-        values.push(it.race_name);
-        fields.push("race_base_name = ?");
-        values.push(it.race_base_name);
-      }
-      if (!it.existing.course_type && it.course_type) {
-        fields.push("course_type = ?");
-        values.push(it.course_type);
-      }
-      if (!it.existing.distance && it.distance) {
-        fields.push("distance = ?");
-        values.push(it.distance);
-      }
-      if (!it.existing.weight_type && it.weight_type) {
-        fields.push("weight_type = ?");
-        values.push(it.weight_type);
-      }
-      if (!it.existing.class_flags && it.class_flags) {
-        fields.push("class_flags = ?");
-        values.push(it.class_flags);
-      }
-      if (!it.existing.course_direction && it.course_direction) {
-        fields.push("course_direction = ?");
-        values.push(it.course_direction);
-      }
+    const stmts = [];
+    for (const it of toUpdate) {
+      const pairs = [["entries", JSON.stringify(it.mergedEntries)]];
+      if (!it.existing.race_name && it.race_name) pairs.push(["race_name", it.race_name], ["race_base_name", it.race_base_name]);
+      if (!it.existing.course_type && it.course_type) pairs.push(["course_type", it.course_type]);
+      if (!it.existing.distance && it.distance) pairs.push(["distance", it.distance]);
+      if (!it.existing.weight_type && it.weight_type) pairs.push(["weight_type", it.weight_type]);
+      if (!it.existing.class_flags && it.class_flags) pairs.push(["class_flags", it.class_flags]);
+      if (!it.existing.course_direction && it.course_direction) pairs.push(["course_direction", it.course_direction]);
       // 発走時刻は公式ページの値を正とする(繰り下げ等で変わることがあるため、違えば置き換える。2026-10-10)
-      if (it.post_time && it.existing.post_time !== it.post_time) {
-        fields.push("post_time = ?");
-        values.push(it.post_time);
-      }
-      values.push(it.existing.id);
-      return db.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values);
-    });
-    await db.batch(stmts);
+      if (it.post_time) pairs.push(["post_time", it.post_time]);
+      const changed = changedPairs(it.existing, pairs);
+      it.changed = changed.length > 0;
+      if (!changed.length) continue;
+      stmts.push(db.prepare(`UPDATE races SET ${changed.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`).bind(...changed.map(([, v]) => v), it.existing.id));
+    }
+    if (stmts.length) await runBatchInChunks(db, stmts);
     toUpdate.forEach((it) => {
       it.id = it.existing.id;
-      results.push({ status: "updated", id: it.existing.id, key: it.key, conflicts: it.conflicts, scratched: scratchedReport(it.scratched, it.mergedEntries), removed: it.removed || [] });
+      results.push({ status: it.changed ? "updated" : "unchanged", id: it.existing.id, key: it.key, conflicts: it.conflicts, scratched: scratchedReport(it.scratched, it.mergedEntries), removed: it.removed || [] });
     });
   }
 

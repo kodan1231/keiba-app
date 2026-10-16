@@ -1,4 +1,4 @@
-import { requireAdmin, jockeyAliasKeyOf, readJsonBody, jsonError, invalidateMemo, MEMO_JOCKEY_ALIASES } from "../../_shared.js";
+import { requireAdmin, jockeyAliasKeyOf, readJsonBody, jsonError, invalidateMemo, MEMO_JOCKEY_ALIASES, loadJockeyAliasMapCached } from "../../_shared.js";
 
 // 管理者向け: 騎手名エイリアス(表記ゆれ→正しい表記)の一覧取得・追加。
 // 詳細な設計方針はdocs/design/jockey-aliases.md「騎手名エイリアス管理(jockey_aliases)」参照。
@@ -7,6 +7,14 @@ export async function onRequestGet(context) {
   if (deny) return deny;
 
   const { env } = context;
+  // ?map=1(2026-10-16): 取り込みの画面(ブックマークレット・馬柱の貼り付け)用の対応表だけを返す { ok, map: { 突き合わせキー: 正しい騎手名 } }。
+  // 同じ実行環境で使い回している対応表(loadJockeyAliasMapCached。2分)を返すので、ほとんど D1 を読まない。
+  // 以前は取り込みのたびに下の一覧(並べ替えつき)を丸ごと読み、3日間で約56万行になっていた。
+  // 保存のときはサーバーが毎回読み直した対応表で正規化するので、画面の候補が最大2分古くても保存される値は正しい
+  if (new URL(context.request.url).searchParams.get("map") === "1") {
+    const m = await loadJockeyAliasMapCached(env.DB);
+    return Response.json({ ok: true, map: Object.fromEntries(m) });
+  }
   // 2026-08-17変更: 一覧の並び順を「登録日時の新しい順」から「表記ゆれ側(alias_display)の
   // 文字列昇順」に変更した。SQLiteの標準的なバイト順比較によるソートで、他画面
   // (stats.jsの名前列ソート等)と同じ方式に揃えている(濁点・拗音等を正規化した

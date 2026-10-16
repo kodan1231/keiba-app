@@ -23,6 +23,8 @@ import {
   addMonthsIso,
   TIME_RECENT_MONTHS,
   PAST_RUNS_FOR_NEW_COURSE,
+  memoizedKeyed,
+  textFingerprint,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -64,13 +66,20 @@ export async function onRequestGet(context) {
   ).bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
 
+  // 同じ実行環境で60秒、同じレース・同じ出走馬表の結果を使い回す(2026-10-16。D1 の負荷軽減。週末は同じレースを何人も開く)。
+  // 出走馬表・コースが変われば名前が変わる。他のレースの結果・馬柱(父母)の取り込みは最大60秒遅れて反映される
+  const memoName = `horse_best:${raceId}:${race.race_date}|${race.track}|${race.course_type}|${race.distance}:${textFingerprint(race.entries)}`;
+  return Response.json(await memoizedKeyed(memoName, () => buildBest(env, race), 60 * 1000));
+}
+
+async function buildBest(env, race) {
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
   const aliasMap = await loadHorseAliasMapCached(env.DB);
   const { canonByKey, searchKeyToKey } = buildHorseSearchKeys(aliasMap, entries.map((e) => e?.horse_name));
   const keyMap = new Map([...canonByKey].map(([k, canon]) => [k, normalizeName(canon)]));
-  if (!keyMap.size) return Response.json({ condition: null, horses: {}, pedigree: {} });
+  if (!keyMap.size) return ({ condition: null, horses: {}, pedigree: {} });
 
   // 父・母(馬柱の馬の列に出す。2026-10-03追加)。horses(馬情報マスタ)に保存済みの分だけを返し、
   // netkeiba への取得はしない(未登録は画面側で「不明」)。horses.horse_key は正しい馬名の
@@ -92,7 +101,7 @@ export async function onRequestGet(context) {
 
   // 今回のコース種別・距離が未登録なら「同条件」を決められないため持ちタイムは空で返す。
   if (!race.course_type || !race.distance || !race.race_date) {
-    return Response.json({ condition: null, horses: {}, pedigree });
+    return ({ condition: null, horses: {}, pedigree });
   }
   const condition = { track: race.track || null, course_type: race.course_type, distance: race.distance };
 
@@ -240,5 +249,5 @@ export async function onRequestGet(context) {
     };
   }
 
-  return Response.json({ condition, horses, pedigree });
+  return ({ condition, horses, pedigree });
 }

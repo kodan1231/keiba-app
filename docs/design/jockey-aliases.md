@@ -101,6 +101,11 @@ CREATE TABLE jockey_aliases (
 - API: `GET/POST /api/admin/jockey-aliases`・`DELETE /api/admin/jockey-aliases/:id`・
   `POST /api/admin/jockey-aliases/normalize-existing`。いずれも管理者限定
   (`requireAdmin()`)
+- **`GET /api/admin/jockey-aliases?map=1`(2026-10-16)**: 取り込みの画面(ブックマークレットの確認画面・馬柱の貼り付け)用。
+  対応表 `{ 突き合わせキー: 正しい騎手名 }` だけを、同じ実行環境で使い回している対応表(`loadJockeyAliasMapCached`。2分)から
+  返す。以前は取り込みのたびに一覧(並べ替えつき)を丸ごと読み、3日間で約56万行になっていた。画面側
+  (`races-entries-modal.js` の `loadJockeyAliasMapForPaste`)も2分使い回し、エイリアスを登録した直後だけは一覧
+  (毎回読む)から作り直す。保存のときはサーバーが毎回読み直した対応表で正規化するので、画面の候補が古くても保存される値は正しい
 
 ### 今回のスコープに含めないもの(BACKLOGへ引き継ぎ)
 

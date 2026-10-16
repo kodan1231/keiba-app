@@ -5,6 +5,8 @@ import {
   loadHorseAliasMapCached,
   applyHorseAliasMap,
   buildHorseSearchKeys,
+  memoizedKeyed,
+  textFingerprint,
 } from "../../_shared.js";
 
 // 予想登録画面(prediction.js)で、出走各馬の「過去成績(出走履歴)」を表示するための取得API。
@@ -66,6 +68,54 @@ export async function onRequestGet(context) {
   const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
 
+  // ?debug=1(切り分け用)は race_results の全件を数え、馬ごとに部分一致で全件を探す(1回で数十万〜百万行超の読み取り)ため、
+  // 管理者だけに限る(2026-10-16。以前はログインしていれば誰でも呼べた)
+  const debug = new URL(context.request.url).searchParams.get("debug") === "1" && context.data?.isAdmin === true;
+  if (!debug) {
+    // 同じ実行環境で60秒、同じレース・同じ出走馬表の結果を使い回す(2026-10-16。D1 の負荷軽減。週末は同じレースを何人も開く)。
+    // 出走馬表が変われば名前が変わる。他のレースの結果の取り込みは最大60秒遅れて反映される
+    const body = await memoizedKeyed(`horse_history:${raceId}:${textFingerprint(race.entries)}`, async () => (await buildHistory(env, raceId, race)).out, 60 * 1000);
+    return Response.json(body);
+  }
+  const { entries, keyMap, searchKeys, aliasMap, rows } = await buildHistory(env, raceId, race);
+
+  // ?debug=1: 過去成績が空になる原因の切り分け用。
+  {
+    const totalRR = await env.DB.prepare("SELECT COUNT(*) AS n FROM race_results").first();
+    // 出走各馬の先頭3文字で race_results.horse_name を部分一致検索し、実際の馬名・
+    // 出走レース・突き合わせ成否を返す(表記ゆれ or 未取込 の切り分け)。
+    const likeSamples = {};
+    for (const [key, displayName] of keyMap) {
+      const head = displayName.replace(/[　\s]+/g, "").slice(0, 3);
+      if (!head) continue;
+      const { results: hits } = await env.DB.prepare(
+        `SELECT rr.horse_name, rr.race_id, r.race_date, r.track, r.race_number
+           FROM race_results rr LEFT JOIN races r ON r.id = rr.race_id
+          WHERE rr.horse_name LIKE ? LIMIT 5`
+      ).bind(`%${head}%`).all();
+      likeSamples[displayName] = (hits || []).map((h) => ({
+        name: h.horse_name,
+        matchesKey: horseAliasKeyOf(applyHorseAliasMap(aliasMap, h.horse_name)) === key,
+        race: `${h.race_date || "?"} ${h.track || "?"}${h.race_number || "?"}R (race_id ${h.race_id})`,
+      }));
+    }
+    return Response.json({
+      _debug: {
+        raceId,
+        entryHorseNames: entries.map((e) => e?.horse_name ?? null),
+        matchKeys: [...keyMap.entries()].map(([k, v]) => ({ key: k, display: v })),
+        searchKeys,
+        aliasCount: aliasMap.size,
+        raceResultsTotalRows: totalRR?.n ?? 0,
+        rankedRowsFetched: rows.length,
+        looseLikeSamplesByHead3: likeSamples,
+      },
+    });
+  }
+}
+
+// 出走各馬の直近5走を引いて、画面に返す形(out)にする。?debug=1 の切り分け用に途中の値も返す
+async function buildHistory(env, raceId, race) {
   let entries = [];
   try { entries = JSON.parse(race.entries || "[]"); } catch {}
 
@@ -80,7 +130,7 @@ export async function onRequestGet(context) {
     entries.map((e) => e?.horse_name)
   );
   const keyMap = new Map([...canonByKey].map(([k, canon]) => [k, normalizeName(canon)]));
-  if (!keyMap.size) return Response.json({});
+  if (!keyMap.size) return { out: {}, entries, keyMap, searchKeys: [], aliasMap, rows: [] };
 
   const searchKeys = [...searchKeyToEntryKey.keys()];
   // 出走各馬について、直近5走(欠番なく)だけをSQL側で確定する。
@@ -182,40 +232,5 @@ export async function onRequestGet(context) {
     });
   }
 
-  // ?debug=1: 過去成績が空になる原因の切り分け用。
-  const url = new URL(context.request.url);
-  if (url.searchParams.get("debug") === "1") {
-    const totalRR = await env.DB.prepare("SELECT COUNT(*) AS n FROM race_results").first();
-    // 出走各馬の先頭3文字で race_results.horse_name を部分一致検索し、実際の馬名・
-    // 出走レース・突き合わせ成否を返す(表記ゆれ or 未取込 の切り分け)。
-    const likeSamples = {};
-    for (const [key, displayName] of keyMap) {
-      const head = displayName.replace(/[　\s]+/g, "").slice(0, 3);
-      if (!head) continue;
-      const { results: hits } = await env.DB.prepare(
-        `SELECT rr.horse_name, rr.race_id, r.race_date, r.track, r.race_number
-           FROM race_results rr LEFT JOIN races r ON r.id = rr.race_id
-          WHERE rr.horse_name LIKE ? LIMIT 5`
-      ).bind(`%${head}%`).all();
-      likeSamples[displayName] = (hits || []).map((h) => ({
-        name: h.horse_name,
-        matchesKey: horseAliasKeyOf(applyHorseAliasMap(aliasMap, h.horse_name)) === key,
-        race: `${h.race_date || "?"} ${h.track || "?"}${h.race_number || "?"}R (race_id ${h.race_id})`,
-      }));
-    }
-    return Response.json({
-      _debug: {
-        raceId,
-        entryHorseNames: entries.map((e) => e?.horse_name ?? null),
-        matchKeys: [...keyMap.entries()].map(([k, v]) => ({ key: k, display: v })),
-        searchKeys,
-        aliasCount: aliasMap.size,
-        raceResultsTotalRows: totalRR?.n ?? 0,
-        rankedRowsFetched: rows.length,
-        looseLikeSamplesByHead3: likeSamples,
-      },
-    });
-  }
-
-  return Response.json(out);
+  return { out, entries, keyMap, searchKeys, aliasMap, rows };
 }

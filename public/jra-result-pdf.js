@@ -1226,7 +1226,7 @@ jraImportSubmit?.addEventListener("click",async()=>{
   if(!confirm(`${targets.length}ファイル / のべ${totalRaces}レースの結果・払戻を登録します。未登録レースは新規作成されます。ファイル単位で順番に実行します。実行しますか？`))return;
   jraImportSubmit.disabled=true;jraResultParseBtn.disabled=true;jraImportFile.disabled=true;jraImportMessage.hidden=false;
 
-  let created=0,updated=0,skipped=0;
+  let created=0,updated=0,skipped=0,unchanged=0; // unchanged: 内容が同じで書き換えなかったレース(2026-10-16〜)
   const failures=[];
   for(let i=0;i<targets.length;i++){
     const f=targets[i];
@@ -1240,13 +1240,14 @@ jraImportSubmit?.addEventListener("click",async()=>{
       created+=(data.results||[]).filter(x=>x.status==="created").length;
       updated+=(data.results||[]).filter(x=>x.status==="updated").length;
       skipped+=(data.results||[]).filter(x=>x.status==="skipped").length;
+      unchanged+=(data.results||[]).filter(x=>x.status==="unchanged").length;
     }catch(e){
       console.error("[JRA PDF] registration failed",f.fileName,e);
       failures.push(`${f.fileName}: ${e.message||String(e)}`);
     }
   }
 
-  let msg=`JRAレース結果を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース${skipped?`\nスキップ：${skipped}レース`:""}`;
+  let msg=`JRAレース結果を登録しました。\n新規登録：${created}レース\n既存更新：${updated}レース${unchanged?`\n変更なし：${unchanged}レース`:""}${skipped?`\nスキップ：${skipped}レース`:""}`;
   if(failures.length)msg+=`\n\n⚠️ 登録に失敗したファイル ${failures.length}件:\n${failures.join("\n")}`;
   alert(msg);
   await loadRaces();

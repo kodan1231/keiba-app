@@ -12,6 +12,7 @@ import {
   readJsonBody,
   jsonError,
   raceBaseNameOf,
+  changedPairs,
   applyImportedTrainerNames,
 } from "../_shared.js";
 
@@ -178,43 +179,42 @@ export async function onRequestPost(context) {
       //   "skip-existing"… 既存レースには一切触れない(上で continue 済み)。
       const modeOverwrite = body.mode === "overwrite";
 
+      // 2026-10-16: 列と値の組を作り、今の行と値が違う列だけを更新する(_lib/http.js の changedPairs)。同じ内容の取り込み直しで
+      // races の更新が起きると、キャッシュ(レース一覧・集計用)の範囲が消えて作り直しになり、払戻の再計算も走っていたため
+      const pairs = [];
       const finishTouch = modeOverwrite ? !!it.finishOrder : !it.existingFinish;
-      if (finishTouch) {
-        fields.push("finish_order = ?");
-        values.push(it.finishOrder ? JSON.stringify(it.finishOrder) : null);
-        finishOrPayoutTouched = true;
-      }
+      if (finishTouch) pairs.push(["finish_order", it.finishOrder ? JSON.stringify(it.finishOrder) : null]);
       it.finalFinishOrder = finishTouch ? it.finishOrder : it.existingFinish;
 
       const payoutTouch = modeOverwrite
         ? Object.keys(it.payouts).length > 0
         : (!it.existingPayouts || Object.keys(it.existingPayouts || {}).length === 0);
-      if (payoutTouch) {
-        fields.push("payouts = ?");
-        values.push(Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null);
-        finishOrPayoutTouched = true;
-      }
+      if (payoutTouch) pairs.push(["payouts", Object.keys(it.payouts).length ? JSON.stringify(it.payouts) : null]);
       it.finalPayoutsObj = payoutTouch ? (Object.keys(it.payouts).length ? it.payouts : null) : it.existingPayouts;
 
-      fields.push("entries = ?");
-      values.push(JSON.stringify(it.mergedEntries));
+      pairs.push(["entries", JSON.stringify(it.mergedEntries)]);
       if (!it.existing.race_name && it.item.race_name) {
-        fields.push("race_name = ?"); values.push(it.item.race_name);
-        fields.push("race_base_name = ?"); values.push(raceBaseNameOf(it.item.race_name));
+        pairs.push(["race_name", it.item.race_name], ["race_base_name", raceBaseNameOf(it.item.race_name)]);
       }
-      if (!it.existing.course_type && it.item.course_type) { fields.push("course_type = ?"); values.push(it.item.course_type); }
-      if (!it.existing.distance && it.item.distance) { fields.push("distance = ?"); values.push(Number(it.item.distance)); }
-      if (!it.existing.weight_type && it.item.weight_type) { fields.push("weight_type = ?"); values.push(it.item.weight_type); }
-      if (!it.existing.class_flags && it.item.class_flags) { fields.push("class_flags = ?"); values.push(it.item.class_flags); }
-      if (!it.existing.course_direction && it.item.course_direction) { fields.push("course_direction = ?"); values.push(it.item.course_direction); }
-      if (it.item.weather) { fields.push("weather = ?"); values.push(it.item.weather); }
-      if (it.item.track_condition) { fields.push("track_condition = ?"); values.push(it.item.track_condition); }
-      if (it.item.post_time) { fields.push("post_time = ?"); values.push(it.item.post_time); }
+      if (!it.existing.course_type && it.item.course_type) pairs.push(["course_type", it.item.course_type]);
+      if (!it.existing.distance && it.item.distance) pairs.push(["distance", Number(it.item.distance)]);
+      if (!it.existing.weight_type && it.item.weight_type) pairs.push(["weight_type", it.item.weight_type]);
+      if (!it.existing.class_flags && it.item.class_flags) pairs.push(["class_flags", it.item.class_flags]);
+      if (!it.existing.course_direction && it.item.course_direction) pairs.push(["course_direction", it.item.course_direction]);
+      if (it.item.weather) pairs.push(["weather", it.item.weather]);
+      if (it.item.track_condition) pairs.push(["track_condition", it.item.track_condition]);
+      if (it.item.post_time) pairs.push(["post_time", it.item.post_time]);
+
+      const changed = changedPairs(it.existing, pairs);
+      for (const [col, val] of changed) { fields.push(`${col} = ?`); values.push(val); }
+      // 払戻の再計算は着順・払戻が実際に変わったときだけ
+      finishOrPayoutTouched = changed.some(([col]) => col === "finish_order" || col === "payouts");
 
       it.id = it.existing.id;
       it.finishOrPayoutTouched = finishOrPayoutTouched;
       it.fieldsCount = fields.length;
 
+      if (!fields.length) continue; // 何も変わっていなければ更新しない(トリガーも動かない)
       values.push(it.existing.id);
       stmts.push(db.prepare(`UPDATE races SET ${fields.join(", ")} WHERE id = ?`).bind(...values));
     }

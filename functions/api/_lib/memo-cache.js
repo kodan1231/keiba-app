@@ -26,6 +26,29 @@ export async function memoized(name, loader, ttlMs = MEMO_TTL_MS) {
   return value;
 }
 
+// レースごとの応答のように名前が増えていく使い回し(2026-10-16)。設定表の使い回し(上の memo)を押し出さないよう別に持ち、
+// 持つ数に上限を置いて古く入れたものから捨てる
+const keyedMemo = new Map(); // name -> { at, value }
+const KEYED_MEMO_MAX = 60;
+
+export async function memoizedKeyed(name, loader, ttlMs) {
+  const hit = keyedMemo.get(name);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+  const value = await loader();
+  keyedMemo.delete(name);
+  keyedMemo.set(name, { at: Date.now(), value });
+  while (keyedMemo.size > KEYED_MEMO_MAX) keyedMemo.delete(keyedMemo.keys().next().value);
+  return value;
+}
+
+// 文字列の短い指紋(使い回しの名前に、出走馬表などの中身を入れるため。暗号用ではない)
+export function textFingerprint(text) {
+  const s = String(text ?? "");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `${s.length}.${(h >>> 0).toString(36)}`;
+}
+
 export function invalidateMemo(...names) {
   for (const n of names) memo.delete(n);
 }

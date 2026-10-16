@@ -322,13 +322,13 @@ export async function onRequestPost(context){
       if(race){
         const newFinishOrder=mergeFinishOrder(race.finish_order,type,hitCombos);
         const newPayouts=mergePayouts(race.payouts,type,hitCombos,hitRateMap);
-        if(newFinishOrder||newPayouts){
+        const nextFinishOrder=newFinishOrder?JSON.stringify(newFinishOrder):race.finish_order;
+        const nextPayouts=newPayouts?JSON.stringify(newPayouts):race.payouts;
+        // 値が今と同じなら書かない(2026-10-16。races の UPDATE はキャッシュの範囲を消すトリガーと購入履歴の版数を動かすため。
+        // 同じCSVの取り込み直しや、同じレースの2行目以降で着順・払戻がもう入っているときに毎回書いていた)
+        if((newFinishOrder||newPayouts)&&(nextFinishOrder!==race.finish_order||nextPayouts!==race.payouts)){
           await db.prepare('UPDATE races SET finish_order=?, payouts=? WHERE id=?')
-            .bind(
-              newFinishOrder?JSON.stringify(newFinishOrder):race.finish_order,
-              newPayouts?JSON.stringify(newPayouts):race.payouts,
-              race.id
-            ).run();
+            .bind(nextFinishOrder,nextPayouts,race.id).run();
           // 同一レースの後続行を処理する際に最新状態を参照できるよう、キャッシュ上の race も更新しておく。
           if(newFinishOrder) race.finish_order=JSON.stringify(newFinishOrder);
           if(newPayouts) race.payouts=JSON.stringify(newPayouts);

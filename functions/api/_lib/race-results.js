@@ -18,6 +18,20 @@
 import { horseAliasKeyOf } from "./horse-alias.js";
 import { runBatchInChunks } from "./http.js";
 
+// 既にある行は、値が1つでも違うときだけ更新する(2026-10-16)。race_results には「この列が UPDATE されたら」キャッシュ
+// (集計用・勝ちタイム・馬名ごとのレース数)の範囲を消すトリガーがあり、SQLite では値が同じでも SET に列があれば動く。
+// 同じ結果の取り込み直しのたびにキャッシュが消えて作り直し(1回で数千〜数万行の読み取り)になり、書き込み行数も使っていた。
+// IS NOT は NULL どうしを同じとみなす。updated_at は比べない(変わっていなければ更新日時も変えない)
+const UPSERT_ONLY_IF_CHANGED = `WHERE race_results.waku_number IS NOT excluded.waku_number
+   OR race_results.horse_name IS NOT excluded.horse_name OR race_results.sex_age IS NOT excluded.sex_age
+   OR race_results.weight_carried IS NOT excluded.weight_carried OR race_results.jockey IS NOT excluded.jockey
+   OR race_results.status IS NOT excluded.status OR race_results.finish_position IS NOT excluded.finish_position
+   OR race_results.time_text IS NOT excluded.time_text OR race_results.margin IS NOT excluded.margin
+   OR race_results.corner_positions IS NOT excluded.corner_positions OR race_results.final_furlong_time IS NOT excluded.final_furlong_time
+   OR race_results.body_weight IS NOT excluded.body_weight OR race_results.body_weight_change IS NOT excluded.body_weight_change
+   OR race_results.win_popularity IS NOT excluded.win_popularity OR race_results.incident_note IS NOT excluded.incident_note
+   OR race_results.horse_key IS NOT excluded.horse_key`;
+
 export async function upsertRaceResults(db, raceId, records) {
   if (!db || !raceId || !Array.isArray(records) || records.length === 0) return { updated: 0 };
 
@@ -81,7 +95,8 @@ export async function upsertRaceResults(db, raceId, records) {
          win_popularity=excluded.win_popularity,
          incident_note=excluded.incident_note,
          horse_key=excluded.horse_key,
-         updated_at=excluded.updated_at`
+         updated_at=excluded.updated_at
+       ${UPSERT_ONLY_IF_CHANGED}`
     ).bind(
       raceId,
       horseNumber,
@@ -169,7 +184,8 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
                win_popularity=excluded.win_popularity,
                incident_note=excluded.incident_note,
                horse_key=excluded.horse_key,
-               updated_at=excluded.updated_at`
+               updated_at=excluded.updated_at
+             ${UPSERT_ONLY_IF_CHANGED}`
           )
           .bind(
             raceId,
