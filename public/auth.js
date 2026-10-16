@@ -143,7 +143,8 @@ function setupAuth(onReady) {
       renderPasswordResetBanner();
     } else {
       const data = await res.json().catch(() => ({}));
-      lastAuthError = data.error || null;
+      lastAuthError = data.d1_limit ? "d1_limit" : data.error || null;
+      if (data.d1_limit) showD1LimitNotice(data.error);
     }
     return res.ok;
   }
@@ -188,6 +189,11 @@ function setupAuth(onReady) {
         return;
       }
       showApp();
+    } else if (lastAuthError === "d1_limit") {
+      // D1 の1日の上限(2026-10-16): ログイン画面ではなく案内だけを出す(ログインしても使えないため)
+      loginScreen.innerHTML = `<div class="ticket"><h1 class="ticket-title">馬券帳</h1><p class="ticket-sub"></p></div>`;
+      loginScreen.querySelector(".ticket-sub").textContent = d1LimitText;
+      showLogin();
     } else if (lastAuthError === "admin_only") {
       await fetch("/api/auth/logout", { method: "POST" });
       showLogin();
@@ -254,7 +260,28 @@ async function authedFetch(url, options) {
   }
   // 重い機能の自動一時停止(2026-10-08。functions/api/_lib/service-guard.js)で止められた場合は、控えめなお知らせを出す
   if (res.status === 503 && res.headers.get("X-Service-Guard") === "1") showServiceGuardNotice();
+  // D1 の1日の上限(2026-10-16。functions/api/_lib/d1-limit.js)で断られた場合は、画面の上に案内を出し続ける
+  if (res.status === 503 && res.headers.get("X-D1-Limit") === "1") {
+    const data = await res.clone().json().catch(() => ({}));
+    showD1LimitNotice(data.error);
+  }
   return res;
+}
+
+// D1 の1日の上限を超えたときの案内(2026-10-16)。画面が空のままで何が起きているか分からない、という声への対応。
+// 画面の上に固定で出し、閉じるまで出し続ける(同じページで何度断られても1つだけ)。文はサーバーが作る(次に使える時刻入り)
+let d1LimitText = "ただいまデータベースの1日の利用上限に達したため、データを表示・保存できません。朝9時以降にもう一度アクセスしてください。";
+function showD1LimitNotice(text) {
+  if (text) d1LimitText = text;
+  if (document.getElementById("d1-limit-notice")) return;
+  const el = document.createElement("div");
+  el.id = "d1-limit-notice";
+  el.className = "d1-limit-notice";
+  el.setAttribute("role", "alert");
+  el.innerHTML = `<span class="d1-limit-notice-text"></span><button type="button" class="d1-limit-notice-close" aria-label="閉じる">×</button>`;
+  el.querySelector(".d1-limit-notice-text").textContent = d1LimitText;
+  el.querySelector("button").addEventListener("click", () => el.remove());
+  document.body.prepend(el);
 }
 
 // 画面下に数秒だけ出すお知らせ(同じページで何度止められても1つだけ)。不安を与えないよう短い文にする。

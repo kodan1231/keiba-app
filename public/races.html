@@ -88,16 +88,13 @@
         </label>
       </div>
 
+      <!-- テキストの貼り付けで出走馬を一括入力・netkeiba馬柱テキストの貼り付けは 2026-10-16 に削除(使っていないため)。
+           馬柱の確認画面は、ブックマークレットの「馬柱(5走)」の取り込みで使う(races-netkeiba-import.js が #paste-area を開く) -->
       <div class="paste-box">
         <div class="paste-box-actions">
-          <button type="button" id="toggle-paste-btn" class="ghost-btn">テキストから出走馬を一括入力</button>
           <button type="submit" class="stamp-btn">保存する</button>
         </div>
         <div id="paste-area" hidden>
-          <p class="picker-hint">netkeiba等からコピーした「馬番・馬名・騎手」のテキストを貼り付けてください(改行区切り、うまく読み取れない場合は下の欄で直接修正できます)。
-            netkeibaの馬柱ページ(5走表示)をコピーして貼り付けると、血統(父・母・母父)・調教師なども確認のうえ馬情報に取り込めます。</p>
-          <textarea id="entries-paste" rows="6" placeholder="例:&#10;1　サンプルホース　田中太郎&#10;2　サンプルホース2　鈴木次郎"></textarea>
-          <button type="button" id="apply-paste-btn" class="stamp-btn">読み込む</button>
           <!-- netkeiba馬柱テキストの確認画面(2026-10-06追加。docs/design/umabashira-paste.md) -->
           <div id="umabashira-preview" class="umabashira-preview" hidden></div>
         </div>
@@ -134,10 +131,8 @@
           <label>2着<select id="r-finish-2"></select></label>
           <label>3着<select id="r-finish-3"></select></label>
           <button type="button" id="race-scratched-open-btn" class="ghost-btn" style="align-self:flex-end">出走取消馬選択</button>
-          <button type="button" id="race-payout-import-open-btn" class="ghost-btn" style="align-self:flex-end">払戻一括取込</button>
         </div>
       </div>
-      <p id="payout-import-status" class="submit-message" hidden></p>
 
       <div id="race-tickets-section"></div>
 
@@ -157,19 +152,7 @@
   </div>
 </div>
 
-<!-- 払戻一括取込ダイアログ(払戻モーダル内の「払戻一括取込」ボタンから開く) -->
-<div id="race-payout-import-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h2>払戻の一括取込</h2>
-    <p class="picker-hint">楽天競馬・netkeibaの払戻表をコピーして貼り付けてください。着順(1〜3着)と各式別の払戻を設定します。「保存する」を押すまでは確定しません。</p>
-    <textarea id="race-payout-import-text" rows="12" style="width:100%" placeholder="単勝 ... 複勝 ... の払戻表を貼り付け"></textarea>
-    <p id="race-payout-import-message" class="submit-message error" hidden></p>
-    <div class="modal-actions">
-      <button type="button" id="race-payout-import-cancel-btn" class="ghost-btn">キャンセル</button>
-      <button type="button" id="race-payout-import-run-btn" class="stamp-btn">取り込む</button>
-    </div>
-  </div>
-</div>
+<!-- 払戻一括取込ダイアログ(払戻表のテキストの貼り付け)は 2026-10-16 に削除(使っていないため。払戻はブックマークレットの結果の取り込みで入る) -->
 
 <!-- 出走取消馬選択ダイアログ(払戻モーダル内の「出走取消馬選択」ボタンから開く) -->
 <div id="race-scratched-modal" class="modal-overlay" hidden>
@@ -183,23 +166,7 @@
   </div>
 </div>
 
-<!-- 出走馬一覧PDFインポートモーダル -->
-<div id="jra-entries-import-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h2>出走馬一覧PDFを一括登録</h2>
-    <p class="picker-hint">JRAの「出走馬一覧」PDFを選択してください(複数ファイルまとめて選択できます)。枠番・馬番が未確定の状態(木曜等)でも、確定後(金曜等)でも同じ機能で取り込めます。既存レースには馬名をキーにマージされ、着順・払戻情報には影響しません。既に確定済みの枠番・馬番と異なる値が来た場合は自動上書きせず警告のみ表示します。</p>
-    <label>PDFファイル(複数可)
-      <input type="file" id="jra-entries-pdf-file" accept="application/pdf,.pdf" multiple />
-    </label>
-    <button type="button" id="jra-entries-parse-btn" class="ghost-btn">PDFを解析する</button>
-    <div id="jra-entries-import-preview"></div>
-    <div class="modal-actions">
-      <button type="button" id="jra-entries-import-cancel-btn" class="ghost-btn">キャンセル</button>
-      <button type="button" id="jra-entries-import-submit-btn" class="stamp-btn" disabled>この内容で一括登録する</button>
-    </div>
-    <p id="jra-entries-import-message" class="submit-message" hidden></p>
-  </div>
-</div>
+<!-- 出走馬一覧PDF・JRAレース結果PDFの一括登録は 2026-10-16 に削除(使っていないため。JRA公式ページのブックマークレットで同じ内容を取り込める) -->
 
 <!-- netkeibaの結果ページの取り込み確認(2026-10-08。docs/design/netkeiba-bookmarklet.md) -->
 <div id="nk-result-modal" class="modal-overlay" hidden>
@@ -229,31 +196,11 @@
   </div>
 </div>
 
-<!-- JRAレース結果PDFインポートモーダル -->
-<div id="jra-result-import-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h2>JRAレース結果PDFを一括登録</h2>
-    <p class="picker-hint">JRAの「レース結果一覧」PDFを選択してください(複数ファイルまとめて選択できます。過去の結果PDFの取り込み直しにも使えます)。未登録のレースは、PDFからレース情報・出走馬・着順・払戻を登録します。既存レースは、PDFに着順・払戻があれば既存データをそれで上書きします(PDFで取れなかった項目は残ります)。全着順・タイム・馬体重等の詳細記録(race_results)もあわせて登録されます。登録はファイル単位で順番に実行します。</p>
-    <label>PDFファイル(複数可)
-      <input type="file" id="jra-result-pdf-file" accept="application/pdf,.pdf" multiple />
-    </label>
-    <button type="button" id="jra-result-parse-btn" class="ghost-btn">PDFを解析する</button>
-    <div id="jra-result-import-preview"></div>
-    <div class="modal-actions">
-      <button type="button" id="jra-result-import-cancel-btn" class="ghost-btn">キャンセル</button>
-      <button type="button" id="jra-result-import-submit-btn" class="stamp-btn" disabled>この内容で一括登録する</button>
-    </div>
-    <p id="jra-result-import-message" class="submit-message" hidden></p>
-  </div>
-</div>
 
 <script src="utils.js"></script>
 <script src="shell.js"></script>
 <script src="bettypes.js"></script>
 <script src="parse.js"></script>
-<script src="jra-pdf-common.js"></script>
-<script src="jra-entries-pdf.js"></script>
-<script src="jra-result-pdf.js"></script>
 <script src="payout.js"></script>
 <script src="auth.js"></script>
 <script src="cart.js"></script>
@@ -263,7 +210,6 @@
      HORSE_COUNT_OPTIONSを参照するため、races.jsを先に読み込む必要がある)。 -->
 <script src="races.js"></script>
 <script src="races-entries-modal.js"></script>
-<script src="payout-paste-parser.js"></script>
 <script src="races-payout-modal.js"></script>
 <script src="netkeiba-html.js"></script>
 <script src="jra-result-html.js"></script>

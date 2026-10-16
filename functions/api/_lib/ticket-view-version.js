@@ -18,13 +18,25 @@
 export const TICKET_VIEW_SHAPE = "1";
 
 // 今の ETag を返す。取れなければ null(ETag を使わない)。
+// 2026-10-16〜(@STEP: user_data_versions): 利用者ごとの版数(user_data_versions)と、全員共通の版数(重賞一覧の変更だけで上がる)の
+// 両方を入れる。以前は全員共通の1つだけで、誰かの購入やレースの登録・更新のたびに全員が購入履歴を全件読み直していた。
+// 利用者ごとの表が無い(マイグレーション前)ときは、以前の全員共通の版数だけを使う。読むのは主キーで最大2行。
 export async function ticketViewEtag(db, userId) {
   try {
-    const row = await db.prepare("SELECT version FROM data_versions WHERE name = 'ticket_views'").first();
-    if (!row) return null;
-    return `W/"tv${TICKET_VIEW_SHAPE}-u${userId}-v${row.version}"`;
+    const row = await db.prepare(
+      `SELECT (SELECT version FROM data_versions WHERE name = 'ticket_views') AS g,
+              (SELECT version FROM user_data_versions WHERE user_id = ?) AS u`
+    ).bind(Number(userId)).first();
+    if (!row || row.g === null || row.g === undefined) return null;
+    return `W/"tv${TICKET_VIEW_SHAPE}-u${userId}-g${row.g}-p${row.u ?? 0}"`;
   } catch (e) {
-    return null;
+    try {
+      const row = await db.prepare("SELECT version FROM data_versions WHERE name = 'ticket_views'").first();
+      if (!row) return null;
+      return `W/"tv${TICKET_VIEW_SHAPE}-u${userId}-v${row.version}"`;
+    } catch {
+      return null;
+    }
   }
 }
 

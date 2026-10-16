@@ -18,19 +18,27 @@
 import { horseAliasKeyOf } from "./horse-alias.js";
 import { runBatchInChunks } from "./http.js";
 
+// 既にある行の更新のしかた(2026-10-16。ユーザー確認済み)。取り込んだ側に無い項目(null)は今の値を残す(COALESCE)。
+// スマホ版の JRA公式の結果ページには通過順の列が無く、PC版で取り込んだレースをスマホで取り込み直すと通過順(脚質の元)が
+// 空で上書きされていた。着順(finish_position)・状態(status)だけは、いつも取り込んだ値にする(取消・中止等で null になるのが正しいため)。
+// 枠番(waku_number)・出来事メモ(incident_note)は呼び出し側で今の値を引き継いだ値を渡す(以前から)。
+const UPSERT_KEEP_COLUMNS = ["waku_number","horse_name","sex_age","weight_carried","jockey","time_text","margin","corner_positions","final_furlong_time","body_weight","body_weight_change","win_popularity","incident_note","horse_key"];
+const UPSERT_SET = [
+  ...UPSERT_KEEP_COLUMNS.map((c) => `${c}=COALESCE(excluded.${c}, race_results.${c})`),
+  "status=excluded.status",
+  "finish_position=excluded.finish_position",
+  "updated_at=excluded.updated_at",
+].join(", ");
+
 // 既にある行は、値が1つでも違うときだけ更新する(2026-10-16)。race_results には「この列が UPDATE されたら」キャッシュ
 // (集計用・勝ちタイム・馬名ごとのレース数)の範囲を消すトリガーがあり、SQLite では値が同じでも SET に列があれば動く。
 // 同じ結果の取り込み直しのたびにキャッシュが消えて作り直し(1回で数千〜数万行の読み取り)になり、書き込み行数も使っていた。
-// IS NOT は NULL どうしを同じとみなす。updated_at は比べない(変わっていなければ更新日時も変えない)
-const UPSERT_ONLY_IF_CHANGED = `WHERE race_results.waku_number IS NOT excluded.waku_number
-   OR race_results.horse_name IS NOT excluded.horse_name OR race_results.sex_age IS NOT excluded.sex_age
-   OR race_results.weight_carried IS NOT excluded.weight_carried OR race_results.jockey IS NOT excluded.jockey
-   OR race_results.status IS NOT excluded.status OR race_results.finish_position IS NOT excluded.finish_position
-   OR race_results.time_text IS NOT excluded.time_text OR race_results.margin IS NOT excluded.margin
-   OR race_results.corner_positions IS NOT excluded.corner_positions OR race_results.final_furlong_time IS NOT excluded.final_furlong_time
-   OR race_results.body_weight IS NOT excluded.body_weight OR race_results.body_weight_change IS NOT excluded.body_weight_change
-   OR race_results.win_popularity IS NOT excluded.win_popularity OR race_results.incident_note IS NOT excluded.incident_note
-   OR race_results.horse_key IS NOT excluded.horse_key`;
+// IS NOT は NULL どうしを同じとみなす。updated_at は比べない(変わっていなければ更新日時も変えない)。比べるのは更新後の値
+const UPSERT_ONLY_IF_CHANGED = `WHERE ${[
+  ...UPSERT_KEEP_COLUMNS.map((c) => `race_results.${c} IS NOT COALESCE(excluded.${c}, race_results.${c})`),
+  "race_results.status IS NOT excluded.status",
+  "race_results.finish_position IS NOT excluded.finish_position",
+].join(" OR ")}`;
 
 export async function upsertRaceResults(db, raceId, records) {
   if (!db || !raceId || !Array.isArray(records) || records.length === 0) return { updated: 0 };
@@ -79,23 +87,7 @@ export async function upsertRaceResults(db, raceId, records) {
          body_weight, body_weight_change, win_popularity, incident_note, horse_key, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(race_id, horse_number) DO UPDATE SET
-         waku_number=excluded.waku_number,
-         horse_name=excluded.horse_name,
-         sex_age=excluded.sex_age,
-         weight_carried=excluded.weight_carried,
-         jockey=excluded.jockey,
-         status=excluded.status,
-         finish_position=excluded.finish_position,
-         time_text=excluded.time_text,
-         margin=excluded.margin,
-         corner_positions=excluded.corner_positions,
-         final_furlong_time=excluded.final_furlong_time,
-         body_weight=excluded.body_weight,
-         body_weight_change=excluded.body_weight_change,
-         win_popularity=excluded.win_popularity,
-         incident_note=excluded.incident_note,
-         horse_key=excluded.horse_key,
-         updated_at=excluded.updated_at
+         ${UPSERT_SET}
        ${UPSERT_ONLY_IF_CHANGED}`
     ).bind(
       raceId,
@@ -115,7 +107,7 @@ export async function upsertRaceResults(db, raceId, records) {
       r.body_weight_change || null,
       r.win_popularity ?? null,
       incidentToSave,
-      horseAliasKeyOf(r.horse_name || ""),
+      (r.horse_name ? horseAliasKeyOf(r.horse_name) : null),
       now,
       now
     ));
@@ -168,23 +160,7 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
                body_weight, body_weight_change, win_popularity, incident_note, horse_key, created_at, updated_at)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT(race_id, horse_number) DO UPDATE SET
-               waku_number=excluded.waku_number,
-               horse_name=excluded.horse_name,
-               sex_age=excluded.sex_age,
-               weight_carried=excluded.weight_carried,
-               jockey=excluded.jockey,
-               status=excluded.status,
-               finish_position=excluded.finish_position,
-               time_text=excluded.time_text,
-               margin=excluded.margin,
-               corner_positions=excluded.corner_positions,
-               final_furlong_time=excluded.final_furlong_time,
-               body_weight=excluded.body_weight,
-               body_weight_change=excluded.body_weight_change,
-               win_popularity=excluded.win_popularity,
-               incident_note=excluded.incident_note,
-               horse_key=excluded.horse_key,
-               updated_at=excluded.updated_at
+         ${UPSERT_SET}
              ${UPSERT_ONLY_IF_CHANGED}`
           )
           .bind(
@@ -205,7 +181,7 @@ export async function upsertRaceResultsBulk(db, raceRecordsList) {
             r.body_weight_change || null,
             r.win_popularity ?? null,
             incidentToSave,
-            horseAliasKeyOf(r.horse_name || ""),
+            (r.horse_name ? horseAliasKeyOf(r.horse_name) : null),
             now,
             now
           )

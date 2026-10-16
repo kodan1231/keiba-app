@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         馬券帳 - JRAレース結果インポート
 // @namespace    keiba-yosou-app
-// @version      1.1.0
+// @version      1.2.0
 // @description  JRAレース結果ページを開いたら、ボタン1つで馬券帳へ結果を送信する(印刷してPDF保存してアプリへアップロードする手間を省く)。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
 // @match        https://sp.jra.jp/JRADB/accessS.html*
@@ -177,7 +177,7 @@
       method: "POST",
       url: `${APP_BASE_URL}/api/races/results-import`,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      data: JSON.stringify({ races: records, mode: "overwrite" }),
+      data: JSON.stringify({ races: records, mode: "overwrite", source: "jra" }), // source: JRA公式(レース名・コース等を上書きする。2026-10-16)
       onload(res) {
         if (btn) {
           btn.disabled = false;

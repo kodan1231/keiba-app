@@ -34,10 +34,10 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 重賞メモ(重賞×年ごと・自分だけ。重賞検索タブと予想登録画面) | `public/graded-race-notes.js`(入力欄の共通部品), `functions/api/graded-race-notes/index.js`, `public/graded-race-search.js`, `public/prediction.js` |
 | 重賞管理(管理画面)・レース分類(重賞/条件戦/その他) | `public/jra-graded-races-pdf.js`, `functions/api/admin/graded-races/*`, `functions/api/_lib/race-classification.js` |
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
-| 出走馬一覧PDFインポート | `public/jra-entries-pdf.js`, `functions/api/races/entries-import.js` |
-| JRAレース結果PDFインポート | `public/jra-result-pdf.js`, `functions/api/races/results-import.js` |
+| 出走馬一覧の取り込みAPI(画面のPDF一括登録は2026-10-16削除。ブックマークレットが使う) | `functions/api/races/entries-import.js` |
+| レース結果の取り込みAPI(画面のPDF一括登録は2026-10-16削除。ブックマークレット・ユーザースクリプトが使う) | `functions/api/races/results-import.js` |
 | JRAレース結果ユーザースクリプト取込み(HTML) | `public/jra-result-importer.user.js`(公開URLから直接インストール), `public/jra-result-html.js`, `functions/api/races/results-import.js`(共用), `functions/api/admin/api-token.js` |
-| PDF解析の共通処理 | `public/jra-pdf-common.js` |
+| PDF解析の共通処理(今は重賞一覧PDFだけ) | `public/jra-pdf-common.js`, `public/jra-graded-races-pdf.js` |
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |
 | 認証・ユーザー管理 | `functions/api/auth/*`, `functions/api/_lib/auth.js`, `public/auth.js` |
@@ -46,7 +46,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | 全画面共通のヘッダー/ナビ/ログイン画面 | `public/shell.js`(6HTMLへ実行時注入。ナビ項目は `NAV_ITEMS`、ページ固有ヘッダーボタンは `PAGE_ACTIONS`) |
 | 騎手名エイリアス(管理API) | `functions/api/admin/jockey-aliases/*` |
 | 騎手名エイリアス(正規化本体) | `functions/api/_lib/jockey-alias.js` |
-| netkeiba馬柱テキストの貼り付け取り込み(血統・調教師等)・調教師名エイリアス | `public/parse.js`(`parseNetkeibaUmabashira`), `public/races-entries-modal.js`, `functions/api/admin/horses/paste-import.js`, `functions/api/admin/trainer-aliases/*`, `functions/api/_lib/trainer-alias.js` |
+| netkeiba馬柱の取り込み(血統・調教師等。テキストの貼り付けの入口は2026-10-16削除、ブックマークレットの馬柱5走が使う)・調教師名エイリアス | `public/parse.js`(`parseNetkeibaUmabashira`), `public/races-entries-modal.js`, `functions/api/admin/horses/paste-import.js`, `functions/api/admin/trainer-aliases/*`, `functions/api/_lib/trainer-alias.js` |
 | ブックマークレット取り込み(netkeiba 馬柱5走・結果〈中央/地方〉、JRA公式 出走馬一覧・結果〈2026-10-10〜〉。PCのChrome) | `public/netkeiba-html.js`(netkeiba読み取り), `public/jra-entries-html.js`(JRA出走馬一覧読み取り), `public/jra-result-html.js`(JRA結果読み取り。既存), `public/races-netkeiba-import.js`(受け取り・結果の確認画面), `public/races.html`, `public/admin.js`(`setupNetkeibaBookmarklet`) |
 | 馬名エイリアス(管理API・登録馬一覧) | `functions/api/admin/horse-aliases/*`, `functions/api/admin/horses/index.js` |
 | 馬名エイリアス(正規化本体) | `functions/api/_lib/horse-alias.js` |
@@ -75,7 +75,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/horse-master.js` | `getHorseMasterRow` `saveManualHorseInfo` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加。netkeibaへの自動取得〈getOrFetchHorseMaster等〉は2026-10-08廃止。血統等は馬柱の取り込みで登録) |
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
 | `_lib/race-lineup.js` | `buildRaceLineup`(レース1件の出走馬・着順配列。race_results全頭→無ければentries+finish_order) `jockeyDisplayName`(2026-10-03。レース成績タブと騎手検索タブで共用) |
-| `_lib/range-chunk-cache.js` | `loadRangeChunks` `rangeCondition` `rangeIndexOf` `RANGE_SIZE`(races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直すキャッシュの共通処理。2026-10-08追加) |
+| `_lib/range-chunk-cache.js` | `loadRangeChunks` `rangeCondition` `rangeIndexOf` `RANGE_SIZE`(races.id の範囲〈200件〉ごとの行で持ち、変わった範囲だけ作り直すキャッシュの共通処理。2026-10-08追加。2026-10-16〜トリガーは `cache_dirty` に変わったレースを控え、読むときにそのレースだけ差し替える〈`patch`。`patchRowsById`〉。**新しい範囲キャッシュを足すときは、cache_dirty のトリガーに表名を足し、差し替えの関数を渡す**) |
 | `_lib/horse-names-cache.js` | `getHorseNameCounts`(馬名ごとのレース数のキャッシュ horse_names_cache。馬情報検索の候補・登録馬一覧用。範囲ごと。2026-10-08追加。読み込みが約38ミリ秒と重いため同じ実行環境で60秒使い回す〈2026-10-13〉) |
 | `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/race-lineup-cache.js` | `getRaceLineups`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加。2026-10-08から範囲ごと) |

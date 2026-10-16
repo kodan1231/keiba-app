@@ -178,6 +178,48 @@ function nkParsePayouts(doc) {
   return payouts;
 }
 
+// 全体の「コーナー通過順位」の表から、馬ごとの通過順(各馬の列と同じ形 "3-3-2-1")を割り出す(2026-10-16。ユーザー要望)。
+// 地方(nar.netkeiba.com)の結果ページは着順の表に通過順の列が無く、脚質が「不明」になっていた。各馬の列があればそちらを使い、
+// 列が無い・空の馬だけこれで補う。表は結果ページが table.Corner_Num、過去レースのデータベースが table[summary="コーナー通過順位"]。
+// 並びの書き方: 「10,(6,11)-8,2,4,1,(3,7),5-9」。区切り(, - =)は間隔の大きさだけで順位には関係しない。括弧は並走の馬群
+// (内の馬から並ぶ。「*」は馬群の先頭)。**順位は「前にいる頭数+1」で、馬群の中の馬は全員同じ順位**(各馬の列と同じ数え方。
+// 2026-10-16 に db.netkeiba.com の保存ページで16頭とも各馬の列と一致することを確認。馬群の中を1つずつずらす数え方は10頭だけ一致)。
+// あるコーナーに載っていない馬(中止等)は、そのコーナーより後を付けない。戻り値: Map<馬番, "3-3-2-1">
+function nkParseCornerPositions(doc) {
+  const out = new Map();
+  const table = doc.querySelector('table.Corner_Num, table[summary="コーナー通過順位"]');
+  if (!table) return out;
+  const corners = [];
+  table.querySelectorAll("tr").forEach((tr) => {
+    const td = tr.querySelector("td");
+    if (!td) return;
+    const ranks = new Map();
+    let ahead = 0;
+    const re = /\(([^)]*)\)|\*?(\d+)/g;
+    const text = nkText(td).normalize("NFKC");
+    let m;
+    while ((m = re.exec(text))) {
+      const group = m[1] !== undefined
+        ? m[1].split(",").map((x) => Number(x.replace("*", "").trim())).filter((n) => Number.isInteger(n) && n > 0)
+        : [Number(m[2])];
+      for (const h of group) ranks.set(h, ahead + 1);
+      ahead += group.length;
+    }
+    if (ranks.size) corners.push(ranks);
+  });
+  if (!corners.length) return out;
+  const horses = new Set(corners.flatMap((r) => [...r.keys()]));
+  for (const h of horses) {
+    const list = [];
+    for (const r of corners) {
+      if (!r.has(h)) break;
+      list.push(r.get(h));
+    }
+    if (list.length) out.set(h, list.join("-"));
+  }
+  return out;
+}
+
 // 結果・払戻ページ → 結果取込API(POST /api/races/results-import)へ送る1レース分のレコード
 // (public/jra-result-html.js の jraResultHtmlParseRaceUnit と同じ形)。読み取れなければ null。
 function nkParseResult(doc) {
@@ -198,6 +240,7 @@ function nkParseResult(doc) {
 
   const entries = [];
   const race_results = [];
+  const cornerByNumber = nkParseCornerPositions(doc); // 各馬の通過順の列が無い・空の馬を補う(2026-10-16)
   const finishSparse = [];
   Array.from(table.querySelectorAll("tr")).slice(1).forEach((tr) => {
     const tds = Array.from(tr.children).filter((c) => c.tagName === "TD");
@@ -237,7 +280,7 @@ function nkParseResult(doc) {
       finish_position: finishPosition,
       time_text: nkText(cell(tds, C.time)) || null,
       margin: nkText(cell(tds, C.margin)) || null,
-      corner_positions: nkText(cell(tds, C.corner)) || null,
+      corner_positions: nkText(cell(tds, C.corner)) || cornerByNumber.get(horseNumber) || null,
       final_furlong_time: Number.isFinite(last3f) && last3f > 0 ? last3f : null,
       body_weight: bodyM ? Number(bodyM[1]) : null,
       body_weight_change: bodyM ? bodyM[2] || null : null,
@@ -347,6 +390,7 @@ function nkParseDbResult(doc) {
   const cell = (tds, i) => (i >= 0 ? tds[i] : null);
   const entries = [];
   const race_results = [];
+  const cornerByNumber = nkParseCornerPositions(doc); // 各馬の通過順の列が無い・空の馬を補う(2026-10-16)
   const finishSparse = [];
   rows.slice(1).forEach((tr) => {
     const tds = Array.from(tr.children).filter((c) => c.tagName === "TD");
@@ -386,7 +430,7 @@ function nkParseDbResult(doc) {
       finish_position: finishPosition,
       time_text: nkText(cell(tds, C.time)) || null,
       margin: nkText(cell(tds, C.margin)) || null,
-      corner_positions: nkText(cell(tds, C.corner)) || null,
+      corner_positions: nkText(cell(tds, C.corner)) || cornerByNumber.get(horseNumber) || null,
       final_furlong_time: Number.isFinite(last3f) && last3f > 0 ? last3f : null,
       body_weight: bodyM ? Number(bodyM[1]) : null,
       body_weight_change: bodyM ? bodyM[2] || null : null,

@@ -3,6 +3,8 @@
 
 # netkeiba馬柱テキストの貼り付け取り込み(2026-10-06追加)
 
+> **2026-10-16: テキストの貼り付けの入口(出走馬表の編集画面の「テキストから出走馬を一括入力」)は使っていないため削除した。** 馬柱の解析(`parseNetkeibaUmabashira`)・確認画面(`startUmabashiraPreview`)・`POST /api/admin/horses/paste-import` は、ブックマークレットの「馬柱(5走)」の取り込みが使うので残している。
+
 レース管理画面の出走馬表編集「テキストから出走馬を一括入力」に、netkeiba の馬柱ページ
 (`race.netkeiba.com/race/shutuba_past.html?race_id=...`)をブラウザでコピーしたテキストを
 貼り付けると、出走馬表の入力欄と、馬情報マスタ(`horses`)の血統等をまとめて埋める機能。

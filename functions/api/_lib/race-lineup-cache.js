@@ -105,7 +105,7 @@ export const MEMO_RACE_LINEUPS = "race_lineups";
 export { LINEUP_STRIDE };
 export function getRaceLineups(db) {
   return memoized(MEMO_RACE_LINEUPS, async () => {
-    const chunks = await loadRangeChunks(db, "race_lineup_cache", buildLineupChunks, { version: LINEUP_CACHE_VERSION });
+    const chunks = await loadRangeChunks(db, "race_lineup_cache", buildLineupChunks, { version: LINEUP_CACHE_VERSION, patch: patchLineupChunk }); // 変わったレースだけ差し替える(2026-10-16)
     const out = [];
     for (const c of chunks) {
       const dict = c.j || [];
@@ -154,7 +154,36 @@ class LineupRace {
   }
 }
 
-// 指定した範囲(null は全件)のレースを読み、範囲ごとの payload({ j, r })にする。
+// 範囲の payload({ j, r })から idSet のレースを除き、partial(そのレースたちだけで作った { j, r })を足す(2026-10-16)。
+// partial の騎手の辞書番号は、範囲の辞書(j)の番号へ付け替える(辞書は足すだけ。使われなくなった名前は残るが小さい)
+function patchLineupChunk(payload, idSet, partial) {
+  const j = [...(payload?.j || [])];
+  const index = new Map(j.map((name, i) => [name, i]));
+  const rows = (payload?.r || []).filter((row) => !idSet.has(row[0]));
+  const pj = partial?.j || [];
+  for (const row of partial?.r || []) {
+    const flat = row[7];
+    let nextFlat = flat;
+    if (Array.isArray(flat)) {
+      nextFlat = flat.slice();
+      for (let i = 0; i < nextFlat.length; i += LINEUP_STRIDE) {
+        const ji = nextFlat[i + 1];
+        if (!(ji >= 0)) continue;
+        const name = pj[ji];
+        let ni = index.get(name);
+        if (ni === undefined) { ni = j.length; j.push(name); index.set(name, ni); }
+        nextFlat[i + 1] = ni;
+      }
+    }
+    const next = row.slice();
+    next[7] = nextFlat;
+    rows.push(next);
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  return { ...payload, j, r: rows };
+}
+
+// 指定した範囲(null は全件。{ ids } はそのレースだけ)のレースを読み、範囲ごとの payload({ j, r })にする。
 async function buildLineupChunks(db, indices) {
   const raceCond = rangeCondition("id", indices);
   const rrCond = rangeCondition("race_id", indices);

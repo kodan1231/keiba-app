@@ -20,9 +20,12 @@ import { memoized } from "./memo-cache.js";
 // 2026-10-13: 読み込みと合算(約144万文字・約2万頭分)に手元で約38ミリ秒かかり、馬情報検索は入力のたびに呼ばれるため、
 // 同じ実行環境で60秒使い回す(_lib/memo-cache.js)。取り込みの反映は最大60秒遅れる。戻り値の Map は書き換えないこと(使い回すため)。
 export const MEMO_HORSE_NAME_COUNTS = "horse_name_counts";
+// 中身が範囲ごとの合計でレースごとに差し替えられないため、変わった範囲の作り直しは10分に1回までにまとめる(2026-10-16。
+// 1回で約6千行を読み、取り込みのたびに起きていた。直近3日で約80万行)。馬情報検索の候補・登録馬一覧は最大10分遅れて反映される
+const HORSE_NAMES_MIN_REBUILD_MS = 10 * 60 * 1000;
 export function getHorseNameCounts(db) {
   return memoized(MEMO_HORSE_NAME_COUNTS, async () => {
-    const chunks = await loadRangeChunks(db, "horse_names_cache", buildHorseNameChunks);
+    const chunks = await loadRangeChunks(db, "horse_names_cache", buildHorseNameChunks, { minRebuildMs: HORSE_NAMES_MIN_REBUILD_MS });
     const entries = new Map();
     const results = new Map();
     for (const c of chunks) {

@@ -3536,3 +3536,7 @@ body.guest-mode #gr-notes { display: none; }
 .guest-nickname-form { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
 .guest-nickname-form input { flex: 1; min-width: 160px; font-size: 16px; padding: 8px 10px; }
 label.inline-check { flex-direction: row; align-items: center; gap: 6px; }
+/* D1 の1日の上限を超えたときの案内(2026-10-16。public/auth.js の showD1LimitNotice) */
+.d1-limit-notice{position:sticky;top:0;z-index:10000;display:flex;gap:10px;align-items:flex-start;padding:12px 16px;background:#fff4e5;color:#7a3e00;border-bottom:2px solid #f0a040;font-size:14px;line-height:1.6}
+.d1-limit-notice-text{flex:1}
+.d1-limit-notice-close{flex:none;background:none;border:none;color:inherit;font-size:20px;line-height:1;cursor:pointer;padding:0 4px}

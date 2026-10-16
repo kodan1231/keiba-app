@@ -192,12 +192,17 @@ export async function onRequestPost(context) {
     const stmts = [];
     for (const it of toUpdate) {
       const pairs = [["entries", JSON.stringify(it.mergedEntries)]];
-      if (!it.existing.race_name && it.race_name) pairs.push(["race_name", it.race_name], ["race_base_name", it.race_base_name]);
-      if (!it.existing.course_type && it.course_type) pairs.push(["course_type", it.course_type]);
-      if (!it.existing.distance && it.distance) pairs.push(["distance", it.distance]);
-      if (!it.existing.weight_type && it.weight_type) pairs.push(["weight_type", it.weight_type]);
-      if (!it.existing.class_flags && it.class_flags) pairs.push(["class_flags", it.class_flags]);
-      if (!it.existing.course_direction && it.course_direction) pairs.push(["course_direction", it.course_direction]);
+      const fromJra = body.source === "jra";
+      // レース名・コース・距離・重量種別・条件・コースの向き: JRA公式(body.source === "jra"。PCのブックマークレット・スマホのスクリプト)の
+      // 取り込みは値が違えば上書きし、それ以外(netkeiba)は今の値が空のときだけ埋める(2026-10-16。ユーザー確認済み。以前はどれも空のときだけで、
+      // 最初に間違った値が入ると JRA公式を取り込んでも直らなかった)。手で直した値も JRA公式の取り込みで公式の値に戻る
+      const takeRaceInfo = (col, v) => v && (fromJra || !it.existing[col]);
+      if (takeRaceInfo("race_name", it.race_name)) pairs.push(["race_name", it.race_name], ["race_base_name", it.race_base_name]);
+      if (takeRaceInfo("course_type", it.course_type)) pairs.push(["course_type", it.course_type]);
+      if (takeRaceInfo("distance", it.distance)) pairs.push(["distance", it.distance]);
+      if (takeRaceInfo("weight_type", it.weight_type)) pairs.push(["weight_type", it.weight_type]);
+      if (takeRaceInfo("class_flags", it.class_flags)) pairs.push(["class_flags", it.class_flags]);
+      if (takeRaceInfo("course_direction", it.course_direction)) pairs.push(["course_direction", it.course_direction]);
       // 発走時刻は公式ページの値を正とする(繰り下げ等で変わることがあるため、違えば置き換える。2026-10-10)
       if (it.post_time) pairs.push(["post_time", it.post_time]);
       const changed = changedPairs(it.existing, pairs);
@@ -337,11 +342,15 @@ export async function onRequestPost(context) {
   //    毎晩3時の定時実行が計算する。_lib/pace-queue.js・docs/design/screens.md「比率の計算(夜間・今すぐ計算)」)
   await enqueuePaceRecompute(db, [
     ...toInsert.map((it) => ({ id: it.id, track: it.track, course_type: it.course_type, distance: it.distance, race_name: it.race_name, class_flags: it.class_flags, entries: it.entries })),
-    ...toUpdate.map((it) => ({
-      id: it.existing.id, track: it.existing.track,
-      course_type: it.existing.course_type || it.course_type, distance: it.existing.distance || it.distance,
-      race_name: it.existing.race_name || it.race_name, class_flags: it.existing.class_flags || it.class_flags, entries: it.mergedEntries,
-    })),
+    ...toUpdate.map((it) => {
+      // 保存した値と同じ選び方(JRA公式は取り込んだ値を優先。2026-10-16)
+      const pick = (col) => (body.source === "jra" && it[col]) || it.existing[col] || it[col];
+      return {
+        id: it.existing.id, track: it.existing.track,
+        course_type: pick("course_type"), distance: pick("distance"),
+        race_name: pick("race_name"), class_flags: pick("class_flags"), entries: it.mergedEntries,
+      };
+    }),
   ]);
 
   return Response.json({ ok: true, results });

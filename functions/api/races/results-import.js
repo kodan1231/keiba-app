@@ -178,6 +178,7 @@ export async function onRequestPost(context) {
       //   "fill-empty"  … 既存が空のときだけ埋める(旧デフォルト。手動で使い分けたい場合用に残す)。
       //   "skip-existing"… 既存レースには一切触れない(上で continue 済み)。
       const modeOverwrite = body.mode === "overwrite";
+      const fromJra = body.source === "jra";
 
       // 2026-10-16: 列と値の組を作り、今の行と値が違う列だけを更新する(_lib/http.js の changedPairs)。同じ内容の取り込み直しで
       // races の更新が起きると、キャッシュ(レース一覧・集計用)の範囲が消えて作り直しになり、払戻の再計算も走っていたため
@@ -193,14 +194,18 @@ export async function onRequestPost(context) {
       it.finalPayoutsObj = payoutTouch ? (Object.keys(it.payouts).length ? it.payouts : null) : it.existingPayouts;
 
       pairs.push(["entries", JSON.stringify(it.mergedEntries)]);
-      if (!it.existing.race_name && it.item.race_name) {
+      // レース名・コース・距離・重量種別・条件・コースの向き: JRA公式(body.source === "jra"。PCのブックマークレット・スマホのスクリプト)の
+      // 取り込みは値が違えば上書きし、それ以外(netkeiba)は今の値が空のときだけ埋める(2026-10-16。ユーザー確認済み。以前はどれも空のときだけで、
+      // 最初に間違った値が入ると JRA公式を取り込んでも直らなかった)。手で直した値も JRA公式の取り込みで公式の値に戻る
+      const takeRaceInfo = (col, v) => v && (fromJra || !it.existing[col]);
+      if (takeRaceInfo("race_name", it.item.race_name)) {
         pairs.push(["race_name", it.item.race_name], ["race_base_name", raceBaseNameOf(it.item.race_name)]);
       }
-      if (!it.existing.course_type && it.item.course_type) pairs.push(["course_type", it.item.course_type]);
-      if (!it.existing.distance && it.item.distance) pairs.push(["distance", Number(it.item.distance)]);
-      if (!it.existing.weight_type && it.item.weight_type) pairs.push(["weight_type", it.item.weight_type]);
-      if (!it.existing.class_flags && it.item.class_flags) pairs.push(["class_flags", it.item.class_flags]);
-      if (!it.existing.course_direction && it.item.course_direction) pairs.push(["course_direction", it.item.course_direction]);
+      if (takeRaceInfo("course_type", it.item.course_type)) pairs.push(["course_type", it.item.course_type]);
+      if (takeRaceInfo("distance", it.item.distance)) pairs.push(["distance", Number(it.item.distance)]);
+      if (takeRaceInfo("weight_type", it.item.weight_type)) pairs.push(["weight_type", it.item.weight_type]);
+      if (takeRaceInfo("class_flags", it.item.class_flags)) pairs.push(["class_flags", it.item.class_flags]);
+      if (takeRaceInfo("course_direction", it.item.course_direction)) pairs.push(["course_direction", it.item.course_direction]);
       if (it.item.weather) pairs.push(["weather", it.item.weather]);
       if (it.item.track_condition) pairs.push(["track_condition", it.item.track_condition]);
       if (it.item.post_time) pairs.push(["post_time", it.item.post_time]);

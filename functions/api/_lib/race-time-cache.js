@@ -12,7 +12,7 @@
 //   勝ちタイムのあるレースだけ。track_condition は 良/稍重/重/不良 か null、race_class は raceClassOf() か null。
 // 無効化は DB トリガー(@STEP: race_time_cache。変わったレース・結果のレースの範囲の行だけ消す)。
 // 同じ実行環境で 60 秒使い回す(_lib/memo-cache.js。取り込みの反映は最大60秒遅れる)。
-import { loadRangeChunks, rangeCondition, rangeIndexOf } from "./range-chunk-cache.js";
+import { loadRangeChunks, rangeCondition, rangeIndexOf, patchRowsById } from "./range-chunk-cache.js";
 import { raceClassOf } from "./race-classification.js";
 import { timeTextToSeconds } from "./graded-race-search.js";
 import { normalizeTrackConditionText } from "./race-lineup-cache.js";
@@ -25,7 +25,7 @@ const MEMO_TTL_MS = 60 * 1000;
 // 戻り値: [{ id, track, course_type, distance, track_condition, race_class, win_time }](races.id の順)
 export function getRaceTimes(db) {
   return memoized(MEMO_RACE_TIMES, async () => {
-    const chunks = await loadRangeChunks(db, "race_time_cache", buildRaceTimeChunks, { version: RACE_TIME_CACHE_VERSION });
+    const chunks = await loadRangeChunks(db, "race_time_cache", buildRaceTimeChunks, { version: RACE_TIME_CACHE_VERSION, patch: patchRowsById }); // 変わったレースだけ差し替える(2026-10-16)
     const out = [];
     for (const c of chunks) {
       for (const [id, track, course_type, distance, track_condition, race_class, win_time] of c.r || []) {

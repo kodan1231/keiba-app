@@ -115,26 +115,41 @@ export async function onRequestPost(context) {
 
   const now = new Date().toISOString();
 
-  const statements = [
-    env.DB.prepare("DELETE FROM prediction_marks WHERE race_id = ? AND user_id = ?").bind(raceId, userId),
-    env.DB.prepare(
+  // 変わった馬の印だけ書く(2026-10-16。D1 の書き込み軽減)。以前は保存のたびにそのレースの印を全部消して全部入れ直しており、
+  // 印6つのレースで1クリック約40行(表+インデックス)を書いていた。今の印と予想メモの行を主キー・一意制約で読み(印は最大で頭数分)、
+  // 消す・変える・足すの差分だけを書く。予想メモの行も、無いときとメモが変わったときだけ書く
+  const [existingNote, existingMarksRes] = await Promise.all([
+    env.DB.prepare("SELECT memo FROM prediction_notes WHERE race_id = ? AND user_id = ?").bind(raceId, userId).first(),
+    env.DB.prepare("SELECT horse_number, mark FROM prediction_marks WHERE race_id = ? AND user_id = ?").bind(raceId, userId).all(),
+  ]);
+  const existingMarks = new Map((existingMarksRes.results || []).map((r) => [Number(r.horse_number), r.mark]));
+  const nextMarks = new Map(marks.map((m) => [m.horse_number, m.mark]));
+
+  const statements = [];
+  if (!existingNote || (existingNote.memo || "") !== memo) {
+    statements.push(env.DB.prepare(
       `INSERT INTO prediction_notes (race_id, user_id, memo, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(race_id, user_id) DO UPDATE SET memo = excluded.memo, updated_at = excluded.updated_at`
-    ).bind(raceId, userId, memo || null, now, now),
-  ];
-
-  for (const item of marks) {
-    statements.push(
-      env.DB.prepare(
-        `INSERT INTO prediction_marks (race_id, user_id, horse_number, mark, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      ).bind(raceId, userId, item.horse_number, item.mark, now, now)
-    );
+    ).bind(raceId, userId, memo || null, now, now));
+  }
+  for (const [horseNumber] of existingMarks) {
+    if (!nextMarks.has(horseNumber)) {
+      statements.push(env.DB.prepare("DELETE FROM prediction_marks WHERE race_id = ? AND user_id = ? AND horse_number = ?").bind(raceId, userId, horseNumber));
+    }
+  }
+  for (const [horseNumber, mark] of nextMarks) {
+    const old = existingMarks.get(horseNumber);
+    if (old === mark) continue;
+    statements.push(env.DB.prepare(
+      `INSERT INTO prediction_marks (race_id, user_id, horse_number, mark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(race_id, horse_number, user_id) DO UPDATE SET mark = excluded.mark, updated_at = excluded.updated_at`
+    ).bind(raceId, userId, horseNumber, mark, now, now));
   }
 
   try {
-    await env.DB.batch(statements);
+    if (statements.length) await env.DB.batch(statements);
   } catch (e) {
     console.error("prediction save error", e);
     return jsonError("予想の保存に失敗しました", 500);

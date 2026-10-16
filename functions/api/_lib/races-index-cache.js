@@ -17,7 +17,7 @@
 // 2026-10-08: 以前は1行に詰められるだけ詰め、レースを1件変えると丸ごと作り直していた(1回約5.8万行の読み取り。
 // json_each で展開した要素も読み取り行数に数えられる)。変わった範囲だけ作り直すようにした。
 
-import { loadRangeChunks, rangeCondition, rangeIndexOf } from "./range-chunk-cache.js";
+import { loadRangeChunks, rangeCondition, rangeIndexOf, patchRowsById } from "./range-chunk-cache.js";
 
 // 画面・APIに返すときの列名(保存形式の並びと同じ)
 export const RACE_INDEX_FIELDS = [
@@ -28,7 +28,7 @@ export const RACE_INDEX_FIELDS = [
 
 // キャッシュを読み、保存形式の配列(行の配列)を返す。並びは 開催日の新しい順→競馬場→R(以前の作り直しの SQL と同じ)。
 export async function getRaceIndexRows(db) {
-  const chunks = await loadRangeChunks(db, "races_index_cache", buildRaceIndexChunks);
+  const chunks = await loadRangeChunks(db, "races_index_cache", buildRaceIndexChunks, { patch: patchRowsById }); // 変わったレースだけ差し替える(2026-10-16)
   const rows = [];
   for (const c of chunks) for (const r of c.r || []) rows.push(r);
   // [1]=race_date, [2]=track, [3]=race_number。SQLite の並び(文字コード順)と同じになるよう < で比べる

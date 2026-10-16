@@ -206,7 +206,8 @@ document.getElementById("nk-batch-submit-btn")?.addEventListener("click", async 
   const res = await authedFetch(isEntries ? "/api/races/entries-import" : "/api/races/results-import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(isEntries ? { races: nkBatch.records } : { races: nkBatch.records, mode: "overwrite" }),
+    // source: "jra" … JRA公式の取り込み(レース名・コース等を公式の値で上書きする。2026-10-16)
+    body: JSON.stringify(isEntries ? { races: nkBatch.records, source: "jra" } : { races: nkBatch.records, mode: "overwrite", source: "jra" }),
   });
   const data = await res.json().catch(() => ({}));
   msg.hidden = false;

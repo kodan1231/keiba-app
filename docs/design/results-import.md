@@ -4,6 +4,8 @@
 
 # JRAレース結果PDFインポート
 
+> **2026-10-16: JRAレース結果PDFの一括登録(画面の「JRAレース結果PDFをインポート」・`public/jra-result-pdf.js`)は使っていないため削除した。** 結果は JRA公式・netkeiba のブックマークレット、JRA結果ページのユーザースクリプトで取り込む。サーバーの `POST /api/races/results-import` は両方が使うので残している。下の PDF の解析の記述は経緯として残す。
+
 `races.html`の「JRAレース結果PDFをインポート」機能(管理者専用)。JRA公式サイトの
 「レース結果一覧」PDF(1開催日・1ファイルにつき12レース分)をブラウザ側でPDF.jsにより
 テキスト抽出し、`public/jra-result-pdf.js`で解析したうえで`POST /api/races/results-import`

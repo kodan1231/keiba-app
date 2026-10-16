@@ -80,10 +80,12 @@ export async function applyImportedTrainerNames(db, entries) {
       const keysChunk = allKeys.slice(i, i + 90);
       const placeholders = keysChunk.map(() => "?").join(",");
       const { results } = await db
-        .prepare(`SELECT horse_key FROM horses WHERE horse_key IN (${placeholders}) AND data_source <> 'manual'`)
+        .prepare(`SELECT horse_key, trainer, fetch_error FROM horses WHERE horse_key IN (${placeholders}) AND data_source <> 'manual'`)
         .bind(...keysChunk)
         .all();
       for (const r of results || []) {
+        // 調教師が今と同じ(かつ失敗の記録も無い)馬は書かない(2026-10-16。以前は取り込みのたびに全頭を書いていた)
+        if (r.trainer === byKey.get(r.horse_key) && !r.fetch_error) continue;
         stmts.push(
           db
             .prepare("UPDATE horses SET trainer=?, data_source='import', fetch_error=NULL, fetched_at=?, updated_at=? WHERE horse_key=?")

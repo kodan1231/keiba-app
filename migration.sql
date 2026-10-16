@@ -236,3 +236,222 @@ ALTER TABLE guest_devices ADD COLUMN nickname TEXT;
 ALTER TABLE guest_devices ADD COLUMN nickname_key TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_devices_nickname_key ON guest_devices(nickname_key);
 INSERT INTO schema_migrations (name) VALUES ('guest_nickname');
+
+-- @STEP: prediction_notes_key_index
+-- 勝負レースの一覧(馬券購入画面を開くたび)用のインデックス(2026-10-16)。以前は prediction_notes を全件読んでいた。
+-- 作成で prediction_notes の全行を1回読む(予想を付けたレースの数×利用者。数千行程度)。コードの反映の前後どちらでもよい。
+CREATE INDEX IF NOT EXISTS idx_prediction_notes_user_key ON prediction_notes(user_id) WHERE is_key_race = 1;
+INSERT INTO schema_migrations (name) VALUES ('prediction_notes_key_index');
+
+-- @STEP: user_data_versions
+-- 購入履歴の「変更なし(304)」の版数を利用者ごとにする(2026-10-16。_lib/ticket-view-version.js)。
+-- **コードの反映の後に適用すること**(前に適用すると、古いコードは全員共通の版数しか見ず、購入しても購入履歴が更新されなくなる)。
+-- 全員共通の版数を上げていたトリガーのうち重賞一覧以外を消し、利用者ごとのトリガーに置き換える。
+-- imported_ticket_groups(race_id) のインデックスを作る(レースのトリガーが使う。作成でその表の全行〈数千行〉を1回読む)。
+-- 適用直後は全員の ETag の形が変わるので、各利用者が次に開いたときに1回だけ全件を読み直す。
+DROP TRIGGER IF EXISTS trg_ticket_views_tickets_ins;
+DROP TRIGGER IF EXISTS trg_ticket_views_tickets_upd;
+DROP TRIGGER IF EXISTS trg_ticket_views_tickets_del;
+DROP TRIGGER IF EXISTS trg_ticket_views_igroups_ins;
+DROP TRIGGER IF EXISTS trg_ticket_views_igroups_upd;
+DROP TRIGGER IF EXISTS trg_ticket_views_igroups_del;
+DROP TRIGGER IF EXISTS trg_ticket_views_iitems_ins;
+DROP TRIGGER IF EXISTS trg_ticket_views_iitems_upd;
+DROP TRIGGER IF EXISTS trg_ticket_views_iitems_del;
+DROP TRIGGER IF EXISTS trg_ticket_views_itickets_ins;
+DROP TRIGGER IF EXISTS trg_ticket_views_itickets_upd;
+DROP TRIGGER IF EXISTS trg_ticket_views_itickets_del;
+DROP TRIGGER IF EXISTS trg_ticket_views_races_ins;
+DROP TRIGGER IF EXISTS trg_ticket_views_races_upd;
+DROP TRIGGER IF EXISTS trg_ticket_views_races_del;
+CREATE TABLE IF NOT EXISTS user_data_versions (
+  user_id INTEGER PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_imported_groups_race ON imported_ticket_groups(race_id);
+CREATE TRIGGER IF NOT EXISTS trg_uv_tickets_ins AFTER INSERT ON tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT NEW.user_id, 1 WHERE NEW.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_tickets_upd AFTER UPDATE ON tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT u, 1 FROM (SELECT NEW.user_id AS u UNION SELECT OLD.user_id) WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_tickets_del AFTER DELETE ON tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT OLD.user_id, 1 WHERE OLD.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_igroups_ins AFTER INSERT ON imported_ticket_groups BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT NEW.user_id, 1 WHERE NEW.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_igroups_upd AFTER UPDATE ON imported_ticket_groups BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT u, 1 FROM (SELECT NEW.user_id AS u UNION SELECT OLD.user_id) WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_igroups_del AFTER DELETE ON imported_ticket_groups BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT OLD.user_id, 1 WHERE OLD.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_iitems_ins AFTER INSERT ON imported_ticket_items BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT user_id, 1 FROM imported_ticket_groups WHERE id = NEW.group_id AND user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_iitems_upd AFTER UPDATE ON imported_ticket_items BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT DISTINCT user_id, 1 FROM imported_ticket_groups WHERE id IN (NEW.group_id, OLD.group_id) AND user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_iitems_del AFTER DELETE ON imported_ticket_items BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT user_id, 1 FROM imported_ticket_groups WHERE id = OLD.group_id AND user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_itickets_ins AFTER INSERT ON imported_tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT NEW.user_id, 1 WHERE NEW.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_itickets_upd AFTER UPDATE ON imported_tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT u, 1 FROM (SELECT NEW.user_id AS u UNION SELECT OLD.user_id) WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_itickets_del AFTER DELETE ON imported_tickets BEGIN
+  INSERT INTO user_data_versions (user_id, version) SELECT OLD.user_id, 1 WHERE OLD.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_races_upd AFTER UPDATE OF finish_order, payouts, course_type, distance, race_name, class_flags, race_base_name ON races
+WHEN OLD.finish_order IS NOT NEW.finish_order OR OLD.payouts IS NOT NEW.payouts OR OLD.course_type IS NOT NEW.course_type
+  OR OLD.distance IS NOT NEW.distance OR OLD.race_name IS NOT NEW.race_name OR OLD.class_flags IS NOT NEW.class_flags
+  OR OLD.race_base_name IS NOT NEW.race_base_name
+BEGIN
+  INSERT INTO user_data_versions (user_id, version)
+    SELECT u, 1 FROM (SELECT user_id AS u FROM tickets WHERE race_id = NEW.id UNION SELECT user_id FROM imported_ticket_groups WHERE race_id = NEW.id)
+     WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_uv_races_del AFTER DELETE ON races BEGIN
+  INSERT INTO user_data_versions (user_id, version)
+    SELECT u, 1 FROM (SELECT user_id AS u FROM tickets WHERE race_id = OLD.id UNION SELECT user_id FROM imported_ticket_groups WHERE race_id = OLD.id)
+     WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+INSERT INTO schema_migrations (name) VALUES ('user_data_versions');
+
+-- @STEP: cache_dirty
+-- 範囲ごとのキャッシュ4つを「変わったレースだけ差し替える」方式にする(2026-10-16。_lib/range-chunk-cache.js)。
+-- **コードの反映の後に適用すること**(前に適用すると、古いコードは控えを見ないため、キャッシュが更新されなくなる)。
+-- 範囲の行を消していたトリガー21個を消し、控え(cache_dirty)に書くトリガー6つに置き換える。表を作るだけでデータは読まない。
+DROP TRIGGER IF EXISTS trg_races_index_cache_ins;
+DROP TRIGGER IF EXISTS trg_races_index_cache_upd;
+DROP TRIGGER IF EXISTS trg_races_index_cache_del;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_races_ins;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_races_upd;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_races_del;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_rr_ins;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_rr_del;
+DROP TRIGGER IF EXISTS trg_race_lineup_cache_rr_upd;
+DROP TRIGGER IF EXISTS trg_race_time_cache_races_ins;
+DROP TRIGGER IF EXISTS trg_race_time_cache_races_upd;
+DROP TRIGGER IF EXISTS trg_race_time_cache_races_del;
+DROP TRIGGER IF EXISTS trg_race_time_cache_rr_ins;
+DROP TRIGGER IF EXISTS trg_race_time_cache_rr_del;
+DROP TRIGGER IF EXISTS trg_race_time_cache_rr_upd;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_races_ins;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_races_upd;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_races_del;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_rr_ins;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_rr_del;
+DROP TRIGGER IF EXISTS trg_horse_names_cache_rr_upd;
+CREATE TABLE IF NOT EXISTS cache_dirty (
+  tbl TEXT NOT NULL,
+  race_id INTEGER NOT NULL,
+  claimed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (tbl, race_id)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_races_ins AFTER INSERT ON races
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    VALUES ('races_index_cache', NEW.id), ('race_lineup_cache', NEW.id), ('race_time_cache', NEW.id), ('horse_names_cache', NEW.id)
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_races_del AFTER DELETE ON races
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    VALUES ('races_index_cache', OLD.id), ('race_lineup_cache', OLD.id), ('race_time_cache', OLD.id), ('horse_names_cache', OLD.id)
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_races_upd AFTER UPDATE ON races
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'races_index_cache', NEW.id
+     WHERE OLD.race_date IS NOT NEW.race_date OR OLD.track IS NOT NEW.track OR OLD.race_number IS NOT NEW.race_number
+        OR OLD.race_name IS NOT NEW.race_name OR OLD.race_base_name IS NOT NEW.race_base_name
+        OR OLD.course_type IS NOT NEW.course_type OR OLD.distance IS NOT NEW.distance OR OLD.class_flags IS NOT NEW.class_flags
+        OR OLD.weight_type IS NOT NEW.weight_type OR OLD.weather IS NOT NEW.weather OR OLD.track_condition IS NOT NEW.track_condition
+        OR OLD.post_time IS NOT NEW.post_time OR OLD.finish_order IS NOT NEW.finish_order OR OLD.payouts IS NOT NEW.payouts
+        OR OLD.entries IS NOT NEW.entries
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'race_lineup_cache', NEW.id
+     WHERE OLD.race_date IS NOT NEW.race_date OR OLD.track IS NOT NEW.track OR OLD.course_type IS NOT NEW.course_type
+        OR OLD.distance IS NOT NEW.distance OR OLD.finish_order IS NOT NEW.finish_order OR OLD.track_condition IS NOT NEW.track_condition
+        OR OLD.class_flags IS NOT NEW.class_flags OR OLD.race_name IS NOT NEW.race_name OR OLD.payouts IS NOT NEW.payouts
+        OR OLD.entries IS NOT NEW.entries
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'race_time_cache', NEW.id
+     WHERE OLD.track IS NOT NEW.track OR OLD.course_type IS NOT NEW.course_type OR OLD.distance IS NOT NEW.distance
+        OR OLD.track_condition IS NOT NEW.track_condition OR OLD.class_flags IS NOT NEW.class_flags OR OLD.race_name IS NOT NEW.race_name
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'horse_names_cache', NEW.id WHERE OLD.entries IS NOT NEW.entries
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_rr_ins AFTER INSERT ON race_results
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    VALUES ('race_lineup_cache', NEW.race_id), ('race_time_cache', NEW.race_id), ('horse_names_cache', NEW.race_id)
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_rr_del AFTER DELETE ON race_results
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    VALUES ('race_lineup_cache', OLD.race_id), ('race_time_cache', OLD.race_id), ('horse_names_cache', OLD.race_id)
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_cache_dirty_rr_upd AFTER UPDATE ON race_results
+BEGIN
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'race_lineup_cache', r FROM (SELECT NEW.race_id AS r UNION SELECT OLD.race_id)
+     WHERE OLD.race_id IS NOT NEW.race_id OR OLD.horse_number IS NOT NEW.horse_number OR OLD.jockey IS NOT NEW.jockey
+        OR OLD.status IS NOT NEW.status OR OLD.finish_position IS NOT NEW.finish_position OR OLD.time_text IS NOT NEW.time_text
+        OR OLD.sex_age IS NOT NEW.sex_age OR OLD.body_weight IS NOT NEW.body_weight OR OLD.corner_positions IS NOT NEW.corner_positions
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'race_time_cache', r FROM (SELECT NEW.race_id AS r UNION SELECT OLD.race_id)
+     WHERE OLD.race_id IS NOT NEW.race_id OR OLD.status IS NOT NEW.status OR OLD.finish_position IS NOT NEW.finish_position
+        OR OLD.time_text IS NOT NEW.time_text
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+  INSERT INTO cache_dirty (tbl, race_id)
+    SELECT 'horse_names_cache', r FROM (SELECT NEW.race_id AS r UNION SELECT OLD.race_id)
+     WHERE OLD.race_id IS NOT NEW.race_id OR OLD.horse_name IS NOT NEW.horse_name
+    ON CONFLICT(tbl, race_id) DO UPDATE SET claimed = 0 WHERE claimed = 1;
+END;
+INSERT INTO schema_migrations (name) VALUES ('cache_dirty');
+
+-- @STEP: drop_redundant_indexes
+-- 一意制約・他のインデックスと重複する、または使う問い合わせが無いインデックスを消す(2026-10-16)。D1 はインデックス1つにつき
+-- 書き込みが1行増える(race_results は1頭の結果を書くたびに5行 → 3行)。
+-- 本番の D1 は手元と違う計画を選ぶことがあるため、**空いている日に適用し、翌日に管理画面「D1の使用量」の重い問い合わせで、
+-- 購入履歴・過去成績・予想印の読み取り行数が増えていないことを確かめる**。増えていたらそのインデックスだけ作り直す
+-- (作り直しの文は schema.sql の git 履歴にある)。
+DROP INDEX IF EXISTS idx_race_results_race_id;
+DROP INDEX IF EXISTS idx_race_results_horse_name;
+DROP INDEX IF EXISTS idx_tickets_group;
+DROP INDEX IF EXISTS idx_tickets_race_date;
+DROP INDEX IF EXISTS idx_tickets_track;
+DROP INDEX IF EXISTS idx_tickets_user_id;
+DROP INDEX IF EXISTS idx_prediction_notes_race_id;
+DROP INDEX IF EXISTS idx_prediction_marks_race_id;
+DROP INDEX IF EXISTS idx_horse_notes_horse_name;
+DROP INDEX IF EXISTS idx_imported_groups_user_id;
+DROP INDEX IF EXISTS idx_horses_horse_name;
+INSERT INTO schema_migrations (name) VALUES ('drop_redundant_indexes');

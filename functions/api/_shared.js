@@ -30,6 +30,7 @@ export * from "./_lib/trainer-alias.js";
 export * from "./_lib/race-lineup-cache.js";
 export * from "./_lib/races-index-cache.js";
 export * from "./_lib/memo-cache.js";
+export * from "./_lib/d1-limit.js";
 export * from "./_lib/ticket-view-version.js";
 export * from "./_lib/horse-names-cache.js";
 export * from "./_lib/d1-usage.js";

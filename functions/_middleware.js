@@ -24,6 +24,7 @@
 import {
   verifySessionToken, isAdminUsername, verifyApiToken, serviceGuardResponse, resolveGuest,
   appRoleOf, pageRedirect, blockedOnMain, adminPublicApi, notFoundJson, readGuestCookie, createGuestCookie, getGuestSettings, randomToken,
+  isD1LimitError, isD1LimitReached, d1LimitResponse,
 } from "./api/_shared.js";
 
 // アプリの入口の分離(2026-10-14。_lib/app-role.js・docs/design/app-split.md)。
@@ -34,7 +35,25 @@ import {
 //   admin: 管理者だけ。ログイン・ログアウト以外の API は管理者でなければ 403(admin_only)。新規登録は不可
 //   all: 手元の開発用(以前と同じ)
 
+// D1 の1日の上限を超えたときの案内(2026-10-16。_lib/d1-limit.js)。API が失敗したとき(500番台・例外。データ検索用アプリの
+// ゲストの 401 は、設定が読めずに「無効」と判定されることがあるため含める)だけ、D1 が上限で断っているかを確かめ、
+// そうなら案内の 503 に置き換える。成功した応答では何もしない
 export async function onRequest(context) {
+  const isApi = new URL(context.request.url).pathname.startsWith("/api/");
+  if (!isApi) return handle(context);
+  try {
+    const res = await handle(context);
+    const suspicious = (res.status >= 500 && res.headers.get("X-Service-Guard") !== "1") ||
+      (res.status === 401 && context.data.appRole === "search");
+    if (suspicious && (await isD1LimitReached(context.env.DB))) return d1LimitResponse();
+    return res;
+  } catch (e) {
+    if (isD1LimitError(e) || (await isD1LimitReached(context.env.DB))) return d1LimitResponse();
+    throw e;
+  }
+}
+
+async function handle(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
   const role = appRoleOf(url, env);

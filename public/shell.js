@@ -58,9 +58,8 @@
   // 実行時に getElementById で行うため、ここで生成しても従来通り動作する。
   const PAGE_ACTIONS = {
     // history の「CSVインポート」は 2026-10-15 に馬券履歴画面のカレンダーの並びへ移した(history.html。ヘッダーの段がずれるため)
+    // races の「出走馬一覧PDFをインポート」「JRAレース結果PDFをインポート」は 2026-10-16 に削除(使っていないため)
     races:
-      '<button id="jra-entries-import-btn" class="ghost-btn" data-admin-only hidden>出走馬一覧PDFをインポート</button>' +
-      '<button id="jra-result-import-btn" class="ghost-btn" data-admin-only hidden>JRAレース結果PDFをインポート</button>' +
       '<button id="new-race-btn" class="stamp-btn" data-admin-only hidden>＋ レースを登録</button>',
   };
 
