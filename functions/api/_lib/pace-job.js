@@ -9,6 +9,7 @@
 import { backtestChunk, saveAutoPaceResult } from "./pace-score.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
 import { parseCourseKey } from "./pace-queue.js";
+import { distanceRatiosStep } from "./distance-ratios.js";
 import { startPaceSearch, stepPaceSearch } from "../../../public/pace-search.js";
 
 const SKIP_DAYS = 7;
@@ -30,7 +31,17 @@ export async function paceJobStep(db) {
 
   if (!job) {
     const item = await db.prepare("SELECT kind, key FROM pace_recompute_queue ORDER BY created_at LIMIT 1").first();
-    if (!item) return { idle: true };
+    if (!item) {
+      // 比率の計算待ちが無ければ、同じ馬の組から出す距離の比を1歩進める(前回から結果が増えていれば始める。2026-10-16)。
+      // 結果を取り込んだ日の夜だけ動く(計算全体で約13万行)。失敗しても比率の計算は止めない
+      try {
+        const r = await distanceRatiosStep(db);
+        if (!r.idle) return { did: `distance-ratios ${r.did}${r.read != null ? ` ${r.read}` : ""}${r.count != null ? ` ${r.usable}/${r.count}` : ""}` };
+      } catch (e) {
+        console.error("distance ratios step failed (ignored)", e);
+      }
+      return { idle: true };
+    }
     const row = await lastComputed(db, item.kind, item.key);
     if (row?.source === "manual" || (row?.source === "auto" && row.updated_at && Date.now() - Date.parse(row.updated_at) < SKIP_DAYS * 86400000)) {
       await dropQueue(db, item.kind, item.key);
