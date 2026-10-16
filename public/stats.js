@@ -419,6 +419,94 @@ function renderJockeyTable(items) {
   renderTable("jockey-table", "jockey", "騎手", "name");
 }
 
+// ---------- 馬別収支(2026-10-15追加。docs/design/stats-rules.md「馬別収支」) ----------
+// 1枚の馬券に複数の馬が絡む場合、関係する馬それぞれに全額を計上する(騎手別と同じ。按分しない)。
+// 同じ馬は馬名を NFKC にして空白を除いた値で突き合わせる(サーバーの horseAliasKeyOf と同じ考え方。購入時点の馬名は
+// 出走馬表〈馬名エイリアスを通して保存〉から入るため、エイリアスは画面では通さない)。表示名はその馬の一番新しい購入の馬名。
+// 枠連(selections の馬番は枠番)と、馬名の無い選択は対象外。購入回数 = その馬を含む馬券を買ったレースの数(BOX等の組数で増えないように)。
+const HORSE_TOP_N = 10;
+const HORSE_RATE_MIN_RACES = 3; // 回収率の順位に入れる最低の購入回数(1回の大当たりだけの馬が並ばないように)
+const HORSE_SEARCH_MAX = 50;
+let horseGroups = []; // [{ key, name, stats, races }]
+
+function horseStatsKeyOf(name) {
+  return String(name || "").normalize("NFKC").replace(/\s/g, "");
+}
+
+function raceKeyOfTicket(t) {
+  return t.race_id != null ? `id:${t.race_id}` : `${t.race_date || ""}|${t.track || ""}|${t.race_number || ""}`;
+}
+
+function renderHorseTables(items) {
+  const byKey = new Map(); // key -> { name, date, tickets, races }
+  for (const t of items) {
+    if (t.bet_type === "wakuren") continue;
+    const keys = new Map();
+    for (const s of t.selections || []) {
+      const k = horseStatsKeyOf(s?.horse_name);
+      if (k) keys.set(k, String(s.horse_name).trim());
+    }
+    for (const [k, name] of keys) {
+      let g = byKey.get(k);
+      if (!g) byKey.set(k, (g = { name, date: "", tickets: [], races: new Set() }));
+      const d = String(t.race_date || "");
+      if (d >= g.date) { g.date = d; g.name = name; }
+      g.tickets.push(t);
+      g.races.add(raceKeyOfTicket(t));
+    }
+  }
+  horseGroups = [...byKey.entries()].map(([key, g]) => ({ key, name: g.name, stats: computeGroupStats(g.tickets), races: g.races.size }));
+
+  const byAmount = [...horseGroups].sort((a, b) => b.stats.totalAmount - a.stats.totalAmount || b.races - a.races);
+  const byRate = horseGroups.filter((g) => g.races >= HORSE_RATE_MIN_RACES && g.stats.rate !== null)
+    .sort((a, b) => b.stats.rate - a.stats.rate || b.stats.totalAmount - a.stats.totalAmount);
+  const byCount = [...horseGroups].sort((a, b) => b.races - a.races || b.stats.totalAmount - a.stats.totalAmount);
+  renderHorseTable("horse-amount-table", byAmount.slice(0, HORSE_TOP_N), true);
+  renderHorseTable("horse-rate-table", byRate.slice(0, HORSE_TOP_N), true);
+  renderHorseTable("horse-count-table", byCount.slice(0, HORSE_TOP_N), true);
+  const note = document.getElementById("horse-rate-note");
+  if (note) note.textContent = `購入回数が${HORSE_RATE_MIN_RACES}回以上の馬だけ(1回の大当たりだけの馬が並ばないように)。`;
+  renderHorseSearch();
+}
+
+// withRank: 先頭に順位の列を付ける
+function renderHorseTable(elId, rows, withRank) {
+  const table = document.getElementById(elId);
+  if (!table) return;
+  if (!rows.length) {
+    table.innerHTML = `<tr><td class="table-empty">データがありません</td></tr>`;
+    return;
+  }
+  const head = `<tr>${withRank ? "<th>順位</th>" : ""}<th>馬名</th><th>購入回数</th><th>購入</th><th>払戻(確定)</th><th>収支</th><th>回収率</th><th>的中率</th></tr>`;
+  const body = rows.map((g, i) => {
+    const s = g.stats;
+    return `<tr>${withRank ? `<td>${i + 1}</td>` : ""}
+      <td class="table-name">${escapeHtml(g.name)}</td>
+      <td>${g.races}</td>
+      <td>${formatYen(s.totalAmount)}</td>
+      <td>${formatYen(s.settledPayout)}</td>
+      <td class="${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(s.profit)}</td>
+      <td>${s.rate !== null ? s.rate + "%" : "-"}</td>
+      <td>${s.hitRate !== null ? s.hitRate + "%" : "-"}</td></tr>`;
+  }).join("");
+  table.innerHTML = head + body;
+}
+
+// 馬名検索: 入力を含む馬(全角半角・空白をそろえて比べる)を購入額の多い順に最大 HORSE_SEARCH_MAX 頭
+function renderHorseSearch() {
+  const input = document.getElementById("horse-stats-search");
+  const wrap = document.getElementById("horse-stats-search-result");
+  if (!input || !wrap) return;
+  const q = horseStatsKeyOf(input.value);
+  if (!q) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const hits = horseGroups.filter((g) => g.key.includes(q)).sort((a, b) => b.stats.totalAmount - a.stats.totalAmount);
+  const note = document.getElementById("horse-stats-search-note");
+  if (note) note.textContent = hits.length > HORSE_SEARCH_MAX ? `${hits.length}頭が当てはまります(購入額の多い順に${HORSE_SEARCH_MAX}頭まで表示)` : `${hits.length}頭`;
+  renderHorseTable("horse-search-table", hits.slice(0, HORSE_SEARCH_MAX), false);
+}
+document.getElementById("horse-stats-search")?.addEventListener("input", renderHorseSearch);
+
 // ---------- レース区分フィルタ(総合成績・レース別。2026-09-19追加) ----------
 // 各購入(t.race_category: "graded"/"condition"/"other")を「すべて/重賞のみ/条件戦のみ」で
 // 絞り込む。タブごとに独立した選択状態を持つ(docs/design/graded-races.md参照)。
@@ -471,6 +559,7 @@ async function loadAndRender() {
   renderTrackTable(allTickets);
   renderCourseTable(allTickets);
   renderJockeyTable(allTickets);
+  renderHorseTables(allTickets);
 }
 
 setupCategoryFilter("overall-category-filter", "overall", () => {

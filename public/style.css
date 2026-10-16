@@ -3500,3 +3500,7 @@ body.guest-mode #gr-notes { display: none; }
   .bet-horse-row.axis2-row .check-inline,
   .bet-horse-row.axis2-row-3col .check-inline { min-width: 30px; }
 }
+
+/* 集計画面「馬別」タブの馬名検索(2026-10-15) */
+.horse-stats-search { margin: 0 0 12px; }
+.horse-stats-search input { width: 100%; max-width: 320px; padding: 8px 10px; font-size: 16px; }

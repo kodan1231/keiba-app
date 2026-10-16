@@ -25,6 +25,7 @@
       <button type="button" class="stats-tab" data-tab="track">競馬場別</button>
       <button type="button" class="stats-tab" data-tab="course">コース別</button>
       <button type="button" class="stats-tab" data-tab="jockey">騎手別</button>
+      <button type="button" class="stats-tab" data-tab="horse">馬別</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="overall">
@@ -48,7 +49,7 @@
       </div>
       <div class="ratio-block">
         <h3 class="stats-subheading">騎手別 購入比率</h3>
-        <p class="stats-note">1枚の馬券に複数の騎手が絡む場合、各騎手に全額を計上します(按分しません)。そのため合計は100%を超えることがあります。騎手情報を持たない購入(CSV取込分など)は含まれません。</p>
+        <p class="stats-note">1枚の馬券に複数の騎手が絡む場合、各騎手に全額を計上します(按分しません)。そのため合計は100%を超えることがあります。騎手が分からない購入(出走馬表の無いレースのCSV取込分など)は含まれません。</p>
         <div class="ratio-bars" id="ratio-jockey"></div>
       </div>
     </section>
@@ -76,6 +77,28 @@
     <section class="stats-section stats-panel" data-panel="jockey" hidden>
       <h2 class="stats-heading">騎手別収支</h2>
       <div class="table-wrap"><table class="stats-table" id="jockey-table"></table></div>
+    </section>
+
+    <!-- 馬別収支(2026-10-15追加。docs/design/stats-rules.md「馬別収支」) -->
+    <section class="stats-section stats-panel" data-panel="horse" hidden>
+      <h2 class="stats-heading">馬別収支</h2>
+      <p class="stats-note">1枚の馬券に複数の馬が絡む場合、各馬に全額を計上します(騎手別と同じ。按分しません)。購入回数はその馬を含む馬券を買ったレースの数です。
+        枠連と、馬名が分からない購入(出走馬表の無いレースのCSV取込分など)は含まれません。</p>
+      <div class="horse-stats-search">
+        <input type="search" id="horse-stats-search" placeholder="馬名で検索" autocomplete="off" />
+      </div>
+      <div id="horse-stats-search-result" hidden>
+        <h3 class="stats-subheading">検索結果</h3>
+        <p class="stats-note" id="horse-stats-search-note"></p>
+        <div class="table-wrap"><table class="stats-table" id="horse-search-table"></table></div>
+      </div>
+      <h3 class="stats-subheading">購入額の多い順(トップ10)</h3>
+      <div class="table-wrap"><table class="stats-table" id="horse-amount-table"></table></div>
+      <h3 class="stats-subheading">回収率の高い順(トップ10)</h3>
+      <p class="stats-note" id="horse-rate-note"></p>
+      <div class="table-wrap"><table class="stats-table" id="horse-rate-table"></table></div>
+      <h3 class="stats-subheading">購入回数の多い順(トップ10)</h3>
+      <div class="table-wrap"><table class="stats-table" id="horse-count-table"></table></div>
     </section>
 
   </main>
