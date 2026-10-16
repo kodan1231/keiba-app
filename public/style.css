@@ -3508,3 +3508,19 @@ body.guest-mode #gr-notes { display: none; }
 /* 集計画面「馬別」タブの馬名検索(2026-10-15) */
 .horse-stats-search { margin: 0 0 12px; }
 .horse-stats-search input { width: 100%; max-width: 320px; padding: 8px 10px; font-size: 16px; }
+
+/* 管理画面(2026-10-16 スマホで縦に崩れていたのを直す) */
+/* 比率・点数の入力欄: label 全体の縦並び(flex-direction: column)を受けて「名前・入力欄・単位」が縦に積まれていたので横に並べる */
+.pace-w-input { flex-direction: row; white-space: nowrap; }
+/* 重賞の登録欄: 横並び(PC)は下揃え。スマホの縦並びでは右寄せにならないよう左に寄せ、幅は中身に合わせる */
+.graded-race-form { align-items: flex-end; flex-wrap: wrap; }
+.graded-race-form .graded-race-form-name { flex: 1; min-width: 160px; }
+.graded-race-form .graded-race-form-check { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; }
+.graded-race-form .graded-race-form-date { flex: 0 0 110px; }
+.graded-race-form label:not(.graded-race-form-name):not(.graded-race-form-date):not(.graded-race-form-check) { flex: 0 0 auto; }
+@media(max-width:600px) { /* .form-row が縦並びになる幅(600px以下)に合わせる */
+  .graded-race-form { align-items: stretch; }
+  .graded-race-form .graded-race-form-name, .graded-race-form .graded-race-form-date { flex: 0 0 auto; width: 100%; min-width: 0; }
+  .graded-race-form .graded-race-form-check { align-self: flex-start; }
+  .graded-race-form button { align-self: flex-start; }
+}

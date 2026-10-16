@@ -1238,9 +1238,12 @@ async function loadPaceWeights() {
     <p class="ticket-sub" id="pace-adjust-auto-info">${escapeHtml(paceAdjustAutoText(data.score_settings?.adjust_auto))}</p>
     <p class="ticket-sub">間隔は全レース共通(前走から6か月以上空いた馬の軸指数・相手指数から引く)。重賞・コースごとの評価点には出ません</p>
     </details>
-    <span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span>
+    <!-- 標準の比率は最初は閉じる(2026-10-16 ユーザー要望。常に出ているとスクロールが増えるため)。開閉は評価点の欄と同じく覚える -->
+    <details class="pace-adj-fold" data-open-key="std-weights" ${paceAdjOpen.has("std-weights") ? "open" : ""}>
+    <summary><span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span></summary>
     ${paceWeightsLinesHtml(data.default, data.builtin)}
-    ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}`;
+    ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}
+    </details>`;
   document.getElementById("pace-missing-score-save").addEventListener("click", () => {
     paceWeightsRequest("/api/admin/pace-weights/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },

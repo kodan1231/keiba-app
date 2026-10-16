@@ -253,9 +253,9 @@
         </div>
 
         <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--rule)">
-          <form id="graded-race-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">
+          <form id="graded-race-form" class="form-row graded-race-form">
             <input type="hidden" id="graded-race-id" value="" />
-            <label style="flex:1;min-width:160px">レース名(例: 紫苑S)
+            <label class="graded-race-form-name">レース名(例: 紫苑S)
               <input type="text" id="graded-race-name" placeholder="レース名" required />
             </label>
             <label>グレード
@@ -265,8 +265,8 @@
                 <option value="G3">G3</option>
               </select>
             </label>
-            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="graded-race-jump" /> 障害重賞</label>
-            <label style="width:110px">開催月日(任意)
+            <label class="graded-race-form-check"><input type="checkbox" id="graded-race-jump" /> 障害重賞</label>
+            <label class="graded-race-form-date">開催月日(任意)
               <input type="text" id="graded-race-schedule" placeholder="12-28" inputmode="numeric" />
             </label>
             <button type="submit" id="graded-race-submit-btn" class="stamp-btn">登録</button>
