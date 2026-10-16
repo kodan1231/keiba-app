@@ -16,6 +16,9 @@ import {
   horseAliasKeyOf,
   getPaceScoreSettings,
   weightAdjOf,
+  pickTimeRuns,
+  addMonthsIso,
+  TIME_RECENT_MONTHS,
 } from "../../_shared.js";
 
 // 予想登録画面の馬柱表示(近5走)で、馬名と前走の間に出す「同条件の持ちタイム・上がり」の取得API
@@ -152,6 +155,7 @@ export async function onRequestGet(context) {
   };
 
   const horses = {};
+  const candsByName = new Map(); // 馬名 -> 補正タイムの候補の走
   for (const row of results || []) {
     const entryKey = searchKeyToKey.get(row.horse_key);
     const name = entryKey && keyMap.get(entryKey);
@@ -174,13 +178,29 @@ export async function onRequestGet(context) {
       const c = correctRunTime(sec, { runTrack: row.track, runCondition: normalizeTrackConditionText(row.track_condition), targetTrack: race.track }, offsets);
       const kgAdj = weightAdjOf(todayKgByName.get(name), row.weight_carried, secPerKg);
       const corrected = Math.round((c.seconds + kgAdj) * 100) / 100;
-      const cur = horses[name].corrected;
-      if (!cur || corrected < cur.corrected_seconds) {
-        // kg_adj: 斤量の補正(秒。重くなれば+)、today_weight: 今回の斤量(2026-10-15)
-        horses[name].corrected = { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial,
-          kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null };
-      }
+      // 候補として持っておき、最後に選ぶ(2026-10-16。下の pickTimeRuns)。同じ距離の走だけなので段は1
+      (candsByName.get(name) || candsByName.set(name, []).get(name)).push({
+        tier: 1, c: corrected, date: String(row.race_date), kgAdj,
+        info: { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial, kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null },
+      });
     }
+  }
+  // 補正タイム(2026-10-16 変更。ユーザー要望・仕様確認済み。_lib/race-factors.js の pickTimeRuns): 直近1年の走だけ(無ければ全部)→
+  // 最速と最遅を1走ずつ除いた平均(2走以下はそのまま平均)。以前は最速の1走。
+  // corrected_seconds は平均、そのほかの項目(元のタイム・競馬場・馬場・補正・斤量・その走)は使った中の最速の走。
+  // runs_used: 平均に使った走数、runs_total: 対象の走数(直近1年に無ければ全期間)、recent_only: 直近1年だけで出したか
+  for (const [name, cands] of candsByName) {
+    const sel = pickTimeRuns(cands, race.race_date);
+    if (!sel) continue;
+    const fastest = sel.runs[0].info;
+    const from = addMonthsIso(race.race_date, -TIME_RECENT_MONTHS);
+    horses[name].corrected = {
+      ...fastest,
+      corrected_seconds: Math.round(sel.time * 100) / 100,
+      fastest_seconds: fastest.corrected_seconds,
+      runs_used: sel.used, runs_total: sel.total,
+      recent_only: cands.some((r) => r.date >= from),
+    };
   }
 
   return Response.json({ condition, horses, pedigree });

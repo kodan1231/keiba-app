@@ -1303,7 +1303,9 @@ function paceCorrectedSectionHtml(entries) {
       <tr>
         <td>${x.rank}</td>
         <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}</td>
-        <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? `<span title="補正値が出せない部分を0として計算">※</span>` : ""}</td>
+        <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? `<span title="補正値が出せない部分を0として計算">※</span>` : ""}${
+          // 何走の平均か(2026-10-16。直近1年の走〈無ければ全期間〉の、最速と最遅を除いた平均)。右の列は使った中の最速の走
+          x.c.runs_used > 1 ? `<br><small class="pace-none" title="${escapeAttr(`${x.c.recent_only ? "直近1年" : "全期間"}の${x.c.runs_total}走${x.c.runs_total > 2 ? "から最速と最遅を除いた" : "の"}平均。最速は ${secText(x.c.fastest_seconds)}`)}">${x.c.runs_used}走平均</small>` : ""}</td>
         <td>${i === 0 ? "—" : `+${(x.c.corrected_seconds - top).toFixed(1)}`}</td>
         <td>${escapeHtml(x.c.time_text)}</td>
         <td>${escapeHtml(x.c.track || "—")}</td>

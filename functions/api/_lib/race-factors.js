@@ -65,6 +65,29 @@ const BOARD_POSITION = 5; // 同コース: 掲示板(5着以内)
 export const DEFAULT_MISSING_SCORE = 40;
 export const DEFAULT_WEIGHT_SEC_PER_KG = 0.1; // 斤量1kgあたりの補正の秒数の既定値(2026-10-15)
 
+// 補正タイムに使う走を選んで平均する(2026-10-16。ユーザー要望・仕様確認済み)。補正タイム順位(horse-best)と共用。
+// cands: [{ tier(1が一番近い), c(換算後の秒), date("YYYY-MM-DD"), x?(走), kgAdj? }]、raceDate: 今回の日付
+//   1. 直近 TIME_RECENT_MONTHS か月(今回の日付より前)の走だけ。その中に1走も無ければ全部の走
+//   2. その中で一番近い段(tier)の走だけ
+//   3. 最速と最遅を1走ずつ除いた平均(2走以下はそのまま平均)
+// 戻り値: { time(平均), tier, run(使った中の最速の走 x), fastest(その換算後の秒), kgAdj(使った走の斤量の補正の平均), used(平均に使った走数),
+//   total(その段の走数), runs(使った走) } か null(走が無い)
+export const TIME_RECENT_MONTHS = 12;
+export function pickTimeRuns(cands, raceDate) {
+  if (!cands || !cands.length) return null;
+  const from = addMonthsIso(raceDate, -TIME_RECENT_MONTHS);
+  const recent = from ? cands.filter((r) => r.date >= from) : [];
+  const pool = recent.length ? recent : cands;
+  const tier = Math.min(...pool.map((r) => r.tier));
+  const inTier = pool.filter((r) => r.tier === tier).sort((a, b) => a.c - b.c);
+  const used = inTier.length > 2 ? inTier.slice(1, -1) : inTier;
+  const avg = (arr, f) => arr.reduce((s, r) => s + f(r), 0) / arr.length;
+  return {
+    time: avg(used, (r) => r.c), tier, run: used[0].x ?? null, fastest: used[0].c,
+    kgAdj: Math.round(avg(used, (r) => r.kgAdj || 0) * 100) / 100, used: used.length, total: inTier.length, runs: used,
+  };
+}
+
 // 斤量の補正(秒)。今回・その走の斤量のどちらかが無ければ0
 export function weightAdjOf(todayKg, runKg, secPerKg = DEFAULT_WEIGHT_SEC_PER_KG) {
   const a = Number(todayKg), b = Number(runKg);
@@ -400,7 +423,8 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 間隔の評価点(2026-10-15): 前走(中止を含む)の6か月後の同じ日以降
     const layoffFrom = last ? addMonthsIso(last.race_date, LAYOFF_MONTHS) : null;
     const layoff = Boolean(layoffFrom && layoffFrom <= date);
-    let time = null, timeTier = 9, timeRun = null, timeKgAdj = 0, l3 = null, l3Tier = 9;
+    let time = null, timeTier = 9, timeRun = null, timeKgAdj = 0, timeUsed = 0, timeTotal = 0, l3 = null, l3Tier = 9;
+    const timeCands = []; // 補正タイムの候補の走 { tier, c(換算後), x, kgAdj, date }
     // 前走の馬体重(体重のある一番新しい走)と、同コースの掲示板(5着以内)の数
     const weightRun = runs.find((x) => x.status !== "scratched" && x.status !== "excluded" && Number(x.body_weight) > 0);
     let boardIn = 0, boardOut = 0;
@@ -422,15 +446,19 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       const tier = tierOf(x, race);
       if (!tier) continue;
       const sec = timeTextToSeconds(x.time_text);
-      if (sec != null && tier <= timeTier) {
+      if (sec != null) {
         const kgAdj = weightAdjOf(h.weight_carried, x.weight_carried, weightSecPerKg);
-        const c = convertTime(ctx, sec, x, race) + kgAdj;
-        if (tier < timeTier || c < time) { time = c; timeTier = tier; timeRun = x; timeKgAdj = kgAdj; }
+        timeCands.push({ tier, c: convertTime(ctx, sec, x, race) + kgAdj, x, kgAdj, date: String(x.race_date) });
       }
       const f = Number(x.final_furlong_time);
       if (x.final_furlong_time != null && f > 0 && tier <= l3Tier && (tier < l3Tier || f < l3)) { l3 = f; l3Tier = tier; }
     }
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff, timeKgAdj };
+    // 補正タイム(2026-10-16 変更。ユーザー要望・仕様確認済み): 直近1年(TIME_RECENT_MONTHS)の走だけ(1年以内に無ければ古い走も)→
+    // 一番近い段の走を全部 → 最速と最遅を1走ずつ除いた平均(2走以下はそのまま平均)。以前は一番近い段の最速の1走だった
+    // (1年以上前の流れの速いレースの走が1本あるだけで高い点になった)
+    const sel = pickTimeRuns(timeCands, date);
+    if (sel) ({ time, tier: timeTier, run: timeRun, kgAdj: timeKgAdj, used: timeUsed, total: timeTotal } = sel);
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -440,7 +468,12 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   }
   const paceType = predictPace(styles, n);
   const kgText = (x) => (x.timeKgAdj ? ` 斤量${x.timeKgAdj > 0 ? "+" : "−"}${Math.abs(x.timeKgAdj).toFixed(1)}` : "");
-  const timeText = (x) => `補${fmtSec(x.time)}${TIER_LABEL[x.timeTier] ? `(${x.timeRun.course_type}${x.timeRun.distance}m・${TIER_LABEL[x.timeTier]})` : ""}${kgText(x)}`;
+  // 何走の平均か(2026-10-16): 「3走平均〈5走中・最速最遅を除く〉」。1走ならその走の芝ダ・距離
+  const usedText = (x) => (x.timeUsed > 1 ? `${x.timeUsed}走平均${x.timeTotal > x.timeUsed ? `〈${x.timeTotal}走中・最速最遅を除く〉` : ""}` : `${x.timeRun.course_type}${x.timeRun.distance}m`);
+  const timeText = (x) => {
+    const parts = [usedText(x), TIER_LABEL[x.timeTier]].filter(Boolean);
+    return `補${fmtSec(x.time)}${x.timeUsed > 1 || TIER_LABEL[x.timeTier] ? `(${parts.join("・")})` : ""}${kgText(x)}`;
+  };
   const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
 
   // 馬番・騎手: 同コース・同場(芝ダ障が同じ)の成績(このレースより前)
