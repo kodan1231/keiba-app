@@ -67,11 +67,22 @@ export function trendDistanceOptions(lineups) {
   return out;
 }
 
-// 補正値(秒。プラスは遅い)。
+// 競馬場ごとの馬場の差を使うのに要るレース数(その競馬場の良・その馬場とも。2026-10-16)
+export const COND_TRACK_MIN_RACES = 5;
+
+// 補正値(秒。プラスは遅い)。芝ダ・距離ごと(呼び出し側が buildTrackTrends に渡した芝ダ・距離)。
 //   trackOff(競馬場) = その競馬場の良馬場の平均 − 全競馬場の良馬場の平均
 //                      (良馬場のレースが少なければ、馬場を問わない平均どうしの差)
-//   condOff(馬場)    = 全競馬場のその馬場の平均 − 全競馬場の良馬場の平均(良は0)
-// レースが TREND_MIN_RACES 未満で出せないものは null。
+//   condOffByTrack(競馬場 → 馬場) = その競馬場のその馬場の平均 − その競馬場の良馬場の平均
+//                      (その競馬場で良・その馬場とも COND_TRACK_MIN_RACES 以上あるときだけ。良は0)
+//   condOff(馬場)    = 競馬場ごとの「その馬場の平均 − 良の平均」を、その馬場のレース数で重み付けした平均(良は0。
+//                      良が TREND_MIN_RACES 以上ある競馬場だけ。合計 TREND_MIN_RACES 未満なら null)
+//   走の補正には condOffOf(競馬場ごと → 無ければ condOff)を使う。
+// 2026-10-16 変更(ユーザー指摘・仕様確認済み): 以前の condOff は「全競馬場のその馬場の平均 − 全競馬場の良の平均」で、
+//   馬場ごとに競馬場の混ざり方が違うと見かけの差が出た(ダ1400 の不良は遅い川崎が4割を占め、競馬場ごとには同じか速いのに
+//   「不良は1.8秒遅い」となり、川崎・不良の走が1.8秒速く補正されていた)。競馬場の差を除いてから馬場の差を出し、
+//   レースが十分ある競馬場はその競馬場の差を使うようにした。
+// レースが足りず出せないものは null。
 export function trackTimeOffsets(trends) {
   const ov = trends.overall;
   const ok = (c) => c && c.n >= TREND_MIN_RACES && c.avg != null;
@@ -82,16 +93,44 @@ export function trackTimeOffsets(trends) {
     else if (ok(t.all) && ok(ov.all)) off = t.all.avg - ov.all.avg;
     trackOff.set(t.track, off);
   }
+  const condOffByTrack = new Map();
+  const pooled = new Map(); // 馬場 -> { sum, w }
+  for (const t of trends.tracks) {
+    const good = t["良"];
+    if (!ok(good)) continue;
+    const m = new Map([["良", 0]]);
+    for (const c of TRACK_CONDITIONS) {
+      if (c === "良") continue;
+      const x = t[c];
+      if (!x || !x.n || x.avg == null) continue;
+      const d = x.avg - good.avg;
+      if (x.n >= COND_TRACK_MIN_RACES && good.n >= COND_TRACK_MIN_RACES) m.set(c, d);
+      const p = pooled.get(c) || { sum: 0, w: 0 };
+      p.sum += d * x.n;
+      p.w += x.n;
+      pooled.set(c, p);
+    }
+    condOffByTrack.set(t.track, m);
+  }
   const condOff = new Map([["良", 0]]);
   for (const c of TRACK_CONDITIONS) {
     if (c === "良") continue;
-    condOff.set(c, ok(ov[c]) && ok(ov["良"]) ? ov[c].avg - ov["良"].avg : null);
+    const p = pooled.get(c);
+    condOff.set(c, p && p.w >= TREND_MIN_RACES ? p.sum / p.w : null);
   }
-  return { trackOff, condOff };
+  return { trackOff, condOff, condOffByTrack };
+}
+
+// 走った競馬場・馬場の補正値: その競馬場の値(レースが十分あるとき)→ 無ければ競馬場の差を除いた全場の値。出せなければ null
+export function condOffOf(offsets, track, condition) {
+  if (!condition) return null;
+  const byTrack = offsets.condOffByTrack?.get(track)?.get(condition);
+  if (byTrack != null) return byTrack;
+  return offsets.condOff.get(condition) ?? null;
 }
 
 // ある走のタイムを「今回の競馬場・良馬場」で走った場合のタイムに換算する。
-//   補正後 = 元のタイム − trackOff(走った競馬場) − condOff(走った日の馬場) + trackOff(今回の競馬場)
+//   補正後 = 元のタイム − trackOff(走った競馬場) − condOffOf(走った競馬場・その日の馬場) + trackOff(今回の競馬場)
 // 補正値が出せない部分は 0 として足し、partial: true を付ける。
 export function correctRunTime(seconds, { runTrack, runCondition, targetTrack }, offsets) {
   let partial = false;
@@ -104,7 +143,7 @@ export function correctRunTime(seconds, { runTrack, runCondition, targetTrack },
   };
   const same = runTrack && runTrack === targetTrack;
   const trackAdj = same ? 0 : -part(offsets.trackOff.get(runTrack)) + part(offsets.trackOff.get(targetTrack));
-  const condAdj = -part(runCondition ? offsets.condOff.get(runCondition) : null);
+  const condAdj = -part(runCondition ? condOffOf(offsets, runTrack, runCondition) : null);
   const adj = Math.round((trackAdj + condAdj) * 100) / 100;
   return { seconds: Math.round((seconds + adj) * 100) / 100, adj, partial };
 }

@@ -6,6 +6,8 @@ import {
   RACE_CLASSES,
   TRACK_CONDITIONS,
   TREND_MIN_RACES,
+  trackTimeOffsets,
+  COND_TRACK_MIN_RACES,
 } from "../_shared.js";
 
 // データ検索画面「競馬場傾向」タブ(2026-10-12追加)。
@@ -34,11 +36,17 @@ export async function onRequestGet(context) {
   if (cls !== "all" && !RACE_CLASSES.includes(cls)) return jsonError("クラスの指定が不正です", 400);
 
   const trends = buildTrackTrends(lineups, { courseType, distance, raceClass: cls === "all" ? null : cls });
+  // 馬場の補正値(2026-10-16): 補正タイムで実際に使う値(_lib/track-trends.js の trackTimeOffsets)。
+  //   cond_offsets: 競馬場の差を除いた全場の値 { 良: 0, 稍重, 重, 不良 }(出せなければ null)
+  //   cond_track_min: 競馬場ごとの馬場の差を使うのに要るレース数(その競馬場の良・その馬場とも)
+  const off = trackTimeOffsets(trends);
   return Response.json({
     distances,
     condition: { course_type: courseType, distance, class: cls },
     conditions: TRACK_CONDITIONS,
     min_races: TREND_MIN_RACES,
+    cond_offsets: Object.fromEntries(off.condOff),
+    cond_track_min: COND_TRACK_MIN_RACES,
     ...trends,
   });
 }

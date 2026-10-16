@@ -61,14 +61,26 @@ function ttRenderTable(data) {
   }
   const ov = data.overall;
   const head = `<thead><tr><th>競馬場</th><th>全体</th>${conds.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
-  // 全競馬場の行: 全体は差なし、馬場の列は良馬場との差(馬場による補正値)
+  // 2026-10-16 変更(補正タイムで実際に使う値に合わせた。docs/design/data-search.md「競馬場傾向タブ」):
+  //   全競馬場の行: 馬場の列の差は「競馬場の差を除いた馬場の補正値」(cond_offsets。以前は全場の平均どうしの差で、
+  //     馬場ごとに競馬場の混ざり方が違うと見かけの差が出た〈ダ1400 の不良が +1.8〉)
+  //   競馬場の行: 全体・良の差は全競馬場との差(競馬場の補正値)。稍重・重・不良の差は「その競馬場の良との差」
+  //     (その競馬場の良・その馬場とも cond_track_min 以上なら補正にこの値を使う。足りない欄は薄く出し、補正は全場の値)
+  const condOff = data.cond_offsets || {};
+  const trackMin = data.cond_track_min || 5;
+  const offsetBase = (cell, off) => (cell && cell.avg != null && off != null ? { avg: cell.avg - off } : null);
   const overallRow = `<tr class="tt-overall"><th scope="row">全競馬場</th>${ttCellHtml(ov.all, null, minRaces)}${conds
-    .map((c) => ttCellHtml(ov[c], c === "良" ? null : ov["良"], minRaces))
+    .map((c) => ttCellHtml(ov[c], c === "良" ? null : offsetBase(ov[c], condOff[c]), minRaces))
     .join("")}</tr>`;
   const tracks = [...data.tracks].sort((a, b) => dsTrackSortIndex(a.track) - dsTrackSortIndex(b.track) || b.all.n - a.all.n);
   const rows = tracks
     .map((t) => `<tr><th scope="row">${escapeHtml(t.track)}</th>${ttCellHtml(t.all, ov.all, minRaces)}${conds
-      .map((c) => ttCellHtml(t[c], ov[c], minRaces))
+      .map((c) => {
+        if (c === "良") return ttCellHtml(t[c], ov[c], minRaces);
+        const good = t["良"];
+        const used = t[c] && good && t[c].n >= trackMin && good.n >= trackMin;
+        return ttCellHtml(t[c], good, used ? minRaces : Infinity);
+      })
       .join("")}</tr>`)
     .join("");
   ttEls.table.innerHTML = `${head}<tbody>${overallRow}${rows}</tbody>`;

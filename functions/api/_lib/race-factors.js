@@ -45,7 +45,7 @@
 // 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
 //   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
 import { runningStyleOf, firstCornerPosition, timeTextToSeconds } from "./graded-race-search.js";
-import { buildTrackTrends, trackTimeOffsets, TREND_MIN_RACES } from "./track-trends.js";
+import { buildTrackTrends, trackTimeOffsets, condOffOf, TREND_MIN_RACES } from "./track-trends.js";
 import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 
@@ -362,7 +362,8 @@ function tierOf(run, race) {
 function convertTime(ctx, sec, run, race) {
   const src = ctx.courseOf(run.course_type, run.distance);
   const off = (m, k) => (k != null && m.get(k) != null ? m.get(k) : 0);
-  let base = sec - off(src.offsets.trackOff, run.track) - off(src.offsets.condOff, normalizeTrackConditionText(run.track_condition));
+  // 馬場の補正は走った競馬場ごと(レースが十分あれば)→ 競馬場の差を除いた全場の値(2026-10-16。_lib/track-trends.js の condOffOf)
+  let base = sec - off(src.offsets.trackOff, run.track) - (condOffOf(src.offsets, run.track, normalizeTrackConditionText(run.track_condition)) ?? 0);
   const tgt = ctx.courseOf(race.course_type, race.distance);
   if (run.course_type !== race.course_type || Number(run.distance) !== Number(race.distance)) {
     base *= src.avg && tgt.avg ? tgt.avg / src.avg : Number(race.distance) / Number(run.distance);
