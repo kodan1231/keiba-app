@@ -17,7 +17,10 @@ function escapeHtml(str) {
  * @returns {string} エスケープ済み文字列
  */
 function escapeAttr(str) {
-  return escapeHtml(str).replace(/'/g, "&#39;");
+  // 2026-10-16: ダブルクォートもエスケープする。escapeHtml(textContent → innerHTML)は & < > しか変えないため、
+  // 以前は属性値の " で属性が切れていた(出走馬表の編集画面の data-extra='{"sex_age":…}' が「{」だけになり、
+  // 保存のたびに性齢・斤量が消えていた。2026-10-06〜10-16)
+  return escapeHtml(str).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /**
