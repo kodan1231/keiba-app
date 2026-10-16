@@ -147,13 +147,31 @@ document.getElementById("apply-paste-btn").addEventListener("click", () => {
     alert("読み取れる行が見つかりませんでした。書式をご確認のうえ、直接入力欄で修正してください。");
     return;
   }
-  const count = clampHorseCount(Math.max(parsed.length, currentEntriesHorseCount, 5));
+  // 頭数は貼り付けた頭数(2026-10-16: 以前は今の頭数より減らさなかったため、特別登録〈21頭〉に確定後の出馬表〈17頭〉を
+  // 貼ると馬名の無い行が4つ残った。貼り付けは全行を置き換えるので、残っても空の行になるだけだった)
+  const count = clampHorseCount(Math.max(parsed.length, 5));
   horseCountSelect.value = count;
+  // 同じ馬(馬名一致)の今の行の項目(性齢・斤量・出走取消の印など)を残す(2026-10-16。以前は行を丸ごと置き換えており、
+  // 出走馬一覧の取り込みで入った性齢・斤量が、出馬表のテキストを貼り直すと消えた)。貼り付けで変えるのは枠・馬番・馬名・騎手。
+  // 枠は貼り付けに無ければ、馬番が今と同じときだけ今の枠を残す(馬番が変われば頭数から計算し直す)
+  const currentByName = new Map(readEntryRows().filter((e) => e.horse_name).map((e) => [ubNameKey(e.horse_name), e]));
+  const keepCurrent = (p) => {
+    const cur = currentByName.get(ubNameKey(p.horse_name));
+    if (!cur) return p;
+    const sameNumber = p.horse_number && Number(cur.horse_number) === Number(p.horse_number);
+    return {
+      ...cur,
+      horse_name: p.horse_name,
+      horse_number: p.horse_number,
+      waku_number: p.waku_number ?? (sameNumber ? cur.waku_number : null),
+      jockey: p.jockey || cur.jockey || null,
+    };
+  };
   // 馬番が読み取れていればその番号順に、読み取れなければ出現順に並べる
   const withNumbers = parsed.filter((p) => p.horse_number);
-  const ordered = withNumbers.length === parsed.length
+  const ordered = (withNumbers.length === parsed.length
     ? [...parsed].sort((a, b) => a.horse_number - b.horse_number)
-    : parsed.map((p, i) => ({ ...p, horse_number: p.horse_number || i + 1 }));
+    : parsed.map((p, i) => ({ ...p, horse_number: p.horse_number || i + 1 }))).map(keepCurrent);
   // 馬番の無い行があれば馬番未確定(特別登録の一覧の貼り付け等)、全行にあれば外す
   unnumberedCheck.checked = withNumbers.length !== parsed.length;
   renderEntryRows(ordered, count);

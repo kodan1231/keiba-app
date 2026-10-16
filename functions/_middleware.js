@@ -122,6 +122,8 @@ export async function onRequest(context) {
     if (guest) {
       context.data.isGuest = true;
       context.data.guestDeviceId = guest.deviceId;
+      context.data.guestNickname = guest.nickname || null; // ニックネーム(2026-10-16。未登録なら null)
+      context.data.guestVersion = guest.version;
       context.data.userId = null;
       context.data.username = null;
       context.data.isAdmin = false;
@@ -172,7 +174,8 @@ async function issueGuestCookie(context, out) {
   const settings = await getGuestSettings(env.DB);
   const cookie = await readGuestCookie(env, request.headers.get("Cookie"));
   if (settings.enabled && (!cookie || cookie.version !== settings.version)) {
-    out.headers.append("Set-Cookie", await createGuestCookie(env, cookie?.deviceId || randomToken(16), settings.version));
+    // 版を作り直すときも、登録済みのニックネームは引き継ぐ(2026-10-16)
+    out.headers.append("Set-Cookie", await createGuestCookie(env, cookie?.deviceId || randomToken(16), settings.version, cookie?.nickname || null));
   }
 }
 
@@ -187,6 +190,8 @@ async function searchApi(context, url) {
   }
   context.data.isGuest = true;
   context.data.guestDeviceId = guest.deviceId;
+  context.data.guestNickname = guest.nickname || null; // ニックネーム(2026-10-16。未登録なら null)
+  context.data.guestVersion = guest.version;
   context.data.userId = null;
   context.data.username = null;
   context.data.isAdmin = false;

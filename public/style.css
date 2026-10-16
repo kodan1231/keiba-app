@@ -3524,3 +3524,8 @@ body.guest-mode #gr-notes { display: none; }
   .graded-race-form .graded-race-form-check { align-self: flex-start; }
   .graded-race-form button { align-self: flex-start; }
 }
+
+/* ゲストのニックネーム登録画面と、管理画面の横並びのチェック(2026-10-16) */
+.guest-nickname-form { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
+.guest-nickname-form input { flex: 1; min-width: 160px; font-size: 16px; padding: 8px 10px; }
+label.inline-check { flex-direction: row; align-items: center; gap: 6px; }

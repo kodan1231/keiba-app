@@ -15,10 +15,16 @@ export async function onRequestGet(context) {
   if (deny) return deny;
   const db = context.env.DB;
   const settings = await getGuestSettings(db, { fresh: true });
-  const [devices, ips] = await Promise.all([
-    db.prepare("SELECT device_id, first_seen, last_seen, ip, user_agent, hits, blocked, note FROM guest_devices ORDER BY last_seen DESC LIMIT 200")
-      .all().then((r) => r.results || []).catch(() => []),
+  // 2026-10-16: ニックネーム(nickname)を返し、既定では名前のある端末だけ(?all=1 で名前の無い端末〈ボット等・登録前〉も)。
+  // unnamed_count: 名前の無い端末の数。guest_devices は端末の数だけの小さな表(全件を読んでも数十〜数百行)
+  const all = new URL(context.request.url).searchParams.get("all") === "1";
+  const [devices, ips, unnamed] = await Promise.all([
+    db.prepare(
+      `SELECT device_id, nickname, first_seen, last_seen, ip, user_agent, hits, blocked, note FROM guest_devices
+        WHERE ? = 1 OR nickname IS NOT NULL ORDER BY last_seen DESC LIMIT 200`
+    ).bind(all ? 1 : 0).all().then((r) => r.results || []).catch(() => []),
     db.prepare("SELECT ip, created_at, note FROM guest_ip_blocks ORDER BY created_at DESC").all().then((r) => r.results || []).catch(() => []),
+    db.prepare("SELECT COUNT(*) AS n FROM guest_devices WHERE nickname IS NULL").first().then((r) => Number(r?.n || 0)).catch(() => 0),
   ]);
   return Response.json({
     ok: true,
@@ -26,6 +32,8 @@ export async function onRequestGet(context) {
     window: guestRaceWindow(),
     devices,
     ip_blocks: ips,
+    all,
+    unnamed_count: unnamed,
   });
 }
 

@@ -51,6 +51,7 @@
 -- 2026-10-14: pace_jobs(比率の計算の途中の状態)・pace_weights_adjust(評価点の列)を追加。同日本番適用済み
 --  (schema_migrations に記録済み。2026-10-15 に確認)。未適用のマイグレーションは無い。
 -- 2026-10-15: pace_weights_week(比率の表に週目の列)を追加。同日本番適用済み(schema_migrations に記録済み)。
+-- 2026-10-16: guest_nickname(ゲストの端末の表にニックネームの列と UNIQUE インデックス)を追加。同日本番適用済み(schema_migrations に記録済み)。
 
 PRAGMA foreign_keys=ON;
 
@@ -226,3 +227,12 @@ INSERT INTO schema_migrations (name) VALUES ('pace_weights_adjust');
 ALTER TABLE pace_weights ADD COLUMN w_week INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE course_pace_weights ADD COLUMN w_week INTEGER NOT NULL DEFAULT 0;
 INSERT INTO schema_migrations (name) VALUES ('pace_weights_week');
+
+-- @STEP: guest_nickname
+-- ゲストのニックネーム(2026-10-16)。端末の表に名前と重複を比べるキーの列、キーの UNIQUE インデックス(NULL は重複してよい)。
+-- **コードの反映より前に適用すること**(2026-10-16 に本番適用済み)(登録の API が nickname 列に書くため、列が無いとゲストが登録できず見られなくなる)。
+-- guest_devices は端末の数だけの小さな表(2026-10-16 時点で26行)なので、インデックスの作成は軽い。
+ALTER TABLE guest_devices ADD COLUMN nickname TEXT;
+ALTER TABLE guest_devices ADD COLUMN nickname_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_devices_nickname_key ON guest_devices(nickname_key);
+INSERT INTO schema_migrations (name) VALUES ('guest_nickname');

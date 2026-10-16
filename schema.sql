@@ -728,8 +728,11 @@ CREATE TABLE IF NOT EXISTS guest_devices (
   user_agent TEXT,  -- 最後のブラウザ(先頭200文字)
   hits INTEGER NOT NULL DEFAULT 0, -- APIへのアクセス回数(おおよそ)
   blocked INTEGER NOT NULL DEFAULT 0,
-  note TEXT         -- 管理者のメモ(誰の端末か等)
+  note TEXT,        -- 管理者のメモ(誰の端末か等)
+  nickname TEXT,     -- ゲストが登録したニックネーム(2026-10-16追加。@STEP: guest_nickname。未登録は NULL)
+  nickname_key TEXT  -- 重複を比べるキー(NFKC・小文字・空白除去。UNIQUE)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_devices_nickname_key ON guest_devices(nickname_key);
 -- ブロックしたIP(Cookieを消して端末IDを変えられても止めるため)
 CREATE TABLE IF NOT EXISTS guest_ip_blocks (
   ip TEXT PRIMARY KEY,

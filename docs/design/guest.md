@@ -27,6 +27,22 @@
 - 公開を止めると、ゲストは全員使えなくなる。
 - Cookie 名は `...session` にしない(`_lib/auth.js` の `verifySessionToken` が `/session=/` で探すため)。
 
+## ニックネーム(2026-10-16追加。ユーザー要望・仕様確認済み)
+
+- 初めて開いたときに**ニックネームの登録画面**を出す(`public/auth.js` の `showGuestNicknameForm`)。名前だけ・**1〜10文字**・パスワードなし。
+  前後の空白は取り、制御文字は不可。**重複は断る**(全角半角・大文字小文字・空白の違いは同じとみなす。409 `nickname_taken`)。
+- 登録は `POST /api/guest/nickname`(`functions/api/guest/nickname.js`)。端末の行(`guest_devices`)に名前とキー(`nickname_key`。UNIQUE)を書き、
+  名前入りの Cookie `kbg`(`n`)を渡す。2回目以降は Cookie の名前を使い、**API のたびに D1 を読まない**。
+- 名前が無いうちは `/api/auth/check`(`need_nickname: true` を返す)と登録以外は 403 `guest_need_name`。**端末の行は登録のときに作る**
+  (アクセスの記録 `recordGuestAccess` は名前のある端末だけ)ので、名前を登録しないボット等は一覧に並ばない。
+- Cookie が消えた・別のブラウザ(iPhone の Safari と Chrome、ホーム画面のアプリ、プライベートブラウズ等は Cookie が別)では、また登録画面が出る。
+  同じ人が別の名前で登録しうる(許容。ユーザー判断)。設定の版を作り直しても名前は引き継ぐ(`issueGuestCookie`)。
+- 管理画面「ゲスト閲覧」の端末の一覧に「名前」の列。**既定では名前のある端末だけ**(`GET /api/admin/guest?all=1` で名前なしも。
+  画面の「名前なしも表示」)。名前の無い端末の数(`unnamed_count`)も出す。ブロック中の行は名前が無くても効く。
+- 背景(2026-10-16 の本番): 端末の一覧26件のうち、管理者のものが7件(アプリ分離で Cookie の署名の秘密情報が変わり作り直し+iPhone のブラウザ違い)、
+  残り19件はデータセンターの IP からの1回だけのアクセス(ボット・クローラー)だった。
+- `@STEP: guest_nickname`(列 `nickname`・`nickname_key`、UNIQUE インデックス)。アプリの振り分けは `/api/guest/` を main で 404(`_lib/app-role.js`)。
+
 ## サーバー側の制限(`functions/api/_lib/guest.js` の `resolveGuest`。`functions/_middleware.js` から)
 
 - `/api/*` で**ログインのセッションが無く**、`kbg` があるときだけゲストとして扱う(ログインしている人はセッションを優先)。

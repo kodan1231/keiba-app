@@ -1602,7 +1602,13 @@ async function loadGuestAdmin() {
   const table = document.getElementById("guest-devices-table");
   const ipTable = document.getElementById("guest-ips-table");
   if (!box || !table || !ipTable) return;
-  const res = await authedFetch("/api/admin/guest");
+  // 2026-10-16: 既定では名前(ニックネーム)のある端末だけ。「名前なしも表示」で ?all=1
+  const allCheck = document.getElementById("guest-devices-all");
+  if (allCheck && !allCheck.dataset.bound) {
+    allCheck.dataset.bound = "1";
+    allCheck.addEventListener("change", () => loadGuestAdmin());
+  }
+  const res = await authedFetch(`/api/admin/guest${allCheck?.checked ? "?all=1" : ""}`);
   if (!res.ok) { box.innerHTML = `<p class="ticket-sub">読み込みに失敗しました</p>`; return; }
   const data = await res.json();
   const s = data.settings || {};
@@ -1625,10 +1631,13 @@ async function loadGuestAdmin() {
   // 「URLを作り直す」は合言葉の廃止(2026-10-14)で外した(端末の止め方はブロック)
 
   const devices = data.devices || [];
+  const unnamedEl = document.getElementById("guest-unnamed-count");
+  if (unnamedEl) unnamedEl.textContent = `(名前なし ${Number(data.unnamed_count || 0)}台)`;
   table.innerHTML = devices.length ? `
-    <thead><tr><th>最終アクセス</th><th>回数</th><th>IP</th><th>ブラウザ</th><th>初回</th><th>メモ</th><th></th></tr></thead>
+    <thead><tr><th>名前</th><th>最終アクセス</th><th>回数</th><th>IP</th><th>ブラウザ</th><th>初回</th><th>メモ</th><th></th></tr></thead>
     <tbody>${devices.map((d) => `
       <tr data-device="${escapeAttr(d.device_id)}" data-ip="${escapeAttr(d.ip || "")}" class="${d.blocked ? "guest-device-blocked" : ""}">
+        <td>${d.nickname ? escapeHtml(d.nickname) : `<span class="ticket-sub">(名前なし)</span>`}</td>
         <td>${escapeHtml(formatDateTime(d.last_seen))}</td>
         <td>${Number(d.hits || 0)}</td>
         <td>${escapeHtml(d.ip || "")}</td>
@@ -1640,7 +1649,7 @@ async function loadGuestAdmin() {
           ${d.ip ? `<button type="button" class="ghost-btn guest-block-ip-btn">IPをブロック</button>` : ""}
         </div></td>
       </tr>`).join("")}
-    </tbody>` : `<tr><td>まだアクセスはありません</td></tr>`;
+    </tbody>` : `<tr><td>${allCheck?.checked ? "まだアクセスはありません" : "名前を登録した端末はまだありません"}</td></tr>`;
   const rowOf = (el) => el.closest("tr");
   table.querySelectorAll(".guest-block-btn").forEach((btn) => btn.addEventListener("click", () => {
     const tr = rowOf(btn);

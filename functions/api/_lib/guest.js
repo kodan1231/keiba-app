@@ -9,6 +9,10 @@
 //   - 設定は app_settings の key='guest': { enabled, version }(以前の合言葉 key が残っていても読まない)。
 //     version は Cookie に入れる版(今は変える操作は無い)。
 //   - 端末ごと・IPごとにブロックできる(guest_devices.blocked / guest_ip_blocks)。
+//   - ニックネーム(2026-10-16追加。ユーザー要望・仕様確認済み): 初めて開いたときに名前だけ(1〜10文字・パスワードなし)を登録してもらう。
+//     名前は署名つき Cookie(kbg)の n に入れる(API のたびに D1 を読まない)。名前が無いうちは /api/auth/check と登録
+//     (POST /api/guest/nickname。functions/api/guest/nickname.js)以外は 403 guest_need_name。名前は重複を断る
+//     (guest_devices.nickname_key の UNIQUE。@STEP: guest_nickname)。端末の行は登録のときに作る(名前の無い端末〈ボット等〉は行を作らない)
 // D1: 設定とブロックの一覧は同じ実行環境で1分使い回す。アクセスの記録は1端末につき10分に1回まで書く。
 import { memoized, invalidateMemo } from "./memo-cache.js";
 
@@ -37,15 +41,17 @@ export function randomToken(bytes = 18) {
   return toB64url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
-// Cookie の値を作る: { d: 端末ID, v: 設定の版 }
-export async function createGuestCookie(env, deviceId, version) {
-  const payload = toB64url(new TextEncoder().encode(JSON.stringify({ d: deviceId, v: version, exp: Date.now() + GUEST_COOKIE_DAYS * 86400000 })));
+// Cookie の値を作る: { d: 端末ID, v: 設定の版, n: ニックネーム(2026-10-16。未登録なら無し) }
+export async function createGuestCookie(env, deviceId, version, nickname = null) {
+  const body = { d: deviceId, v: version, exp: Date.now() + GUEST_COOKIE_DAYS * 86400000 };
+  if (nickname) body.n = nickname;
+  const payload = toB64url(new TextEncoder().encode(JSON.stringify(body)));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(env.APP_PASSWORD, "sign"), new TextEncoder().encode(payload));
   const value = `${payload}.${toB64url(new Uint8Array(sig))}`;
   return `${GUEST_COOKIE}=${value}; Path=/; Max-Age=${GUEST_COOKIE_DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`;
 }
 
-// Cookie を検証して { deviceId, version } か null
+// Cookie を検証して { deviceId, version, nickname } か null
 export async function readGuestCookie(env, cookieHeader) {
   const m = String(cookieHeader || "").match(new RegExp(`(?:^|;\\s*)${GUEST_COOKIE}=([^;]+)`));
   if (!m || !env.APP_PASSWORD) return null;
@@ -56,7 +62,7 @@ export async function readGuestCookie(env, cookieHeader) {
     if (!ok) return null;
     const p = JSON.parse(new TextDecoder().decode(fromB64url(payload)));
     if (!(p.exp > Date.now()) || typeof p.d !== "string" || !Number.isInteger(p.v)) return null;
-    return { deviceId: p.d, version: p.v };
+    return { deviceId: p.d, version: p.v, nickname: typeof p.n === "string" && p.n ? p.n : null };
   } catch {
     return null;
   }
@@ -157,6 +163,21 @@ export function isGuestRace(race, win = guestRaceWindow()) {
   return d >= win.from && d <= win.to && JRA_TRACKS.includes(String(race.track || "").trim());
 }
 
+// ---- ニックネーム(2026-10-16) ----
+export const GUEST_NICKNAME_MAX = 10;
+export const GUEST_NICKNAME_PATH = "/api/guest/nickname";
+// 重複を比べるキー(全角半角・大文字小文字・空白の違いは同じとみなす)
+export function guestNicknameKeyOf(name) {
+  return String(name || "").normalize("NFKC").toLowerCase().replace(/\s/g, "");
+}
+// 入力をそろえる(前後の空白を取る・制御文字は不可)。1〜GUEST_NICKNAME_MAX 文字でなければ null
+export function normalizeGuestNickname(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s || /[\u0000-\u001f\u007f]/.test(s)) return null;
+  const len = [...s].length;
+  return len >= 1 && len <= GUEST_NICKNAME_MAX ? s : null;
+}
+
 // ---- ゲストが使えるAPI(GETだけ) ----
 // raceId: そのレースが期間内の中央のレースでなければ断る(パスの :id か ?race_id=)
 const GUEST_API_RULES = [
@@ -185,6 +206,15 @@ export async function resolveGuest(context) {
   if (blocks.devices.has(cookie.deviceId) || blocks.ips.has(requestIp(request))) return json({ error: "guest_blocked" }, 403);
 
   const url = new URL(request.url);
+  // ニックネームの登録(2026-10-16): 名前の有無に関係なく POST だけ通す(アクセスの記録はしない。行は登録の API が作る)
+  if (url.pathname === GUEST_NICKNAME_PATH) {
+    return request.method === "POST" ? { deviceId: cookie.deviceId, nickname: cookie.nickname, version: cookie.version } : json({ error: "guest_forbidden" }, 403);
+  }
+  // 名前が未登録なら、画面が登録画面を出すための /api/auth/check だけ通す
+  if (!cookie.nickname) {
+    if (request.method === "GET" && url.pathname === "/api/auth/check") return { deviceId: cookie.deviceId, nickname: null, version: cookie.version };
+    return json({ error: "guest_need_name" }, 403);
+  }
   const rule = request.method === "GET" ? GUEST_API_RULES.find((r) => r.re.test(url.pathname)) : null;
   if (!rule || (rule.query && !rule.query(url.searchParams))) return json({ error: "guest_forbidden" }, 403);
   let raceId = null;
@@ -198,5 +228,5 @@ export async function resolveGuest(context) {
     if (!isGuestRace(race)) return json({ error: "guest_out_of_range" }, 403);
   }
   recordGuestAccess(context, cookie.deviceId);
-  return { deviceId: cookie.deviceId };
+  return { deviceId: cookie.deviceId, nickname: cookie.nickname, version: cookie.version };
 }

@@ -81,11 +81,14 @@
         <h2 class="stats-section-title">ゲスト閲覧</h2>
         <p class="ticket-sub">
           下のURLを知っている人は、ログインせずに「次の開催週末の中央のレース」(出馬表・馬柱・展開・時計)と「データ検索」を見られます。
-          予想印・メモ・馬券購入・集計は使えません。URLが広まりすぎたら「URLを作り直す」と、古いURLとそこから入った端末は使えなくなります。
+          予想印・メモ・馬券購入・集計は使えません。初めて開いたときにニックネーム(1〜10文字・重複不可)を登録してもらいます。
+          困る端末はブロックしてください(Cookie を消された等で効かなければ IP でも止められます)。
         </p>
         <div id="guest-settings"><p class="ticket-sub">読み込み中…</p></div>
         <p id="guest-message" class="submit-message" hidden></p>
         <h3 class="pace-w-list-title">アクセスした端末(最終アクセスの新しい順)</h3>
+        <!-- 2026-10-16: 既定ではニックネームを登録した端末だけ。名前の無い端末(登録前・ボット等)はチェックで出す -->
+        <p><label class="inline-check"><input type="checkbox" id="guest-devices-all" /> 名前なしも表示 <span id="guest-unnamed-count" class="ticket-sub"></span></label></p>
         <div class="table-wrap"><table class="stats-table" id="guest-devices-table"></table></div>
         <h3 class="pace-w-list-title">ブロックしたIP</h3>
         <form id="guest-ip-form" class="form-row" style="align-items:flex-end;flex-wrap:wrap">

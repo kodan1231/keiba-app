@@ -136,6 +136,8 @@ function setupAuth(onReady) {
         isAdmin: Boolean(data.is_admin),
         isGuest: Boolean(data.is_guest),
         passwordResetPending: Boolean(data.password_reset_pending),
+        guestNickname: data.guest_nickname || null, // ゲストのニックネーム(2026-10-16)
+        needNickname: Boolean(data.need_nickname),
       };
       applyAdminVisibility();
       renderPasswordResetBanner();
@@ -174,6 +176,11 @@ function setupAuth(onReady) {
 
   (async function init() {
     const ok = await refreshCurrentUser();
+    if (ok && window.currentUser.isGuest && window.currentUser.needNickname) {
+      // ニックネームが未登録のゲストは、登録画面を出す(2026-10-16。docs/design/guest.md「ニックネーム」)
+      showGuestNicknameForm();
+      return;
+    }
     if (ok) {
       // ゲストは閲覧用の画面だけ(それ以外の画面を開いたらゲスト用のレース一覧へ)
       if (window.currentUser.isGuest && !GUEST_PAGES.includes(document.body.dataset.page)) {
@@ -193,6 +200,49 @@ function setupAuth(onReady) {
       showLogin();
     }
   })();
+}
+
+// ゲストのニックネーム登録画面(2026-10-16)。名前だけ(1〜10文字・パスワードなし)。登録できたら読み込み直す。
+// ログイン画面の場所(#login-screen)に出す。名前は重複できない(サーバーが 409 を返す)
+function showGuestNicknameForm() {
+  const loginScreen = document.getElementById("login-screen");
+  const appScreen = document.getElementById("app-screen");
+  if (!loginScreen) return;
+  loginScreen.innerHTML = `
+    <div class="ticket guest-nickname">
+      <h1 class="ticket-title">馬券帳 データ検索</h1>
+      <p class="ticket-sub">はじめに、ニックネームを登録してください(1〜10文字・パスワードは要りません)。このブラウザでは次から自動で使われます。</p>
+      <form id="guest-nickname-form" class="guest-nickname-form">
+        <input type="text" id="guest-nickname-input" maxlength="10" autocomplete="nickname" placeholder="ニックネーム" required />
+        <button type="submit" class="stamp-btn">登録</button>
+      </form>
+      <p id="guest-nickname-error" class="submit-message error" hidden></p>
+    </div>`;
+  loginScreen.hidden = false;
+  if (appScreen) appScreen.hidden = true;
+  const form = document.getElementById("guest-nickname-form");
+  const input = document.getElementById("guest-nickname-input");
+  const err = document.getElementById("guest-nickname-error");
+  input.focus();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.hidden = true;
+    const btn = form.querySelector("button");
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/guest/nickname", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname: input.value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) { location.reload(); return; }
+      err.textContent = data.error || "登録できませんでした";
+      err.hidden = false;
+    } catch {
+      err.textContent = "通信に失敗しました。もう一度お試しください";
+      err.hidden = false;
+    }
+    btn.disabled = false;
+  });
 }
 
 // 認証必須のfetchラッパー。401が返ったらログイン画面に戻す。

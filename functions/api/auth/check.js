@@ -10,8 +10,11 @@
 export async function onRequestGet(context) {
   const { env } = context;
 
+  // guest_nickname / need_nickname(2026-10-16): ゲストのニックネーム。未登録なら画面が登録画面を出す(docs/design/guest.md「ニックネーム」)
   if (context.data?.isGuest) {
-    return Response.json({ ok: true, username: null, is_admin: false, is_guest: true, password_reset_pending: false });
+    const nickname = context.data.guestNickname || null;
+    return Response.json({ ok: true, username: null, is_admin: false, is_guest: true, password_reset_pending: false,
+      guest_nickname: nickname, need_nickname: !nickname });
   }
 
   let passwordResetPending = false;

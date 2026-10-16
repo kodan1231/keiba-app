@@ -62,6 +62,7 @@ function redirect(location) {
 export function blockedOnMain(request, url) {
   const p = url.pathname, m = request.method;
   if (p.startsWith("/api/admin/") || p.startsWith("/api/cron/")) return true;
+  if (p.startsWith("/api/guest/")) return true; // ゲストのニックネーム登録(2026-10-16)はデータ検索用アプリ(search)だけ
   if (p === "/api/races/entries-import" || p === "/api/races/results-import") return true;
   if (p === "/api/races" && m !== "GET") return true;
   if (/^\/api\/races\/\d+$/.test(p) && m !== "GET") return true;
