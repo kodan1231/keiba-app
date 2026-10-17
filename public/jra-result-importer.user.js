@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         馬券帳 - JRAレース結果インポート
 // @namespace    keiba-yosou-app
-// @version      1.3.1
+// @version      1.3.2
 // @description  JRAのレース結果・出走馬一覧のページを開いたら、ボタン1つで馬券帳へ送信する。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
 // @match        https://sp.jra.jp/JRADB/accessS.html*
@@ -229,8 +229,11 @@
     // jraResultHtmlParsePage は @require で読み込む public/jra-result-html.js の関数。
     const { records, diagnostics } = jraResultHtmlParsePage(document);
     if (!records.length) {
+      // 外れた理由と読み取りの版(2026-10-18。版が出なければ @require の読み取りが古い=入れ直しが要る)
+      const why = (diagnostics.reasons || []).slice(0, 3).join("\n");
       alert(
-        `取り込めるレース結果が見つかりませんでした(検出したレース枠: ${diagnostics.unitsFound}件)。まだ結果が確定していない可能性があります。`
+        `取り込めるレース結果が見つかりませんでした(検出したレース枠: ${diagnostics.unitsFound}件)。まだ結果が確定していない可能性があります。` +
+          `${why ? `\n\n理由:\n${why}` : ""}\n\n読み取りの版: ${diagnostics.version || "古い(スクリプトを入れ直してください)"}`
       );
       return;
     }

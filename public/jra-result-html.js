@@ -169,7 +169,12 @@ function jraResultHtmlParsePayouts(refundAreaEl) {
 
 // 1レース分(.race_result_unit)を解析する。着順が1件も取れない場合はnullを返す
 // (まだ確定していないレース、または想定外のDOM構造)。
-function jraResultHtmlParseRaceUnit(unitEl) {
+// 読み取りの版(取り込めなかったときの知らせに出す。スマホのスクリプトの @require が新しいかを見分けるため。2026-10-18)
+const JRA_RESULT_HTML_VERSION = "2026-10-18b";
+
+// diag(省略可): 外れたときに理由を diag.reason に入れる
+function jraResultHtmlParseRaceUnit(unitEl, diag) {
+  const fail = (reason) => { if (diag) diag.reason = reason; return null; };
   const idMatch = (unitEl.id || "").match(/race_result_(\d+)R/);
   // 1レースだけの結果のページ(レース選択から1レースを開いたページ)は入れ物に id が無い(2026-10-18 に実物で確認)。
   // そのときはレース番号の画像(<img src=".../race_num_11.png" alt="11レース">)から読む
@@ -178,11 +183,11 @@ function jraResultHtmlParseRaceUnit(unitEl) {
     ? (String(numImg.getAttribute("alt") || "").match(/(\d+)\s*レース/) || String(numImg.getAttribute("src") || "").match(/race_num_(\d+)/))
     : null;
   const raceNumber = Number((idMatch || imgMatch || [])[1]);
-  if (!Number.isInteger(raceNumber) || raceNumber < 1 || raceNumber > 12) return null;
+  if (!Number.isInteger(raceNumber) || raceNumber < 1 || raceNumber > 12) return fail("レース番号が読めない");
 
   const dateText = jraResultHtmlText(unitEl.querySelector(".date_line .cell.date"));
   const { race_date, track } = jraResultHtmlParseDateTrack(dateText);
-  if (!race_date || !track) return null;
+  if (!race_date || !track) return fail(`開催日・競馬場が読めない(${dateText.slice(0, 30)})`);
 
   const post_time = jraResultHtmlParsePostTime(jraResultHtmlText(unitEl.querySelector(".date_line .cell.time")));
   const { weather, track_condition } = jraResultHtmlParseWeather(unitEl.querySelector(".date_line .cell.baba"));
@@ -202,7 +207,15 @@ function jraResultHtmlParseRaceUnit(unitEl) {
   const race_results = [];
   const finishOrderSparse = [];
 
-  unitEl.querySelectorAll(":scope > table.basic > tbody > tr").forEach((tr) => {
+  // 着順の行: 一覧のページは入れ物の直下の表。1レースだけのページ(2026-10-18)は作りが違うことがあるため、直下に無ければ
+  // 入れ物の中の「馬番・馬名の列がある行」、それも無くページにレースが1つだけならページ全体から探す
+  const doc = unitEl.ownerDocument;
+  const onlyUnit = doc && doc.querySelectorAll(".race_result_unit").length === 1;
+  const resultRowsIn = (scope) => Array.from(scope.querySelectorAll("table tbody tr")).filter((tr) => tr.querySelector("td.num") && tr.querySelector("td.horse"));
+  let rows = Array.from(unitEl.querySelectorAll(":scope > table.basic > tbody > tr"));
+  if (!rows.length) rows = resultRowsIn(unitEl);
+  if (!rows.length && onlyUnit) rows = resultRowsIn(doc);
+  rows.forEach((tr) => {
     const parsed = jraResultHtmlParseRow(tr);
     if (!parsed) return;
     entries.push(parsed.entry);
@@ -212,12 +225,12 @@ function jraResultHtmlParseRaceUnit(unitEl) {
     }
   });
 
-  if (!race_results.length) return null;
+  if (!race_results.length) return fail(`着順の行が無い(表 ${unitEl.querySelectorAll("table").length}・行 ${rows.length})`);
 
   // races.finish_order は的中判定に使う上位3着までのみ保持する
   // (public/jra-result-pdf.js の既存挙動に合わせる。docs/design/race-results.md参照)。
   const finish_order = finishOrderSparse.filter((v) => v !== undefined).slice(0, 3);
-  const payouts = jraResultHtmlParsePayouts(unitEl.querySelector(".refund_area"));
+  const payouts = jraResultHtmlParsePayouts(unitEl.querySelector(".refund_area") || (onlyUnit ? doc.querySelector(".refund_area") : null));
 
   return {
     race_date,
@@ -507,15 +520,18 @@ function jraResultHtmlParsePage(root) {
     const units = Array.from(scope.querySelectorAll(".race_result_unit"));
     const records = [];
     const errors = [];
+    const reasons = [];
     units.forEach((unit) => {
       try {
-        const record = jraResultHtmlParseRaceUnit(unit);
+        const diag = {};
+        const record = jraResultHtmlParseRaceUnit(unit, diag);
         if (record) records.push(record);
+        else if (diag.reason) reasons.push(diag.reason);
       } catch (e) {
         errors.push({ id: unit.id, message: String(e?.message || e) });
       }
     });
-    return { records, diagnostics: { unitsFound: units.length, recordsParsed: records.length, errors } };
+    return { records, diagnostics: { unitsFound: units.length, recordsParsed: records.length, errors, reasons, version: JRA_RESULT_HTML_VERSION } };
   }
 
   if (scope.querySelectorAll("div[id^='kekkaRaceInfo_']").length) {
