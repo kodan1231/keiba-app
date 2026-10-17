@@ -171,8 +171,14 @@ function jraResultHtmlParsePayouts(refundAreaEl) {
 // (まだ確定していないレース、または想定外のDOM構造)。
 function jraResultHtmlParseRaceUnit(unitEl) {
   const idMatch = (unitEl.id || "").match(/race_result_(\d+)R/);
-  if (!idMatch) return null;
-  const raceNumber = Number(idMatch[1]);
+  // 1レースだけの結果のページ(レース選択から1レースを開いたページ)は入れ物に id が無い(2026-10-18 に実物で確認)。
+  // そのときはレース番号の画像(<img src=".../race_num_11.png" alt="11レース">)から読む
+  const numImg = unitEl.querySelector(".race_title .race_number img");
+  const imgMatch = !idMatch && numImg
+    ? (String(numImg.getAttribute("alt") || "").match(/(\d+)\s*レース/) || String(numImg.getAttribute("src") || "").match(/race_num_(\d+)/))
+    : null;
+  const raceNumber = Number((idMatch || imgMatch || [])[1]);
+  if (!Number.isInteger(raceNumber) || raceNumber < 1 || raceNumber > 12) return null;
 
   const dateText = jraResultHtmlText(unitEl.querySelector(".date_line .cell.date"));
   const { race_date, track } = jraResultHtmlParseDateTrack(dateText);
