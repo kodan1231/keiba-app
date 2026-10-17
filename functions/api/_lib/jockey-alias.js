@@ -11,6 +11,7 @@
 // 「戸崎圭太」は同一キーとして扱われる(要件: スペース有無は同一人物とみなす)。
 import { runBatchInChunks } from "./http.js";
 import { memoized, MEMO_JOCKEY_ALIASES } from "./memo-cache.js";
+import { loadTableSnapshot } from "./table-snapshot.js";
 
 const JOCKEY_MARK_RE = /^([☆▲△★◇])/;
 
@@ -29,23 +30,28 @@ export function jockeyAliasKeyOf(name) {
 // 騎手名1件ごとにDBへ問い合わせるN+1構成を避けるため、呼び出し元は本関数で1回だけ
 // 取得したMapを使い回すこと(functions/api/ticket-imports/index.js等、既存の
 // N+1回避パターンを踏襲)。
-export async function loadJockeyAliasMap(db) {
+const JOCKEY_ALIAS_SELECT = "SELECT alias_key, canonical_name FROM jockey_aliases";
+
+function jockeyAliasMapOf(rows) {
   const map = new Map();
-  if (!db) return map;
-  const { results } = await db.prepare(
-    "SELECT alias_key, canonical_name FROM jockey_aliases"
-  ).all();
-  for (const r of results || []) {
+  for (const r of rows || []) {
     if (r.alias_key) map.set(r.alias_key, r.canonical_name);
   }
   return map;
 }
 
+export async function loadJockeyAliasMap(db) {
+  if (!db) return new Map();
+  const { results } = await db.prepare(JOCKEY_ALIAS_SELECT).all();
+  return jockeyAliasMapOf(results);
+}
+
 // 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
 // DBへ書き込む処理では使わないこと(古いエイリアスで正規化した値を保存しないため)。
 // 戻り値の Map は共有物なので変更しないこと。
+// 2026-10-18: 使い回しが切れたときは、表の全件(約360行)ではなく写し(_lib/table-snapshot.js。1〜2行)を読む
 export function loadJockeyAliasMapCached(db) {
-  return memoized(MEMO_JOCKEY_ALIASES, () => loadJockeyAliasMap(db));
+  return memoized(MEMO_JOCKEY_ALIASES, async () => (db ? jockeyAliasMapOf(await loadTableSnapshot(db, "jockey_aliases", JOCKEY_ALIAS_SELECT)) : new Map()));
 }
 
 // 騎手名1件を、事前に取得済みのエイリアスMapと突き合わせて正規化する。

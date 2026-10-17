@@ -390,6 +390,14 @@ export async function onRequestGet(context){
     if(raceIdFilter&&!/^\d+$/.test(raceIdFilter)) return Response.json({ok:true,items:[]});
     if(raceIdFilter){ groupWhere.push("race_id=?"); groupBinds.push(Number(raceIdFilter)); }
     else if(sinceFilter){ groupWhere.push("race_date>=?"); groupBinds.push(sinceFilter); }
+    // ?until= / ?fields=race_ids(2026-10-18): 馬券購入画面の「購入済み」の色分けは、選んだ日の取込グループのレース番号だけ
+    // (グループだけを読み、明細・レースは読まない。functions/api/tickets/index.js と同じ)
+    const untilFilter=url.searchParams.get("until");
+    if(!raceIdFilter&&sinceFilter&&untilFilter){ groupWhere.push("race_date<=?"); groupBinds.push(untilFilter); }
+    if(url.searchParams.get("fields")==="race_ids"){
+      const ids=(await db.prepare(`SELECT DISTINCT race_id FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} AND race_id IS NOT NULL`).bind(...groupBinds).all()).results||[];
+      return jsonWithEtag({ok:true,race_ids:ids.map(r=>Number(r.race_id))},etag);
+    }
     // 1レース分のときは並び順の race_date に「+」を付け、並びのためにインデックスを選ばせない(2026-10-10。
     // 付けないと本番 D1 は (user_id, race_date) のインデックスでその利用者の全グループ〈1回約2,600行〉を読んでいた)
     const groups=(await db.prepare(`SELECT * FROM imported_ticket_groups WHERE ${groupWhere.join(" AND ")} ORDER BY ${raceIdFilter?"+race_date":"race_date"} DESC,id DESC`).bind(...groupBinds).all()).results||[];

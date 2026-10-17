@@ -16,7 +16,8 @@
 //   表 pace_jobs の1行(kind='distance')に置き、夜間の定時実行(_lib/pace-job.js)が比率の計算待ちの無いときに1歩ずつ進める。
 //   前回から結果が増えていれば(race_results の最大 id)始める。管理画面の「今すぐ計算」は同じ1歩を画面から繰り返し呼ぶ。
 //   当初は D1 の問い合わせ1本で集計まで行ったが、並べ替え・まとめの一時表の読み取りも数えられ、本番で1回57万〜104万行になったためやめた。
-// D1: 1回の計算全体で、結果の行+レースを主キーで引く分(約13万行。結果を取り込んだ日の夜だけ)。1歩は約2,000走+その分のレース。
+// D1: 1回の計算全体で、結果の行+レースを主キーで引く分(約28万行。結果を取り込んだ日の夜だけ)。1歩は約2,000走+その分のレースで
+//   約4,000行(2026-10-17 に本番で1歩分を実行して 4,015行。結果の最大 id 136,341 から約70歩)。
 //   読み込みは app_settings の1行(同じ実行環境で10分使い回す)。
 import { memoized, invalidateMemo } from "./memo-cache.js";
 
@@ -26,6 +27,7 @@ const MEMO_KEY = "distance_ratios";
 const MEMO_TTL_MS = 10 * 60 * 1000;
 const NEAR = 200;
 const CHUNK_ROWS = 2000;
+const RECOMPUTE_DAYS = 7;
 const JOB_KIND = "distance";
 const JOB_KEY = "ratios";
 
@@ -68,13 +70,20 @@ export async function distanceRatiosState(db) {
   let v = null;
   try { v = row ? JSON.parse(row.value) : null; } catch { v = null; }
   const current = Number(max?.m || 0);
+  const newer = !v || Number(v.marker) !== current;
+  // 夜間に計算し直すのは、新しい結果があり、前回から RECOMPUTE_DAYS 日たったときだけ(2026-10-18)。比はゆっくりしか変わらない一方、
+  // 計算1回で約28万行読むため、結果を取り込んだ夜ごとではなく週1回にした。管理画面の「今すぐ計算」(force)はいつでも動く
+  const age = v?.computed_at ? Date.now() - Date.parse(v.computed_at) : Infinity;
   return {
     computed_at: v?.computed_at || null,
     marker: v?.marker ?? null,
     count: (v?.pairs || []).length,
     usable: (v?.pairs || []).filter((p) => Number(p[4]) >= DISTANCE_RATIO_MIN_PAIRS).length,
     current_marker: current,
-    stale: !v || Number(v.marker) !== current,
+    newer,
+    stale: newer && !(age < RECOMPUTE_DAYS * 86400000),
+    next_after: v?.computed_at && newer && age < RECOMPUTE_DAYS * 86400000
+      ? new Date(Date.parse(v.computed_at) + RECOMPUTE_DAYS * 86400000).toISOString() : null,
     running: Boolean(job),
     progress: job ? Number(job.offset || 0) : null, // 読んだ走の数
   };

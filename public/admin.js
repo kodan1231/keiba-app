@@ -1232,7 +1232,7 @@ async function loadPaceWeights() {
     <div class="pace-w-line">
       <span class="pace-w-admin-title" title="同じ競馬場で距離が200m以内の2つの距離を走った同じ馬の組から、距離の換算の比を出します(20組以上ある組み合わせだけ使う)。結果を取り込んだ日の夜に自動で計算し直します">距離の換算の比(同じ馬の組)</span>
       <small class="pace-w-line-source" id="distance-ratios-info">読み込み中…</small>
-      <button type="button" class="ghost-btn" id="distance-ratios-run" title="約13万行を読みます。1〜2分かかります">今すぐ計算</button>
+      <button type="button" class="ghost-btn" id="distance-ratios-run" title="約28万行を読みます。1〜2分かかります">今すぐ計算</button>
     </div>
     <details class="pace-adj-fold" data-open-key="default" ${paceAdjOpen.has("default") ? "open" : ""}>
     <summary><span class="pace-w-admin-title">評価点の既定値</span> <small class="pace-w-line-source">${escapeHtml(paceAdjustText(paceAdjustDefault))}</small></summary>
@@ -1265,12 +1265,13 @@ async function loadPaceWeights() {
   // 距離の換算の比(2026-10-16): 状態を出し、「今すぐ計算」で計算し直す
   const drInfo = document.getElementById("distance-ratios-info");
   const drText = (s) => (s.computed_at
-    ? `最後の計算 ${formatDateTime(s.computed_at)}・${s.usable}/${s.count}組み合わせで使用${s.running ? "(計算中)" : s.stale ? "(新しい結果あり。今夜計算し直します)" : ""}`
+    ? `最後の計算 ${formatDateTime(s.computed_at)}・${s.usable}/${s.count}組み合わせで使用${s.running ? "(計算中)" : s.stale ? "(新しい結果あり。今夜計算し直します)"
+      : s.next_after ? `(新しい結果あり。${formatDateTime(s.next_after)}以降の夜に計算し直します。夜間は週1回)` : ""}`
     : s.running ? "計算中です" : "まだ計算していません(今夜計算します)");
   authedFetch("/api/admin/distance-ratios").then((r) => (r.ok ? r.json() : null)).then((s) => { if (drInfo) drInfo.textContent = s ? drText(s) : "読み込みに失敗しました"; })
     .catch(() => { if (drInfo) drInfo.textContent = "読み込みに失敗しました"; });
   document.getElementById("distance-ratios-run").addEventListener("click", async (e) => {
-    if (!(await confirmHeavyOperation("同じ馬の組から距離の換算の比を計算し直します(結果の表を一通り読むので約13万行を読みます。1〜2分かかります)。実行しますか？"))) return;
+    if (!(await confirmHeavyOperation("同じ馬の組から距離の換算の比を計算し直します(結果の表を一通り読むので約28万行を読みます。1〜2分かかります)。実行しますか？"))) return;
     const btn = e.currentTarget;
     btn.disabled = true;
     drInfo.textContent = "計算中…";

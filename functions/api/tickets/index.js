@@ -39,6 +39,19 @@ export async function onRequestGet(context) {
   if (raceId && !/^\d+$/.test(raceId)) return Response.json([]);
   if (raceId) { whereParts.push("t.race_id = ?"); binds.push(Number(raceId)); }
   else if (since) { whereParts.push("t.race_date >= ?"); binds.push(since); }
+  // ?until=(2026-10-18): 期間の終わり。馬券購入画面は選んだ日の分だけ(since=until=その日)
+  const until = url.searchParams.get("until");
+  if (!raceId && since && until) { whereParts.push("t.race_date <= ?"); binds.push(until); }
+
+  // ?fields=race_ids(2026-10-18): 買ったレースの番号だけ返す(馬券購入画面の「購入済み」の色分け用)。
+  // 以前は全項目+レースの JOIN で1か月分(1回約4,600行。2026-10-17 は62回で29万行)を読んでいた。
+  // races を JOIN せず、(user_id, race_date) の範囲の購入だけを読む
+  if (url.searchParams.get("fields") === "race_ids") {
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT t.race_id FROM tickets t WHERE ${whereParts.join(" AND ")} AND t.race_id IS NOT NULL`
+    ).bind(...binds).all();
+    return jsonWithEtag({ race_ids: (results || []).map((r) => Number(r.race_id)) }, etag);
+  }
   // 1レース分のときは並び順の race_date に「+」を付け、並びのためにインデックスを選ばせない(2026-10-10)。
   // 付けないと本番 D1 は ORDER BY race_date を満たすため (user_id, race_date) のインデックスでその利用者の全購入を
   // 読み(1回約2,900行)、(user_id, race_id) で引けば1行で済むところを大きく読んでいた。並び順の結果は同じ。

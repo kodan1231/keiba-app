@@ -2,7 +2,6 @@ const raceList = document.getElementById("race-list");
 const emptyState = document.getElementById("empty-state");
 const summaryBar = document.getElementById("summary-bar");
 let expandedRaces = new Set();
-let races = [];
 let allItems = [];
 // 一括削除(通常購入 tickets のみ・CSV取込分は対象外)の選択モード。
 // selectedTicketIds は数値の tickets.id。applyHistoryFilter() のたびにクリアするため、
@@ -117,25 +116,60 @@ function applyHistoryFilter() {
 
 // 2026-09-13: GET /api/races は ?since= (直近1ヶ月+未来レース全部) に絞って呼ぶ
 // (docs/design/data-model.md「GET /api/races の範囲限定」参照)。この画面での races は
-// 金額編集時の払戻再計算(下記 races.find 部分)にしか使わないため、対象が範囲外
+// 金額編集時の払戻再計算(下記 raceForPayout)にしか使わないため、対象が範囲外
 // (古い購入履歴)の場合は GET /api/races/:id でその場で個別取得する。
+// 2026-10-18: 1か月分の一覧(1回約900行)は開くたびに読まず、金額を編集したときにそのレースだけを取る(raceForPayout)。
 async function loadTickets() {
-  const since = monthsAgoDateKey(1);
-  const [ticketsRes, racesRes, importedRes] = await Promise.all([
+  const [ticketsRes, importedRes] = await Promise.all([
     authedFetch("/api/tickets"),
-    authedFetch(`/api/races?since=${since}`),
     authedFetch("/api/ticket-imports"),
   ]);
   if (!ticketsRes.ok) return;
   const items = await ticketsRes.json();
-  const importedPayload = importedRes.ok ? await importedRes.json() : { items: [] };
-    const imported = Array.isArray(importedPayload)
-      ? importedPayload
-      : (Array.isArray(importedPayload.items) ? importedPayload.items : []);
-  races = racesRes.ok ? await racesRes.json() : [];
-  allItems = [...(Array.isArray(items) ? items : []), ...imported];
+  allItems = [...(Array.isArray(items) ? items : []), ...importedItemsOf(importedRes.ok ? await importedRes.json() : null)];
   renderHistoryCalendar();
   applyHistoryFilter();
+}
+
+function importedItemsOf(payload) {
+  if (Array.isArray(payload)) return payload;
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+// 編集・削除の後に、そのレースの購入だけを取り直して差し替える(2026-10-18)。
+// 以前は1件直すたびに全購入(1回約7,500行)を取り直しており、2026-10-17 は4分で81回・61万行を読んでいた。
+// レースの無い購入・レースが多すぎるとき・取得に失敗したときは全件を取り直す
+const RELOAD_RACES_MAX = 10;
+async function reloadTicketsForRaces(raceIds) {
+  const ids = [...new Set(raceIds.map((id) => Number(id)))];
+  if (!ids.length || ids.length > RELOAD_RACES_MAX || ids.some((id) => !Number.isInteger(id) || id <= 0)) return loadTickets();
+  const parts = await Promise.all(ids.map(async (id) => {
+    const [ticketsRes, importedRes] = await Promise.all([
+      authedFetch(`/api/tickets?race_id=${id}`),
+      authedFetch(`/api/ticket-imports?race_id=${id}`),
+    ]);
+    if (!ticketsRes.ok || !importedRes.ok) return null;
+    const items = await ticketsRes.json().catch(() => null);
+    const imported = await importedRes.json().catch(() => null);
+    if (!Array.isArray(items) || !imported) return null;
+    return [...items, ...importedItemsOf(imported)];
+  }));
+  if (parts.some((p) => p === null)) return loadTickets();
+  const idSet = new Set(ids);
+  allItems = [...allItems.filter((t) => !idSet.has(Number(t.race_id))), ...parts.flat()];
+  renderHistoryCalendar();
+  applyHistoryFilter();
+}
+
+// 金額の編集で払戻を計算し直すためのレース(払戻率)。開いたレースだけ取り、ページの中で使い回す
+const raceCache = new Map();
+async function raceForPayout(raceId) {
+  if (!raceId) return null;
+  if (raceCache.has(raceId)) return raceCache.get(raceId);
+  const res = await authedFetch(`/api/races/${encodeURIComponent(raceId)}`);
+  const race = res.ok ? await res.json().catch(() => null) : null;
+  if (race) raceCache.set(raceId, race);
+  return race;
 }
 
 function groupByRace(items) {
@@ -742,7 +776,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
       const amount = row.querySelector(".amount-edit-input")?.value; const payoutInput = row.querySelector(".payout-edit-input");
       const payout = payoutInput && payoutInput.value !== "" ? Number(payoutInput.value) : null;
       await authedFetch(`/api/ticket-imports/${encodeURIComponent(id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount:Number(amount),payout})});
-      await loadTickets();
+      await reloadTicketsForRaces([first.race_id]);
       refreshTicketDialog(groupId, true);
     });
   });
@@ -755,13 +789,8 @@ function renderTicketDialogContent(group, amountPanelOpen) {
 
       // 払戻率が既に入力されているレースなら、新しい購入額で払戻金額も再計算する。
       // 払戻率データがまだない場合は、既存の払戻金額をそのまま維持する。
-      // races は ?since= で範囲を絞っているため、古い購入履歴では見つからないことが
-      // あり、その場合は GET /api/races/:id でその1件だけ個別取得する。
-      let race = races.find((r) => r.id === ticket.race_id);
-      if (!race) {
-        const raceRes = await authedFetch(`/api/races/${ticket.race_id}`);
-        if (raceRes.ok) race = await raceRes.json();
-      }
+      // レースは GET /api/races/:id でその1件だけ取る(2026-10-18〜。以前は開いたときに1か月分を読んでいた)
+      const race = await raceForPayout(ticket.race_id);
       let newPayout = ticket.payout ?? null;
       if (race && race.payouts && race.payouts[ticket.bet_type]) {
         newPayout = computeTicketPayout({ ...ticket, amount: newAmount }, race);
@@ -772,7 +801,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: newAmount, payout: newPayout }),
       });
-      await loadTickets();
+      await reloadTicketsForRaces([ticket.race_id]);
       refreshTicketDialog(groupId, true);
     });
   });
@@ -795,7 +824,7 @@ function renderTicketDialogContent(group, amountPanelOpen) {
           return;
         }
 
-        await loadTickets();
+        await reloadTicketsForRaces([first.race_id]);
         refreshTicketDialog(groupId, true);
       } catch (e) {
         alert("削除に失敗しました: " + (e.message || e));
@@ -908,8 +937,10 @@ document.getElementById("bulk-delete-btn")?.addEventListener("click", async () =
       alert(data.error || "削除に失敗しました。");
       return;
     }
+    // 消した購入のレースだけ取り直す(2026-10-18。多ければ reloadTicketsForRaces が全件を取り直す)
+    const raceIds = allItems.filter((t) => !t.imported && ids.includes(Number(t.id))).map((t) => t.race_id);
     setSelectionMode(false);
-    await loadTickets();
+    await reloadTicketsForRaces(raceIds);
   } catch (e) {
     alert("削除に失敗しました: " + (e.message || e));
   } finally {

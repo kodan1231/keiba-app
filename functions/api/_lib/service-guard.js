@@ -32,7 +32,7 @@ export const SERVICE_GUARD_FEATURES = {
     match: (req, url) =>
       /^\/api\/admin\/(jockey-aliases|horse-aliases)\/normalize-existing$/.test(url.pathname) ||
       url.pathname === "/api/admin/races/recompute-base-names" ||
-      (req.method === "POST" && url.pathname === "/api/admin/distance-ratios"), // 2026-10-16。1回で約13万行を読む
+      (req.method === "POST" && url.pathname === "/api/admin/distance-ratios"), // 2026-10-16。1回で約28万行を読む
   },
   imports: {
     label: "取り込み(出走馬一覧・結果のPDF/HTML/netkeiba、購入履歴CSV、馬柱)",

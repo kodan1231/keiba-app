@@ -80,6 +80,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/races-index-cache.js` | `getRaceIndexRows` `getRaceIndex` `RACE_INDEX_FIELDS`(レース一覧用の軽いキャッシュ races_index_cache。予想登録・レース管理・購入履歴のコース付与・重賞検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/race-lineup-cache.js` | `getRaceLineups`(集計用の小さいキャッシュ race_lineup_cache。レース成績・騎手検索用。2026-10-07追加。2026-10-08から範囲ごと) |
 | `_lib/memo-cache.js` | `memoized` `invalidateMemo`(小さな設定表を同じ実行環境で2分間使い回す。2026-10-07追加)。`memoizedKeyed` `textFingerprint`(レースごとの応答の使い回し。最大60件。名前に出走馬表の指紋を入れる。2026-10-16)。**画面表示用の読み取りAPIは `loadJockeyAliasMapCached` `loadHorseAliasMapCached` `loadGradedRaceMapCached` を使い、DBへ書き込む処理は毎回読む版を使う**。エイリアス・重賞を変える管理APIは `invalidateMemo` を呼ぶ |
+| `_lib/table-snapshot.js` | `loadTableSnapshot`(設定表〈騎手エイリアス・重賞一覧〉の全件の写し。表 table_snapshots に2,000件ごとの行で持ち、元の表のトリガーが data_versions の `snap:<表名>` を上げて古い写しを無効にする。`loadJockeyAliasMapCached`・`loadGradedRaceMapCached` が使う。2026-10-18追加。**写しにする表を足すときは、その表のトリガーと data_versions の行をマイグレーションで足す**) |
 | `_lib/ticket-view-version.js` | `ticketViewEtag` `notModifiedResponse` `jsonWithEtag`(購入履歴APIの「変更なし(304)」。`data_versions` の版数をDBトリガーで更新。**応答の項目や重賞判定を変えたら `TICKET_VIEW_SHAPE` を変える**。2026-10-07追加) |
 | `_lib/d1-usage.js` | `getD1Usage` `loadD1Usage` `d1UsageRatio`(今日の D1 使用量を Cloudflare の分析APIで取る。秘密情報 `CF_ANALYTICS_TOKEN`。2026-10-08追加) |
 | `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |

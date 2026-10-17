@@ -14,6 +14,7 @@
 
 import { runBatchInChunks } from "./http.js";
 import { memoized, MEMO_GRADED_RACES } from "./memo-cache.js";
+import { loadTableSnapshot } from "./table-snapshot.js";
 
 const CONDITION_KEYWORDS = ["新馬", "未勝利", "1勝クラス"];
 
@@ -155,10 +156,16 @@ export function gradedRaceOf(gradedMap, race) {
 // 重賞一覧を Map<キー, { id, name, grade, is_jump }> で返す(id・name は2026-10-08追加。gradedRaceOf 用)。キーは保存済みの name_key に加え、名前から
 // 今の gradedRaceNameKey() で計算し直したものも入れる(2026-10-06。正規化ルールを変えた後も、
 // 保存済みの name_key の計算し直しを待たずに一致させるため)。
+const GRADED_MAP_SELECT = "SELECT id, name, name_key, grade, is_jump FROM graded_races";
+
 export async function loadGradedRaceMap(db) {
-  const { results } = await db.prepare("SELECT id, name, name_key, grade, is_jump FROM graded_races").all();
+  const { results } = await db.prepare(GRADED_MAP_SELECT).all();
+  return gradedRaceMapOf(results);
+}
+
+function gradedRaceMapOf(rows) {
   const map = new Map();
-  for (const r of results || []) {
+  for (const r of rows || []) {
     const v = { id: r.id, name: r.name, grade: r.grade, is_jump: !!r.is_jump };
     map.set(r.name_key, v);
     const fresh = gradedRaceNameKey(r.name);
@@ -169,8 +176,9 @@ export async function loadGradedRaceMap(db) {
 
 // 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
 // 戻り値の Map は共有物なので変更しないこと。
+// 2026-10-18: 使い回しが切れたときは、表の全件(約140行)ではなく写し(_lib/table-snapshot.js。1〜2行)を読む
 export function loadGradedRaceMapCached(db) {
-  return memoized(MEMO_GRADED_RACES, () => loadGradedRaceMap(db));
+  return memoized(MEMO_GRADED_RACES, async () => gradedRaceMapOf(await loadTableSnapshot(db, "graded_races", GRADED_MAP_SELECT)));
 }
 
 // races全件のrace_base_nameを再計算する一括補正(POST /api/admin/races/recompute-base-names。

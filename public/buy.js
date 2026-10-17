@@ -99,35 +99,25 @@ dateInput.value = selectedDate;
 // 自分が既に購入済みのレースID集合を作る(通常購入・CSVインポート分の両方)。
 // レース一覧取得と並行して呼び出す(loadRaces参照)。取得に失敗した場合は
 // バッジ表示を諦めるだけで、レース一覧・購入自体には影響させない。
-async function loadPurchasedRaceIds() {
-  const ids = new Set();
+// 2026-10-18: 選んだ日の分だけ、レースの番号だけを取る(?since=その日&until=その日&fields=race_ids)。以前は1か月分の
+// 購入を全項目で読んでいた(1回約4,600行)。日付ごとに覚えておき、同じ日に戻ったときは取り直さない(購入はこの画面では起きない)
+const purchasedLoadedDates = new Set();
+async function loadPurchasedRaceIds(date) {
+  if (purchasedLoadedDates.has(date)) return;
   try {
-    // 直近1ヶ月分だけで足りる(バッジ表示はレース一覧の表示範囲=直近+未来のみ対象)ため、
-    // GET /api/races?since= と同じ範囲限定を付けて呼ぶ(2026-09-29追加。全履歴を毎回
-    // 読んでいたことがCloudflare WorkersのCPU時間上限超過の一因になっていたため。
-    // docs/design/data-model.md「GET /api/tickets・GET /api/ticket-imports の範囲限定」参照)。
-    const since = monthsAgoDateKey(1);
+    const q = `since=${date}&until=${date}&fields=race_ids`;
     const [ticketsRes, importedRes] = await Promise.all([
-      authedFetch(`/api/tickets?since=${since}`),
-      authedFetch(`/api/ticket-imports?since=${since}`),
+      authedFetch(`/api/tickets?${q}`),
+      authedFetch(`/api/ticket-imports?${q}`),
     ]);
-    if (ticketsRes.ok) {
-      const tickets = await ticketsRes.json().catch(() => []);
-      (Array.isArray(tickets) ? tickets : []).forEach((t) => {
-        if (t.race_id !== null && t.race_id !== undefined) ids.add(Number(t.race_id));
-      });
-    }
-    if (importedRes.ok) {
-      const payload = await importedRes.json().catch(() => ({}));
-      const items = Array.isArray(payload) ? payload : (Array.isArray(payload.items) ? payload.items : []);
-      items.forEach((t) => {
-        if (t.race_id !== null && t.race_id !== undefined) ids.add(Number(t.race_id));
-      });
-    }
+    if (!ticketsRes.ok || !importedRes.ok) return;
+    const tickets = await ticketsRes.json().catch(() => ({}));
+    const imported = await importedRes.json().catch(() => ({}));
+    [...(tickets.race_ids || []), ...(imported.race_ids || [])].forEach((id) => purchasedRaceIds.add(Number(id)));
+    purchasedLoadedDates.add(date);
   } catch (_) {
     // 取得に失敗してもレース一覧表示自体は継続する(色分けが出ないだけ)。
   }
-  purchasedRaceIds = ids;
 }
 
 // 自分が空でないメモを登録済みの馬名一覧を取得する(2026-08-16追加)。
@@ -171,16 +161,54 @@ async function loadMyKeyRaceIds() {
 // 2026-09-13: GET /api/races は ?since= (直近1ヶ月+未来レース全部) に絞って呼ぶ
 // (docs/design/data-model.md「GET /api/races の範囲限定」参照)。買い目画面は
 // この範囲だけで足りる想定のため、初期表示の高速化を優先する。
+// 2026-10-18: 表に出すレース(出走馬込み)は選んだ日の分だけ取る(?since=その日&until=その日。1日約36レース)。
+// カレンダーの「レースのある日」の印は一覧用の軽いキャッシュ(?index=1。読み取り約35行・変わらなければ 304)から作る。
+// 以前は開くたびに1か月分(約450レース・1回約900行)を出走馬込みで読んでいた
+let raceDates = new Set(); // レースのある日(カレンダーの印)
+const loadedRaceDates = new Set();
+async function loadRacesOfDate(date) {
+  if (loadedRaceDates.has(date)) return true;
+  const res = await authedFetch(`/api/races?since=${date}&until=${date}`);
+  if (!res.ok) return false;
+  const list = await res.json().catch(() => null);
+  if (!Array.isArray(list)) return false;
+  races = [...races.filter((r) => r.race_date !== date), ...list];
+  list.forEach((r) => raceDates.add(r.race_date));
+  loadedRaceDates.add(date);
+  return true;
+}
+
+async function loadRaceDates() {
+  try {
+    const res = await authedFetch("/api/races?index=1");
+    if (!res.ok) return;
+    const data = await res.json();
+    const di = (data.fields || []).indexOf("race_date");
+    if (di < 0) return;
+    (data.rows || []).forEach((row) => raceDates.add(row[di]));
+  } catch (_) {
+    // 取れなくても、読み込んだ日の印だけで表示を続ける
+  }
+}
+
+// 日付を選んだとき: その日のレースと購入済みの印を取ってから描く(取ってある日は取り直さない)
+async function showDate(date) {
+  await Promise.all([loadRacesOfDate(date), loadPurchasedRaceIds(date)]);
+  if (dateInput.value !== date) return; // 取っている間に別の日を選んだ
+  renderCalendar();
+  renderGrid();
+}
+
 async function loadRaces() {
-  const since = monthsAgoDateKey(1);
-  const [racesRes] = await Promise.all([
-    authedFetch(`/api/races?since=${since}`),
-    loadPurchasedRaceIds(),
+  const date = dateInput.value;
+  const [ok] = await Promise.all([
+    loadRacesOfDate(date),
+    loadPurchasedRaceIds(date),
+    loadRaceDates(),
     loadMyMemoHorseNames(),
     loadMyKeyRaceIds(),
   ]);
-  if (!racesRes.ok) return;
-  races = await racesRes.json();
+  if (!ok) return;
   renderCalendar();
   renderGrid();
 
@@ -223,6 +251,14 @@ function renderGradedDayList(day) {
 
 function renderGrid() {
   const date = dateInput.value;
+  // まだ取っていない日(2026-10-18〜。日付を選んでから取る)は、取り終わるまで「読み込み中」を出す
+  if (!loadedRaceDates.has(date)) {
+    renderGradedDayList([]);
+    noRaceHint.hidden = true;
+    raceGrid.innerHTML = `<p class="buy-hint">読み込み中…</p>`;
+    if (raceTrackTabs) raceTrackTabs.innerHTML = "";
+    return;
+  }
   const day = races.filter(r => r.race_date === date);
   renderGradedDayList(day);
   const tracks = sortTracksForDisplay([...new Set(day.map(r => r.track))]);
@@ -343,7 +379,6 @@ function renderCalendar() {
 
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const raceDates = new Set(races.map(r => r.race_date));
   const selected = dateInput.value;
 
   const headers = ["日","月","火","水","木","金","土"];
@@ -365,6 +400,7 @@ function renderCalendar() {
       selectedTrackTab = null; // 日付が変わるため、タブ選択を先頭競馬場へリセットする
       renderCalendar();
       renderGrid();
+      showDate(selectedDate); // その日をまだ取っていなければ取ってから描き直す(2026-10-18)
       const url = new URL(location.href);
       url.searchParams.set("date", selectedDate);
       url.searchParams.delete("race");
@@ -392,6 +428,7 @@ todayBtn?.addEventListener("click", () => {
   selectedTrackTab = null; // 日付が変わるため、タブ選択を先頭競馬場へリセットする
   renderCalendar();
   renderGrid();
+  showDate(selectedDate);
 });
 
 setupAuth(loadRaces);

@@ -455,3 +455,24 @@ DROP INDEX IF EXISTS idx_horse_notes_horse_name;
 DROP INDEX IF EXISTS idx_imported_groups_user_id;
 DROP INDEX IF EXISTS idx_horses_horse_name;
 INSERT INTO schema_migrations (name) VALUES ('drop_redundant_indexes');
+
+-- @STEP: table_snapshots
+-- 設定表(騎手名エイリアス・重賞一覧)の全件の写し(2026-10-18。_lib/table-snapshot.js)。画面表示の読み取りAPIは、使い回しが切れたときに
+-- 表の全件(騎手エイリアス約360行・重賞一覧約140行)ではなく写しの1〜2行を読む。表が変わるとトリガーが data_versions の版数を上げ、
+-- 古い写しは使われなくなる(次に読んだ人が作り直す)。表を作るだけでデータは読まない(版数の行を2つ書く)。
+CREATE TABLE IF NOT EXISTS table_snapshots (
+  name TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  version INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (name, part)
+) WITHOUT ROWID;
+INSERT OR IGNORE INTO data_versions (name, version) VALUES ('snap:jockey_aliases', 1), ('snap:graded_races', 1);
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_ins AFTER INSERT ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_upd AFTER UPDATE ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_del AFTER DELETE ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_ins AFTER INSERT ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+INSERT INTO schema_migrations (name) VALUES ('table_snapshots');

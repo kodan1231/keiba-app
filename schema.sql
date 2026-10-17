@@ -822,3 +822,25 @@ CREATE TABLE IF NOT EXISTS guest_ip_blocks (
   created_at TEXT,
   note TEXT
 );
+
+-- ============================================================
+-- 15c. 設定表の写し(table_snapshots)
+-- ============================================================
+-- 2026-10-18(@STEP: table_snapshots。_lib/table-snapshot.js・docs/design/data-model.md「設定表の写し」)。
+-- 騎手名エイリアス・重賞一覧の全件を JSON にした写し。2,000件ごとに1行(part。total は全体の行数)。
+-- version は作ったときの data_versions の 'snap:<表名>' の版数で、今の版数と同じ行だけを使う。元の表のトリガーが版数を上げる。
+CREATE TABLE IF NOT EXISTS table_snapshots (
+  name TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  version INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (name, part)
+) WITHOUT ROWID;
+INSERT OR IGNORE INTO data_versions (name, version) VALUES ('snap:jockey_aliases', 1), ('snap:graded_races', 1);
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_ins AFTER INSERT ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_upd AFTER UPDATE ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_del AFTER DELETE ON jockey_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:jockey_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_ins AFTER INSERT ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;

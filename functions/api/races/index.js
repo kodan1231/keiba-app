@@ -43,9 +43,13 @@ export async function onRequestGet(context) {
   // 2026-10-08: 範囲を指定しない全件取得(races_cache 経由。全レース・全出走馬 約7,000行の読み取り・約10MB)は廃止した。
   // どの画面からも使われなくなっており、誤って呼ばれると D1 の読み取り・CPU時間・通信量を大きく消費するため。
   if (!since) return jsonError("?since=YYYY-MM-DD または ?index=1 を指定してください", 400);
+  // ?until=YYYY-MM-DD(2026-10-18): 馬券購入画面は選んだ日の分だけ取る(since=until=その日)。以前は開くたびに1か月分
+  // (約450レース・1回約900行。2026-10-17 は231回で21万行)を出走馬込みで読んでいた。idx_races_date の範囲で引く
+  const until = params.get("until");
+  if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) return jsonError("until は YYYY-MM-DD で指定してください", 400);
   const { results: rows } = await env.DB
-    .prepare("SELECT * FROM races WHERE race_date >= ? ORDER BY race_date DESC, track ASC, race_number ASC")
-    .bind(since)
+    .prepare(`SELECT * FROM races WHERE race_date >= ?${until ? " AND race_date <= ?" : ""} ORDER BY race_date DESC, track ASC, race_number ASC`)
+    .bind(...(until ? [since, until] : [since]))
     .all();
   const results = rows || [];
 
