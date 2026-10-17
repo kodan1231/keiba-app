@@ -320,6 +320,16 @@ iOS Safari の Userscripts 拡張は入れ直しが必要)。取込済みの空�
   (Userscripts拡張の仕様)。`jra-result-html.js`側の解析ロジックを更新した場合、
   ユーザースクリプトを一度削除して入れ直す(再保存する)必要がある
 
+**出走馬一覧(出馬表)ページにも対応(2026-10-17。1.3.0)**: `@match` に `accessD.html`(PC・スマホの両ドメイン)を、
+`@require` に `public/jra-entries-html.js`(PC のブックマークレットと同じ読み取り。docs/design/netkeiba-bookmarklet.md
+「JRA公式ページ」)を足した。ページに `li[id^="syutsuba_"]` があれば出走馬一覧と判定して同じ「馬券帳へ送信」ボタンを出し、
+押すとそのページの全レースを確認のダイアログに並べてから `POST /api/races/entries-import` へ
+`{ races, source: "jra" }`(ブックマークレットと同じ)で送る。送った後は新規・更新・変更なしの件数と、取り込めなかったレースを出す。
+2026-10-17 にスマホ(iPhone)で開いた出走馬一覧は `www.jra.go.jp` の PC 版と同じ作りだった(保存ページ2つで読み取りを確認)。
+`sp.jra.jp` の出走馬一覧の作りは未確認で、作りが違えばボタンは出ない(「🔍HTML取得」で中身を送ってもらい対応する)。
+スクリプトの名前は変えていない(Tampermonkey 等は名前+namespace で同じスクリプトかを見分けるため、変えると2つ入る)。
+`@require` を足したので、iOS の Userscripts 拡張は入れ直しが必要。
+
 **既知の制約**:
 - 返還(`refunds`)情報はHTML側では解析していない(既存のPDFインポートも`results-import.js`側で
   未消費のため、対応する優先度は低いと判断した)

@@ -36,7 +36,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | レース管理画面(手動編集) | `public/races.js`, `public/races.html`, `public/races-entries-modal.js`, `public/races-payout-modal.js` |
 | 出走馬一覧の取り込みAPI(画面のPDF一括登録は2026-10-16削除。ブックマークレットが使う) | `functions/api/races/entries-import.js` |
 | レース結果の取り込みAPI(画面のPDF一括登録は2026-10-16削除。ブックマークレット・ユーザースクリプトが使う) | `functions/api/races/results-import.js` |
-| JRAレース結果ユーザースクリプト取込み(HTML) | `public/jra-result-importer.user.js`(公開URLから直接インストール), `public/jra-result-html.js`, `functions/api/races/results-import.js`(共用), `functions/api/admin/api-token.js` |
+| JRAユーザースクリプト取込み(HTML。結果〈accessS〉と、2026-10-17〜出走馬一覧〈accessD〉) | `public/jra-result-importer.user.js`(公開URLから直接インストール), `public/jra-result-html.js`, `public/jra-entries-html.js`(出走馬一覧。ブックマークレットと共用), `functions/api/races/results-import.js`・`functions/api/races/entries-import.js`(共用), `functions/api/admin/api-token.js` |
 | PDF解析の共通処理(今は重賞一覧PDFだけ) | `public/jra-pdf-common.js`, `public/jra-graded-races-pdf.js` |
 | CSVインポート | `functions/api/ticket-imports/index.js` |
 | 払戻計算ロジック | `public/payout.js`, `functions/api/_lib/ticket-payout.js` |

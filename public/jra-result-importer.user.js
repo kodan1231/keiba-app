@@ -1,11 +1,14 @@
 // ==UserScript==
 // @name         馬券帳 - JRAレース結果インポート
 // @namespace    keiba-yosou-app
-// @version      1.2.0
-// @description  JRAレース結果ページを開いたら、ボタン1つで馬券帳へ結果を送信する(印刷してPDF保存してアプリへアップロードする手間を省く)。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
+// @version      1.3.0
+// @description  JRAのレース結果・出走馬一覧のページを開いたら、ボタン1つで馬券帳へ送信する。docs/design/results-import.md「ユーザースクリプトによるHTML取込み」参照。
 // @match        https://www.jra.go.jp/JRADB/accessS.html*
 // @match        https://sp.jra.jp/JRADB/accessS.html*
+// @match        https://www.jra.go.jp/JRADB/accessD.html*
+// @match        https://sp.jra.jp/JRADB/accessD.html*
 // @require      https://keiba-admin.pages.dev/jra-result-html.js
+// @require      https://keiba-admin.pages.dev/jra-entries-html.js
 // @connect      keiba-admin.pages.dev
 // @grant        GM_xmlhttpRequest
 // @grant        GM.setValue
@@ -22,6 +25,8 @@
 //      馬券帳の管理画面「APIトークン」で発行したトークンを貼り付ける。
 //   4. 「馬券帳へ送信」を押す。確定しているレースだけが自動的に取り込まれる(未確定の
 //      レースは何度実行しても自然にスキップされる)。
+//   5. 出走馬一覧(出馬表。accessD.html)のページでも同じボタンが出る(1.3.0〜。2026-10-17)。
+//      そのページの全レースの出走馬を、出走馬一覧の取込API へ送る(ブックマークレットと同じ。public/jra-entries-html.js)。
 //
 // このスクリプトはJRA公式サイトへ追加のアクセスを一切発生させない
 // (今まさに開いているページの中身を読み取って送信するだけ)。
@@ -128,11 +133,8 @@
     wrap.appendChild(debugBtn);
 
     // レース結果一覧ページ(PC版=.race_result_unit、スマホ版=div[id^="kekkaRaceInfo_"]が
-    // ある)でのみ、送信・設定ボタンを追加する。
-    const isResultPage =
-      document.querySelectorAll(".race_result_unit").length ||
-      document.querySelectorAll("div[id^='kekkaRaceInfo_']").length;
-    if (isResultPage) {
+    // ある)と出走馬一覧ページ(li[id^="syutsuba_"]。2026-10-17)でのみ、送信・設定ボタンを追加する。
+    if (pageKind()) {
       const settingsBtn = makeButton("⚙", "APIトークンを設定", "#333");
       settingsBtn.style.pointerEvents = "auto";
       settingsBtn.addEventListener("click", setToken);
@@ -148,10 +150,79 @@
     document.body.appendChild(wrap);
   }
 
+  // "result"(レース結果一覧)/ "entries"(出走馬一覧)/ null
+  function pageKind() {
+    if (document.querySelector(".race_result_unit") || document.querySelector("div[id^='kekkaRaceInfo_']")) return "result";
+    if (typeof jraEntriesHtmlIsPage === "function" && jraEntriesHtmlIsPage(document)) return "entries";
+    return null;
+  }
+
+  function resetButton() {
+    const btn = document.getElementById("keiba-app-import-btn");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "馬券帳へ送信";
+    }
+  }
+
+  function post(path, token, payload, onSuccess) {
+    const btn = document.getElementById("keiba-app-import-btn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "送信中…";
+    }
+    GM_xmlhttpRequest({
+      method: "POST",
+      url: `${APP_BASE_URL}${path}`,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      data: JSON.stringify(payload),
+      onload(res) {
+        resetButton();
+        if (res.status >= 200 && res.status < 300) {
+          let data = null;
+          try { data = JSON.parse(res.responseText); } catch { data = null; }
+          onSuccess(data);
+        } else {
+          alert(`送信に失敗しました(HTTP ${res.status})。\n${res.responseText}`);
+        }
+      },
+      onerror() {
+        resetButton();
+        alert("送信に失敗しました(通信エラー)。");
+      },
+    });
+  }
+
+  // 出走馬一覧(2026-10-17): jraEntriesHtmlParsePage は @require で読み込む public/jra-entries-html.js の関数
+  function importEntries(token) {
+    const { records, errors } = jraEntriesHtmlParsePage(document);
+    if (!records.length) {
+      alert(`取り込める出走馬が見つかりませんでした。${errors.length ? `\n\n${errors.join("\n")}` : ""}`);
+      return;
+    }
+    const head = `${records[0].race_date} ${records[0].track}`;
+    const summary = records.map((r) => `${r.race_number}R ${r.race_name || ""}(${r.entries.length}頭)`).join("\n");
+    const warn = errors.length ? `\n\n読み取れなかったもの:\n${errors.join("\n")}` : "";
+    if (!confirm(`${head} の${records.length}レース分の出走馬を馬券帳へ送信します。よろしいですか?\n\n${summary}${warn}`)) return;
+    // source: JRA公式(レース名・コース等を公式の値で上書きする。ブックマークレットと同じ。2026-10-16)
+    post("/api/races/entries-import", token, { races: records, source: "jra" }, (data) => {
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const count = (s) => results.filter((x) => x.status === s).length;
+      const invalid = results.filter((x) => x.status === "invalid");
+      let msg = `送信しました(${records.length}レース分。新規 ${count("created")}・更新 ${count("updated")}・変更なし ${count("unchanged")})。`;
+      if (invalid.length) msg += `\n\n取り込めなかったレース:\n${invalid.map((x) => `${x.key || ""} ${x.message || ""}`).join("\n")}`;
+      alert(msg);
+    });
+  }
+
   async function onClickImport() {
     const token = await getToken();
     if (!token) {
       alert("先に「⚙」ボタンからAPIトークンを設定してください。");
+      return;
+    }
+    if (pageKind() === "entries") {
+      importEntries(token);
       return;
     }
 
@@ -167,35 +238,9 @@
     const summary = records.map((r) => `${r.race_number}R ${r.race_name || ""}`).join("\n");
     if (!confirm(`以下${records.length}レース分の結果を馬券帳へ送信します。よろしいですか?\n\n${summary}`)) return;
 
-    const btn = document.getElementById("keiba-app-import-btn");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "送信中…";
-    }
-
-    GM_xmlhttpRequest({
-      method: "POST",
-      url: `${APP_BASE_URL}/api/races/results-import`,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      data: JSON.stringify({ races: records, mode: "overwrite", source: "jra" }), // source: JRA公式(レース名・コース等を上書きする。2026-10-16)
-      onload(res) {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = "馬券帳へ送信";
-        }
-        if (res.status >= 200 && res.status < 300) {
-          alert(`送信しました(${records.length}レース分)。`);
-        } else {
-          alert(`送信に失敗しました(HTTP ${res.status})。\n${res.responseText}`);
-        }
-      },
-      onerror() {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = "馬券帳へ送信";
-        }
-        alert("送信に失敗しました(通信エラー)。");
-      },
+    // source: JRA公式(レース名・コース等を上書きする。2026-10-16)
+    post("/api/races/results-import", token, { races: records, mode: "overwrite", source: "jra" }, () => {
+      alert(`送信しました(${records.length}レース分)。`);
     });
   }
 
