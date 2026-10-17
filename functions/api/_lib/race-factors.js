@@ -497,7 +497,10 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     else if (s === "先行") senko++;
   }
   const paceType = predictPace(styles, n);
-  const kgText = (x) => (x.timeKgAdj ? ` 斤量${x.timeKgAdj > 0 ? "+" : "−"}${Math.abs(x.timeKgAdj).toFixed(1)}` : "");
+  // 斤量の補正(2026-10-18): 内訳に「斤量+0.1」のように出すのはやめた(ユーザー要望)。計算は1走ごとに「換算したタイム+その走の
+  // 斤量の補正」を作ってから最速・最遅を除いて平均しており正しいが、表示は使った走の補正の平均だったため「斤量を平均している」ように
+  // 見え、どの走で何秒補正したかも分からなかった(例: 秋華賞のラベルセーヌ。55kg の走 0 と 53kg の走 +0.2 の平均で +0.1)。
+  // 1走ごとの補正は予想登録画面の「補正タイム順位」の表に出ている
   // 何走の平均か(2026-10-16): 「3走平均〈5走中・最速最遅を除く〉」。1走ならその走の芝ダ・距離
   //   1走だけで距離が違えば、その走の芝ダ・距離と「同場換算」(同じ競馬場の ±200m。2026-10-16)か段の名前
   const usedText = (x) => {
@@ -511,7 +514,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const tierText = (x) => (x.timeMode === "last" ? "" : TIER_LABEL[x.timeTier] || (x.timeTotal === 1 && Number(x.timeRun.distance) !== Number(race.distance) ? "同場換算" : ""));
   const timeText = (x) => {
     const parts = [usedText(x), tierText(x)].filter(Boolean);
-    return `補${fmtSec(x.time)}${parts.length ? `(${parts.join("・")})` : ""}${kgText(x)}`;
+    return `補${fmtSec(x.time)}${parts.length ? `(${parts.join("・")})` : ""}`;
   };
   const l3Text = (x) => `上${x.l3.toFixed(1)}${TIER_LABEL[x.l3Tier] ? "(他距離)" : ""}`;
 
@@ -640,9 +643,9 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   let paceRanked;
   // ハイ・スロー: 有利な脚質の組が必ず上、組の中は速い順(2026-10-15。paceFavoredRank)
   const styleText = (x) => x.paceStyle || "脚質不明";
-  // 展開の内訳は短く(2026-10-16 ユーザー要望): 脚質・補正タイム・斤量(スローは上がり)だけ。何走の平均か・換算の種類などの説明は
-  // 「補正タイム」要素の内訳(timeText)にだけ出す
-  const shortTime = (x) => `補${fmtSec(x.time)}${kgText(x)}`;
+  // 展開の内訳は短く(2026-10-16 ユーザー要望): 脚質・補正タイム(スローは上がり)だけ。何走の平均か・換算の種類などの説明は
+  // 「補正タイム」要素の内訳(timeText)にだけ出す(斤量は 2026-10-18 に表示をやめた。timeText の注記参照)
+  const shortTime = (x) => `補${fmtSec(x.time)}`;
   const shortL3 = (x) => `上${x.l3.toFixed(1)}`;
   if (paceType === "high") {
     paceRanked = paceFavoredRank(withTime.map((x) => ({ ...x, t: x.time, fav: isFavoredStyle("high", x.paceStyle) })))
