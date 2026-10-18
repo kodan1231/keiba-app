@@ -207,7 +207,7 @@ async function buildBest(env, race) {
         c = correctRunTime(sec, { runTrack: row.track, runCondition: cond, targetTrack: race.track }, offsets);
       } else {
         // 距離が違う走: 総合推奨馬と同じ換算(_lib/race-factors.js の convertTime。同じ競馬場なら同じ馬の組の比
-        // → 勝ちタイムの平均の比と距離の比の平均、ほかの競馬場は競馬場・馬場の補正と全場の比)
+        // → その競馬場の勝ちタイムの平均の比〈2026-10-18 から距離の比と平均しない〉、ほかの競馬場は競馬場・馬場の補正と全場の勝ちタイムの比)
         const seconds = Math.round(convertTime(timeCtx, sec, { track: row.track, course_type: race.course_type, distance: runDist, track_condition: row.track_condition }, race, distanceRatios) * 100) / 100;
         c = { seconds, adj: Math.round((seconds - sec) * 100) / 100, partial: false };
       }

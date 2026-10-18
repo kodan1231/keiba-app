@@ -6,8 +6,8 @@
 //   加速区間・坂・コーナーの数など、その競馬場のその2つの距離の違いがそのまま比に入る(距離の比や勝ちタイムの平均の比より実態に合う。
 //   川崎ダ1400→1500 は 129組で ×1.0636。勝ちタイムの平均の比は ×1.0517、距離の比は ×1.0714 だった)。
 //   1頭の極端な比(体調・展開等)を除くため、距離の比から ±10% を外れる組は数えない。
-// 使い方: 組が DISTANCE_RATIO_MIN_PAIRS 以上ならこの比、足りなければ従来の比(勝ちタイムの平均の比と距離の比の平均。
-//   _lib/track-trends.js の sameTrackDistanceRatio)。補正タイム順位(horse-best)と総合推奨馬の補正タイム(_lib/race-factors.js)。
+// 使い方: 組が DISTANCE_RATIO_MIN_PAIRS 以上ならこの比、足りなければ従来の比(その競馬場の勝ちタイムの平均の比。2026-10-16〜10-18 は
+//   距離の比との平均だった。_lib/track-trends.js の sameTrackDistanceRatio)。補正タイム順位(horse-best)と総合推奨馬の補正タイム(_lib/race-factors.js)。
 //
 // 保存: app_settings の key='distance_ratios' に JSON 1行 { computed_at, marker, pairs: [[競馬場, 芝ダ, A(短), B(長), 組数, 比], ...] }。
 //   長→短は読み込みのときに逆数にする。組み合わせは「競馬場 × 芝ダ × 200m以内の距離の組」で、データが増えても競馬場と距離の数で頭打ち

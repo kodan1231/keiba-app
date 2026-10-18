@@ -45,7 +45,7 @@
 // 「このレースより前」: 戦績・同コース/同場の成績は日付で絞る。全競馬場の成績(馬番・騎手の最後の段)と補正値・平均勝ちタイムは
 //   全期間(過去の年の採点ではわずかに先の情報が混ざる。年ごとに出し直すと重いため)。
 import { runningStyleOf, firstCornerPosition, timeTextToSeconds } from "./graded-race-search.js";
-import { buildTrackTrends, trackTimeOffsets, condOffOf, sameTrackDistanceRatio, blendDistanceRatio, TREND_MIN_RACES } from "./track-trends.js";
+import { buildTrackTrends, trackTimeOffsets, condOffOf, sameTrackDistanceRatio, TREND_MIN_RACES } from "./track-trends.js";
 import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 import { pairDistanceRatioOf } from "./distance-ratios.js";
@@ -401,18 +401,21 @@ export function convertTime(ctx, sec, run, race, distanceRatios = null) {
   const off = (m, k) => (k != null && m.get(k) != null ? m.get(k) : 0);
   // 同じ競馬場・同じ芝ダで距離だけ違う走(2026-10-16): その競馬場の中の距離の比で換算する(全場の比は競馬場の混ざり方で偏るため)。
   // 比は「同じ馬の組の比(20組以上)」→「勝ちタイムの平均の比と距離の比の平均」。競馬場の補正は要らない(同じ競馬場)。比が出せなければ下の全場の比
+  // 2026-10-18(ユーザー確認済み): 同じ馬の組の比が無いときは、その競馬場の勝ちタイムの平均の比だけ(距離の比と平均しない。下の全場も同じ)。
+  // 過去1年の中央3,098レースの試算で、補正タイム1位の3着内率が 38.7% → 44.9%(docs/design/screens.md「距離の換算の比の見直し」)
   if (run.track === race.track && run.course_type === race.course_type && Number(run.distance) !== Number(race.distance)) {
     const ratio = pairDistanceRatioOf(distanceRatios, race.track, race.course_type, run.distance, race.distance)
-      ?? sameTrackDistanceRatio(src.trends, ctx.courseOf(race.course_type, race.distance).trends, race.track, run.distance, race.distance);
+      ?? sameTrackDistanceRatio(src.trends, ctx.courseOf(race.course_type, race.distance).trends, race.track);
     if (ratio) return (sec - (condOffOf(src.offsets, run.track, normalizeTrackConditionText(run.track_condition)) ?? 0)) * ratio;
   }
   // 馬場の補正は走った競馬場ごと(レースが十分あれば)→ 競馬場の差を除いた全場の値(2026-10-16。_lib/track-trends.js の condOffOf)
   let base = sec - off(src.offsets.trackOff, run.track) - (condOffOf(src.offsets, run.track, normalizeTrackConditionText(run.track_condition)) ?? 0);
   const tgt = ctx.courseOf(race.course_type, race.distance);
   if (run.course_type !== race.course_type || Number(run.distance) !== Number(race.distance)) {
-    // 2026-10-16: 全場の勝ちタイムの平均の比も距離ごとの競馬場・クラスの混ざり方で偏るため、距離の比との平均にする(芝ダが違うときは従来どおり)
+    // 全場の勝ちタイムの平均の比(無ければ距離の比)。2026-10-16〜10-18 は距離の比との平均にしていたが、比が小さくなり
+    // 短い距離の走の換算が速く・長い距離の走の換算が遅く出すぎた(マイル中心の馬が距離延長で上位に来る)ため戻した(上の注記)
     const timeRatio = src.avg && tgt.avg ? tgt.avg / src.avg : null;
-    base *= run.course_type === race.course_type ? blendDistanceRatio(timeRatio, run.distance, race.distance) : (timeRatio ?? Number(race.distance) / Number(run.distance));
+    base *= timeRatio ?? Number(race.distance) / Number(run.distance);
   }
   return base + off(tgt.offsets.trackOff, race.track);
 }
