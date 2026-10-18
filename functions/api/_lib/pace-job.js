@@ -71,9 +71,12 @@ export async function paceJobStep(db) {
       await dropQueue(db, job.kind, job.key);
       return { did: `error ${job.kind} ${job.key}: ${chunk.error}` };
     }
-    races.push(...chunk.races);
-    const offset = job.offset + Math.max(chunk.races.length, 1);
-    const finished = offset >= chunk.total || !chunk.races.length;
+    // 次の位置は next_offset(対象にした件数で進める。2026-10-18)。以前は返した件数で進めており、採点できないレース(今日の重賞・結果の無い年)が
+    // あると手前にずれて同じレースを2回採点し、6件すべて採点できない回があるとそこで終えていた。同じレースは1回だけ足す
+    const have = new Set(races.map((r) => r.race_id));
+    races.push(...chunk.races.filter((r) => !have.has(r.race_id)));
+    const offset = Math.max(job.offset + 1, chunk.next_offset ?? job.offset + chunk.races.length);
+    const finished = offset >= chunk.total;
     let phase = "score", state = null;
     if (finished) {
       const s = startPaceSearch(races, { baseAdjust: (await getPaceScoreSettings(db)).adjust });

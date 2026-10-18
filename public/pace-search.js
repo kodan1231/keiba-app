@@ -357,15 +357,24 @@ export function choosePaceWeights(races, opts = {}) {
 // onProgress(done, total) で進み具合を知らせる。戻り値: { result, info }(info は最初の応答の付帯情報)
 export async function collectAndChoose(fetchChunk, onProgress = () => {}) {
   const races = [];
+  const seen = new Set();
   let offset = 0, total = null, info = null;
   for (let guard = 0; guard < 200; guard++) {
     const chunk = await fetchChunk(offset);
     if (!info) info = chunk;
     total = chunk.total;
-    races.push(...(chunk.races || []));
-    offset += (chunk.races || []).length;
+    for (const r of chunk.races || []) {
+      if (seen.has(r.race_id)) continue; // 同じレースは1回だけ(2026-10-18)
+      seen.add(r.race_id);
+      races.push(r);
+    }
+    // 次の開始位置はサーバーの next_offset(対象にした件数で進める。2026-10-18)。採点できないレースがあっても手前にずれない。
+    // 古いサーバーの応答(next_offset 無し)は従来どおり返した件数で進める
+    const next = Number.isInteger(chunk.next_offset) ? chunk.next_offset : offset + (chunk.races || []).length;
+    if (next <= offset) break;
+    offset = next;
     onProgress(Math.min(offset, total), total);
-    if (!chunk.races || !chunk.races.length || offset >= total) break;
+    if (offset >= total) break;
   }
   // 評価点の既定値は採点の応答から(2026-10-14)。全コースの採点(kind="all")のときだけ全レース共通の項目も選ぶ(2026-10-15)
   const result = choosePaceWeights(races, { baseAdjust: info?.adjust_default || null, adjustAll: info?.kind === "all" });

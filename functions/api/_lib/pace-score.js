@@ -366,8 +366,10 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
   }
   const slice = targets.slice(offset, offset + Math.min(limit, BACKTEST_CHUNK_MAX));
   const scored = await scoreRaces(db, slice, { ...scoreOpts, prevOf });
+  // next_offset(2026-10-18): 次の開始位置は「対象にした件数」で進める。採点できないレース(今日の重賞・結果の無い年)は races に入らないため、
+  // 以前のように返した件数で進めると開始位置が手前にずれ、同じレースを2回採点していた(秋華賞で2021年が二重。比率がその年に偏った)
   return {
-    kind, key: String(key), label, total: targets.length, offset, missing_score: scoreOpts.missingScore,
+    kind, key: String(key), label, total: targets.length, offset, next_offset: offset + slice.length, missing_score: scoreOpts.missingScore,
     races: scored.map((x) => ({
       race_id: Number(x.race.id), race_date: x.race.race_date, pace_type: x.pace_type,
       runners: x.runners.map((h) => ({
