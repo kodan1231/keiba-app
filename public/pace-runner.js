@@ -1,9 +1,9 @@
 // 総合推奨馬の比率の計算待ちを、このブラウザで処理する(2026-10-14追加。管理者のみ。仕様は docs/design/screens.md「比率の計算」)。
 // 使う場面: ①出馬表を取り込んだ直後(レース管理画面。races-netkeiba-import.js / jra-entries-pdf.js から裏で)
 //          ②管理画面「重賞・予想」タブの「計算待ちを今すぐ計算」(admin.js)
-// 夜間の定時起動(workers/pace-cron → /api/cron/pace-step)と同じ規則: 前の自動計算から7日未満・手で保存した比率は計算せず
+// 夜間の計算(2026-10-18〜 GitHub Actions の scripts/pace-nightly.mjs。以前は workers/pace-cron)と同じ規則: 前の自動計算から7日未満・手で保存した比率は計算せず
 // 計算待ちから外す。それ以外は採点を数レースずつ受け取り(/api/admin/pace-backtest)、public/pace-search.js で比率を選んで
-// 保存し(/api/admin/pace-weights/auto-result)、外す。途中で画面を閉じた分は計算待ちに残り、夜間の定時起動が続きを行う。
+// 保存し(/api/admin/pace-weights/auto-result)、外す。途中で画面を閉じた分は計算待ちに残り、夜間に続きを行う。2026-10-18 から使うのは管理画面の「今すぐ計算」だけ(取り込み直後の自動の計算はやめた)。
 // 普通の <script> として読み込む(関数をグローバルに置く)。計算部分だけ import() で ES モジュールを読む。
 
 const PACE_RUNNER_SKIP_DAYS = 7;

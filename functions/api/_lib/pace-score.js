@@ -38,7 +38,8 @@ export const PACE_TYPES = ["high", "middle", "slow"];
 export const PACE_PICK_N = 3; // 相手の頭数
 export const PACE_KINDS = ["axis", "partner"];
 const GRADED_PAST_YEARS = 10; // 重賞: 過去10年(+今年)
-const COURSE_PAST_DAYS = 365; // コース: 直近1年(2026-10-14 ユーザー要望)
+const COURSE_PAST_DAYS = 365; // 評価点の既定値の自動計算(全コース): 直近1年(2026-10-14 ユーザー要望)
+const COURSE_WEIGHT_DAYS = 730; // コースの比率: 直近2年(2026-10-18 ユーザー確認済み。以前は COURSE_PAST_DAYS と同じ1年)
 // 全コース(評価点の既定値を自動で出す用。2026-10-14): 直近1年の結果のあるレースから等間隔に最大この数
 // (1年約3,400レースを全部採点すると約90万行を読むため。600レースで約16万行。管理者のボタンのときだけ)
 const ALL_SAMPLE_MAX = 600;
@@ -126,10 +127,23 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
     const r = resolvePaceWeights(specific(partnerRowView), partnerRowView(d), p, "partner");
     return r.scope === "builtin" ? { ...axisOf(p), from_axis: true } : r;
   };
+  // 重賞のレースのペースごと(2026-10-18。ユーザー確認済み。docs/design/screens.md「比率の選び方の見直し」): 重賞の年だけではペースごとの
+  // 比率を作らなくなったので、重賞にそのペースの比率が無く、重賞の共通の比率が自動のときは、今年のコース(同じ競馬場・芝ダ障・距離の直近2年)の
+  // そのペースの比率と半分ずつ混ぜる。重賞の比率を手で決めた・重賞にそのペースの比率がある・コースにそのペースの比率が無いときは混ぜない
+  const blendOf = (view, p, base) => {
+    if (!p || !g || !courseRow || base.scope !== "graded") return base;
+    const gv = view(g), cv = view(courseRow);
+    if (!gv || !cv || gv.source !== "auto" || parseByPace(gv.by_pace)[p]) return base;
+    const ce = parseByPace(cv.by_pace)[p];
+    if (!ce) return base;
+    const a = weightsOf(gv), b = weightsOf(ce);
+    const w = Object.fromEntries(Object.keys(a).map((k) => [k, Math.round(((a[k] + b[k]) / 2) * 10) / 10]));
+    return { ...base, ...w, scope: "graded+course", pace_type: p, blend: { graded: a, course: b, course_source: ce.source === "auto" ? "auto" : "manual" } };
+  };
   return {
     ...axisOf(null),
-    paces: Object.fromEntries(PACE_TYPES.map((p) => [p, axisOf(p)])),
-    partner: { ...partnerOf(null), paces: Object.fromEntries(PACE_TYPES.map((p) => [p, partnerOf(p)])) },
+    paces: Object.fromEntries(PACE_TYPES.map((p) => [p, blendOf((r) => r, p, axisOf(p))])),
+    partner: { ...partnerOf(null), paces: Object.fromEntries(PACE_TYPES.map((p) => [p, blendOf(partnerRowView, p, partnerOf(p))])) },
     adjust: resolveAdjust([[g, "graded"], [courseRow, "course"]]),
   };
 }
@@ -306,11 +320,12 @@ export async function prevYearGradedRaceId(db, gradedRaceId, race) {
   return p ? Number(p.id) : null;
 }
 
-// コースの直近1年(今日より前。結果のあるレース。新しい順)。races_index_cache から絞る(D1はキャッシュ約20行)
+// コースの直近2年(2026-10-18 ユーザー確認済み。以前は1年。ペース予想ごとの比率も作るため。今日より前・結果のあるレース・新しい順)。
+// races_index_cache から絞る(D1はキャッシュ約20行)。採点の読み取りはレース数に比例する(1レース約250行。2年で約100レース → 約2.5万行)
 async function courseTargets(db, course) {
   const allRaces = await paceRaceIndex(db);
   const today = todayJst();
-  const from = new Date(Date.now() + 9 * 3600 * 1000 - COURSE_PAST_DAYS * 86400000).toISOString().slice(0, 10);
+  const from = new Date(Date.now() + 9 * 3600 * 1000 - COURSE_WEIGHT_DAYS * 86400000).toISOString().slice(0, 10);
   return allRaces
     .filter((r) => r.track === course.track && r.course_type === course.course_type && Number(r.distance) === Number(course.distance)
       && String(r.race_date) >= from && String(r.race_date) < today && r.has_finish_order)

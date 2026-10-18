@@ -53,6 +53,9 @@ export async function onRequest(context) {
   }
 }
 
+// 夜間の比率の計算(GitHub Actions)が秘密情報で呼べる管理の API(2026-10-18)
+const CRON_ADMIN_PATHS = new Set(["/api/admin/pace-queue", "/api/admin/pace-backtest", "/api/admin/pace-weights/auto-result"]);
+
 async function handle(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
@@ -95,6 +98,26 @@ async function handle(context) {
       return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
     }
     context.data.isCron = true;
+    return next();
+  }
+
+  // 夜間の比率の計算(GitHub Actions の scripts/pace-nightly.mjs。2026-10-18): 秘密情報 PACE_CRON_SECRET(ヘッダー X-Cron-Secret)で、
+  // 比率の計算に要る管理の API(計算待ち・採点・保存)だけを管理者として通す。管理者用アプリ(と手元の all)だけ
+  if (CRON_ADMIN_PATHS.has(url.pathname) && request.headers.get("X-Cron-Secret")) {
+    if (role === "main") return notFoundJson();
+    if (!env.PACE_CRON_SECRET || request.headers.get("X-Cron-Secret") !== env.PACE_CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    context.data.isCron = true;
+    context.data.isAdmin = true;
+    context.data.userId = null;
+    context.data.username = null;
+    try {
+      const guarded = await serviceGuardResponse(context);
+      if (guarded) return guarded;
+    } catch (e) {
+      console.error("service guard failed (ignored)", e);
+    }
     return next();
   }
 

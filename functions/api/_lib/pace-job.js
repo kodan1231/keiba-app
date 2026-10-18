@@ -1,112 +1,25 @@
-// 総合推奨馬の比率の計算を「1歩ずつ」進める(2026-10-14追加。Cloudflare の定時起動 workers/pace-cron から呼ぶ)。
-// 仕様は docs/design/screens.md「比率の計算(夜間・今すぐ計算)」。
-// サーバーの1回の処理のCPU上限(無料枠10ミリ秒)に収まるよう、1回の呼び出しでは次のどれか1つだけ行う:
-//   - 計算待ち(pace_recompute_queue)の先頭を作業(pace_jobs)にする(7日未満・手で保存した比率なら計算せず計算待ちから外す)
-//   - 採点を6レースぶん進めて作業に足す(_lib/pace-score.js の backtestChunk)
-//   - 比率選びを1段進める(public/pace-search.js の stepPaceSearch。ブラウザ・Node と同じ計算)。最後の段で保存して作業と計算待ちを消す
-// 作業の途中の状態は表 pace_jobs に置く(1作業1行。採点した数十レースの JSON で数十KB)。
-// D1: 1回あたり作業1行の読み書き+(採点のとき)約1,500行の読み取り。
-import { backtestChunk, saveAutoPaceResult } from "./pace-score.js";
-import { getPaceScoreSettings } from "./pace-settings.js";
-import { parseCourseKey } from "./pace-queue.js";
+// 夜間の1歩ずつの計算(POST /api/cron/pace-step。2026-10-14追加)。
+// 2026-10-18 から: 呼ぶのは GitHub Actions(.github/workflows/pace-nightly.yml の scripts/pace-nightly.mjs。以前は Cloudflare の定時起動
+// workers/pace-cron)で、ここで行うのは**同じ馬の組から出す距離の換算の比**(_lib/distance-ratios.js)を1歩進めることだけ。
+// 総合推奨馬の比率の計算待ち(pace_recompute_queue)は、同じ GitHub Actions が Node で総当たりして保存する
+// (サーバーの1回の処理の CPU 上限〈10ミリ秒〉では総当たりが終わらないため。docs/design/screens.md「比率の選び方の見直し」)。
+// 以前はここで比率の作業(pace_jobs の kind='graded' / 'course')を採点 → 山登りの段ごとに1歩ずつ進めていた。
+// 残っている古い比率の作業は1歩目で消す(計算待ちは残すので GitHub Actions が計算する)。
 import { distanceRatiosStep } from "./distance-ratios.js";
-import { startPaceSearch, stepPaceSearch } from "../../../public/pace-search.js";
-
-const SKIP_DAYS = 7;
-
-async function lastComputed(db, kind, key) {
-  if (kind === "graded") return db.prepare("SELECT updated_at, source FROM pace_weights WHERE graded_race_id = ?").bind(Number(key)).first();
-  const c = parseCourseKey(key);
-  return c ? db.prepare("SELECT updated_at, source FROM course_pace_weights WHERE track = ? AND course_type = ? AND distance = ?").bind(c.track, c.course_type, c.distance).first() : null;
-}
-
-const dropQueue = (db, kind, key) => db.prepare("DELETE FROM pace_recompute_queue WHERE kind = ? AND key = ?").bind(kind, key).run();
-const dropJob = (db, kind, key) => db.prepare("DELETE FROM pace_jobs WHERE kind = ? AND key = ?").bind(kind, key).run();
 
 // 1歩進める。戻り値: { idle: true }(やることが無い)か { did: "..." }
 export async function paceJobStep(db) {
-  // 距離の換算の比の作業(kind='distance'。2026-10-16。_lib/distance-ratios.js)は比率の作業とは別に扱う
-  let job = await db.prepare("SELECT kind, key, phase, offset, total, races, state, missing_score FROM pace_jobs WHERE kind <> 'distance' ORDER BY updated_at LIMIT 1").first();
-  const now = new Date().toISOString();
-
-  if (!job) {
-    const item = await db.prepare("SELECT kind, key FROM pace_recompute_queue ORDER BY created_at LIMIT 1").first();
-    if (!item) {
-      // 比率の計算待ちが無ければ、同じ馬の組から出す距離の比を1歩進める(前回から結果が増えていれば始める。2026-10-16)。
-      // 結果を取り込んだ日の夜だけ動く(計算全体で約15万行・約40歩。2026-10-18 の初回は38歩・149,696行)。失敗しても比率の計算は止めない
-      try {
-        const r = await distanceRatiosStep(db);
-        if (!r.idle) return { did: `distance-ratios ${r.did}${r.read != null ? ` ${r.read}` : ""}${r.count != null ? ` ${r.usable}/${r.count}` : ""}` };
-      } catch (e) {
-        console.error("distance ratios step failed (ignored)", e);
-      }
-      return { idle: true };
-    }
-    const row = await lastComputed(db, item.kind, item.key);
-    if (row?.source === "manual" || (row?.source === "auto" && row.updated_at && Date.now() - Date.parse(row.updated_at) < SKIP_DAYS * 86400000)) {
-      await dropQueue(db, item.kind, item.key);
-      return { did: `skip ${item.kind} ${item.key}` };
-    }
-    const { missing_score } = await getPaceScoreSettings(db);
-    await db.prepare(
-      `INSERT OR REPLACE INTO pace_jobs (kind, key, phase, offset, total, races, state, missing_score, updated_at) VALUES (?, ?, 'score', 0, NULL, '[]', NULL, ?, ?)`
-    ).bind(item.kind, item.key, missing_score, now).run();
-    return { did: `start ${item.kind} ${item.key}` };
+  const old = await db.prepare("SELECT COUNT(*) AS n FROM pace_jobs WHERE kind <> 'distance'").first().catch(() => null);
+  if (old && Number(old.n) > 0) {
+    await db.prepare("DELETE FROM pace_jobs WHERE kind <> 'distance'").run();
+    return { did: `cleared ${old.n} old pace jobs` };
   }
-
-  // 計算待ちから消えていれば(管理者のブラウザで計算し終えた等)作業も消す
-  const still = await db.prepare("SELECT 1 AS x FROM pace_recompute_queue WHERE kind = ? AND key = ?").bind(job.kind, job.key).first();
-  if (!still) {
-    await dropJob(db, job.kind, job.key);
-    return { did: `drop ${job.kind} ${job.key}` };
+  // 同じ馬の組から出す距離の比(週1回。新しい結果があり前回から7日たったときに始める)。失敗しても次の晩にやり直す
+  try {
+    const r = await distanceRatiosStep(db);
+    if (!r.idle) return { did: `distance-ratios ${r.did}${r.read != null ? ` ${r.read}` : ""}${r.count != null ? ` ${r.usable}/${r.count}` : ""}` };
+  } catch (e) {
+    console.error("distance ratios step failed (ignored)", e);
   }
-
-  let races = [];
-  try { races = JSON.parse(job.races || "[]"); } catch { races = []; }
-
-  if (job.phase === "score") {
-    const chunk = await backtestChunk(db, job.kind, job.key, job.offset, 6, { missingScore: job.missing_score });
-    if (chunk.error) {
-      await dropJob(db, job.kind, job.key);
-      await dropQueue(db, job.kind, job.key);
-      return { did: `error ${job.kind} ${job.key}: ${chunk.error}` };
-    }
-    // 次の位置は next_offset(対象にした件数で進める。2026-10-18)。以前は返した件数で進めており、採点できないレース(今日の重賞・結果の無い年)が
-    // あると手前にずれて同じレースを2回採点し、6件すべて採点できない回があるとそこで終えていた。同じレースは1回だけ足す
-    const have = new Set(races.map((r) => r.race_id));
-    races.push(...chunk.races.filter((r) => !have.has(r.race_id)));
-    const offset = Math.max(job.offset + 1, chunk.next_offset ?? job.offset + chunk.races.length);
-    const finished = offset >= chunk.total;
-    let phase = "score", state = null;
-    if (finished) {
-      const s = startPaceSearch(races, { baseAdjust: (await getPaceScoreSettings(db)).adjust });
-      if (s.error) {
-        await dropJob(db, job.kind, job.key);
-        await dropQueue(db, job.kind, job.key);
-        return { did: `none ${job.kind} ${job.key}: ${s.error}` };
-      }
-      phase = "search";
-      state = JSON.stringify(s);
-    }
-    await db.prepare("UPDATE pace_jobs SET phase = ?, offset = ?, total = ?, races = ?, state = ?, updated_at = ? WHERE kind = ? AND key = ?")
-      .bind(phase, offset, chunk.total, JSON.stringify(races), state, now, job.kind, job.key).run();
-    return { did: `score ${job.kind} ${job.key} ${Math.min(offset, chunk.total)}/${chunk.total}` };
-  }
-
-  // 比率選びを1段
-  let state = null;
-  try { state = JSON.parse(job.state || "null"); } catch { state = null; }
-  if (!state) state = startPaceSearch(races, { baseAdjust: (await getPaceScoreSettings(db)).adjust });
-  const r = stepPaceSearch(races, state);
-  if (!r.done) {
-    await db.prepare("UPDATE pace_jobs SET state = ?, updated_at = ? WHERE kind = ? AND key = ?").bind(JSON.stringify(r.state), now, job.kind, job.key).run();
-    return { did: `search ${job.kind} ${job.key} ${r.state.stage}/${r.state.stages.length}` };
-  }
-  if (!r.result.error) {
-    r.result.detail.missing_score = job.missing_score;
-    await saveAutoPaceResult(db, job.kind, job.key, r.result);
-  }
-  await dropJob(db, job.kind, job.key);
-  await dropQueue(db, job.kind, job.key);
-  return { did: `saved ${job.kind} ${job.key}` };
+  return { idle: true };
 }

@@ -1360,7 +1360,7 @@ async function paceAdjustDefaultAuto(btn) {
 }
 
 // ---- 自動計算: 計算待ち(2026-10-14。API: GET/DELETE /api/admin/pace-queue)----
-// 「計算待ちを今すぐ計算」は夜間の定時起動(workers/pace-cron)と同じ規則で、このブラウザで処理する(pace-runner.js の runPaceQueueInBrowser)。
+// 「計算待ちを今すぐ計算」は夜間(GitHub Actions の scripts/pace-nightly.mjs。2026-10-18〜)と同じ規則で、このブラウザで処理する(pace-runner.js の runPaceQueueInBrowser)。
 let paceQueueItems = [];
 
 function paceQueueLabel(it) {
@@ -1550,7 +1550,7 @@ function renderCourseWeightsList() {
             <span class="pace-w-item-sub">${escapeHtml(w?.source === "auto" ? "自動" : w?.source === "none" ? "ペースのみ手動" : "手動")}${paceUpdatedDateHtml(w)}</span>
           </span>
           <!-- 開かずに計算し直せるよう、閉じた行にもボタンを置く(2026-10-16 ユーザー要望) -->
-          <button type="button" class="ghost-btn course-w-auto pace-w-summary-btn" title="このコースの直近1年から比率を計算して保存します">今すぐ計算</button>
+          <button type="button" class="ghost-btn course-w-auto pace-w-summary-btn" title="このコースの直近2年から比率を計算して保存します">今すぐ計算</button>
         </summary>
         <div class="pace-w-item-body">
           ${paceWeightsLinesHtml(w, std)}
@@ -1558,7 +1558,7 @@ function renderCourseWeightsList() {
           ${paceAdjustLineHtml(w?.adjust || null, `c${c.course_key}`)}
           ${w?.detail?.method === "backtest" ? `<p class="ticket-sub">${escapeHtml(paceAutoSummaryText(w.detail))}</p>` : ""}
           <div class="row-actions">
-            <button type="button" class="ghost-btn course-w-auto">今すぐ計算(直近1年)</button>
+            <button type="button" class="ghost-btn course-w-auto">今すぐ計算(直近2年)</button>
             <button type="button" class="icon-btn delete course-w-clear" title="このコースの比率を消す">×</button>
           </div>
         </div>

@@ -1,0 +1,33 @@
+# 夜間の計算(2026-10-18。docs/design/screens.md「比率の選び方の見直し」)。毎晩3時(日本時間)に scripts/pace-nightly.mjs を動かす:
+#   1. 総合推奨馬の比率の計算待ちを総当たりで計算して保存  2. 同じ馬の組から出す距離の換算の比を1歩ずつ進める
+# 以前(2026-10-14〜10-18)は Cloudflare の定時起動(workers/pace-cron)が 2 と、比率の山登りを1歩ずつ行っていた。
+# 手動でも実行できる(Actions タブの「Run workflow」、または gh workflow run pace-nightly.yml)。
+# 必要な Secrets(リポジトリの Settings → Secrets and variables → Actions):
+#   KEIBA_BASE_URL    … 管理者用アプリの URL(https://keiba-admin.pages.dev)
+#   KEIBA_CRON_SECRET … 管理者用アプリ(Pages の keiba-admin)の秘密情報 PACE_CRON_SECRET と同じ値
+# GitHub の定時実行は混み具合で数分〜数十分遅れることがある。公開リポジトリは無料。60日間リポジトリの更新が無いと定時実行が止まる。
+name: pace-nightly
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # UTC 18:00 = 日本時間 3:00
+  workflow_dispatch:
+
+concurrency:
+  group: pace-nightly
+  cancel-in-progress: false
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 比率の計算待ちと距離の換算の比を計算して保存
+        run: node scripts/pace-nightly.mjs
+        env:
+          KEIBA_BASE_URL: ${{ secrets.KEIBA_BASE_URL }}
+          KEIBA_CRON_SECRET: ${{ secrets.KEIBA_CRON_SECRET }}
