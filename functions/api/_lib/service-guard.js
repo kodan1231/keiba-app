@@ -43,6 +43,12 @@ export const SERVICE_GUARD_FEATURES = {
         url.pathname === "/api/ticket-imports" ||
         url.pathname === "/api/admin/horses/paste-import"),
   },
+  // 2026-10-18: 結果を取り込んだ日の夜は30〜40条件の比率を計算し直す(採点で約75〜100万行)ため。止めた分は計算待ちに残り、次の晩に計算する。
+  // 管理画面の「今すぐ計算」(同じ採点の API)も止まる
+  nightly: {
+    label: "比率の計算(夜間の GitHub Actions・管理画面の今すぐ計算)と距離の換算の比の夜間の計算",
+    match: (req, url) => url.pathname === "/api/admin/pace-backtest" || url.pathname === "/api/cron/pace-step",
+  },
   history_all: {
     label: "購入履歴・集計画面の全期間の表示",
     match: (req, url) =>
@@ -55,7 +61,7 @@ export const SERVICE_GUARD_FEATURES = {
 export const SERVICE_GUARD_DEFAULTS = {
   enabled: true,
   thresholdPercent: 80,
-  targets: ["data_search", "admin_bulk"],
+  targets: ["data_search", "admin_bulk", "nightly"],
   manualPause: false,
   overrideUntil: null,
 };

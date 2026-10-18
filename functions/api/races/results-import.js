@@ -14,6 +14,7 @@ import {
   raceBaseNameOf,
   changedPairs,
   applyImportedTrainerNames,
+  enqueuePaceRecomputeForResults,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -363,6 +364,19 @@ export async function onRequestPost(context) {
   if (recomputeUpdates.length) {
     await recomputeTicketPayoutsForRaces(db, recomputeUpdates);
   }
+
+  // 7b) 着順・払戻が入った・変わったレースのコースと重賞を、総合推奨馬の比率の計算待ちに積む(2026-10-18。比率の元になる結果が増えたため。
+  //     その夜の GitHub Actions が計算する。_lib/pace-queue.js)。コース等は取り込んだ値、無ければ今の行の値
+  const resultRaces = [
+    ...toInsert.filter((it) => it.finishOrder || Object.keys(it.payouts).length).map((it) => ({
+      id: it.id, track: it.track, course_type: it.item.course_type, distance: it.item.distance, race_name: it.item.race_name, class_flags: it.item.class_flags,
+    })),
+    ...toUpdate.filter((it) => it.finishOrPayoutTouched).map((it) => {
+      const pick = (k) => it.item[k] || it.existing[k] || null;
+      return { id: it.id, track: it.existing.track, course_type: pick("course_type"), distance: pick("distance"), race_name: pick("race_name"), class_flags: pick("class_flags") };
+    }),
+  ];
+  if (resultRaces.length) await enqueuePaceRecomputeForResults(db, resultRaces);
 
   // 8) 馬情報マスタ(horses)の調教師欄への反映(best-effort。docs/design/data-search.md
   //    「馬情報検索タブ」参照)。raceResultsInputは各行が{horse_name, trainer, ...}を

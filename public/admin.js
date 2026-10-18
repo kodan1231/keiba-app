@@ -1391,7 +1391,7 @@ async function runPaceQueue(btn) {
   btn.disabled = false;
   btn.textContent = label;
   if (r.busy) { paceWeightsMsg("別の計算が動いています。終わってからもう一度押してください", false); return; }
-  paceWeightsMsg(`計算待ちを処理しました(計算${r.done}件・7日未満などで省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
+  paceWeightsMsg(`計算待ちを処理しました(計算${r.done}件・手で決めた比率のため省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
   await loadPaceWeights();
 }
 

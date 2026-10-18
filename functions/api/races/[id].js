@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute, enqueuePaceRecomputeForResults } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -147,6 +147,12 @@ export async function onRequestPut(context) {
       const payoutsObj = race.payouts ? JSON.parse(race.payouts) : null;
       await recomputeTicketPayoutsForRace(env.DB, Number(params.id), finishOrder, payoutsObj, entries);
     }
+  }
+  // 着順・払戻の値が変わったら、このレースのコースと重賞を総合推奨馬の比率の計算待ちに積む(2026-10-18。結果が増えた・変わったため。
+  // _lib/pace-queue.js)。値が同じ保存では積まない
+  if (changed.some(([c]) => c === "finish_order" || c === "payouts")) {
+    const r = await env.DB.prepare("SELECT id, track, course_type, distance, race_name, class_flags FROM races WHERE id = ?").bind(raceId).first();
+    if (r) await enqueuePaceRecomputeForResults(env.DB, [r]);
   }
 
   return Response.json({ ok: true });

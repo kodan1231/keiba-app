@@ -99,6 +99,13 @@ async function handle(context) {
       return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
     }
     context.data.isCron = true;
+    // 使用量が多い日は止める(2026-10-18。重い機能の自動一時停止の「夜間の計算」。止めた分は次の晩に続きから)
+    try {
+      const guarded = await serviceGuardResponse(context);
+      if (guarded) return guarded;
+    } catch (e) {
+      console.error("service guard failed (ignored)", e);
+    }
     return next();
   }
 

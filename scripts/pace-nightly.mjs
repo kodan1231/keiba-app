@@ -1,7 +1,8 @@
 // 夜間の計算(2026-10-14追加。2026-10-18 から GitHub Actions〈.github/workflows/pace-nightly.yml〉で毎晩動かす。
 // 仕様は docs/design/screens.md「比率の選び方の見直し」「比率の計算(夜間・今すぐ計算)」)。
 //   1. 総合推奨馬の比率の計算待ち(GET /api/admin/pace-queue)の重賞・コースごとに、
-//      前の自動計算から7日未満、または手で保存した比率なら計算せず計算待ちから外す。
+//      手で保存した比率なら計算せず計算待ちから外す(2026-10-18: 以前の「前の自動計算から7日未満なら外す」はやめた。
+//      計算待ちに積むのは結果が入ったとき・まだ今の方式で計算していないときだけ〈_lib/pace-queue.js〉で、同じ条件は1晩1回)。
 //      それ以外は採点を数レースずつ受け取り(GET /api/admin/pace-backtest)、public/pace-search.js の総当たりで比率を選んで
 //      保存し(PUT /api/admin/pace-weights/auto-result)、計算待ちから外す(DELETE /api/admin/pace-queue)。
 //      総当たりはサーバーの1回の処理の CPU 上限(10ミリ秒)では終わらないため、ここ(Node)で計算する。
@@ -16,7 +17,6 @@ import { collectAndChoose } from "../public/pace-search.js";
 const BASE = String(process.env.KEIBA_BASE_URL || "").replace(/\/+$/, "");
 const SECRET = process.env.KEIBA_CRON_SECRET || "";
 const TOKEN = process.env.KEIBA_API_TOKEN || "";
-const SKIP_DAYS = 7;
 const DISTANCE_STEPS_MAX = 2000; // 距離の比の1歩の上限(1回の計算は約40歩)
 
 if (!BASE || (!SECRET && !TOKEN)) {
@@ -64,11 +64,6 @@ for (const it of items) {
   try {
     if (it.manual) {
       console.log(`${label}: 手で保存した比率のため計算しない`);
-      await removeFromQueue(it);
-      continue;
-    }
-    if (it.last_computed_at && Date.now() - Date.parse(it.last_computed_at) < SKIP_DAYS * 86400000) {
-      console.log(`${label}: 前の計算から${SKIP_DAYS}日未満のため計算しない(${it.last_computed_at})`);
       await removeFromQueue(it);
       continue;
     }
