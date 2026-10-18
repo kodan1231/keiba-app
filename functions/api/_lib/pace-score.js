@@ -379,7 +379,9 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
   } else {
     return { error: "kind が不正です" };
   }
-  const slice = targets.slice(offset, offset + Math.min(limit, BACKTEST_CHUNK_MAX));
+  // scoreOpts.chunkMax(2026-10-18): 夜間の Node(scripts/pace-nightly.mjs)は CPU の上限が無いので一度に多く採点する。
+  // 対象レースの IN は最大この数(100バインド上限より小さく。Node は30)、出走馬の IN は scoreRaces の中で90件ずつ
+  const slice = targets.slice(offset, offset + Math.min(limit, Math.min(90, scoreOpts.chunkMax || BACKTEST_CHUNK_MAX)));
   const scored = await scoreRaces(db, slice, { ...scoreOpts, prevOf });
   // next_offset(2026-10-18): 次の開始位置は「対象にした件数」で進める。採点できないレース(今日の重賞・結果の無い年)は races に入らないため、
   // 以前のように返した件数で進めると開始位置が手前にずれ、同じレースを2回採点していた(秋華賞で2021年が二重。比率がその年に偏った)

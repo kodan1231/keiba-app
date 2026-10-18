@@ -1099,6 +1099,18 @@ PC幅では表ヘッダーの見出しと二重になるため701px以上で非�
           `_lib/pace-job.js` は距離の換算の比だけにした(古い比率の作業の行は1歩目で消す)。Cloudflare の定時起動 `workers/pace-cron` は
           GitHub Actions を手動で動かして成功したのを確かめ、同日に削除した(Worker `keiba-pace-cron` とフォルダ)。
           取り込み直後の裏での計算(`pace-runner.js` の `runPaceQueueInBackground` と CSS `.pace-runner-status`)も削除
+        - **採点も Node で(2026-10-19。ユーザー要望「根本的に解決」)**: 初回の手動実行(30条件)で、後半11件が採点の API
+          (`/api/admin/pace-backtest`)の `HTTP 503` で失敗した。Cloudflare の記録では Functions が `exceededResources`(CPU 時間の上限)で
+          50回断られ、成功した呼び出しも CPU 時間の中央値 13ミリ秒・上位1% 261ミリ秒(無料枠の目安10ミリ秒を普段から超え、続けて超えると
+          軽い `pace-step` までまとめて断られる)。そこで `scripts/pace-nightly.mjs` は、D1 を Cloudflare の API で読む `scripts/lib/d1-rest.mjs`
+          (env.DB と同じ形。混雑・一時的な失敗は待ってやり直す)で、サーバーと同じ採点のコード(`backtestChunk`。Node では1回30レース。
+          `scoreOpts.chunkMax`)を動かす。Cloudflare の Functions が受け持つのは保存・計算待ちの削除・距離の比の1歩だけ(軽い)。
+          アプリの API の呼び出しも 503・429・通信エラーは 5→15→30→60秒 待ってやり直し、失敗した条件は最後に1分待ってもう一度やり直す。
+          それでも残った条件だけを一覧に出して計算待ちに残し、終了コード1(GitHub のメール)。トークンは GitHub の Secrets `CF_D1_TOKEN`
+          (管理画面の D1 の使用量と同じトークン。D1 への書き込みもできるので、キャッシュの差し替えもサーバーと同じく保存される。
+          書けないトークンのときのために、`_lib/range-chunk-cache.js` は控えを読むだけで差し替えをメモリの中で行う)。
+          手元の確認(`DRY_RUN=1`。計算だけ): 京都芝1600 80レース 7.5秒・新潟芝2000 38レース 2.9秒、2件の読み取り 25,670行。
+          定時実行は日本時間 3:17 と 4:47 の2回(10/19 3:00 は GitHub 側で始まらなかった。混み合う0分を避け、1回目が飛ばされても2回目で拾う)
         - コースの比率の期間: `_lib/pace-score.js` の `COURSE_WEIGHT_DAYS`(730日)。評価点の既定値の自動計算は1年のまま(`COURSE_PAST_DAYS`)
         - 混ぜ方: `_lib/pace-score.js` の `getPaceWeights` の `blendOf`。重賞のレースでペース予想が P のとき、重賞に P の比率が無く、重賞の共通が
           自動で、コースに P の比率があれば、軸・相手とも半分ずつ(`scope: "graded+course"`、`blend` に元の2つ)。重賞検索の検証

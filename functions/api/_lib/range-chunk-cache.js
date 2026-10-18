@@ -103,7 +103,14 @@ async function claimDirty(db, table) {
     ]);
     return (res?.[1]?.results || []).map((r) => Number(r.race_id)).filter((n) => Number.isInteger(n));
   } catch {
-    return null;
+    // 書き込めない(読み取り専用のトークンで読む夜間の計算〈scripts/pace-nightly.mjs。2026-10-18〉等)ときは、印を付けずに控えだけ読み、
+    // 差し替えはメモリの中だけで行う(保存・控えの削除は失敗して握りつぶされる)。表が無いときは null
+    try {
+      const { results } = await db.prepare("SELECT race_id FROM cache_dirty WHERE tbl = ?").bind(table).all();
+      return (results || []).map((r) => Number(r.race_id)).filter((n) => Number.isInteger(n));
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -261,10 +268,15 @@ async function applyPatches(db, table, build, patch, version, have, tokens, patc
         .bind(text, token, ci, tokens.get(ci) ?? null),
       ...clearDirtyStatements(db, table, raceIds, { chunk: ci, token }),
     ];
-    const res = await db.batch(stmts);
-    // 別の実行環境が先に差し替えていた(保存されなかった)ときも、今回の画面には差し替えた内容を返す(控えは残り次回やり直す)
+    // 別の実行環境が先に差し替えていた(保存されなかった)ときも、保存に失敗した(読み取り専用。2026-10-18)ときも、
+    // 今回の結果には差し替えた内容を返す(控えは残り次回やり直す)
     have.set(ci, next);
-    if (!res?.[0]?.meta?.changes) console.warn(`${table}: chunk ${ci} changed concurrently; will retry`);
+    try {
+      const res = await db.batch(stmts);
+      if (!res?.[0]?.meta?.changes) console.warn(`${table}: chunk ${ci} changed concurrently; will retry`);
+    } catch (e) {
+      console.warn(`${table}: chunk ${ci} patched in memory only (${e?.message || e})`);
+    }
   }
 }
 
