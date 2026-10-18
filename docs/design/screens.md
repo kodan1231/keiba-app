@@ -1097,7 +1097,8 @@ PC幅では表ヘッダーの見出しと二重になるため701px以上で非�
           返るまで呼ぶ。認証は管理者用アプリの秘密情報 `PACE_CRON_SECRET`(ヘッダー `X-Cron-Secret`)で、`functions/_middleware.js` が
           計算待ち・採点・保存の3つの管理の API(`CRON_ADMIN_PATHS`)だけを管理者として通す(予想・購入用アプリでは 404)。
           `_lib/pace-job.js` は距離の換算の比だけにした(古い比率の作業の行は1歩目で消す)。Cloudflare の定時起動 `workers/pace-cron` は
-          GitHub Actions で動くことを確かめた後に削除する
+          GitHub Actions を手動で動かして成功したのを確かめ、同日に削除した(Worker `keiba-pace-cron` とフォルダ)。
+          取り込み直後の裏での計算(`pace-runner.js` の `runPaceQueueInBackground` と CSS `.pace-runner-status`)も削除
         - コースの比率の期間: `_lib/pace-score.js` の `COURSE_WEIGHT_DAYS`(730日)。評価点の既定値の自動計算は1年のまま(`COURSE_PAST_DAYS`)
         - 混ぜ方: `_lib/pace-score.js` の `getPaceWeights` の `blendOf`。重賞のレースでペース予想が P のとき、重賞に P の比率が無く、重賞の共通が
           自動で、コースに P の比率があれば、軸・相手とも半分ずつ(`scope: "graded+course"`、`blend` に元の2つ)。重賞検索の検証

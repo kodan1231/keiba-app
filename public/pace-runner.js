@@ -77,20 +77,3 @@ async function runPaceQueueInBrowser(onStatus = () => {}) {
   }
   return { done, skipped, failed, total };
 }
-
-// 取り込み直後に裏で動かす(画面の隅に小さく進み具合を出す。終わったら数秒で消す)
-async function runPaceQueueInBackground() {
-  if (!window.currentUser?.isAdmin) return;
-  let el = document.getElementById("pace-runner-status");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "pace-runner-status";
-    el.className = "pace-runner-status";
-    el.setAttribute("role", "status");
-    document.body.appendChild(el);
-  }
-  const r = await runPaceQueueInBrowser((text) => { el.textContent = text; el.hidden = false; });
-  if (r.busy || !r.total) { el.remove(); return; }
-  el.textContent = `推奨馬の比率: 計算${r.done}件・省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(夜間に計算し直します)` : ""}`;
-  setTimeout(() => el.remove(), 6000);
-}

@@ -252,8 +252,8 @@ const PARTNER_KEYS = ["win"];
 const sum3 = (x) => ({ win: x.win, quin: x.quin, show: x.show });
 const usableRaces = (races) => (races || []).filter((r) => r && r.runners && r.runners.length && r.runners.some((h) => h.place >= 1 && h.place <= 3));
 
-// ---- 1段ずつ進める形(2026-10-14。Cloudflare の定時起動〈workers/pace-cron〉から、サーバーの1回の処理のCPU上限〈10ミリ秒〉に
-// 収まるよう1段ずつ呼ぶため。ブラウザ・Node は choosePaceWeights で全段を続けて呼ぶ。結果はどちらも同じ) ----
+// ---- 1段ずつ進める形(2026-10-14。当初は Cloudflare の定時起動〈workers/pace-cron。2026-10-18 削除〉から1段ずつ呼ぶため。
+// 今は choosePaceWeights が全段を続けて呼ぶ〈ブラウザの「今すぐ計算」と GitHub Actions の Node〉) ----
 // 段: 全体の軸(既定の評価点)→ 評価点 → 全体の軸(選んだ評価点。前の段から出発)→ 全体の相手 → (レース数の足りるペースごとに)軸 → 相手。
 // 1段 = 総当たり1回(2026-10-18〜。1レース・1通り約1マイクロ秒。重賞10レースで約0.2秒、コース2年で数秒。夜間は GitHub Actions の Node で計算する)。
 // 評価点の段より後は選んだ評価点で採点する。

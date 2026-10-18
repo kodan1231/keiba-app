@@ -43,7 +43,7 @@
   admin: レース管理・管理・馬券帳へ(→main)。画面の中のリンク(購入履歴の「払戻を編集」→admin、馬券購入・予想登録の
   「過去のデータ」→search 等)も `appUrl`。
 - **外から呼ぶもの**: JRA結果のユーザースクリプト(`public/jra-result-importer.user.js`。1.1.0)と夜間計算の Worker
-  (`workers/pace-cron`)の送り先を admin にした。ユーザースクリプトは admin の管理画面のリンクから入れ直す。
+  (`workers/pace-cron`)の送り先を admin にした(2026-10-18: Worker は削除し、夜間の計算は GitHub Actions〈`.github/workflows/pace-nightly.yml`〉から admin を呼ぶ)。ユーザースクリプトは admin の管理画面のリンクから入れ直す。
   netkeiba・JRA のブックマークレットは管理画面のある URL(admin)を使うので、admin の管理画面からブックマークを登録し直す。
 
 ## 公開の設定(Cloudflare)

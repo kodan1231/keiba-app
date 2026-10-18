@@ -89,7 +89,8 @@ async function handle(context) {
     url.pathname === "/api/auth/register" ||
     url.pathname === "/api/auth/logout";
 
-  // 定時起動(workers/pace-cron)からの呼び出し(2026-10-14): ログインの代わりに秘密情報 PACE_CRON_SECRET で確かめる。
+  // 夜間の計算(2026-10-18〜 GitHub Actions。以前は Cloudflare の定時起動 workers/pace-cron〈削除済み〉)からの呼び出し(2026-10-14):
+  // ログインの代わりに秘密情報 PACE_CRON_SECRET で確かめる。
   // /api/cron/ の下だけ。秘密情報が設定されていない・違うときは 401。
   if (url.pathname.startsWith("/api/cron/")) {
     if (role === "main") return notFoundJson(); // 夜間計算の受け口は管理者用アプリだけ
