@@ -40,10 +40,12 @@ function jockeyAliasMapOf(rows) {
   return map;
 }
 
+// 2026-10-20: 表の全件(約380行)ではなく写し(_lib/table-snapshot.js。1〜2行)を読む。写しは読むたびに今の版数と
+// 比べるので、取り込みなど DB へ書き込む処理でも古いエイリアスにはならない(使い回し〈memoized〉は通さない)。
+// 取り込み・レースの保存で1日に100〜380回、全件を読んでいた
 export async function loadJockeyAliasMap(db) {
   if (!db) return new Map();
-  const { results } = await db.prepare(JOCKEY_ALIAS_SELECT).all();
-  return jockeyAliasMapOf(results);
+  return jockeyAliasMapOf(await loadTableSnapshot(db, "jockey_aliases", JOCKEY_ALIAS_SELECT));
 }
 
 // 画面表示用の読み取りAPI向け: 同じ実行環境で短時間だけ使い回す版(2026-10-07。_lib/memo-cache.js 参照)。
@@ -51,7 +53,7 @@ export async function loadJockeyAliasMap(db) {
 // 戻り値の Map は共有物なので変更しないこと。
 // 2026-10-18: 使い回しが切れたときは、表の全件(約360行)ではなく写し(_lib/table-snapshot.js。1〜2行)を読む
 export function loadJockeyAliasMapCached(db) {
-  return memoized(MEMO_JOCKEY_ALIASES, async () => (db ? jockeyAliasMapOf(await loadTableSnapshot(db, "jockey_aliases", JOCKEY_ALIAS_SELECT)) : new Map()));
+  return memoized(MEMO_JOCKEY_ALIASES, () => loadJockeyAliasMap(db));
 }
 
 // 騎手名1件を、事前に取得済みのエイリアスMapと突き合わせて正規化する。

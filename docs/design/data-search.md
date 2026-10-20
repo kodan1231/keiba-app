@@ -210,7 +210,10 @@ ROADMAP「クラスタM」の「騎手名ベースの集計」に相当する。
     読み取りは races 全件〈約3,700行〉/回。本番データで旧方式と結果が一致)。
     **`q` は2文字未満だと400**(1文字だと該当馬が多すぎて絞り込みの意味が薄いうえ、
     races全件スキャンのコストに見合わないため。クライアント側(`data-search.js`の
-    `HI_SEARCH_MIN_LENGTH`)でも2文字未満は送信しない)
+    `HI_SEARCH_MIN_LENGTH`)でも2文字未満は送信しない)。
+    **画面は入力の300ms後に送り、問い合わせは同時に1つだけ**(2026-10-20。`hiRequestSearch`)。返事を待つ間に入力が変わったら、
+    返事の後に最後の入力だけを送り、古い返事は表示しない。馬名の数のキャッシュ(`_lib/horse-names-cache.js`)を作り直す数秒の間に
+    続けて送られた問い合わせが、それぞれ作り直しをしていた(同じ1分に6〜8回。10/20 は6回で約41万行の読み取り)
   - `GET /api/data-search/horse-info?name=`(`functions/api/data-search/horse-info.js`)
     … 詳細(馬齢・性別・過去全出走履歴・血統/調教師/馬主/生産牧場)。`race_results` は
     `horse_key` の直接検索(`GET /api/races/:id/horse-history` と同じ設計。回数上限なし)

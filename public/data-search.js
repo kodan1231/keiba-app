@@ -387,9 +387,30 @@ async function hiLoadDetail(name) {
   }
 }
 
+// 検索の問い合わせは同時に1つだけ送る(2026-10-20)。サーバーは馬名の数のキャッシュを作り直す間(数秒)に来た問い合わせを
+// それぞれ作り直すため、入力を続けると同じ作り直しが6〜8回重なっていた(1回約7万行の読み取り)。
+// 返事を待つ間に入力が変わったら、返事の後に最後の入力だけを送る
+let hiSearchBusy = false;
+let hiSearchPending = null;
+
+function hiRequestSearch(q) {
+  if (hiSearchBusy) {
+    hiSearchPending = q;
+    return;
+  }
+  hiSearchBusy = true;
+  hiLoadSearch(q).finally(() => {
+    hiSearchBusy = false;
+    const next = hiSearchPending;
+    hiSearchPending = null;
+    if (next !== null && next === hiEls.search.value.trim()) hiRequestSearch(next);
+  });
+}
+
 async function hiLoadSearch(q) {
   try {
     const res = await authedFetch(`/api/data-search/horse-search?q=${encodeURIComponent(q)}`);
+    if (q !== hiEls.search.value.trim()) return; // 返事を待つ間に入力が変わった(古い結果は出さない)
     if (!res.ok) {
       hiEls.resultList.hidden = true;
       hiEls.searchStatus.textContent = "検索に失敗しました。";
@@ -503,6 +524,7 @@ function hiInit() {
 
   hiEls.search.addEventListener("input", () => {
     clearTimeout(hiSearchTimer);
+    hiSearchPending = null;
     const q = hiEls.search.value.trim();
     hiEls.detail.hidden = true;
     if (!q) {
@@ -516,7 +538,7 @@ function hiInit() {
       return;
     }
     hiEls.searchStatus.textContent = "検索中…";
-    hiSearchTimer = setTimeout(() => hiLoadSearch(q), 300);
+    hiSearchTimer = setTimeout(() => hiRequestSearch(q), 300);
   });
 
   setupHiEditForm();
