@@ -52,10 +52,11 @@ const CJK_RADICAL_VARIANTS = new Map([
   ["⻩", "黄"], ["⻨", "麦"], ["⻆", "角"], ["⻏", "邑"], ["⻘", "青"],
 ]);
 // 異体字(2026-10-22): JRA公式は「神戶新聞杯」(戶 U+6236)と書き、netkeiba・過去の取り込みは「神戸新聞杯」(戸 U+6238)。
-// 重賞一覧が「神戶」で登録され、過去10年(2016〜2025)の神戸新聞杯が結び付いていなかった。NFKC でもそろわないため個別に置き換える
-const KANJI_VARIANTS = new Map([["戶", "戸"], ["髙", "高"], ["﨑", "崎"], ["德", "徳"]]);
+// 重賞一覧が「神戶」で登録され、過去10年(2016〜2025)の神戸新聞杯が結び付いていなかった。NFKC でもそろわないため個別に置き換える。
+// 「目黑記念」(黑 U+9ED1)も同じ(過去の「目黒記念」が結び付いていなかった)
+const KANJI_VARIANTS = new Map([["戶", "戸"], ["髙", "高"], ["﨑", "崎"], ["德", "徳"], ["黑", "黒"]]);
 function normalizeCjkRadicals(s) {
-  return s.replace(/[⺀-⻿]/g, (c) => CJK_RADICAL_VARIANTS.get(c) || c).replace(/[戶髙﨑德]/g, (c) => KANJI_VARIANTS.get(c));
+  return s.replace(/[⺀-⻿]/g, (c) => CJK_RADICAL_VARIANTS.get(c) || c).replace(/[戶髙﨑德黑]/g, (c) => KANJI_VARIANTS.get(c));
 }
 
 // 結果・出走馬PDFの正式名 → 重賞一覧(JRA公式の略称)の名前(2026-10-06)。
@@ -83,6 +84,9 @@ export function gradedRaceNameKey(rawName) {
   const base = raceBaseNameOf(rawName);
   if (!base) return "";
   let s = normalizeCjkRadicals(base).replace(/[　\s]+/g, "");
+  // 末尾の「(ハンデ)」・グレードのかっこ書きを外す(2026-10-22。「GⅢCBC賞(ハンデ)」が CBC賞 に結び付いていなかった)。
+  // かっこ全般は外さない(「天皇賞(秋)」「天皇賞(春)」が同じキーになる)
+  s = s.replace(/[(（](?:ハンデ|ハンデキャップ|(?:J・?)?G(?:I{1,3}|[ⅠⅡⅢ123])|Jpn(?:I{1,3}|[ⅠⅡⅢ123])|L|OP)[)）]$/, "");
   s = s
     .replace(/ステークス$/, "S")
     .replace(/カップ$/, "C")
