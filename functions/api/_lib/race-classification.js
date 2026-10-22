@@ -133,6 +133,27 @@ export function isConditionRace(classFlags) {
   return CONDITION_KEYWORDS.some((k) => s.includes(k));
 }
 
+// 障害レースか(2026-10-22)。race: { race_name, class_flags }。条件(class_flags。例「障害3歳以上 未勝利」)かレース名に「障害」があれば障害。
+// JRA公式の結果・出走馬一覧のページは障害のコースを「3,000メートル(芝)」と書き、netkeiba は「障芝3000m」と書くため、読み取りが「芝」にして
+// 障害レース197件が芝として保存されていた(芝3000m の勝ちタイムの平均が障害で遅くなり、補正タイムの換算がずれた。docs/design/entries-import.md)
+export function isJumpRace(race) {
+  return /障害/.test(String(race?.class_flags ?? "")) || /障害/.test(String(race?.race_name ?? ""));
+}
+
+// 保存する芝ダ障: 障害レースなら "障害"、それ以外は渡された値。レースを書き込む API(取り込み・登録・保存)は必ずこれを通す
+export function raceCourseTypeOf(courseType, race) {
+  return isJumpRace(race) ? "障害" : courseType || null;
+}
+
+// 既にあるレースの芝ダ障を書き換えるか(取り込み用)。incoming: 取り込んだ値(raceCourseTypeOf を通す前)、
+// race: { race_name, class_flags }(取り込んだ値。無い列は今の行の値)、existing: 今の行、take: 取り込み元の決まり(JRA公式は上書き・それ以外は空のときだけ)。
+// 障害レースなのに障害以外で保存されている行は、取り込み元によらず障害に直す。戻り値: 書き込む値か null(書き換えない)
+export function courseTypeToUpdate(incoming, race, existing, take) {
+  const v = raceCourseTypeOf(incoming, race);
+  if (v === "障害") return existing?.course_type === "障害" ? null : v;
+  return take(v) ? v : null;
+}
+
 // gradedMap: Map<name_key, { grade, is_jump }>(loadGradedRaceMap() の戻り値)
 // race: { race_name, class_flags }
 // 戻り値: { category: "condition"|"graded"|"other", grade: "G1"|"G2"|"G3"|null }

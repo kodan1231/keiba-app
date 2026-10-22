@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute, enqueuePaceRecomputeForResults } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute, enqueuePaceRecomputeForResults, raceCourseTypeOf } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -77,7 +77,8 @@ export async function onRequestPut(context) {
     // PDFインポート以外の経路(将来のUI等)からも更新できるよう受け付けておく。
     "weight_type", "class_flags", "course_direction", "weather", "track_condition",
   ]) {
-    if (key in data) pairs.push([key, data[key]]);
+    // 芝ダ障は障害レースなら「障害」(2026-10-22。送られてきたレース名・条件で判定)
+    if (key in data) pairs.push([key, key === "course_type" ? raceCourseTypeOf(data.course_type, data) : data[key]]);
   }
   if ("race_name" in data) pairs.push(["race_base_name", raceBaseNameOf(data.race_name)]);
   if ("entries" in data) {

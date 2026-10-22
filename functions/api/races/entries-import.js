@@ -13,6 +13,8 @@ import {
   enqueuePaceRecompute,
   changedPairs,
   runBatchInChunks,
+  raceCourseTypeOf,
+  courseTypeToUpdate,
 } from "../_shared.js";
 
 // 出走馬一覧PDF(枠番・馬番なし/あり 共通)からの一括登録・更新。管理者専用。
@@ -101,7 +103,7 @@ export async function onRequestPost(context) {
         .filter((x) => x.horse_name),
       race_name: item.race_name || null,
       race_base_name: raceBaseNameOf(item.race_name),
-      course_type: item.course_type || null,
+      course_type: raceCourseTypeOf(item.course_type, item), // 障害レースは「障害」(2026-10-22。JRA公式は障害を「芝」と書く)
       distance: item.distance ? Number(item.distance) : null,
       weight_type: item.weight_type || null,
       class_flags: item.class_flags || null,
@@ -198,7 +200,11 @@ export async function onRequestPost(context) {
       // 最初に間違った値が入ると JRA公式を取り込んでも直らなかった)。手で直した値も JRA公式の取り込みで公式の値に戻る
       const takeRaceInfo = (col, v) => v && (fromJra || !it.existing[col]);
       if (takeRaceInfo("race_name", it.race_name)) pairs.push(["race_name", it.race_name], ["race_base_name", it.race_base_name]);
-      if (takeRaceInfo("course_type", it.course_type)) pairs.push(["course_type", it.course_type]);
+      // 芝ダ障: 障害レースなのに障害以外で保存されている行は、取り込み元によらず障害に直す(2026-10-22)
+      const courseType = courseTypeToUpdate(it.course_type,
+        { race_name: it.race_name || it.existing.race_name, class_flags: it.class_flags || it.existing.class_flags },
+        it.existing, (v) => takeRaceInfo("course_type", v));
+      if (courseType) pairs.push(["course_type", courseType]);
       if (takeRaceInfo("distance", it.distance)) pairs.push(["distance", it.distance]);
       if (takeRaceInfo("weight_type", it.weight_type)) pairs.push(["weight_type", it.weight_type]);
       if (takeRaceInfo("class_flags", it.class_flags)) pairs.push(["class_flags", it.class_flags]);
@@ -347,7 +353,7 @@ export async function onRequestPost(context) {
       const pick = (col) => (body.source === "jra" && it[col]) || it.existing[col] || it[col];
       return {
         id: it.existing.id, track: it.existing.track,
-        course_type: pick("course_type"), distance: pick("distance"),
+        course_type: raceCourseTypeOf(pick("course_type"), { race_name: pick("race_name"), class_flags: pick("class_flags") }), distance: pick("distance"),
         race_name: pick("race_name"), class_flags: pick("class_flags"), entries: it.mergedEntries,
       };
     }),

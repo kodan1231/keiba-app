@@ -15,7 +15,8 @@
 //
 // 注意: 応答の作り方(返す項目・重賞判定のルール等)を変えたときは TICKET_VIEW_SHAPE を変えること。
 // 変えないと、データに変更が無い利用者には古い形の応答(ブラウザ保存分)が使われ続ける。
-export const TICKET_VIEW_SHAPE = "1";
+// 2: 2026-10-22 障害レースの芝ダ障を「芝」から「障害」に直した(@STEP: jump_course_type。races の変更では版数が上がらないため)
+export const TICKET_VIEW_SHAPE = "2";
 
 // 今の ETag を返す。取れなければ null(ETag を使わない)。
 // 2026-10-16〜(@STEP: user_data_versions): 利用者ごとの版数(user_data_versions)と、全員共通の版数(重賞一覧の変更だけで上がる)の

@@ -476,3 +476,16 @@ CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_ins AFTER INSERT ON graded_ra
 CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
 CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
 INSERT INTO schema_migrations (name) VALUES ('table_snapshots');
+
+-- @STEP: jump_course_type
+-- 障害レースの芝ダ障を「障害」に直す(2026-10-22)。JRA公式の結果・出走馬一覧のページは障害のコースを「3,000メートル(芝)」と書き、
+-- netkeiba は「障芝3000m」と書くため、読み取りが「芝」にして、障害レース197件が芝として保存されていた(「障害」は2件だけ)。
+-- 芝3000m の勝ちタイムの平均が障害(3:16〜3:26)で遅くなり、補正タイム・競馬場傾向がずれていた。取り込みは _lib/race-classification.js の
+-- raceCourseTypeOf で今後は障害になる。条件(class_flags)かレース名に「障害」がある行が対象(平地の条件・レース名には「障害」は無い)。
+-- races は約8千行を読む(条件の列にインデックスが無い。1回だけ)。書き込みは197行+キャッシュの差し替えの控え(トリガー。3表×197行)。
+-- 比率の表に障害のコースが芝として2行入っていた(京都芝2910・東京芝3110)ので消す。
+UPDATE races SET course_type = '障害'
+ WHERE (course_type IS NULL OR course_type <> '障害')
+   AND (class_flags LIKE '%障害%' OR race_name LIKE '%障害%');
+DELETE FROM course_pace_weights WHERE course_type = '芝' AND ((track = '京都' AND distance = 2910) OR (track = '東京' AND distance = 3110));
+INSERT INTO schema_migrations (name) VALUES ('jump_course_type');

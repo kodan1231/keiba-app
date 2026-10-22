@@ -15,6 +15,8 @@ import {
   changedPairs,
   applyImportedTrainerNames,
   enqueuePaceRecomputeForResults,
+  raceCourseTypeOf,
+  courseTypeToUpdate,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -83,7 +85,9 @@ export async function onRequestPost(context) {
       track: item.track,
       raceNumber,
       key: normRaceKey(item),
-      item,
+      // 芝ダ障は障害レースなら「障害」(2026-10-22。JRA公式は障害を「芝」と書く)。rawCourseType は書き換えの判定用(取り込んだそのままの値)
+      item: { ...item, course_type: raceCourseTypeOf(item.course_type, item) },
+      rawCourseType: item.course_type || null,
       incomingEntries,
       finishOrder,
       payouts,
@@ -202,7 +206,11 @@ export async function onRequestPost(context) {
       if (takeRaceInfo("race_name", it.item.race_name)) {
         pairs.push(["race_name", it.item.race_name], ["race_base_name", raceBaseNameOf(it.item.race_name)]);
       }
-      if (takeRaceInfo("course_type", it.item.course_type)) pairs.push(["course_type", it.item.course_type]);
+      // 芝ダ障: 障害レースなのに障害以外で保存されている行は、取り込み元によらず障害に直す(2026-10-22)
+      const courseType = courseTypeToUpdate(it.rawCourseType,
+        { race_name: it.item.race_name || it.existing.race_name, class_flags: it.item.class_flags || it.existing.class_flags },
+        it.existing, (v) => takeRaceInfo("course_type", v));
+      if (courseType) pairs.push(["course_type", courseType]);
       if (takeRaceInfo("distance", it.item.distance)) pairs.push(["distance", Number(it.item.distance)]);
       if (takeRaceInfo("weight_type", it.item.weight_type)) pairs.push(["weight_type", it.item.weight_type]);
       if (takeRaceInfo("class_flags", it.item.class_flags)) pairs.push(["class_flags", it.item.class_flags]);
@@ -373,7 +381,7 @@ export async function onRequestPost(context) {
     })),
     ...toUpdate.filter((it) => it.finishOrPayoutTouched).map((it) => {
       const pick = (k) => it.item[k] || it.existing[k] || null;
-      return { id: it.id, track: it.existing.track, course_type: pick("course_type"), distance: pick("distance"), race_name: pick("race_name"), class_flags: pick("class_flags") };
+      return { id: it.id, track: it.existing.track, course_type: raceCourseTypeOf(pick("course_type"), { race_name: pick("race_name"), class_flags: pick("class_flags") }), distance: pick("distance"), race_name: pick("race_name"), class_flags: pick("class_flags") };
     }),
   ];
   if (resultRaces.length) await enqueuePaceRecomputeForResults(db, resultRaces);

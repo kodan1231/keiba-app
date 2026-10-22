@@ -59,7 +59,8 @@ function nkParseRaceMeta(doc) {
   // 例: "15:45発走 / 芝1800m (左 A) / 天候:曇 / 馬場:良"(地方は「ダ2000m (右)」)
   const d1 = nkText(doc.querySelector(".RaceData01"));
   const timeM = d1.match(/(\d{1,2}):(\d{2})発走/);
-  const courseM = d1.match(/(芝|ダ|障)\s*(\d{3,4})m/);
+  // 障害は「障芝3000m」のように書かれる。「障」と距離の間に文字があっても「障」を拾う(2026-10-22。以前は「芝3000m」に当たり芝になっていた)
+  const courseM = d1.match(/(芝|ダ|障)[^\d/]*?(\d{3,4})m/);
   const dirM = d1.match(/\((左|右|直)/);
   const weatherM = d1.match(/天候\s*:\s*(\S+)/);
   const condM = d1.match(/馬場\s*:\s*(\S+)/);

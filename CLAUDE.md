@@ -70,7 +70,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/horse-alias.js` | `horseAliasKeyOf`(NFKC+空白除去) `loadHorseAliasMap` `applyHorseAliasMap` `buildHorseSearchKeys`(複数馬名→race_results.horse_key検索キー集合〈逆引きエイリアス込み〉。2026-10-02切り出し) `applyHorseAliasesToEntries` `normalizeExistingHorseNames` |
 | `_lib/race-results.js` | `upsertRaceResults` `upsertRaceResultsBulk` |
 | `_lib/ticket-payout.js` | `recomputeTicketPayoutsForRace` `recomputeTicketPayoutsForRaces` `findStoredRateServer`(非export・内部) |
-| `_lib/race-classification.js` | `gradedRaceNameKey` `resolveGradedKey`(冠付きのレース名を重賞一覧のキーへ解決。2026-10-06追加) `isConditionRace` `classifyRace` `gradedRaceOf`(当たる重賞の id・name・grade。2026-10-08) `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) `normalizeScheduleMd`(重賞の開催月日"MM-DD"。2026-10-02追加) |
+| `_lib/race-classification.js` | `gradedRaceNameKey` `resolveGradedKey`(冠付きのレース名を重賞一覧のキーへ解決。2026-10-06追加) `isConditionRace` `classifyRace` `gradedRaceOf`(当たる重賞の id・name・grade。2026-10-08) `loadGradedRaceMap`(重賞/条件戦/その他の判定。2026-09-19追加) `normalizeScheduleMd`(重賞の開催月日"MM-DD"。2026-10-02追加) `isJumpRace` `raceCourseTypeOf` `courseTypeToUpdate`(障害レースの芝ダ障を「障害」にする。**レースを書き込む API は必ず通す**。2026-10-22) |
 | `_lib/graded-race-search.js` | `runningStyleOf` `dominantRunningStyle` `timeTextToSeconds` `addPlacing` `fieldSizeOf` `findRacesByGradedKey` `raceSummaryOf` `gradedJockeyKey` `jstYear`(重賞検索タブ用。DB不使用。2026-10-02追加) |
 | `_lib/horse-master.js` | `getHorseMasterRow` `saveManualHorseInfo` `applyImportedTrainerNames`(馬情報マスタ`horses`テーブルの読み書き。2026-09-28追加。netkeibaへの自動取得〈getOrFetchHorseMaster等〉は2026-10-08廃止。血統等は馬柱の取り込みで登録) |
 | `_lib/trainer-alias.js` | `trainerAliasKeyOf`(NFKC+全空白除去) `loadTrainerAliasMap` `resolveTrainerAlias`(調教師名エイリアス。2026-10-06追加) |
