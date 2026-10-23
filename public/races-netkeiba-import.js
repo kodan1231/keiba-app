@@ -346,9 +346,13 @@ function nkRenderResult() {
       </tr>`;
     })
     .join("");
-  const payoutText = Object.entries(r.payouts || {})
-    .map(([type, list]) => `${NK_BET_LABELS[type] || type} ${list.map((p) => `${p.combo.join("-")}: ${p.rate.toLocaleString()}円`).join(" / ")}`)
-    .join("<br>");
+  const payoutText = r.race_cancelled
+    // レースの取りやめ(2026-10-23。docs/design/payout-refund.md「レースの取りやめ」)
+    ? "<b>このレースは取りやめ(競走取り止め)です。</b>払戻は「取りやめ」として保存し、購入済みの馬券はすべて返還(払戻=購入額)にします。着順・各馬の結果は登録しません。"
+    : Object.entries(r.payouts || {})
+      .filter(([, list]) => Array.isArray(list))
+      .map(([type, list]) => `${NK_BET_LABELS[type] || type} ${list.map((p) => `${p.combo.join("-")}: ${p.rate.toLocaleString()}円`).join(" / ")}`)
+      .join("<br>");
   const unregistered = r.race_results.filter((h) => {
     const j = nkJockeyInfo(h);
     return j.raw && !j.resolved && j.source !== "known";

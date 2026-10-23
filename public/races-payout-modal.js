@@ -23,6 +23,7 @@ const raceResultsDetailTable = document.getElementById("race-results-detail-tabl
 const scratchedOpenBtn = document.getElementById("race-scratched-open-btn");
 const scratchedModal = document.getElementById("race-scratched-modal");
 const scratchedPicker = document.getElementById("race-scratched-picker");
+const raceCancelledCheck = document.getElementById("rp-race-cancelled");
 
 // 払戻モーダルで編集中のレースの出走馬情報(combo表示・枠連判定に使う。払戻モーダルでは編集不可)
 let currentPayoutEntries = [];
@@ -251,6 +252,9 @@ function captureEnteredRatesIntoState() {
 function buildPayoutSubmission() {
   captureEnteredRatesIntoState();
   const payoutsPayload = {};
+  // レースの取りやめ(2026-10-23。docs/design/payout-refund.md「レースの取りやめ」): 払戻は印だけ(券種の金額・返還の馬番は持たない)。
+  // サーバーが購入済みの馬券をすべて返還にする。チェックを外して保存すると印が消え、入力した着順・払戻で計算し直す
+  if (raceCancelledCheck.checked) return { payoutsPayload: { race_cancelled: true } };
 
   for (const betType of BET_TYPE_ORDER) {
     const combos = currentRacePayouts[betType] || [];
@@ -377,6 +381,7 @@ function openPayoutModal(race) {
   payoutHorseCountSelect.value = count;
   renderFinishSelects(count, race.finish_order);
   currentRacePayouts = race.payouts || {};
+  raceCancelledCheck.checked = !!(race.payouts && race.payouts.race_cancelled === true);
   // 出走馬表で出走取消の印(entries[].scratched。2026-10-15)を付けた馬も最初から選んでおく
   // (保存すると返還の対象になる。印を外したいときは出走馬表の編集画面で外す)
   currentScratchedHorseNumbers = new Set([
@@ -412,7 +417,7 @@ payoutForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const id = document.getElementById("payout-race-id").value;
-  const finish_order = readFinishTop3();
+  const finish_order = raceCancelledCheck.checked ? null : readFinishTop3(); // 取りやめは着順なし(2026-10-23)
   const { payoutsPayload } = buildPayoutSubmission();
 
   const payload = {

@@ -50,6 +50,8 @@ function computeHitRate(tickets) {
   let hitRaces = 0;
   for (const raceTickets of byRace.values()) {
     const t0 = raceTickets[0];
+    // レースの取りやめ(2026-10-23。全部返還)は的中率の判定対象にしない(不的中のレースとして分母に入れない)
+    if (parsePayoutsJson(t0?.race_payouts)?.race_cancelled === true) continue;
     const hasTicketPayout = raceTickets.some((t) => t.payout !== null && t.payout !== undefined);
     // race_payoutsはJOIN元(races.payouts)のJSON文字列そのままなので、判定前にパースする。
     // 2026-08-23修正: payouts.refunds(取消・除外・中止馬の馬番/枠番の記録であり、

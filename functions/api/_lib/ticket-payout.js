@@ -107,6 +107,36 @@ function isTicketRefunded(betType, selections, refunds) {
   return selections.some((s) => refundHorses.has(s.horse_number));
 }
 
+// 結果の取り込みで、各馬の結果が取消・除外の馬を払戻の返還の記録(payouts.refunds)に足す(2026-10-23)。
+// netkeiba の結果の取り込み(地方)は返還の記録を作らず、10/23 浦和5R で除外の馬を含む7点が「外れ(0円)」で確定していた。
+// 購入の後の除外も JRA・地方とも返還(中止は返還しない。今の決まりどおり)。枠連は、その枠の馬が全部取消・除外のときだけ返還の枠。
+// payouts: 取り込んだ払戻(券種の金額が無ければそのまま返す)、raceResults: [{ horse_number, waku_number, status }]
+// 戻り値: 新しい payouts(足すものが無ければ渡されたもの)
+const REFUND_STATUSES = new Set(["scratched", "excluded"]);
+export function addResultRefunds(payouts, raceResults) {
+  if (!payouts || typeof payouts !== "object" || !Array.isArray(raceResults) || !raceResults.length) return payouts;
+  if (!Object.keys(payouts).some((k) => k !== "refunds" && Array.isArray(payouts[k]) && payouts[k].length)) return payouts;
+  const refundRows = raceResults.filter((r) => REFUND_STATUSES.has(r?.status) && Number.isInteger(Number(r.horse_number)) && r.horse_number !== null);
+  if (!refundRows.length) return payouts;
+  const existing = Array.isArray(payouts.refunds) ? payouts.refunds : [];
+  const known = new Set(existing.flatMap((r) => r?.horse_numbers || []).map(Number));
+  const horseNumbers = [...new Set(refundRows.map((r) => Number(r.horse_number)))].filter((n) => !known.has(n)).sort((a, b) => a - b);
+  if (!horseNumbers.length) return payouts;
+  const refundSet = new Set([...known, ...horseNumbers]);
+  const knownWakus = new Set(existing.flatMap((r) => r?.waku_numbers || []).map(Number));
+  const byWaku = new Map(); // 枠 -> [馬番]
+  for (const r of raceResults) {
+    const w = Number(r?.waku_number);
+    if (!Number.isInteger(w) || w < 1) continue;
+    if (!byWaku.has(w)) byWaku.set(w, []);
+    byWaku.get(w).push(Number(r.horse_number));
+  }
+  const wakuNumbers = [...byWaku.entries()]
+    .filter(([w, nums]) => !knownWakus.has(w) && nums.every((n) => refundSet.has(n)))
+    .map(([w]) => w).sort((a, b) => a - b);
+  return { ...payouts, refunds: [...existing, { horse_numbers: horseNumbers, waku_numbers: wakuNumbers }] };
+}
+
 // ---- 1枚の買い目についての払戻計算(tickets / imported_ticket_items 共通) ----
 // 返還判定は的中判定より先に行う。返還対象の買い目は、結果的に的中コンボと一致していても
 // 返還として扱う(対象そのものが競走から除かれたため的中/不的中の判定が成立しない)。
@@ -116,6 +146,8 @@ function isTicketRefunded(betType, selections, refunds) {
 //   payout === 0    … 不的中(確定)
 //   payout  >  0    … 的中(確定)/ 返還(= amount と同額)
 function computeSettledPayout(betType, selections, amount, finishOrder, payoutsObj, entries) {
+  // レースの取りやめ(2026-10-23。payouts.race_cancelled。docs/design/payout-refund.md「レースの取りやめ」): 券種によらず全部返還
+  if (payoutsObj && payoutsObj.race_cancelled === true) return { payout: Number(amount), refunded: 1 };
   const refunds = (payoutsObj && Array.isArray(payoutsObj.refunds)) ? payoutsObj.refunds : [];
   if (refunds.length && isTicketRefunded(betType, selections, refunds)) {
     return { payout: Number(amount), refunded: 1 };

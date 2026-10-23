@@ -106,7 +106,7 @@ function renderRaceCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const dateRaces = byDate.get(key);
-    const settledCount = dateRaces ? dateRaces.filter((r) => r.has_finish_order).length : 0;
+    const settledCount = dateRaces ? dateRaces.filter(raceIsSettled).length : 0;
     html += `<button type="button" class="calendar-day ${key === selectedRaceDate ? "selected" : ""} ${dateRaces ? "has-race" : ""}" data-date="${key}">
       <span>${d}</span>
       ${dateRaces ? `<span class="calendar-day-count">${settledCount}/${dateRaces.length}</span>` : ""}
@@ -227,7 +227,7 @@ function renderRaceList() {
 
   for (const date of dates) {
     const dateRaces = byDate.get(date);
-    const settledCount = dateRaces.filter((r) => r.has_finish_order).length;
+    const settledCount = dateRaces.filter(raceIsSettled).length;
     const dateExpanded = expandedDates.has(date);
 
     const dateWrap = document.createElement("div");
@@ -256,7 +256,7 @@ function renderRaceList() {
     columnsWrap.className = "race-columns";
 
     for (const [track, trackRaces] of byTrack) {
-      const trackSettled = trackRaces.filter((r) => r.has_finish_order).length;
+      const trackSettled = trackRaces.filter(raceIsSettled).length;
       const byNumber = new Map(trackRaces.map((r) => [r.race_number, r]));
 
       const col = document.createElement("section");
@@ -302,9 +302,16 @@ function renderRaceList() {
 // races.js側にのみあった重複定義をutils.jsへ集約した。races.htmlはutils.jsを
 // races.jsより先に読み込むため、そのまま参照できる)。
 
+// 結果が確定したレースか(一覧の印から)。着順があるか、レースの取りやめ(has_payout_rates = 2。2026-10-23。
+// docs/design/payout-refund.md「レースの取りやめ」。着順は無いが全部返還で確定)
+function raceIsSettled(r) {
+  return !!r.has_finish_order || Number(r.has_payout_rates) === 2;
+}
+
 function renderRaceRow(r) {
   // 2026-10-07: 一覧は軽い一覧(GET /api/races?index=1)の印から判定する(出走馬そのものは持たない)。
-  const settled = !!r.has_finish_order;
+  const settled = raceIsSettled(r);
+  const cancelled = Number(r.has_payout_rates) === 2;
   const entryCount = Number(r.entry_count) || 0;
   const hasEntries = entryCount > 0;
   // 出走馬一覧PDFインポート(枠番なし)対応により、entriesに枠番・馬番が未確定(null)の
@@ -317,7 +324,7 @@ function renderRaceRow(r) {
   // 出走馬表・払戻それぞれの状態バッジは、管理者にはそのまま登録・編集への入口(ボタン)を兼ねる。
   const unconfirmedSuffix = hasUnconfirmedNumbers ? "・枠番未確定" : "";
   const entriesLabel = hasEntries ? `出走馬表を編集(${entryCount}頭${unconfirmedSuffix})` : "出走馬表を登録";
-  const settledLabel = settled ? "払戻を編集" : "払戻を登録";
+  const settledLabel = cancelled ? "取りやめ(払戻を編集)" : settled ? "払戻を編集" : "払戻を登録";
 
   const row = document.createElement("div");
   row.className = "race-list-card";
@@ -330,7 +337,7 @@ function renderRaceRow(r) {
       : `<span class="entries-badge ${hasEntries ? "done" : ""}">${hasEntries ? `出走馬登録済み(${entryCount}頭${unconfirmedSuffix})` : "出走馬未登録"}</span>`}
     ${isAdmin
       ? `<button type="button" class="settled-badge ${settled ? "done" : ""}" data-id="${r.id}">${settledLabel}</button>`
-      : `<span class="settled-badge ${settled ? "done" : ""}">${settled ? "結果確定" : "結果未確定"}</span>`}
+      : `<span class="settled-badge ${settled ? "done" : ""}">${cancelled ? "取りやめ" : settled ? "結果確定" : "結果未確定"}</span>`}
     <span class="card-actions">
       ${isAdmin ? `<button class="icon-btn delete delete-race-btn" data-id="${r.id}" title="削除">×</button>` : ""}
     </span>

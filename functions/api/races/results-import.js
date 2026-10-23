@@ -17,6 +17,7 @@ import {
   enqueuePaceRecomputeForResults,
   raceCourseTypeOf,
   courseTypeToUpdate,
+  addResultRefunds,
 } from "../_shared.js";
 
 // 2026-08-30: entries-import.js と同じ理由(Cloudflare Pages Functionsの1リクエスト
@@ -79,6 +80,8 @@ export async function onRequestPost(context) {
     // 読み取り側によって entries に性齢・斤量が入らないことがあり、予想登録画面(entries を表示)に馬齢・斤量が出ない
     // 中央の重賞が続いたため(スワンS・毎日王冠など。race_results には入っていた)。馬番 → 馬名の順で突き合わせる
     fillEntriesFromResults(incomingEntries, raceResultsInput);
+    // 各馬の結果が取消・除外の馬を、払戻の返還の記録に足す(2026-10-23。netkeiba の取り込みは返還の記録を作らないため。_lib/ticket-payout.js)
+    const payoutsWithRefunds = addResultRefunds(payouts, raceResultsInput);
 
     items.push({
       raceDate: item.race_date,
@@ -90,7 +93,7 @@ export async function onRequestPost(context) {
       rawCourseType: item.course_type || null,
       incomingEntries,
       finishOrder,
-      payouts,
+      payouts: payoutsWithRefunds,
       raceResultsInput,
     });
   }

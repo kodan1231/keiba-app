@@ -11,7 +11,8 @@
 // 保存形式(2026-10-08〜。1行= races.id の範囲1つ分。_lib/range-chunk-cache.js):
 //   {"v":2,"r":[[id, race_date, track, race_number, race_name, race_base_name, course_type, distance,
 //     class_flags, weight_type, weather, track_condition, post_time,
-//     has_finish_order(0/1), has_payout_rates(0/1), entry_count, has_unconfirmed_numbers(0/1)], ...]}
+//     has_finish_order(0/1), has_payout_rates(0/1。2 = レースの取りやめ〈payouts.race_cancelled。2026-10-23〉), entry_count, has_unconfirmed_numbers(0/1)], ...]}
+//   (2 は取りやめのレースの行を作り直したときだけ入る。それまでの行は取りやめのレースが無いので形の版〈v〉は上げない)
 // 作り直しは DB から必要な列だけを読み、印は SQL(json_each 等)で計算する(大きなJSONを解析しない)。
 // 保存の失敗は握りつぶす(best-effort)。無効化は DB トリガー(@STEP: range_chunk_caches。変わったレースの範囲の行だけ消す)。
 // 2026-10-08: 以前は1行に詰められるだけ詰め、レースを1件変えると丸ごと作り直していた(1回約5.8万行の読み取り。
@@ -56,7 +57,8 @@ async function buildRaceIndexChunks(db, indices) {
     `SELECT id, race_date, track, race_number, race_name, race_base_name, course_type, distance,
             class_flags, weight_type, weather, track_condition, post_time,
             CASE WHEN finish_order IS NOT NULL AND finish_order <> '' AND finish_order <> 'null' THEN 1 ELSE 0 END AS has_finish_order,
-            CASE WHEN json_valid(payouts) AND EXISTS (
+            CASE WHEN json_valid(payouts) AND json_extract(payouts, '$.race_cancelled') = 1 THEN 2
+                 WHEN json_valid(payouts) AND EXISTS (
                    SELECT 1 FROM json_each(payouts)
                     WHERE key <> 'refunds' AND type = 'array' AND json_array_length(value) > 0)
                  THEN 1 ELSE 0 END AS has_payout_rates,

@@ -290,7 +290,13 @@ function nkParseResult(doc) {
     });
     if (Number.isInteger(finishPosition)) finishSparse[finishPosition - 1] = horseNumber;
   });
-  if (!race_results.length) return null;
+  if (!race_results.length) {
+    // レースの取りやめ(2026-10-23。docs/design/payout-refund.md「レースの取りやめ」): 着順の表が空で、ページに
+    // 「トラブルにより競走取り止めとなりました。」等があるとき。払戻は全券種「返還」なので、払戻の印 race_cancelled だけを送る
+    // (各馬の結果は表が空なので無い。出走馬表はサーバーで今の行のまま)
+    if (!NK_RACE_CANCELLED_RE.test(nkText(doc.body))) return null;
+    return { ...meta, entries: [], finish_order: [], payouts: { race_cancelled: true }, race_results: [], race_cancelled: true };
+  }
 
   return {
     ...meta,
@@ -300,6 +306,9 @@ function nkParseResult(doc) {
     race_results,
   };
 }
+
+// レースの取りやめの文言(着順の表が空のときだけ見る。各馬の「中止」とは別)
+const NK_RACE_CANCELLED_RE = /競走取り?止め|競走不成立|レース中止|開催中止/;
 
 // ---------- 過去レースのデータベース(db.netkeiba.com/race/<レースID>/。2026-10-13追加) ----------
 // 結果・払戻の1ページ。race.netkeiba.com の結果ページとは作りが違う(見出しは .data_intro、表は table.race_table_01、

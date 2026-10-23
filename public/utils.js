@@ -213,6 +213,8 @@ function courseTypeOrderIndex(courseType) {
  */
 function hasSettledPayoutRates(payouts) {
   if (!payouts || typeof payouts !== "object") return false;
+  // レースの取りやめ(2026-10-23。payouts.race_cancelled。docs/design/payout-refund.md「レースの取りやめ」)も確定とみなす
+  if (payouts.race_cancelled === true) return true;
   return Object.keys(payouts).some(
     (k) => k !== "refunds" && Array.isArray(payouts[k]) && payouts[k].length > 0
   );

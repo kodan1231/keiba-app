@@ -720,6 +720,12 @@ function renderRaceResults() {
     resultEl.innerHTML = `<p class="ticket-sub">結果を読み込んでいます…</p>`;
     return;
   }
+  // レースの取りやめ(2026-10-23。docs/design/payout-refund.md「レースの取りやめ」)
+  if (selectedRace.payouts && selectedRace.payouts.race_cancelled === true) {
+    resultEl.innerHTML = `<p><b>このレースは取りやめ(競走取り止め)になりました。</b></p>
+      <p class="ticket-sub">購入した馬券はすべて返還(払戻=購入額)です。</p>`;
+    return;
+  }
   const rows = raceResultRows();
   const note = raceResults?.status === "error"
     ? `<p class="ticket-sub">結果の詳細を読み込めませんでした。分かる範囲だけ表示しています。</p>`
