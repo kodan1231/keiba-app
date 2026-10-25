@@ -30,7 +30,12 @@
 export const FACTORS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"]; // week(週目)は2026-10-15追加
 export const DEFAULT_WEIGHTS = { w_pace: 13, w_number: 13, w_jockey: 13, w_time: 13, w_sexage: 12, w_weight: 12, w_course: 12, w_week: 12 };
 export const PACE_TYPES = ["high", "middle", "slow"];
-export const METHOD_VERSION = 16; // サーバー側 detail.version と同じ意味(16: 2026-10-18 総当たり・差がつかない要素を外す・重賞はペースごとを作らない。15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
+// 補正タイム(その馬自身の能力を表す要素)の比率の下限(%。2026-10-25 ユーザー要望・仕様確認済み。docs/design/screens.md「補正タイムの比率の下限」)。
+// 以前は 0% もありえ、東京芝1600のハイペースの比率が「騎手40・週目40・補正タイム0」になり、補正タイム24点の馬が◎になった(10/25 東京8R・16着)。
+// 比率を選ぶのに使っていないレースの試算で、◎の補正タイムが40点未満のレースが 南関東 3.2% → 0.2%・重賞 4.7% → 0.4%、
+// ◎の複勝圏が 南関東 47.3% → 49.4%(ペースごとは全体と半分ずつ混ぜたとき)・重賞 35.7% → 36.8%
+export const TIME_MIN_WEIGHT = 30;
+export const METHOD_VERSION = 17; // サーバー側 detail.version と同じ意味(17: 2026-10-25 補正タイムの比率は30%以上。16: 2026-10-18 総当たり・差がつかない要素を外す・重賞はペースごとを作らない。15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
 // 評価点(サーバーの _lib/race-factors.js の ADJUST_KEYS・DEFAULT_ADJUST と同じ)
 export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff"];
 export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 };
@@ -217,6 +222,7 @@ function flatFactors(races) {
 // 比率を総当たりで選ぶ(2026-10-18。以前は山登り〈下の climbSearch〉で、よりよい比率を見落としていた。
 // docs/design/screens.md「比率の選び方の見直し」)。keys の順に多いもの、同じなら DEFAULT_WEIGHTS に近いもの。
 // 差がつかない要素(flatFactors)は 0% に決めた比率だけを試す
+// 補正タイムは TIME_MIN_WEIGHT(30%)以上の比率だけを試す(2026-10-25。差がつかないときは上の規則で 0%)
 function search(races, { evaluate, keys }) {
   const r2 = (x) => Math.round(x * 100) / 100;
   const toW = (arr) => Object.fromEntries(FACTORS.map((f, i) => [`w_${f}`, arr[i]]));
@@ -235,8 +241,10 @@ function search(races, { evaluate, keys }) {
   };
   const flat = flatFactors(races);
   let best = null;
+  const timeFlat = flat.includes(I_TIME);
   for (const arr of allCombos()) {
     if (flat.length && flat.some((k) => arr[k] !== 0)) continue;
+    if (!timeFlat && arr[I_TIME] < TIME_MIN_WEIGHT) continue;
     const r = { arr, ...evalArr(arr) };
     if (!best || better(r, best)) best = r;
   }

@@ -140,10 +140,22 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
     const w = Object.fromEntries(Object.keys(a).map((k) => [k, Math.round(((a[k] + b[k]) / 2) * 10) / 10]));
     return { ...base, ...w, scope: "graded+course", pace_type: p, blend: { graded: a, course: b, course_source: ce.source === "auto" ? "auto" : "manual" } };
   };
+  // コースのペースごと(2026-10-25。ユーザー確認済み。docs/design/screens.md「補正タイムの比率の下限」): コースのそのペースの比率(自動)は、
+  // コースの全体の比率(自動)と半分ずつ混ぜる。ペースごとの比率は少ないレース(東京芝1600のハイは22レース)から選ぶため偏りやすく、
+  // 補正タイム0%・騎手40%・週目40% のような比率で実力不足の馬が◎になっていた(10/25 東京8R)。どちらかを手で決めたときは混ぜない
+  const courseBlendOf = (view, p, base) => {
+    if (!p || !courseRow || base.scope !== "course" || base.pace_type !== p || base.source !== "auto") return base;
+    const cv = view(courseRow);
+    if (!cv || cv.source !== "auto") return base;
+    const a = weightsOf(base), b = weightsOf(cv);
+    const w = Object.fromEntries(Object.keys(a).map((k) => [k, Math.round(((a[k] + b[k]) / 2) * 10) / 10]));
+    return { ...base, ...w, scope: "course", blend: { pace: a, common: b } };
+  };
+  const paceOf = (view, p, base) => courseBlendOf(view, p, blendOf(view, p, base));
   return {
     ...axisOf(null),
-    paces: Object.fromEntries(PACE_TYPES.map((p) => [p, blendOf((r) => r, p, axisOf(p))])),
-    partner: { ...partnerOf(null), paces: Object.fromEntries(PACE_TYPES.map((p) => [p, blendOf(partnerRowView, p, partnerOf(p))])) },
+    paces: Object.fromEntries(PACE_TYPES.map((p) => [p, paceOf((r) => r, p, axisOf(p))])),
+    partner: { ...partnerOf(null), paces: Object.fromEntries(PACE_TYPES.map((p) => [p, paceOf(partnerRowView, p, partnerOf(p))])) },
     adjust: resolveAdjust([[g, "graded"], [courseRow, "course"]]),
   };
 }
