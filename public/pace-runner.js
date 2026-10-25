@@ -64,6 +64,7 @@ async function runPaceViaGithub(item, onStatus = () => {}) {
   if (!d.dispatched) return { via: "fallback", reason: d.reason || "GitHub に頼めませんでした" };
   const t0 = Date.now();
   let started = false;
+  let waitFrom = t0; // 「動き出さない」を数え始めた時刻(前の計算が動いている間は数えない)
   while (Date.now() - t0 < PACE_GITHUB_MAX_MS) {
     await new Promise((r) => setTimeout(r, PACE_GITHUB_POLL_MS));
     let s = null;
@@ -77,8 +78,13 @@ async function runPaceViaGithub(item, onStatus = () => {}) {
     }
     if (run?.status === "in_progress") started = true;
     const secs = Math.round((Date.now() - t0) / 1000);
-    onStatus(started ? `GitHub で計算中…(計算待ち 残り${s?.remaining ?? "?"}件・${secs}秒)` : `GitHub の準備中…(${secs}秒)`);
-    if (!started && Date.now() - t0 > PACE_GITHUB_START_WAIT_MS) {
+    // 前の計算(定時実行・前の手動実行)が動いている間は、自分の実行は順番待ち。ブラウザに切り替えずに待つ(2026-10-25)
+    const waitingPrev = !started && s?.busy;
+    if (waitingPrev) waitFrom = Date.now();
+    onStatus(started ? `GitHub で計算中…(計算待ち 残り${s?.remaining ?? "?"}件・${secs}秒)`
+      : waitingPrev ? `GitHub で前の計算が終わるのを待っています…(計算待ち 残り${s?.remaining ?? "?"}件・${secs}秒)`
+      : `GitHub の準備中…(${secs}秒)`);
+    if (!started && Date.now() - waitFrom > PACE_GITHUB_START_WAIT_MS) {
       return { via: "fallback", reason: "GitHub が1分たっても動き出しませんでした" };
     }
   }

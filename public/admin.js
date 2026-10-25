@@ -1381,14 +1381,59 @@ async function loadPaceQueue() {
   paceQueueItems = (await res.json()).items || [];
   summary.textContent = paceQueueItems.length ? `${paceQueueItems.length}件` : "ありません";
   listEl.textContent = paceQueueItems.map(paceQueueLabel).join(" / ");
+  watchPaceGithub();
+}
+
+// 管理画面を開いた・読み込み直したときに、GitHub で計算中か(定時実行・手動実行)を確かめる(2026-10-25。docs/design/screens.md「今すぐ計算を GitHub Actions で」)。
+// 計算中なら計算待ちの欄に出し、終わるまで「今すぐ計算」を断る(paceComputeBlocked)。終わったら一覧を読み直す。
+// きっかけ: 10-25 12:33 の手動実行の途中で画面が読み込み直され、計算中と分からずにもう一度押し、最後の1件をブラウザで二重に計算した
+let paceGithubWatching = false;
+let paceOwnRun = false; // この画面で「今すぐ計算」を動かしている間(その間は見に行かない)
+async function watchPaceGithub() {
+  if (paceGithubWatching || paceOwnRun) return;
+  const check = async () => {
+    try {
+      const r = await authedFetch("/api/admin/pace-dispatch");
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  };
+  let s = await check();
+  if (!s?.running || paceOwnRun) return;
+  paceGithubWatching = true;
+  const btn = document.getElementById("pace-queue-run-btn");
+  const summary = document.getElementById("pace-queue-summary");
+  const label = btn?.textContent;
+  if (btn) btn.disabled = true;
+  try {
+    const t0 = Date.now();
+    while (s?.running && Date.now() - t0 < 30 * 60 * 1000) {
+      if (summary) summary.textContent = `GitHub で計算中…(残り${s.remaining}件)`;
+      if (btn) btn.textContent = "GitHub で計算中…";
+      await new Promise((r) => setTimeout(r, 5000));
+      s = await check();
+    }
+  } finally {
+    paceGithubWatching = false;
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+  await loadPaceWeights(); // 計算待ちも読み直す
+}
+
+// GitHub で計算中(この画面以外で始めた計算)なら断る。戻り値: 断ったか
+function paceComputeBlocked() {
+  if (!paceGithubWatching) return false;
+  paceWeightsMsg("GitHub で計算中です。終わってからもう一度押してください(終わると一覧が読み直されます)", false);
+  return true;
 }
 
 // 2026-10-25: まず GitHub Actions に頼む(pace-runner.js の runPaceViaGithub)。頼めない・1分たっても動き出さない・GitHub 側で失敗して
 // 計算待ちが残ったときは、今までどおりこのブラウザで計算する(Cloudflare の CPU の上限で止められることがある。止められた分はやり直す)
 async function runPaceQueue(btn) {
+  if (paceComputeBlocked()) return;
   if (!paceQueueItems.length) { paceWeightsMsg("計算待ちはありません", true); return; }
   const label = btn.textContent;
   btn.disabled = true;
+  paceOwnRun = true;
   try {
     const g = await runPaceViaGithub(null, (text) => { btn.textContent = text; });
     if (g.via === "error") { paceWeightsMsg(`計算を頼めませんでした: ${g.message}`, false); return; }
@@ -1403,6 +1448,7 @@ async function runPaceQueue(btn) {
   } finally {
     btn.disabled = false;
     btn.textContent = label;
+    paceOwnRun = false;
     await loadPaceWeights();
   }
 }
@@ -1509,6 +1555,16 @@ function renderPaceWeightsList() {
 // 2026-10-25: まずその1件を計算待ちに入れて GitHub Actions に頼む(pace-runner.js の runPaceViaGithub。計算待ちに他の条件があれば一緒に計算される)。
 // 頼めない・1分たっても動き出さない・GitHub 側で失敗したときは、今までどおりこのブラウザで計算し(paceComputeAdminInBrowser)、計算待ちから外す
 async function paceComputeAdmin(kind, key, btn, { reload = true } = {}) {
+  if (paceComputeBlocked()) return false;
+  paceOwnRun = true;
+  try {
+    return await paceComputeAdminRun(kind, key, btn, { reload });
+  } finally {
+    paceOwnRun = false;
+  }
+}
+
+async function paceComputeAdminRun(kind, key, btn, { reload }) {
   const label = btn?.textContent;
   if (btn) btn.disabled = true;
   let g;
