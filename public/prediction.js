@@ -1234,11 +1234,14 @@ function paceTotalSectionHtml(entries) {
   rows.forEach(x => { x.total = x.axis + x.partner; });
   const marks = paceRecommendMarks(rows);
   const markOf = (x) => marks.get(x) || "";
+  paceRecommendForApply = [...marks].map(([x, m]) => ({ horse_number: x.e.horse_number, mark: m }));
   // 推奨馬は印だけ(2026-10-25 ユーザー要望。根拠の指数は出さない。指数は下の表)
+  // 「予想を反映」(2026-10-26): 押した人の予想印のうち、この4頭の印だけを上書きする(ゲストは予想印が無いので出さない)
   const pickHtml = `
     <div class="pace-pick">
       <div class="pace-pick-row">
-        ${marks.size ? [...marks].map(([x, m]) => `<span class="pace-chip"><b class="pace-pick-mark">${m}</b> ${paceHorseLabelHtml(x.e)}</span>`).join("") : `<span class="pace-none">—</span>`}</div>
+        ${marks.size ? [...marks].map(([x, m]) => `<span class="pace-chip"><b class="pace-pick-mark">${m}</b> ${paceHorseLabelHtml(x.e)}</span>`).join("") : `<span class="pace-none">—</span>`}
+        ${marks.size && !GUEST_VIEW ? `<button type="button" class="ghost-btn pace-apply-marks-btn">予想を反映</button><span class="pace-apply-marks-msg ticket-sub"></span>` : ""}</div>
     </div>`;
   const sortKey = ["partner", "total"].includes(paceTotalSort) ? paceTotalSort : "axis";
   const ranked = paceRanked(rows, x => -Math.round(x[sortKey] * 10));
@@ -1263,6 +1266,26 @@ function paceTotalSectionHtml(entries) {
         <tbody>${body}</tbody>
       </table>
     </div>`;
+}
+
+// 「予想を反映」(2026-10-26 ユーザー要望。docs/design/screens.md「推奨馬の印(◎〇▲☆)」): 推奨の4頭の印を、押した人の予想印へ上書きする。
+// この4頭以外の印は変えない(同じ印がほかの馬に付いていても消さない)。推奨の「〇」は予想印の「○」にして付ける。馬番が未確定の馬は付けられない
+let paceRecommendForApply = []; // [{ horse_number, mark }](最後に描いた推奨の4頭)
+const PACE_TO_PREDICTION_MARK = { "◎": "◎", "〇": "○", "▲": "▲", "☆": "☆" };
+async function applyRecommendMarks(btn) {
+  const msg = btn.parentElement.querySelector(".pace-apply-marks-msg");
+  const targets = paceRecommendForApply.filter(x => x.horse_number !== null && x.horse_number !== undefined);
+  if (!targets.length) { if (msg) msg.textContent = "馬番が確定していないため反映できません"; return; }
+  btn.disabled = true;
+  const nums = new Set(targets.map(x => Number(x.horse_number)));
+  prediction.marks = (prediction.marks || []).filter(x => !nums.has(Number(x.horse_number)));
+  for (const x of targets) prediction.marks.push({ horse_number: Number(x.horse_number), mark: PACE_TO_PREDICTION_MARK[x.mark] || x.mark });
+  applyPrediction(); // 出馬表・馬柱の印へすぐ反映してから保存する
+  const ok = await savePredictionMarks();
+  btn.disabled = false;
+  if (!ok) { if (msg) msg.textContent = "印の保存に失敗しました。もう一度押してください"; return; }
+  const skipped = paceRecommendForApply.length - targets.length;
+  if (msg) msg.textContent = `予想印に反映しました(${targets.map(x => `${PACE_TO_PREDICTION_MARK[x.mark] || x.mark}${x.horse_number}`).join(" ")}${skipped ? `。馬番未確定の${skipped}頭は反映していません` : ""})`;
 }
 
 // 総合推奨馬の表の並べ替え(軸指数 / 相手指数 / 合計〈2026-10-25〉)
@@ -1360,6 +1383,7 @@ function renderPace() {
     });
   });
   setupPaceTotalSort();
+  paceEl.querySelector(".pace-apply-marks-btn")?.addEventListener("click", (e) => applyRecommendMarks(e.currentTarget));
   // 展開・時計タブを表示中なら騎手成績・比率を取得する(取得済み・別タブ表示中なら何もしない)。
   ensureJockeyCourse();
   ensurePaceWeights();
@@ -1511,17 +1535,19 @@ async function savePredictionMarks() {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ race_id: selectedRace.id, marks: prediction.marks || [], memo: "" })
   });
-  if (!messageEl) return;
+  // 戻り値: 保存できたか(2026-10-26。「予想を反映」がメッセージを出し分けるため)
+  if (!messageEl) return res.ok;
   if (res.ok) {
     // 予想印は選択直後に画面へ即時反映される(applyPrediction())ため、
     // 「印を自動保存しました」という成功メッセージは表示しない。
     messageEl.hidden = true;
-    return;
+    return true;
   }
   // 保存失敗時のみ、原因が分かるようメッセージを表示する。
   messageEl.hidden = false;
   messageEl.className = "submit-message error";
   messageEl.textContent = "印の保存に失敗しました";
+  return false;
 }
 
 function applyPrediction() {
