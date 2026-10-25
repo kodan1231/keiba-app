@@ -23,6 +23,7 @@ import {
   addMonthsIso,
   TIME_RECENT_MONTHS,
   PAST_RUNS_FOR_NEW_COURSE,
+  TIME_LAST_RUNS_ALWAYS,
   memoizedKeyed,
   textFingerprint,
 } from "../../_shared.js";
@@ -233,8 +234,11 @@ async function buildBest(env, race) {
   // runs_used: 平均に使った走数、runs_total: 対象の走数、recent_only: 直近1年だけで出したか、mode: "course" | "last"(初コース)
   for (const [name, cands] of candsByName) {
     const ranCourse = cands.some((r) => r.sameCourse);
-    const last = ranCourse ? [] : [...cands].sort((a, b) => b.date.localeCompare(a.date) || b.num - a.num).slice(0, PAST_RUNS_FOR_NEW_COURSE);
-    const pool = ranCourse ? cands.filter((r) => r.pool === "course") : last;
+    const newestFirst = [...cands].sort((a, b) => b.date.localeCompare(a.date) || b.num - a.num);
+    const last = ranCourse ? [] : newestFirst.slice(0, PAST_RUNS_FOR_NEW_COURSE);
+    // 2026-10-25: 経験のある馬も、直近2走(同じ芝ダ。距離・競馬場は問わない)は入れる(_lib/race-factors.js の TIME_LAST_RUNS_ALWAYS と同じ)
+    const recentTwo = new Set(newestFirst.slice(0, TIME_LAST_RUNS_ALWAYS));
+    const pool = ranCourse ? cands.filter((r) => r.pool === "course" || recentTwo.has(r)) : last;
     const sel = ranCourse ? pickTimeRuns(pool, race.race_date) : pickTimeRuns(pool, race.race_date, { recent: false });
     if (!sel) continue;
     const fastest = sel.runs[0].info;

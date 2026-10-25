@@ -71,9 +71,17 @@ export const DEFAULT_WEIGHT_SEC_PER_KG = 0.1; // 斤量1kgあたりの補正の�
 //   1. 直近 TIME_RECENT_MONTHS か月(今回の日付より前)の走だけ。その中に1走も無ければ全部の走
 //   2. その中で一番近い段(tier)の走だけ
 //   3. 最速と最遅を1走ずつ除いた平均(2走以下はそのまま平均)
+//      → 2026-10-25〜 **新しい走ほど重い平均**(重み = 0.5 ^ (今回までの日数 ÷ TIME_HALF_LIFE_DAYS)。60日前の走は半分、120日前は4分の1)。
+//      ユーザー要望(10/25 京都10R: 補正タイム1位のルヴァンユニベールが、5か月前の好走が効いて近走の不振が表れず15着)。
+//      手元の試算(南関東1,144R・重賞377R。各馬はそのレースより前の走だけ): 補正タイム1位の3着内率 南関東 52.3% → 54.4%・重賞 28.4% → 29.4%、
+//      並びの一致 66.82% → 67.71%・58.77% → 59.34%(半減期30〜60日が最も良く、180日でほぼ今と同じ)
 // 戻り値: { time(平均), tier, run(使った中の最速の走 x), fastest(その換算後の秒), kgAdj(使った走の斤量の補正の平均), used(平均に使った走数),
 //   total(その段の走数), runs(使った走) } か null(走が無い)
 export const TIME_RECENT_MONTHS = 12;
+export const TIME_HALF_LIFE_DAYS = 60;
+// 経験のある馬(今回の競馬場・距離を走ったことがある)にも、同じ芝ダの直近この数の走は距離・競馬場が違っても入れる(2026-10-25。
+// 試算: 「直近2走も入れる+半減期60日」で 補正タイム1位の3着内率 南関東 52.3% → 54.2%・重賞 28.4% → 32.4%、並びの一致 66.82% → 67.63%・58.77% → 60.70%)
+export const TIME_LAST_RUNS_ALWAYS = 2;
 // 初コース(今回の競馬場で今回の距離を完走したことがない)の馬に使う、同じ芝ダの過去の走の数(2026-10-16)
 export const PAST_RUNS_FOR_NEW_COURSE = 5;
 // opts.recent: false なら直近1年に絞らない(初コースの馬の過去5走。2026-10-16)
@@ -85,7 +93,14 @@ export function pickTimeRuns(cands, raceDate, { recent: useRecent = true } = {})
   const tier = Math.min(...pool.map((r) => r.tier));
   const inTier = pool.filter((r) => r.tier === tier).sort((a, b) => a.c - b.c);
   const used = inTier.length > 2 ? inTier.slice(1, -1) : inTier;
-  const avg = (arr, f) => arr.reduce((s, r) => s + f(r), 0) / arr.length;
+  // 新しい走ほど重い平均(2026-10-25)。日付が読めない走は重み1
+  const t0 = Date.parse(raceDate);
+  const weightOf = (r) => {
+    const days = (t0 - Date.parse(r.date)) / 86400000;
+    return Number.isFinite(days) ? Math.pow(0.5, Math.max(0, days) / TIME_HALF_LIFE_DAYS) : 1;
+  };
+  const wSum = used.reduce((s, r) => s + weightOf(r), 0) || 1;
+  const avg = (arr, f) => arr.reduce((s, r) => s + weightOf(r) * f(r), 0) / wSum;
   return {
     time: avg(used, (r) => r.c), tier, run: used[0].x ?? null, fastest: used[0].c,
     kgAdj: Math.round(avg(used, (r) => r.kgAdj || 0) * 100) / 100, used: used.length, total: inTier.length, runs: used,
@@ -489,7 +504,12 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 同じ芝ダの走が無ければ従来の選び方。timeCands は新しい順(runs の順)
     const lastRuns = ranCourse ? [] : timeCands.filter((c) => c.x.course_type === race.course_type).slice(0, PAST_RUNS_FOR_NEW_COURSE);
     const timeMode = lastRuns.length ? "last" : "course";
-    const sel = lastRuns.length ? pickTimeRuns(lastRuns.map((c) => ({ ...c, tier: 1 })), date, { recent: false }) : pickTimeRuns(timeCands, date);
+    // 2026-10-25(ユーザー要望): 経験のある馬も、同じ芝ダの直近2走は距離・競馬場が違っても一番近い段に入れる(近走の調子を入れるため。
+    // 10/25 京都10R のルヴァンユニベールは、距離の違う前走の不振が入らず補正タイム1位・15着)。試算は pickTimeRuns の注記。
+    // 補正タイム順位(horse-best)も同じ
+    const recentTwo = ranCourse ? new Set(timeCands.filter((c) => c.x.course_type === race.course_type).slice(0, TIME_LAST_RUNS_ALWAYS)) : null;
+    const courseCands = recentTwo ? timeCands.map((c) => (recentTwo.has(c) ? { ...c, tier: 1 } : c)) : timeCands;
+    const sel = lastRuns.length ? pickTimeRuns(lastRuns.map((c) => ({ ...c, tier: 1 })), date, { recent: false }) : pickTimeRuns(courseCands, date);
     if (sel) ({ time, tier: timeTier, run: timeRun, kgAdj: timeKgAdj, used: timeUsed, total: timeTotal } = sel);
     return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal, timeMode };
   });
