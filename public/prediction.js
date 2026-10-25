@@ -403,7 +403,8 @@ function renderRaceHeader() {
   // (または class_flags)に「ハンデ」を含むかで判定する(docs/design/data-model.md
   // 「レース条件の詳細カラム」参照。構造化されていない生テキストのため部分一致で見る)。
   const classFlags = String(selectedRace.class_flags || "");
-  const isFillyOnly = classFlags.includes("牝");
+  // 2026-10-25: 「牡・牝」(牡馬・牝馬とも出られる。菊花賞など)は牝馬限定ではない。「牝」があって「牡」が無いときだけ牝馬限定
+  const isFillyOnly = classFlags.includes("牝") && !classFlags.includes("牡");
   const isHandicap = String(selectedRace.weight_type || "").includes("ハンデ") || classFlags.includes("ハンデ");
   // 勝負レースフラグ(prediction.is_key_race)は selectRace() が /api/predictions を
   // 取得し終えるまでは前のレースの値が残っているため、初回描画時は常にOFF扱いにする
