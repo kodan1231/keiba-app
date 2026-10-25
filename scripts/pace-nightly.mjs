@@ -132,7 +132,8 @@ for (let round = 0; round < 2 && pending.length; round++) {
 
 // ---- 2. 距離の換算の比(秘密情報があるときだけ) ----
 let distanceFailed = null;
-if (SECRET && !DRY_RUN) {
+// SKIP_DISTANCE=true(2026-10-25): 管理画面の「今すぐ計算」から頼まれた手動実行。比率だけをすぐ計算し、距離の換算の比は夜間に任せる
+if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
   let steps = 0;
   try {
     for (; steps < DISTANCE_STEPS_MAX; steps++) {

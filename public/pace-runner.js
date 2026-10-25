@@ -4,6 +4,7 @@
 // 夜間の計算(2026-10-18〜 GitHub Actions の scripts/pace-nightly.mjs。以前は workers/pace-cron)と同じ規則: 手で保存した比率は計算せず(2026-10-18: 「前の自動計算から7日未満」で外すのはやめた)
 // 計算待ちから外す。それ以外は採点を数レースずつ受け取り(/api/admin/pace-backtest)、public/pace-search.js で比率を選んで
 // 保存し(/api/admin/pace-weights/auto-result)、外す。途中で画面を閉じた分は計算待ちに残り、夜間に続きを行う。2026-10-18 から使うのは管理画面の「今すぐ計算」だけ(取り込み直後の自動の計算はやめた)。
+// 2026-10-25〜 「今すぐ計算」はまず GitHub Actions に頼み(runPaceViaGithub)、頼めない・動き出さないときだけこのブラウザで計算する。
 // 普通の <script> として読み込む(関数をグローバルに置く)。計算部分だけ import() で ES モジュールを読む。
 
 let paceRunnerBusy = false;
@@ -43,6 +44,45 @@ async function paceRunnerComputeOne(kind, key, onProgress = () => {}) {
   return res.ok
     ? { ok: true, message: `${label}: 計算して保存しました(${d.races}レース: 軸の3着以内${d.best.show}・1着${d.best.win}回 / 軸+相手に1着馬${d.partner.best.win}回)` }
     : { ok: false, message: `${label}: 保存できませんでした` };
+}
+
+// 「今すぐ計算」を GitHub Actions で動かす(2026-10-25。docs/design/screens.md「今すぐ計算を GitHub Actions で」)。
+// ブラウザで計算すると採点の API が Cloudflare の CPU 時間の上限を超えて止められるため(10/23 に140回)、夜間と同じ計算を GitHub に頼む。
+// item: { kind, key }(その1件を計算待ちに入れてから頼む)か null(計算待ちをそのまま)。onStatus(text) で進み具合を知らせる。
+// 戻り値: { via: "github", ok, conclusion, url, remaining } か、ブラウザでの計算に切り替えるとき { via: "fallback", reason }
+// (トークンが無い・頼めない・1分たっても動き出さない・30分で終わらない)。頼めたが API が失敗したときは { via: "error", message }
+const PACE_GITHUB_POLL_MS = 5000;
+const PACE_GITHUB_START_WAIT_MS = 60 * 1000;
+const PACE_GITHUB_MAX_MS = 30 * 60 * 1000;
+async function runPaceViaGithub(item, onStatus = () => {}) {
+  onStatus("GitHub に計算を頼んでいます…");
+  const res = await authedFetch("/api/admin/pace-dispatch", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item || {}),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) return { via: "error", message: d.error || `HTTP ${res.status}` };
+  if (!d.dispatched) return { via: "fallback", reason: d.reason || "GitHub に頼めませんでした" };
+  const t0 = Date.now();
+  let started = false;
+  while (Date.now() - t0 < PACE_GITHUB_MAX_MS) {
+    await new Promise((r) => setTimeout(r, PACE_GITHUB_POLL_MS));
+    let s = null;
+    try {
+      const r = await authedFetch(`/api/admin/pace-dispatch?since=${encodeURIComponent(d.since)}`);
+      s = r.ok ? await r.json() : null;
+    } catch { /* 次の回にまた見る */ }
+    const run = s?.run;
+    if (run?.status === "completed") {
+      return { via: "github", ok: run.conclusion === "success", conclusion: run.conclusion, url: run.html_url, remaining: s.remaining };
+    }
+    if (run?.status === "in_progress") started = true;
+    const secs = Math.round((Date.now() - t0) / 1000);
+    onStatus(started ? `GitHub で計算中…(計算待ち 残り${s?.remaining ?? "?"}件・${secs}秒)` : `GitHub の準備中…(${secs}秒)`);
+    if (!started && Date.now() - t0 > PACE_GITHUB_START_WAIT_MS) {
+      return { via: "fallback", reason: "GitHub が1分たっても動き出しませんでした" };
+    }
+  }
+  return { via: "fallback", reason: "GitHub の計算が30分で終わりませんでした" };
 }
 
 // 計算待ちを全部処理する。onStatus(text) で進み具合を知らせる。戻り値: { done, skipped, failed, total }

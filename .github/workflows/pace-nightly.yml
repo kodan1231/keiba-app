@@ -18,7 +18,14 @@ on:
     - cron: "17 13 * * *" # UTC 13:17 = 日本時間 22:17
     - cron: "47 15 * * *" # UTC 15:47 = 日本時間 0:47
     - cron: "17 18 * * *" # UTC 18:17 = 日本時間 3:17
+  # 手動実行(Actions タブの Run workflow、または管理画面の「今すぐ計算」〈2026-10-25。/api/admin/pace-dispatch〉)。
+  # 管理画面からは skip_distance=true(距離の換算の比は夜間に任せ、比率の計算待ちだけをすぐ計算する)
   workflow_dispatch:
+    inputs:
+      skip_distance:
+        description: "距離の換算の比を飛ばす"
+        required: false
+        default: "false"
 
 concurrency:
   group: pace-nightly
@@ -39,3 +46,4 @@ jobs:
           KEIBA_BASE_URL: ${{ secrets.KEIBA_BASE_URL }}
           KEIBA_CRON_SECRET: ${{ secrets.KEIBA_CRON_SECRET }}
           CF_D1_TOKEN: ${{ secrets.CF_D1_TOKEN }}
+          SKIP_DISTANCE: ${{ inputs.skip_distance || 'false' }}

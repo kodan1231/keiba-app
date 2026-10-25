@@ -1383,16 +1383,28 @@ async function loadPaceQueue() {
   listEl.textContent = paceQueueItems.map(paceQueueLabel).join(" / ");
 }
 
+// 2026-10-25: まず GitHub Actions に頼む(pace-runner.js の runPaceViaGithub)。頼めない・1分たっても動き出さない・GitHub 側で失敗して
+// 計算待ちが残ったときは、今までどおりこのブラウザで計算する(Cloudflare の CPU の上限で止められることがある。止められた分はやり直す)
 async function runPaceQueue(btn) {
   if (!paceQueueItems.length) { paceWeightsMsg("計算待ちはありません", true); return; }
   const label = btn.textContent;
   btn.disabled = true;
-  const r = await runPaceQueueInBrowser((text) => { btn.textContent = text; });
-  btn.disabled = false;
-  btn.textContent = label;
-  if (r.busy) { paceWeightsMsg("別の計算が動いています。終わってからもう一度押してください", false); return; }
-  paceWeightsMsg(`計算待ちを処理しました(計算${r.done}件・手で決めた比率のため省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
-  await loadPaceWeights();
+  try {
+    const g = await runPaceViaGithub(null, (text) => { btn.textContent = text; });
+    if (g.via === "error") { paceWeightsMsg(`計算を頼めませんでした: ${g.message}`, false); return; }
+    if (g.via === "github" && (g.ok || !g.remaining)) {
+      paceWeightsMsg(g.ok ? `GitHub で計算待ちを計算しました(残り${g.remaining}件)` : `GitHub の計算が失敗しました(${g.conclusion})`, g.ok);
+      return;
+    }
+    const why = g.via === "github" ? `GitHub の計算が失敗し、${g.remaining}件残ったため` : g.reason;
+    const r = await runPaceQueueInBrowser((text) => { btn.textContent = `${text}(ブラウザ)`; });
+    if (r.busy) { paceWeightsMsg("別の計算が動いています。終わってからもう一度押してください", false); return; }
+    paceWeightsMsg(`${why}、このブラウザで計算しました(計算${r.done}件・手で決めた比率のため省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+    await loadPaceWeights();
+  }
 }
 
 function setupPaceCompute() {
@@ -1494,7 +1506,38 @@ function renderPaceWeightsList() {
 // このブラウザで比率を選んで(public/pace-search.js。夜間の定時実行と同じ計算)保存する。kind: "graded" | "course"
 // btn: 進み具合を出すボタン(無ければ出さない)、opts.reload: 保存後に一覧を読み直すか。戻り値: 保存できたか
 //(採点できる過去のレースが無いときも true〈計算待ちから外してよい〉)
+// 2026-10-25: まずその1件を計算待ちに入れて GitHub Actions に頼む(pace-runner.js の runPaceViaGithub。計算待ちに他の条件があれば一緒に計算される)。
+// 頼めない・1分たっても動き出さない・GitHub 側で失敗したときは、今までどおりこのブラウザで計算し(paceComputeAdminInBrowser)、計算待ちから外す
 async function paceComputeAdmin(kind, key, btn, { reload = true } = {}) {
+  const label = btn?.textContent;
+  if (btn) btn.disabled = true;
+  let g;
+  try {
+    g = await runPaceViaGithub({ kind, key }, (text) => { if (btn) btn.textContent = text; });
+  } catch (e) {
+    g = { via: "fallback", reason: e.message };
+  }
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+  if (g.via === "error") { paceWeightsMsg(`計算を頼めませんでした: ${g.message}`, false); return false; }
+  if (g.via === "github" && g.ok) {
+    paceWeightsMsg(`GitHub で計算して保存しました(計算待ち 残り${g.remaining}件)`, true);
+    if (reload) await loadPaceWeights();
+    return true;
+  }
+  const why = g.via === "github" ? `GitHub の計算が失敗したため(${g.conclusion})` : g.reason;
+  paceWeightsMsg(`${why}、このブラウザで計算します`, true);
+  const ok = await paceComputeAdminInBrowser(kind, key, btn, { reload: false });
+  if (ok) {
+    // GitHub に頼む前に入れた計算待ちを外す(残すと夜間にもう一度計算する)
+    await authedFetch(`/api/admin/pace-queue?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {});
+  }
+  if (reload) await loadPaceWeights();
+  return ok;
+}
+
+// このブラウザで計算する(2026-10-14〜。2026-10-25 から GitHub に頼めないときだけ)。サーバーから採点を数レースずつ受け取り(Cloudflare で採点。
+// 1回の CPU 時間が無料枠の上限を超えると止められ、paceFetchBacktestChunk がレース数を減らしてやり直す)
+async function paceComputeAdminInBrowser(kind, key, btn, { reload = true } = {}) {
   const label = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = "採点中…"; }
   let ok = false;

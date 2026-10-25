@@ -1133,6 +1133,19 @@ PC幅では表ヘッダーの見出しと二重になるため701px以上で非�
       無料枠のCPU上限(10ミリ秒)に収まらないため、**サーバーでは計算しない**。サーバーは「過去のレースの採点を数レース(最大6)ずつ返す」
       (`GET /api/admin/pace-backtest?kind=graded|course&key=`)と「選んだ結果を保存する」(`PUT /api/admin/pace-weights/auto-result`)だけ。
       比率を選ぶのは `public/pace-search.js`(ES モジュール。ブラウザと Node の両方で同じファイルを使う。規則は1か所)。
+      - **今すぐ計算を GitHub Actions で(2026-10-25。ユーザー要望・仕様確認済み)**: 管理画面の「計算待ちを今すぐ計算」・重賞/コースの行の
+        「今すぐ計算」・コースの計算は、まず GitHub Actions に夜間の計算(`pace-nightly.yml`。採点は Node)の手動実行を頼む
+        (`POST /api/admin/pace-dispatch`。行のボタンはその1件を計算待ちに入れてから。入力 `skip_distance=true` で距離の換算の比は飛ばす)。
+        画面は5秒おきに `GET /api/admin/pace-dispatch?since=` で実行の状態(準備中 → 計算中〈計算待ちの残り〉→ 完了)を見る
+        (`public/pace-runner.js` の `runPaceViaGithub`)。**頼めない(トークン無し・期限切れ)・1分たっても動き出さない・GitHub 側で失敗して
+        計算待ちが残ったときは、今までどおりブラウザで計算する**(`runPaceQueueInBrowser`・`paceComputeAdminInBrowser`。Cloudflare で採点)。
+        切り替えた後に GitHub が動き出すと同じ条件を二重に計算することがあるが、同じ結果を保存し直すだけ。
+        **経緯**: ブラウザでの計算は採点の API(`/api/admin/pace-backtest`)を Cloudflare で動かすため、1回の CPU 時間が無料枠の上限(10ms)を超えて
+        止められていた(2026-10-23 11時台に140回。Cloudflare から「Workers の CPU 制限を超過しました」のメール。止められた分はやり直すので計算は終わる)。
+        手動実行は定時実行と違って遅れない(10/18 の手動実行は押した秒に動き出し、10〜25秒で計算が始まった。定時実行は3〜4時間遅れることがある)。
+        所要時間(夜間の記録): 準備10〜25秒+1条件あたり重賞1〜8秒・コース3〜30秒(計算待ち23件で約3分50秒、85件で約10分)。
+        秘密情報: keiba-admin の `GITHUB_DISPATCH_TOKEN`(keiba-app だけ・権限 Actions: Read and write の fine-grained トークン)。
+        「評価点の既定値の自動で計算」(kind=all)は対象外のまま(ブラウザで計算)。
       - **夜間**: 馬番が確定した出馬表を取り込んだ・保存したとき(entries-import・レースの登録/編集。全頭の馬番が入っているレースだけ)、
         そのレースのコースと当たる重賞を表 `pace_recompute_queue` に積む(`_lib/pace-queue.js`。INSERT OR IGNORE)。計算待ちは次の2つで処理する
         (規則はどちらも同じ: 前の自動計算から7日未満・手で保存した比率なら計算せず外す。それ以外は採点 → 比率を選ぶ → 保存 → 外す):
