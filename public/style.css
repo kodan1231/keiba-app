@@ -3398,6 +3398,7 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pace-pick-label { min-width: 4.2em; font-weight: 700; font-size: 13px; }
 .pace-pick-axis { color: var(--hanko); }
+.pace-pick-mark { color: var(--hanko); } /* 推奨馬の印 ◎〇▲☆(2026-10-25) */
 .pace-total-mark { font-weight: 700; color: var(--hanko); text-align: center; }
 /* 管理画面: タブ(2026-10-14)。スクロールしても上に残し、スマホでは横にスワイプ */
 .admin-tabs {

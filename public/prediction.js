@@ -1185,10 +1185,12 @@ function paceEffectiveWeights(d, pace) {
   return (pace && d.paces?.[pace]) || d;
 }
 
-// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。サーバーの _lib/pace-score.js の pickAxisPartners と同じ規則:
-// 軸 = 軸指数の1位(同じなら相手指数 → 馬番の小さい方)、相手 = 軸を除いた相手指数の上位3頭(同じなら軸指数 → 馬番)
-const PACE_PARTNER_N = 3;
-let paceTotalSort = "axis"; // 表の並び "axis" | "partner"(レースを切り替えても保つ)
+// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。推奨馬の印(2026-10-25。「推奨馬の印(◎〇▲☆)」)は
+// サーバーの _lib/pace-score.js の pickRecommended と同じ規則: ◎〇▲ = 軸指数の1・2・3位(同じなら相手指数)、
+// ☆ = 3頭を除いた相手指数1位(同じなら軸指数)、すべて同じなら馬番の小さい方。
+// 以前(〜2026-10-25)は ◎軸 = 軸指数1位・○相手 = 軸を除いた相手指数の上位3頭
+const PACE_MARKS = ["◎", "〇", "▲", "☆"];
+let paceTotalSort = "axis"; // 表の並び "axis" | "partner" | "total"(レースを切り替えても保つ)
 
 function paceIndexOf(factors, w) {
   const wOf = (f) => Number(w[`w_${f}`] ?? 0);
@@ -1196,13 +1198,15 @@ function paceIndexOf(factors, w) {
   return PACE_FACTOR_KEYS.reduce((acc, f) => acc + wOf(f) * factors[f].score, 0) / wSum;
 }
 
-function paceAxisPartner(rows) {
+// 戻り値: Map(行 -> 印)(◎〇▲☆の順に入る)
+function paceRecommendMarks(rows) {
   const num = (x) => (x.e.horse_number === null || x.e.horse_number === undefined ? 999 : Number(x.e.horse_number));
-  const axis = [...rows].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b))[0] || null;
-  const partners = rows.filter(x => x !== axis)
-    .sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))
-    .slice(0, PACE_PARTNER_N);
-  return { axis, partners };
+  const marks = new Map();
+  const top = [...rows].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b)).slice(0, 3);
+  const used = new Set(top);
+  const star = rows.filter(x => !used.has(x)).sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))[0];
+  [...top, star].filter(Boolean).forEach((x, i) => marks.set(x, PACE_MARKS[i]));
+  return marks;
 }
 
 // 軸・相手それぞれの比率(このレースのペース予想の比率)
@@ -1227,16 +1231,16 @@ function paceTotalSectionHtml(entries) {
   // 総合点へ直接足す評価点(間隔。2026-10-15。サーバーの total_adjust)
   const extraOf = (h) => Number(h.total_adjust?.value) || 0;
   const rows = rf.horses.map(h => ({ e: h, f: h.factors, extra: h.total_adjust, axis: paceIndexOf(h.factors, kw.axis) + extraOf(h), partner: paceIndexOf(h.factors, kw.partner) + extraOf(h) }));
-  const { axis, partners } = paceAxisPartner(rows);
-  const markOf = (x) => (x === axis ? "◎" : partners.includes(x) ? "○" : "");
+  rows.forEach(x => { x.total = x.axis + x.partner; });
+  const marks = paceRecommendMarks(rows);
+  const markOf = (x) => marks.get(x) || "";
+  // 推奨馬は印だけ(2026-10-25 ユーザー要望。根拠の指数は出さない。指数は下の表)
   const pickHtml = `
     <div class="pace-pick">
-      <div class="pace-pick-row"><span class="pace-pick-label pace-pick-axis">◎ 軸</span>
-        ${axis ? `<span class="pace-chip">${paceHorseLabelHtml(axis.e)}<small class="pace-chip-sub">軸指数 ${axis.axis.toFixed(1)}</small></span>` : `<span class="pace-none">—</span>`}</div>
-      <div class="pace-pick-row"><span class="pace-pick-label pace-pick-partner">○ 相手</span>
-        ${partners.length ? partners.map(x => `<span class="pace-chip">${paceHorseLabelHtml(x.e)}<small class="pace-chip-sub">相手指数 ${x.partner.toFixed(1)}</small></span>`).join("") : `<span class="pace-none">—</span>`}</div>
+      <div class="pace-pick-row">
+        ${marks.size ? [...marks].map(([x, m]) => `<span class="pace-chip"><b class="pace-pick-mark">${m}</b> ${paceHorseLabelHtml(x.e)}</span>`).join("") : `<span class="pace-none">—</span>`}</div>
     </div>`;
-  const sortKey = paceTotalSort === "partner" ? "partner" : "axis";
+  const sortKey = ["partner", "total"].includes(paceTotalSort) ? paceTotalSort : "axis";
   const ranked = paceRanked(rows, x => -Math.round(x[sortKey] * 10));
   // 点は偏差値(2026-10-14〜)。データ無しの点は管理画面の設定(サーバーで入っている)
   const cell = (x) => (x.missing ? `<span class="pace-none" title="データ無し">−(${Math.round(x.score)})</span>` : `<span title="${escapeAttr(x.value || "")}">${Math.round(x.score)}</span>`);
@@ -1249,18 +1253,19 @@ function paceTotalSectionHtml(entries) {
       <td class="pace-time-horse">${paceHorseLabelHtml(x.e)}${x.extra?.note ? ` <small class="pace-none" title="軸指数・相手指数から直接引いた点">${escapeHtml(x.extra.note)}</small>` : ""}</td>
       <td>${sortKey === "axis" ? `<strong>${x.axis.toFixed(1)}</strong>` : x.axis.toFixed(1)}</td>
       <td>${sortKey === "partner" ? `<strong>${x.partner.toFixed(1)}</strong>` : x.partner.toFixed(1)}</td>
+      <td>${sortKey === "total" ? `<strong>${x.total.toFixed(1)}</strong>` : x.total.toFixed(1)}</td>
       ${PACE_FACTOR_KEYS.map(f => `<td>${cell(x.f[f])}</td>`).join("")}
     </tr>`).join("");
   return `${head}${pickHtml}
     <div class="table-wrap">
       <table class="horse-history-table pace-time-table pace-total-table">
-        <thead><tr><th></th><th>順位</th><th>馬</th>${sortTh("axis", "軸指数")}${sortTh("partner", "相手指数")}${PACE_FACTOR_KEYS.map(f => `<th>${PACE_FACTOR_LABELS[f]}</th>`).join("")}</tr></thead>
+        <thead><tr><th></th><th>順位</th><th>馬</th>${sortTh("axis", "軸指数")}${sortTh("partner", "相手指数")}${sortTh("total", "合計")}${PACE_FACTOR_KEYS.map(f => `<th>${PACE_FACTOR_LABELS[f]}</th>`).join("")}</tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
 }
 
-// 総合推奨馬の表の並べ替え(軸指数 / 相手指数)
+// 総合推奨馬の表の並べ替え(軸指数 / 相手指数 / 合計〈2026-10-25〉)
 function setupPaceTotalSort() {
   paceEl.querySelectorAll(".pace-total-sort-btn").forEach(btn => {
     btn.addEventListener("click", () => {

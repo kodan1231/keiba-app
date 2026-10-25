@@ -58,25 +58,27 @@ function grPicksHtml(data) {
   // 相手の判定(2026-10-14 ユーザー要望で変更): 軸を除いた相手3頭が取った3着以内の着順を並べる(例「相手1,3着」。無ければ「相手×」)。
   // 以前は「軸を含めた4頭に1着から順にそろって入ったか」(比率の自動計算のものさし。partner_win/quin/show)を出していたが、
   // 軸が1着でも「相手1着」、相手が2着でも1着がいなければ「相手×」となり分かりにくかった
+  // 2026-10-25: 推奨馬は ◎〇▲☆(◎〇▲ = 軸指数の1〜3位、☆ = 残りの相手指数1位。サーバーの pickRecommended)。当たりは「◎」と「〇▲☆が取った3着以内の着順」
   const partnerHits = (y) => y.picks
-    .filter((p) => p.role === "partner" && p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3)
+    .filter((p) => p.mark !== "◎" && p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3)
     .map((p) => p.finish_position).sort((a, b) => a - b);
   return years.map((y) => `
     <div class="gr-year-card">
       <div class="gr-year-head">
         <span class="gr-year">${y.year}年</span>
         <span class="ticket-sub">${escapeHtml([formatDate(y.race_date), `${y.field_size}頭`, `${GR_PACE_LABEL[y.pace_type] || ""}ペース予想`].filter(Boolean).join(" "))}</span>
-        <span class="gr-picks-hits">軸${y.axis_show ? (y.axis_win ? "1着" : "3着以内") : "×"} / 相手${partnerHits(y).length ? `${partnerHits(y).join(",")}着` : "×"}</span>
+        <span class="gr-picks-hits">◎${y.axis_show ? (y.axis_win ? "1着" : "3着以内") : "×"} / 〇▲☆${partnerHits(y).length ? `${partnerHits(y).join(",")}着` : "×"}</span>
       </div>
       <div class="table-wrap">
         <table class="horse-history-table gr-picks-table">
-          <thead><tr><th></th><th>馬</th><th>軸指数</th><th>相手指数</th>${GR_FACTOR_KEYS.map((f) => `<th>${GR_FACTOR_LABELS[f]}</th>`).join("")}<th>着順</th></tr></thead>
+          <thead><tr><th></th><th>馬</th><th>軸指数</th><th>相手指数</th><th>合計</th>${GR_FACTOR_KEYS.map((f) => `<th>${GR_FACTOR_LABELS[f]}</th>`).join("")}<th>着順</th></tr></thead>
           <tbody>${y.picks.map((p) => `
             <tr class="${p.status === "finished" && p.finish_position >= 1 && p.finish_position <= 3 ? "gr-picks-hit" : ""}">
-              <td>${p.role === "axis" ? "◎軸" : "○相手"}</td>
+              <td class="pace-total-mark">${escapeHtml(p.mark || "")}</td>
               <td class="gr-picks-horse">${p.horse_number != null ? `${p.horse_number} ` : ""}${escapeHtml(p.horse_name || "")}</td>
-              <td>${p.role === "axis" ? `<strong>${p.axis.toFixed(1)}</strong>` : p.axis.toFixed(1)}</td>
-              <td>${p.role === "partner" ? `<strong>${p.partner.toFixed(1)}</strong>` : p.partner.toFixed(1)}</td>
+              <td>${p.axis.toFixed(1)}</td>
+              <td>${p.partner.toFixed(1)}</td>
+              <td>${(p.total ?? p.axis + p.partner).toFixed(1)}</td>
               ${GR_FACTOR_KEYS.map((f) => `<td>${cell(p.factors[f])}</td>`).join("")}
               <td>${escapeHtml(place(p))}</td>
             </tr>`).join("")}

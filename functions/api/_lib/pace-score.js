@@ -467,15 +467,21 @@ export function paceIndexOf(factors, w) {
   return PACE_FACTORS.reduce((a, f) => a + wOf(f) * factors[f].score, 0) / wSum;
 }
 
-// 軸1頭・相手3頭を選ぶ。horses: [{ horse_number, axis, partner }] → { axis: 要素|null, partners: [要素] }
-// 軸 = 軸指数の1位(同じなら相手指数の高い方 → 馬番の小さい方)。相手 = 軸を除いた相手指数の上位3頭(同じなら軸指数 → 馬番)
-export function pickAxisPartners(horses) {
+// 推奨馬の4頭を選ぶ(2026-10-25 ユーザー要望。docs/design/screens.md「推奨馬の印(◎〇▲☆)」)。
+// horses: [{ horse_number, axis, partner }] → [{ mark: "◎"|"〇"|"▲"|"☆", x: 要素 }](頭数が足りなければ短い)
+//   ◎・〇・▲ = 軸指数の1・2・3位(3着以内に入りやすい3頭。同じなら相手指数の高い方)
+//   ☆ = 3頭を除いた相手指数の1位(同じなら軸指数の高い方)
+//   すべて同じなら馬番の小さい方
+// 以前(2026-10-14〜10-25)は「軸 = 軸指数1位、相手 = 軸を除いた相手指数の上位3頭」(pickAxisPartners)。
+// 検討の途中で「◎ = 軸指数+相手指数の合計1位」も作ったが、ユーザーの考え(◎〇▲で的中率を確保し、☆で回収率を狙う)に合わせてこの形にした。
+// ☆の物差し(コース巧者・馬場巧者・一発・距離が合う)も試算したが、相手指数1位を上回らなかった(screens.md の同じ節)
+export const RECOMMEND_MARKS = ["◎", "〇", "▲", "☆"];
+export function pickRecommended(horses) {
   const num = (h) => (h.horse_number == null ? 999 : Number(h.horse_number));
-  const axis = [...horses].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b))[0] || null;
-  const partners = horses.filter((h) => h !== axis)
-    .sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))
-    .slice(0, PACE_PICK_N);
-  return { axis, partners };
+  const top = [...horses].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b)).slice(0, 3);
+  const used = new Set(top);
+  const star = horses.filter((h) => !used.has(h)).sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))[0];
+  return [...top, star].filter(Boolean).map((x, i) => ({ mark: RECOMMEND_MARKS[i], x }));
 }
 
 // 重賞検索タブの「総合推奨馬の検証」(2026-10-13追加。2026-10-14 軸・相手に変更): 過去の各年を、指定の比率で採点した
@@ -490,15 +496,15 @@ export function gradedPicksOf(bt, weights, adjust = null) {
     // 間隔(2026-10-15)は総合点から直接引く
     const extra = (h) => (adjust ? totalAdjustOf(h.flags, adjust).value : 0);
     const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa) + extra(h), partner: paceIndexOf(h.factors, wp) + extra(h) }));
-    const { axis, partners } = pickAxisPartners(horses);
+    const picked = pickRecommended(horses); // ◎〇▲☆(2026-10-25)
     const finished = (x) => (x && x.h.status === "finished" && x.h.finish_position >= 1 ? x.h.finish_position : null);
-    const axisPos = finished(axis);
-    const set = [axis, ...partners].filter(Boolean);
+    const axisPos = finished(picked[0]?.x);
+    const set = picked.map((p) => p.x);
     const inSet = (pos) => set.some((x) => finished(x) === pos);
     const r1 = (v) => Math.round(v * 10) / 10;
-    const row = (x, role) => ({
-      role, horse_name: x.h.horse_name, horse_number: x.h.horse_number, status: x.h.status, finish_position: x.h.finish_position,
-      axis: r1(x.axis), partner: r1(x.partner),
+    const row = (x, mark) => ({
+      mark, horse_name: x.h.horse_name, horse_number: x.h.horse_number, status: x.h.status, finish_position: x.h.finish_position,
+      axis: r1(x.axis), partner: r1(x.partner), total: r1(x.axis + x.partner),
       factors: Object.fromEntries(PACE_FACTORS.map((f) => [f, { score: Math.round(x.h.factors[f].score), missing: x.h.factors[f].missing, value: x.h.factors[f].value }])),
     });
     const top3 = y.runners
@@ -508,8 +514,8 @@ export function gradedPicksOf(bt, weights, adjust = null) {
     return {
       year: y.year, race_id: y.race.id, race_date: y.race.race_date, track: y.race.track, course_type: y.race.course_type, distance: y.race.distance,
       field_size: y.runners.length, pace_type: y.pace_type, top3,
-      picks: [...(axis ? [row(axis, "axis")] : []), ...partners.map((x) => row(x, "partner"))],
-      // 軸: 3着以内 / 1着。相手: 軸+相手3頭に 1着馬 / 1・2着馬 / 1〜3着馬
+      picks: picked.map((p) => row(p.x, p.mark)),
+      // ◎: 3着以内 / 1着(項目名は以前の「軸」のまま)。4頭(◎〇▲☆)に 1着馬 / 1・2着馬 / 1〜3着馬
       axis_show: axisPos != null && axisPos <= 3, axis_win: axisPos === 1,
       partner_win: inSet(1), partner_quin: inSet(1) && inSet(2), partner_show: inSet(1) && inSet(2) && inSet(3),
       weights: { ...weightsOf(wa), pace_type: wa.pace_type ?? null }, // この年の採点に使った軸指数の比率
