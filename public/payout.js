@@ -25,18 +25,6 @@ function computeWinningCombos(betType, finishOrder, entries) {
   return [];
 }
 
-function ticketMatchesCombo(ticket, combo) {
-  if (!combo) return false;
-  const def = BET_TYPES[ticket.bet_type];
-  if (ticket.bet_type === "wakuren") {
-    const w = ticket.selections.map((s) => s.waku_number).filter((x) => x !== null && x !== undefined).sort((a, b) => a - b);
-    return JSON.stringify(w) === JSON.stringify(combo);
-  }
-  const nums = ticket.selections.map((s) => s.horse_number);
-  const target = def.ordered ? nums : [...nums].sort((a, b) => a - b);
-  return JSON.stringify(target) === JSON.stringify(combo);
-}
-
 // レースに保存された払戻率(payouts)から、指定の組み合わせに対応するレート(100円あたり)を探す
 function findStoredRate(payouts, betType, combo) {
   if (!payouts || !payouts[betType] || !combo) return null;
@@ -53,19 +41,17 @@ function computeTicketPayout(ticket, race) {
   // ticket.refunded フラグを信頼するのみに留める(判定ロジックをクライアント側にも複製すると、
   // サーバー・クライアントの実装がズレるリスクが増えるため。docs/design/payout-refund.md「返還(refund)処理」参照)。
   if (ticket.refunded) return Number(ticket.amount);
-  if (!race || !race.finish_order || !race.payouts || !race.payouts[ticket.bet_type]) return null;
-  const combos = computeWinningCombos(ticket.bet_type, race.finish_order, race.entries);
-  // 枠番(waku_number)が未確定の出走馬が絡む枠連など、的中組み合わせ自体を算出できない
-  // (combo === null)場合は、「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う。
-  // 出走馬一覧PDFインポート機能では、確定後PDFでも枠番はテキスト抽出できず基本的に
-  // waku_numberがnullのままになる(docs/design/entries-import.md「出走馬一覧PDFインポート」参照)。
-  if (combos.some((c) => c.combo === null)) return null;
-  for (const c of combos) {
-    const rate = findStoredRate(race.payouts, ticket.bet_type, c.combo);
-    if (rate !== null && ticketMatchesCombo(ticket, c.combo)) {
-      return Math.round((ticket.amount / 100) * rate);
-    }
-  }
-  // どの的中組み合わせにも一致しなかったが、その式別に何らかのレートが入力済み = 不的中確定
-  return 0;
+  // 2026-10-27: 買った組み合わせを、払戻の表から直接探す(サーバーの _lib/ticket-payout.js と同じ)。以前は着順から当たりの組み合わせを
+  // 作ってから探していたため、同着で組み合わせが増えると取りこぼした(10/26 大井11R の2着同着で、3連単 9-2-4・9-4-2 などが0円になった)
+  const list = race && race.payouts ? race.payouts[ticket.bet_type] : null;
+  if (!Array.isArray(list) || !list.length) return null;
+  const def = BET_TYPES[ticket.bet_type] || { ordered: false };
+  const vals = (ticket.selections || []).map((s) => (ticket.bet_type === "wakuren" ? s.waku_number : s.horse_number));
+  // 枠番(waku_number)が未確定の出走馬が絡む枠連など、買い目の組み合わせ自体を作れない場合は、
+  // 「不的中(0円)」と断定せず判定不能(null=未確定のまま)として扱う
+  if (!vals.length || vals.some((v) => v === null || v === undefined)) return null;
+  const key = def.ordered ? vals.map(Number) : vals.map(Number).sort((a, b) => a - b);
+  const rate = findStoredRate(race.payouts, ticket.bet_type, key);
+  // 払戻の表に無い = 不的中確定
+  return rate !== null ? Math.round((ticket.amount / 100) * rate) : 0;
 }

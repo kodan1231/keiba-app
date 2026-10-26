@@ -11,8 +11,8 @@
 //     ただし CSV は「既に決着済み」の購入履歴のため、レース結果から的中が確認できない
 //     場合に既存の正の payout を 0 へ落とすことはしない(0→確定 と 増額方向のみ更新)。
 //
-// (ロジックは public/payout.js の computeWinningCombos 等をサーバー側へ移植したもの。
-//  クライアント側と実装がずれないよう、変更する際は両方を確認すること)
+// (ロジックは public/payout.js の computeTicketPayout と同じ。クライアント側と実装がずれないよう、変更する際は両方を確認すること。
+//  2026-10-27〜 どちらも、買った組み合わせを払戻の表から直接探す〈同着で組み合わせが増えても取りこぼさない〉)
 //
 // 呼び出し元(2026-09-08時点):
 //   - functions/api/races/[id].js (レース管理画面の払戻編集モーダルからの保存。単一レース版)
@@ -30,46 +30,13 @@ import { runBatchInChunks } from "./http.js";
 
 const ORDERED_BET_TYPES = new Set(["umatan", "sanrentan"]);
 
-function computeWinningCombos(betType, finishOrder, entries) {
-  if (!finishOrder || finishOrder.length === 0) return [];
-  const wakuOf = (h) => {
-    const e = (entries || []).find((x) => x.horse_number === h);
-    return e ? e.waku_number : null;
-  };
-  const sorted = (arr) => [...arr].sort((a, b) => a - b);
-  const top = (n) => finishOrder.slice(0, n);
-
-  if (betType === "tan") return [{ combo: [top(1)[0]] }];
-  if (betType === "fuku") return top(3).map((h) => ({ combo: [h] }));
-  if (betType === "umaren") { const t = top(2); return [{ combo: sorted(t) }]; }
-  if (betType === "wide") {
-    const t3 = top(3);
-    return [[t3[0], t3[1]], [t3[0], t3[2]], [t3[1], t3[2]]].map((p) => ({ combo: sorted(p) }));
-  }
-  if (betType === "umatan") { const t = top(2); return [{ combo: t }]; }
-  if (betType === "sanrenpuku") { const t = top(3); return [{ combo: sorted(t) }]; }
-  if (betType === "sanrentan") { const t = top(3); return [{ combo: t }]; }
-  if (betType === "wakuren") {
-    const t = top(2);
-    const w = [wakuOf(t[0]), wakuOf(t[1])];
-    if (w.some((x) => x === null || x === undefined)) return [{ combo: null }];
-    return [{ combo: sorted(w) }];
-  }
-  return [];
-}
-
-function ticketMatchesComboServer(betType, selections, combo) {
-  if (!combo) return false;
-  if (betType === "wakuren") {
-    const w = selections
-      .map((s) => s.waku_number)
-      .filter((x) => x !== null && x !== undefined)
-      .sort((a, b) => a - b);
-    return JSON.stringify(w) === JSON.stringify(combo);
-  }
-  const nums = selections.map((s) => s.horse_number);
-  const target = ORDERED_BET_TYPES.has(betType) ? nums : [...nums].sort((a, b) => a - b);
-  return JSON.stringify(target) === JSON.stringify(combo);
+// 買い目の組み合わせ(払戻の表の combo と同じ形)。馬単・3連単は買った順、それ以外は小さい順。枠連は枠番。作れなければ null
+function ticketComboKeyServer(betType, selections) {
+  if (!Array.isArray(selections) || !selections.length) return null;
+  const vals = selections.map((s) => (betType === "wakuren" ? s?.waku_number : s?.horse_number));
+  if (vals.some((v) => v === null || v === undefined || !Number.isFinite(Number(v)))) return null;
+  const nums = vals.map(Number);
+  return ORDERED_BET_TYPES.has(betType) ? nums : [...nums].sort((a, b) => a - b);
 }
 
 function findStoredRateServer(payouts, betType, combo) {
@@ -152,24 +119,16 @@ function computeSettledPayout(betType, selections, amount, finishOrder, payoutsO
   if (refunds.length && isTicketRefunded(betType, selections, refunds)) {
     return { payout: Number(amount), refunded: 1 };
   }
-  if (finishOrder && payoutsObj && payoutsObj[betType]) {
-    const combos = computeWinningCombos(betType, finishOrder, entries);
-    // 枠番未確定などで的中組み合わせ自体を算出できない場合は、「不的中」と断定せず
-    // 判定不能(null)として扱う(0円へフォールバックすると的中している可能性がある
-    // 馬券まで不的中扱いになってしまうため)。
-    if (combos.some((c) => c.combo === null)) return { payout: null, refunded: 0 };
-    let matchedRate = null;
-    for (const c of combos) {
-      const rate = findStoredRateServer(payoutsObj, betType, c.combo);
-      if (rate !== null && ticketMatchesComboServer(betType, selections, c.combo)) {
-        matchedRate = rate;
-        break;
-      }
-    }
-    return {
-      payout: matchedRate !== null ? Math.round((Number(amount) / 100) * matchedRate) : 0,
-      refunded: 0,
-    };
+  // 2026-10-27: 買った組み合わせを、払戻の表(その券種の当たりの組み合わせと金額。公式の払戻そのもの)から直接探す。
+  // 以前は着順(finish_order)から当たりの組み合わせを作ってから探していたが、同着で組み合わせが増えると取りこぼした
+  // (10/26 大井11R は2着同着〈2番・4番〉で、読み取りの着順が [9,4,5] になり、ワイド2-4・3連複2-4-9・3連単9-2-4/9-4-2 が0円になった)。
+  // 払戻の表は手入力(払戻モーダル)でも着順から作った当たりの組み合わせだけを持つので、どちらでも同じに判定できる
+  if (payoutsObj && Array.isArray(payoutsObj[betType]) && payoutsObj[betType].length) {
+    const key = ticketComboKeyServer(betType, selections);
+    // 枠番未確定などで買い目の組み合わせ自体を作れない場合は、「不的中」と断定せず判定不能(null)にする
+    if (!key) return { payout: null, refunded: 0 };
+    const rate = findStoredRateServer(payoutsObj, betType, key);
+    return { payout: rate !== null ? Math.round((Number(amount) / 100) * rate) : 0, refunded: 0 };
   }
   return { payout: null, refunded: 0 };
 }

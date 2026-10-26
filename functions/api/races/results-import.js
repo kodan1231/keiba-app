@@ -68,7 +68,7 @@ export async function onRequestPost(context) {
       sex_age: e.sex_age || null,
       weight_carried: e.weight_carried ?? null,
     }));
-    const finishOrder = Array.isArray(item.finish_order) && item.finish_order.length ? item.finish_order : null;
+    let finishOrder = Array.isArray(item.finish_order) && item.finish_order.length ? item.finish_order : null;
     const payouts = item.payouts && typeof item.payouts === "object" ? item.payouts : {};
     const raceResultsInput = (Array.isArray(item.race_results) ? item.race_results : []).map((r) => {
       const next = { ...r };
@@ -80,6 +80,12 @@ export async function onRequestPost(context) {
     // 読み取り側によって entries に性齢・斤量が入らないことがあり、予想登録画面(entries を表示)に馬齢・斤量が出ない
     // 中央の重賞が続いたため(スワンS・毎日王冠など。race_results には入っていた)。馬番 → 馬名の順で突き合わせる
     fillEntriesFromResults(incomingEntries, raceResultsInput);
+    // 着順は各馬の結果から作り直す(2026-10-27): 3着以内に入った馬を、着順 → 馬番の順に全部(同着なら4頭以上になる)。
+    // 読み取り側(netkeiba・JRA の4か所)は同じ着順の馬を上書きしており、10/26 大井11R(2着同着 2番・4番)が [9,4,5] になっていた
+    const placed = raceResultsInput
+      .filter((r) => (r.status || "finished") === "finished" && Number(r.finish_position) >= 1 && Number(r.finish_position) <= 3 && Number(r.horse_number) > 0)
+      .sort((a, b) => Number(a.finish_position) - Number(b.finish_position) || Number(a.horse_number) - Number(b.horse_number));
+    if (placed.some((r) => Number(r.finish_position) === 1)) finishOrder = placed.map((r) => Number(r.horse_number));
     // 各馬の結果が取消・除外の馬を、払戻の返還の記録に足す(2026-10-23。netkeiba の取り込みは返還の記録を作らないため。_lib/ticket-payout.js)
     const payoutsWithRefunds = addResultRefunds(payouts, raceResultsInput);
 
