@@ -222,7 +222,10 @@ function resolvePaceWeights(specifics, d, pace, kind = "axis") {
 //   (race_results の horse_key インデックス。1頭あたり十数行)。horse_key の IN は90件ずつ。
 // 評価点は掛けない(比率の計算で評価点も選ぶため)。各馬の flags(評価点の印)を一緒に返す。
 // prevOf: Map(レースID -> 前年の同じ重賞のレースID)(重賞の採点のとき。前年の同レースの印用。2026-10-14)
-async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null } = {}) {
+// runsCache(2026-10-27。省略可): Map(horse_key -> 全戦績の行)。夜間の Node(scripts/pace-nightly.mjs)が1回の実行の間ずっと渡し、
+//   同じ馬の戦績を読み直さない。以前はレース30件の塊・重賞・コースごとに出走馬の全戦績を読み直し、計算方法の版を変えて全部を計算し直した
+//   2026-10-22 は1晩でこの問い合わせだけで約290万行(D1 の1日の上限の6割)を読んでいた。採点は戦績の配列を書き換えない(絞り込んだ写しを使う)
+async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null, runsCache = null } = {}) {
   if (!races.length) return [];
   // 騎手名エイリアスは使い回し版(読み取り専用。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
   // 斤量の補正の秒数(2026-10-15)は設定から(app_settings 1行。2分使い回し)
@@ -246,8 +249,9 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
   // 出走馬の全戦績(horse_key は最大 11レース×18頭 ≒ 200件になりうるため90件ずつ)
   const horseKeys = [...new Set((rrRows || []).map((r) => r.horse_key).filter(Boolean))];
   const runsByHorse = new Map();
-  for (let i = 0; i < horseKeys.length; i += 90) {
-    const keys = horseKeys.slice(i, i + 90);
+  const toRead = runsCache ? horseKeys.filter((k) => !runsCache.has(k)) : horseKeys;
+  for (let i = 0; i < toRead.length; i += 90) {
+    const keys = toRead.slice(i, i + 90);
     const { results } = await db
       .prepare(
         `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
@@ -261,6 +265,10 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
       if (!runsByHorse.has(row.horse_key)) runsByHorse.set(row.horse_key, []);
       runsByHorse.get(row.horse_key).push(row);
     }
+  }
+  if (runsCache) {
+    for (const k of toRead) runsCache.set(k, runsByHorse.get(k) || []);
+    for (const k of horseKeys) if (!runsByHorse.has(k) && runsCache.get(k).length) runsByHorse.set(k, runsCache.get(k));
   }
   const ctx = createFactorContext(lineups, raceTimes, aliasMap);
   const out = [];

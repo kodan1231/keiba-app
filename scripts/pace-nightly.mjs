@@ -64,10 +64,12 @@ if (D1_TOKEN) {
   ({ backtestChunk } = await import("../functions/api/_lib/pace-score.js"));
   ({ getPaceScoreSettings } = await import("../functions/api/_lib/pace-settings.js"));
 }
+// 出走馬の全戦績を1回の実行の間使い回す(2026-10-27。D1 の読み取りを減らす。_lib/pace-score.js の scoreRaces の runsCache)
+const runsCache = new Map();
 async function fetchChunk(kind, key, offset) {
   if (d1) {
     const s = await getPaceScoreSettings(d1);
-    const r = await backtestChunk(d1, kind, key, offset, LOCAL_CHUNK, { missingScore: s.missing_score, chunkMax: LOCAL_CHUNK });
+    const r = await backtestChunk(d1, kind, key, offset, LOCAL_CHUNK, { missingScore: s.missing_score, chunkMax: LOCAL_CHUNK, runsCache });
     // 重賞が見つからない等は採点するレースが無いのと同じ扱い(計算待ちから外す)
     if (r.error) return { kind, key: String(key), label: key, total: 0, offset, races: [], missing_score: s.missing_score, adjust_default: s.adjust, note: r.error };
     return { ...r, adjust_default: s.adjust };

@@ -231,7 +231,16 @@ export async function onRequestPost(context){
     // 1回だけ行う方式で、1リクエストあたりのクエリ回数を抑える。
     // 複数ユーザー対応により、既存チェック・重複候補検出はいずれもログインユーザー
     // 自身のデータのみを対象にする(他ユーザーのCSVとは重複判定しない)。
-    const existingRows=(await db.prepare(`SELECT race_date, receipt_number, sequence_number, raw_csv FROM imported_tickets WHERE source=? AND user_id=?`).bind('club_jra_net',userId).all()).results||[];
+    // 2026-10-27: 既存チェックは、このCSVに出てくる日付の分だけ読む(索引 idx_imported_tickets_race_date で絞る。
+    // user_id の索引を選ぶとそのユーザーの全件を読むので +user_id で外す。一意の索引は受付番号のある行だけの部分索引で使えない)。
+    // 以前はそのユーザーの全件(約2,800行。使い込むほど増える)を取込のたびに読み、元のCSVの文字列も全部持ってきていた
+    // (2026-10-26 に CSV 取込が CPU 時間の上限を超えて3回失敗した)。日付は1つのCSVで数十日程度だが上限は無いので80件ずつ(+2バインド)
+    const csvDates=[...new Set(dataRows.map(row=>cols.raceDate>=0?normalizeDate(row[cols.raceDate]):''))];
+    const existingRows=[];
+    for(let i=0;i<csvDates.length;i+=80){
+      const part=csvDates.slice(i,i+80);
+      existingRows.push(...((await db.prepare(`SELECT race_date, receipt_number, sequence_number, CASE WHEN receipt_number IS NULL OR receipt_number='' THEN raw_csv END AS raw_csv FROM imported_tickets WHERE source=? AND +user_id=? AND race_date IN (${part.map(()=>'?').join(',')})`).bind('club_jra_net',userId,...part).all()).results||[]));
+    }
     const existingKeyed=new Set(); const existingRaw=new Set();
     for(const r of existingRows){ if(r.receipt_number) existingKeyed.add(`${r.race_date}:${r.receipt_number}:${r.sequence_number}`); else existingRaw.add(r.raw_csv); }
     const raceCache=new Map(); // key: `${race_date}|${track}|${race_number}` -> race row | null
