@@ -1,6 +1,6 @@
 // データ検索画面「騎手検索」タブ(2026-10-03追加)。仕様は docs/design/data-search.md「騎手検索タブ」。
 //   GET /api/data-search/jockeys             … 騎手の全件一覧(タブを初めて開いたときに1回だけ取得)
-//   GET /api/data-search/jockey-stats?name=  … 通算・年度別・コース別の成績
+//   GET /api/data-search/jockey-stats?name=  … 通算・脚質別・年度別・コース別の成績
 // 候補の絞り込み(部分一致)は取得済みの一覧から画面側で行う(入力のたびにAPIを呼ばない)。
 // escapeHtml / escapeAttr / formatCourseText は utils.js のものを使う。
 // data-search.js のタブ切り替えから jsInit() が1回だけ呼ばれる。
@@ -39,21 +39,22 @@ function jsSortCourses(rows) {
   );
 }
 
-// 通算・年度別・コース別で共通の表。labelHead が null なら先頭の見出し列を出さない(通算)。
+// 通算・脚質別・年度別・コース別で共通の表。labelHead が null なら先頭の見出し列を出さない(通算)。
+// 列の並び(2026-10-27変更): 単勝率・連対率・複勝率 → 騎乗数・1着・2着・3着・着外(以前は騎乗数が先で率が後ろ)。
 function jsTableHtml(labelHead, rows, labelOf) {
   const head = `
     <thead><tr>
       ${labelHead ? `<th class="js-label-cell">${escapeHtml(labelHead)}</th>` : ""}
-      <th>騎乗数</th><th>1着</th><th>2着</th><th>3着</th><th>着外</th>
       <th>単勝率</th><th>連対率</th><th>複勝率</th>
+      <th>騎乗数</th><th>1着</th><th>2着</th><th>3着</th><th>着外</th>
     </tr></thead>`;
   const body = rows
     .map(
       (r) => `
       <tr>
         ${labelHead ? `<td class="js-label-cell">${escapeHtml(labelOf(r))}</td>` : ""}
-        <td>${r.rides}</td><td>${r.first}</td><td>${r.second}</td><td>${r.third}</td><td>${r.other}</td>
         <td>${jsPct(r.winRate)}</td><td>${jsPct(r.quinellaRate)}</td><td>${jsPct(r.showRate)}</td>
+        <td>${r.rides}</td><td>${r.first}</td><td>${r.second}</td><td>${r.third}</td><td>${r.other}</td>
       </tr>`
     )
     .join("");
@@ -65,6 +66,8 @@ function jsRenderDetail(data) {
   const p = data.period || {};
   jsEls.detailSub.textContent = p.from && p.to ? `対象期間 ${formatDate(p.from)} 〜 ${formatDate(p.to)}` : "";
   jsEls.totalTable.innerHTML = jsTableHtml(null, [data.total], null);
+  // 脚質別(2026-10-27。全期間の通算。その騎乗での最初のコーナーの位置取り)
+  jsEls.styleTable.innerHTML = jsTableHtml("脚質", data.byStyle || [], (r) => r.style);
   // 年度別は今年を含む過去5年ぶんだけ出す(2026-10-03。例: 2026年なら2022〜2026年)。
   // 通算・コース別は全期間のまま。今年は端末の日付(日本時間で使う前提)で判定する。
   const fromYear = new Date().getFullYear() - (JS_YEAR_TABLE_YEARS - 1);
@@ -152,6 +155,7 @@ function jsInit() {
   jsEls.detailName = document.getElementById("js-detail-name");
   jsEls.detailSub = document.getElementById("js-detail-sub");
   jsEls.totalTable = document.getElementById("js-total-table");
+  jsEls.styleTable = document.getElementById("js-style-table");
   jsEls.yearTable = document.getElementById("js-year-table");
   jsEls.courseTable = document.getElementById("js-course-table");
 

@@ -13,6 +13,7 @@ import { jockeyDisplayName } from "./race-lineup.js";
 //   display … 表示名(見習い記号を除き空白を1つに畳んだ形)
 //   race    … races の行(race_date / track / course_type / distance 等)
 //   pos     … 1/2/3(3着以内)または null(着外)
+//   style   … その騎乗の脚質のコード(1=逃げ・2=先行・3=差し・4=追込、0=不明。STYLE_CODE_LABELS。2026-10-27)
 // 着順ソースはレース成績タブと同じ規則(race_results が全頭ぶん揃っていればそれ、無ければ
 // entries + finish_order)。出走しなかった馬(取消・除外)は呼ばない。障害レースも含める(騎手検索の仕様)。
 // 2026-10-07: 以前は races_cache(約10MB)と race_stats_cache(約3.8MB)を丸ごと解析して
@@ -32,11 +33,11 @@ export async function forEachJockeyRide(db, fn) {
   };
   for (const race of races) {
     if (!race.lineup) continue;
-    for (const [, jockey, pos] of race.lineup) {
+    for (const [, jockey, pos, , , , style] of race.lineup) {
       if (!jockey || !String(jockey).trim()) continue;
       const j = resolveJockey(String(jockey));
       if (!j) continue;
-      fn({ key: j.key, display: j.display, race, pos });
+      fn({ key: j.key, display: j.display, race, pos, style });
     }
   }
 }

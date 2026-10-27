@@ -7,11 +7,12 @@ import {
   jockeyAliasKeyOf,
   loadJockeyAliasMapCached,
   applyJockeyAliasMap,
+  STYLE_CODE_LABELS,
 } from "../_shared.js";
 
 // データ検索画面「騎手検索」タブの騎手成績API(2026-10-03追加)。
 // GET /api/data-search/jockey-stats?name=騎手名
-// 通算・年度別・コース別(競馬場×芝/ダート/障害×距離)の騎乗数・着度数・単勝率・連対率・複勝率。
+// 通算・脚質別(2026-10-27)・年度別・コース別(競馬場×芝/ダート/障害×距離)の騎乗数・着度数・単勝率・連対率・複勝率。
 // races / race_results は全ユーザー共有データのため requireAdmin しない。
 // 詳細は docs/design/data-search.md「騎手検索タブ」参照。
 export async function onRequestGet(context) {
@@ -30,10 +31,11 @@ export async function onRequestGet(context) {
   let from = null;
   let to = null;
   const total = emptyRideCounts();
+  const byStyle = STYLE_CODE_LABELS.map(() => emptyRideCounts()); // 脚質のコード(0=不明・1=逃げ〜4=追込) -> counts
   const byYear = new Map(); // year -> counts
   const byCourse = new Map(); // "track|course_type|distance" -> { track, course_type, distance, counts }
 
-  await forEachJockeyRide(env.DB, ({ key, display, race, pos }) => {
+  await forEachJockeyRide(env.DB, ({ key, display, race, pos, style }) => {
     if (key !== targetKey) return;
     if (!displayName) displayName = display;
     const date = race.race_date || "";
@@ -43,6 +45,7 @@ export async function onRequestGet(context) {
     }
 
     addRide(total, pos);
+    addRide(byStyle[byStyle[style] ? style : 0], pos);
 
     const year = Number(date.slice(0, 4));
     if (Number.isInteger(year) && year > 0) {
@@ -68,6 +71,10 @@ export async function onRequestGet(context) {
     name: displayName,
     period: { from, to },
     total: finalizeRideCounts(total),
+    // 逃げ → 先行 → 差し → 追込 → 不明。騎乗0の脚質は省く
+    byStyle: [1, 2, 3, 4, 0]
+      .filter((code) => byStyle[code].rides)
+      .map((code) => ({ style: STYLE_CODE_LABELS[code], ...finalizeRideCounts(byStyle[code]) })),
     byYear: [...byYear.entries()]
       .sort((a, b) => b[0] - a[0])
       .map(([year, counts]) => ({ year, ...finalizeRideCounts(counts) })),
