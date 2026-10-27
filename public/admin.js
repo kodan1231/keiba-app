@@ -298,6 +298,12 @@ function setupD1UsageButton() {
 
 // 一括補正など、D1 の読み取り・書き込みを大きく消費する操作の前の確認。今日の使用量を添え、
 // 半分を超えていれば明日(日本時間9時以降)に回すよう促す。使用量が取れなくても確認だけは出す。
+// 確認の画面がすぐ閉じた(押す間もなく false が返った)ときは、ブラウザがダイアログを止めているとみなす(2026-10-28。
+// 「今すぐ計算」を押しても何も起きないように見えた件)。呼び出し側は heavyConfirmSuppressed() で知らせる
+let lastHeavyConfirmSuppressed = false;
+function heavyConfirmSuppressed() {
+  return lastHeavyConfirmSuppressed;
+}
 async function confirmHeavyOperation(message) {
   const u = await fetchD1Usage(true);
   let usageText = "";
@@ -310,8 +316,13 @@ async function confirmHeavyOperation(message) {
       usageText += "\n※ 既に半分を超えています。上限を超えると翌朝9時まで全画面が止まるため、日本時間9時以降に回すことをおすすめします。";
     }
   }
-  return confirm(message + usageText);
+  const t0 = Date.now();
+  const ok = confirm(message + usageText);
+  lastHeavyConfirmSuppressed = !ok && Date.now() - t0 < 50;
+  return ok;
 }
+// 止められているときの案内(画面の文言)
+const HEAVY_CONFIRM_SUPPRESSED_TEXT = "確認の画面が出ませんでした(ブラウザがこのページのダイアログを止めている可能性があります)。タブを閉じて開き直してから、もう一度押してください";
 
 // ---------- 重い機能の自動一時停止(2026-10-08) ----------
 // API: GET/PUT /api/admin/service-guard(functions/api/admin/service-guard.js)。仕様は docs/design/ops.md「重い機能の自動一時停止」。
@@ -1272,9 +1283,24 @@ async function loadPaceWeights() {
   authedFetch("/api/admin/distance-ratios").then((r) => (r.ok ? r.json() : null)).then((s) => { if (drInfo) drInfo.textContent = s ? drText(s) : "読み込みに失敗しました"; })
     .catch(() => { if (drInfo) drInfo.textContent = "読み込みに失敗しました"; });
   document.getElementById("distance-ratios-run").addEventListener("click", async (e) => {
-    if (!(await confirmHeavyOperation("同じ馬の組から距離の換算の比を計算し直します(結果の表を一通り読むので約15万行を読みます。1〜2分かかります)。実行しますか？"))) return;
     const btn = e.currentTarget;
+    const before = drInfo.textContent;
+    // 確認の前に使用量を取りに行く間(数秒かかることがある)も、押したことが分かるようにする(2026-10-28)
     btn.disabled = true;
+    drInfo.textContent = "今日の D1 の使用量を確認しています…";
+    let ok = false;
+    try {
+      ok = await confirmHeavyOperation("同じ馬の組から距離の換算の比を計算し直します(結果の表を一通り読むので約15万行を読みます。1〜2分かかります)。実行しますか？");
+    } catch (err) {
+      drInfo.textContent = `計算を始められませんでした: ${err.message}`;
+      btn.disabled = false;
+      return;
+    }
+    if (!ok) {
+      drInfo.textContent = heavyConfirmSuppressed() ? HEAVY_CONFIRM_SUPPRESSED_TEXT : before;
+      btn.disabled = false;
+      return;
+    }
     drInfo.textContent = "計算中…";
     // 1歩ずつ(約2,000走ずつ)終わるまで呼ぶ(1回のサーバーの処理を無料枠のCPU時間に収めるため。夜間の定時実行と同じ処理)
     try {
@@ -1325,9 +1351,26 @@ function paceAdjustAutoMsg(text, ok) {
 }
 
 async function paceAdjustDefaultAuto(btn) {
-  if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値と標準の比率を計算し、そのまま保存します(手で保存した標準の比率も置き換えます。約12万行を読みます。1〜2分かかります)。実行しますか？"))) return;
-  const label = btn.textContent;
+  // 確認の前に使用量を取りに行く間も、押したことが分かるようにする(2026-10-28)
   btn.disabled = true;
+  const infoEl = document.getElementById("pace-adjust-auto-info");
+  const before = infoEl ? { text: infoEl.textContent, cls: infoEl.className, hidden: infoEl.hidden } : null;
+  paceAdjustAutoMsg("今日の D1 の使用量を確認しています…", null);
+  let ok = false;
+  try {
+    ok = await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値と標準の比率を計算し、そのまま保存します(手で保存した標準の比率も置き換えます。約12万行を読みます。1〜2分かかります)。実行しますか？");
+  } catch (e) {
+    paceAdjustAutoMsg(`計算を始められませんでした: ${e.message}`, false);
+    btn.disabled = false;
+    return;
+  }
+  if (!ok) {
+    if (heavyConfirmSuppressed()) paceAdjustAutoMsg(HEAVY_CONFIRM_SUPPRESSED_TEXT, false);
+    else if (infoEl && before) Object.assign(infoEl, { textContent: before.text, className: before.cls, hidden: before.hidden }); // キャンセルは元の表示に戻す
+    btn.disabled = false;
+    return;
+  }
+  const label = btn.textContent;
   try {
     const { collectAndChoose } = await import("./pace-search.js");
     const { result } = await collectAndChoose((offset) => paceFetchBacktestChunk("all", "all", offset), (done, total) => {
