@@ -13,6 +13,7 @@
 //   - 相手指数の比率: ①の比率で各レースの軸を決め、軸を除いた上位3頭+軸に1着馬が入ったレースが一番多い比率
 //     (同じなら1・2着馬とも → 1〜3着馬とも → 均等に近い方。境目の同点は按分)
 //   - ペース予想ごと: コースの計算だけ、そのペースのレースが PACE_SPLIT_MIN 以上あれば作る(2026-10-18。以前は重賞も2レースから作っていた)
+//   - 全コースの計算(評価点の既定値の自動計算。2026-10-28〜標準の比率としても保存)だけは 5%刻み・全要素5%以上・評価点5以上
 //   - 探し方は総当たり(2026-10-18。10%刻み・合計100%の全19,448通り。選ぶレースのすべてで全馬が同じ点の要素は0%に決める)。
 //     以前は山登り(各要素40%・残り10%の7通り+(20,20,20,10,10,10,10)から出発し、10%を別の要素へ移す〈最大42通り〉を最大6回)で、
 //     よりよい比率を見落としていた(過去の重賞156レースの試算で、選ぶときに使わなかった年の軸の3着以内 29.5% → 41.0%)
@@ -106,7 +107,10 @@ function orderAgreement(r, w) {
 
 // 評価点を選ぶ(全体の軸の比率 axisArr で、並びの一致の平均が一番高い値。1つずつ動かす)。def: 既定値(配列)
 // fixed: 動かさない項目の位置(重賞・コースの計算では全レース共通の項目)
-function searchAdjust(rs, axisArr, def, fixed = []) {
+// adjustMin(2026-10-28): 選ぶ値の下限(評価点の既定値の自動計算は5。0を選ばない)。既定値が下限より小さければ下限にしてから選ぶ
+function searchAdjust(rs, axisArr, def0, fixed = [], adjustMin = 0) {
+  const def = def0.map((v, i) => (fixed.includes(i) ? v : Math.max(v, adjustMin)));
+  const values = ADJUST_VALUES.filter((v) => v >= adjustMin);
   const r2 = (x) => Math.round(x * 100) / 100;
   const evalAdj = (adj) => {
     let agree = 0, cnt = 0, win = 0, quin = 0, show = 0;
@@ -127,7 +131,7 @@ function searchAdjust(rs, axisArr, def, fixed = []) {
     let moved = false;
     for (let i = 0; i < def.length; i++) {
       if (fixed.includes(i)) continue;
-      for (const v of ADJUST_VALUES) {
+      for (const v of values) {
         if (v === best.adj[i]) continue;
         const a = [...best.adj];
         a[i] = v;
@@ -193,16 +197,20 @@ function evaluatePartner(r, w, axisIdx) {
   return { win: cov[0], quin: cov[0] * cov[1], show: cov[0] * cov[1] * cov[2] };
 }
 
-// 比率の全通り(10%刻み・合計100%。8要素で19,448通り)。初めて要るときに作る
-let COMBOS = null;
-function allCombos() {
-  if (COMBOS) return COMBOS;
+// 比率の全通り(step% 刻み・合計100%。10%刻みは8要素で19,448通り)。初めて要るときに作る
+// minWeight(2026-10-28): 各要素の下限(%)。標準の比率は5%刻み・各5%以上(補正タイムの30%以上は search で絞る。3,432通り)
+const COMBOS = new Map();
+function allCombos(step = 10, minWeight = 0) {
+  const key = `${step}|${minWeight}`;
+  if (COMBOS.has(key)) return COMBOS.get(key);
   const F = FACTORS.length, out = [];
+  const units = Math.round(100 / step), minU = Math.ceil(minWeight / step);
   (function rec(k, left, arr) {
-    if (k === F - 1) { out.push([...arr, left * 10]); return; }
-    for (let v = 0; v <= left; v++) rec(k + 1, left - v, [...arr, v * 10]);
-  })(0, 10, []);
-  return (COMBOS = out);
+    if (k === F - 1) { if (left >= minU) out.push([...arr, left * step]); return; }
+    for (let v = minU; v <= left - minU * (F - 1 - k); v++) rec(k + 1, left - v, [...arr, v * step]);
+  })(0, units, []);
+  COMBOS.set(key, out);
+  return out;
 }
 
 // 選ぶレースのすべてで、全馬が同じ点だった要素の位置(順番に効かないので比率を割り振らない。2026-10-18)
@@ -223,7 +231,8 @@ function flatFactors(races) {
 // docs/design/screens.md「比率の選び方の見直し」)。keys の順に多いもの、同じなら DEFAULT_WEIGHTS に近いもの。
 // 差がつかない要素(flatFactors)は 0% に決めた比率だけを試す
 // 補正タイムは TIME_MIN_WEIGHT(30%)以上の比率だけを試す(2026-10-25。差がつかないときは上の規則で 0%)
-function search(races, { evaluate, keys }) {
+// step・minWeight(2026-10-28。標準の比率は 5・5): 刻みと各要素の下限。下限があるときは差がつかない要素も0%にしない
+function search(races, { evaluate, keys, step = 10, minWeight = 0 }) {
   const r2 = (x) => Math.round(x * 100) / 100;
   const toW = (arr) => Object.fromEntries(FACTORS.map((f, i) => [`w_${f}`, arr[i]]));
   const dist = (arr) => FACTORS.reduce((a, f, i) => a + Math.abs(arr[i] - DEFAULT_WEIGHTS[`w_${f}`]), 0);
@@ -239,10 +248,10 @@ function search(races, { evaluate, keys }) {
     for (const k of keys) if (a[k] !== b[k]) return a[k] > b[k];
     return dist(a.arr) < dist(b.arr);
   };
-  const flat = flatFactors(races);
+  const flat = minWeight > 0 ? [] : flatFactors(races);
   let best = null;
   const timeFlat = flat.includes(I_TIME);
-  for (const arr of allCombos()) {
+  for (const arr of allCombos(step, minWeight)) {
     if (flat.length && flat.some((k) => arr[k] !== 0)) continue;
     if (!timeFlat && arr[I_TIME] < TIME_MIN_WEIGHT) continue;
     const r = { arr, ...evalArr(arr) };
@@ -272,7 +281,8 @@ const usableRaces = (races) => (races || []).filter((r) => r && r.runners && r.r
 // opts.paceSplitMin(2026-10-18): ペースごとの比率を作るのは、そのペースのレースがこの数以上のときだけ。0 なら作らない
 //   (重賞は0〈年数が少なく合わせすぎる。重賞のレースはコースのペースの比率と混ぜて使う〉、コースは PACE_SPLIT_MIN)
 // opts.chooseAdjust: 評価点も選ぶか(false なら既定値のまま。試算での比較用)
-export function startPaceSearch(races, { baseAdjust = null, adjustAll = false, paceSplitMin = 0, chooseAdjust = false } = {}) {
+// opts.step・minWeight・adjustMin(2026-10-28。標準の比率〈評価点の既定値の自動計算〉は 5・5・5): 比率の刻み・各要素の下限(%)・評価点の下限
+export function startPaceSearch(races, { baseAdjust = null, adjustAll = false, paceSplitMin = 0, chooseAdjust = false, step = 10, minWeight = 0, adjustMin = 0 } = {}) {
   const usable = usableRaces(races);
   if (!usable.length) return { error: "採点できる過去のレースがありません" };
   const base = ADJUST_KEYS.map((k) => (baseAdjust && Number.isFinite(Number(baseAdjust[k])) ? Number(baseAdjust[k]) : DEFAULT_ADJUST[k]));
@@ -282,7 +292,7 @@ export function startPaceSearch(races, { baseAdjust = null, adjustAll = false, p
   for (const p of PACE_TYPES) {
     if (paceSplitMin > 0 && usable.filter((r) => r.pace_type === p).length >= paceSplitMin) stages.push({ kind: "axis", pace: p }, { kind: "partner", pace: p });
   }
-  return { stage: 0, stages, out: {}, base, adjustAll: Boolean(adjustAll) };
+  return { stage: 0, stages, out: {}, base, adjustAll: Boolean(adjustAll), step, minWeight, adjustMin };
 }
 
 // 1段進める。戻り値: { done: false, state } か { done: true, result }(result は choosePaceWeights と同じ形)
@@ -300,34 +310,35 @@ export function stepPaceSearch(races, state) {
     for (const x of rs) x.adj = adj;
     if (st.kind === "adjust") {
       const fixed = state.adjustAll ? [] : GLOBAL_ADJUST_KEYS.map((k) => ADJUST_KEYS.indexOf(k));
-      const a = searchAdjust(rs, state.out[key("axis0", null)].arr, fill(null), fixed);
+      const a = searchAdjust(rs, state.out[key("axis0", null)].arr, fill(null), fixed, state.adjustMin || 0);
       const stat = (x) => ({ ...sum3(x), agree: x.agree });
       const next = { ...state, stage: state.stage + 1, out: { ...state.out, adjust: { vals: a.best.adj, ...stat(a.best), base: stat(a.base) } } };
-      return next.stage < state.stages.length ? { done: false, state: next } : { done: true, result: assembleResult(usable, next.out) };
+      return next.stage < state.stages.length ? { done: false, state: next } : { done: true, result: assembleResult(usable, next.out, next) };
     }
     let r;
+    const grid = { step: state.step || 10, minWeight: state.minWeight || 0 };
     const sameAdjust = !state.out.adjust || state.out.adjust.vals.every((v, i) => v === fill(null)[i]);
     if (st.kind === "axis" && !st.pace && sameAdjust && state.out[key("axis0", null)]) {
       // 評価点が既定値のままなら、全体の軸は「既定の評価点の軸」と同じ(総当たりをもう一度しない)
       const a0 = state.out[key("axis0", null)];
       r = { best: { arr: a0.arr, win: a0.win, quin: a0.quin, show: a0.show }, equal: a0.equal, flat: a0.flat };
     } else if (st.kind === "axis0" || st.kind === "axis") {
-      r = search(rs, { evaluate: evaluateAxis, keys: AXIS_KEYS });
+      r = search(rs, { evaluate: evaluateAxis, keys: AXIS_KEYS, ...grid });
     } else {
       // 相手: 同じ範囲の軸の比率で各レースの軸を決めてから
       const axisArr = state.out[key("axis", st.pace)].arr;
       const axisIdx = rs.map((x) => axisPick(x, axisArr));
-      r = search(rs, { evaluate: (x, w, i) => evaluatePartner(x, w, axisIdx[i]), keys: PARTNER_KEYS });
+      r = search(rs, { evaluate: (x, w, i) => evaluatePartner(x, w, axisIdx[i]), keys: PARTNER_KEYS, ...grid });
     }
     const out = { ...state.out, [key(st.kind, st.pace)]: { arr: r.best.arr, ...sum3(r.best), equal: sum3(r.equal), races: idx.length, flat: r.flat || [] } };
     const next = { ...state, stage: state.stage + 1, out };
     if (next.stage < state.stages.length) return { done: false, state: next };
     state = next;
   }
-  return { done: true, result: assembleResult(usable, state.out) };
+  return { done: true, result: assembleResult(usable, state.out, state) };
 }
 
-function assembleResult(usable, out) {
+function assembleResult(usable, out, state = {}) {
   const toW = (arr) => Object.fromEntries(FACTORS.map((f, i) => [`w_${f}`, arr[i]]));
   const ax = out["axis|"], pt = out["partner|"];
   const byPace = {}, partnerByPace = {}, byPaceDetail = {}, partnerByPaceDetail = {};
@@ -354,6 +365,8 @@ function assembleResult(usable, out) {
       computed_at: new Date().toISOString(),
       races: usable.length,
       race_ids: usable.map((r) => r.race_id),
+      step: state.step || 10, // 比率の刻み・各要素の下限(2026-10-28。標準は 5・5)
+      min_weight: state.minWeight || 0,
       best: sum3(ax),
       flat: ax.flat || [], // 差がつかず 0% に決めた要素(2026-10-18)
       equal: ax.equal,
@@ -399,10 +412,13 @@ export async function collectAndChoose(fetchChunk, onProgress = () => {}, choose
     if (offset >= total) break;
   }
   // 評価点の既定値は採点の応答から(2026-10-14)。全コースの採点(kind="all")のときだけ全レース共通の項目も選ぶ(2026-10-15)
-  // ペースごとの比率はコースの計算だけ(2026-10-18)
-  const result = choosePaceWeights(races, { baseAdjust: info?.adjust_default || null, adjustAll: info?.kind === "all", paceSplitMin: info?.kind === "course" ? PACE_SPLIT_MIN : 0,
+  // ペースごとの比率はコースと全コース(標準の比率。2026-10-28)の計算だけ(2026-10-18)
+  const all = info?.kind === "all";
+  const result = choosePaceWeights(races, { baseAdjust: info?.adjust_default || null, adjustAll: all, paceSplitMin: info?.kind === "course" || all ? PACE_SPLIT_MIN : 0,
     // 評価点を選ぶのは「評価点の既定値」の自動計算(kind="all")だけ。重賞・コースは既定値のまま(2026-10-18。選ぶと使わなかった年で当たりが下がった)
-    chooseAdjust: info?.kind === "all", ...chooseOpts });
+    chooseAdjust: all,
+    // 全コースの計算は標準の比率にもする(2026-10-28 ユーザー要望): 5%刻み・全要素5%以上、評価点も5以上(0にしない)
+    ...(all ? { step: 5, minWeight: 5, adjustMin: 5 } : {}), ...chooseOpts });
   if (!result.error && info) result.detail.missing_score = info.missing_score;
   return { result, info };
 }

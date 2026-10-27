@@ -54,6 +54,11 @@ export function normalizePaceWeights(w) {
   return toPercents(vals);
 }
 
+// 全要素が0より大きいか(標準の比率の条件。2026-10-28)。w: normalizePaceWeights の戻り値
+export function allPositiveWeights(w) {
+  return Boolean(w) && PACE_FACTORS.every((f) => Number(w[`w_${f}`]) > 0);
+}
+
 // 0以上の値の並びを、合計100の整数%にする(端数は大きい順に配る)。
 function toPercents(vals) {
   const sum = vals.reduce((a, b) => a + b, 0);
@@ -151,7 +156,17 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
     const w = Object.fromEntries(Object.keys(a).map((k) => [k, Math.round(((a[k] + b[k]) / 2) * 10) / 10]));
     return { ...base, ...w, scope: "course", blend: { pace: a, common: b } };
   };
-  const paceOf = (view, p, base) => courseBlendOf(view, p, blendOf(view, p, base));
+  // 標準のペースごと(2026-10-28。docs/design/screens.md「標準の比率の自動計算」): コースと同じく、標準のそのペースの比率(自動)は
+  // 標準の全体の比率(自動)と半分ずつ混ぜる。どちらかを手で決めたときは混ぜない
+  const stdBlendOf = (view, p, base) => {
+    if (!p || !d || base.scope !== "default" || base.pace_type !== p || base.source !== "auto") return base;
+    const dv = view(d);
+    if (!dv || dv.source !== "auto") return base;
+    const a = weightsOf(base), b = weightsOf(dv);
+    const w = Object.fromEntries(Object.keys(a).map((k) => [k, Math.round(((a[k] + b[k]) / 2) * 10) / 10]));
+    return { ...base, ...w, blend: { pace: a, common: b } };
+  };
+  const paceOf = (view, p, base) => stdBlendOf(view, p, courseBlendOf(view, p, blendOf(view, p, base)));
   return {
     ...axisOf(null),
     paces: Object.fromEntries(PACE_TYPES.map((p) => [p, paceOf((r) => r, p, axisOf(p))])),
@@ -425,6 +440,8 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
 // 評価点(adjust。2026-10-14)は、手で保存した評価点があれば残し、無ければ自動の値にする
 // 共通の比率は自動の値で上書きする(手で保存した共通があれば、軸・相手それぞれ残す)。ペースの比率は手で決めたものを残し、
 // それ以外を自動の値に置き換える(レース数が足りず作らなかったペースの古い自動の値は消す)。
+// kind "standard"(2026-10-28。標準の比率 graded_race_id=0。評価点の既定値の自動計算の結果): 手で保存した値も含めて全部置き換える。
+// 全要素が0より大きいこと(5%以上で選んでいる)を確かめる。評価点は行に持たない(設定の既定値を使う)
 export async function saveAutoPaceResult(db, kind, key, result) {
   const w = normalizePaceWeights(result?.weights);
   const pw = normalizePaceWeights(result?.partnerWeights);
@@ -432,8 +449,14 @@ export async function saveAutoPaceResult(db, kind, key, result) {
   const clean = (obj) => Object.fromEntries(PACE_TYPES.filter((p) => obj?.[p]).map((p) => [p, normalizePaceWeights(obj[p])]).filter(([, v]) => v));
   const autoByPace = clean(result.byPace), autoPartnerByPace = clean(result.partnerByPace);
   const detail = JSON.stringify(result.detail || {}).slice(0, 200000);
+  const standard = kind === "standard";
+  if (standard && ![w, pw, ...Object.values(autoByPace), ...Object.values(autoPartnerByPace)].every(allPositiveWeights)) {
+    return { error: "標準の比率は全要素を0より大きくしてください" };
+  }
   let table, where, binds, insertKeyCols, insertKeyBinds;
-  if (kind === "graded") {
+  if (standard) {
+    table = "pace_weights"; where = "graded_race_id = ?"; binds = [0]; insertKeyCols = ["graded_race_id"]; insertKeyBinds = [0];
+  } else if (kind === "graded") {
     const id = Number(key);
     if (!Number.isInteger(id) || id <= 0) return { error: "重賞が不正です" };
     table = "pace_weights"; where = "graded_race_id = ?"; binds = [id]; insertKeyCols = ["graded_race_id"]; insertKeyBinds = [id];
@@ -449,23 +472,23 @@ export async function saveAutoPaceResult(db, kind, key, result) {
   const mergePaces = (prev, auto) => {
     const out = {};
     for (const p of PACE_TYPES) {
-      if (prev[p]?.source === "manual") out[p] = prev[p];
+      if (!standard && prev[p]?.source === "manual") out[p] = prev[p];
       else if (auto[p]) out[p] = { ...auto[p], source: "auto" };
     }
     return out;
   };
-  const keepManualCommon = row?.source === "manual";
+  const keepManualCommon = !standard && row?.source === "manual";
   const axisCommon = keepManualCommon ? weightsOf(row) : w;
   const byPace = mergePaces(parseByPace(row?.by_pace), autoByPace);
   const prevPartner = parsePartner(row?.partner);
   const partner = {
-    common: prevPartner.common?.source === "manual" ? prevPartner.common : { ...pw, source: "auto" },
+    common: !standard && prevPartner.common?.source === "manual" ? prevPartner.common : { ...pw, source: "auto" },
     by_pace: mergePaces(prevPartner.by_pace, autoPartnerByPace),
   };
   const prevAdjust = parseAdjust(row?.adjust);
   const autoAdjust = result.adjust && ROW_ADJUST_KEYS.every((k) => Number.isFinite(Number(result.adjust[k])))
     ? { ...Object.fromEntries(ROW_ADJUST_KEYS.map((k) => [k, Number(result.adjust[k])])), source: "auto" } : null;
-  const adjust = prevAdjust?.source === "manual" ? prevAdjust : autoAdjust;
+  const adjust = standard ? null : prevAdjust?.source === "manual" ? prevAdjust : autoAdjust;
   const now = new Date().toISOString();
   const cols = PACE_WEIGHT_COLUMNS;
   await db.prepare(

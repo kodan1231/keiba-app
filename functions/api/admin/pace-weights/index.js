@@ -1,5 +1,5 @@
 import {
-  requireAdmin, readJsonBody, jsonError, normalizePaceWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS,
+  requireAdmin, readJsonBody, jsonError, normalizePaceWeights, allPositiveWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS,
   parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey, parseAdjust, normalizeAdjust, ADJUST_KEYS, GLOBAL_ADJUST_KEYS,
 } from "../../_shared.js";
 
@@ -92,6 +92,10 @@ export async function onRequestPut(context) {
   if (pErr) return pErr;
   const w = normalizePaceWeights(data);
   if (!w) return jsonError("比率は0以上の数で、合計が0より大きくなるように入力してください", 400);
+  // 標準の比率(graded_race_id=0)は全要素を0より大きく(2026-10-28 ユーザー要望。軸・相手・ペースとも)
+  if (t.table === "pace_weights" && t.keyBinds[0] === 0 && !allPositiveWeights(w)) {
+    return jsonError("標準の比率は全要素を0より大きくしてください(0%は保存できません)", 400);
+  }
   const where = t.keyCols.map((c) => `${c} = ?`).join(" AND ");
   const keyList = t.keyCols.join(", ");
   const keyQ = t.keyCols.map(() => "?").join(", ");

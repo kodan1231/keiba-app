@@ -1239,7 +1239,7 @@ async function loadPaceWeights() {
     <div class="pace-w-line" id="pace-adjust-default">
       ${PACE_ADJ_KEYS.map(([k, label, sign]) => `<label class="pace-w-input">${label}${sign}<input type="number" min="0" max="50" step="1" data-akey="${k}" value="${paceAdjustDefault[k]}">点</label>`).join("")}
       <button type="button" class="ghost-btn" id="pace-adjust-default-save">保存</button>
-      <button type="button" class="ghost-btn" id="pace-adjust-default-auto" title="全コースの直近1年(最大600レース)から評価点を選び、そのまま保存します">自動で計算</button>
+      <button type="button" class="ghost-btn" id="pace-adjust-default-auto" title="全コースの直近1年(最大600レース)から評価点と標準の比率を選び、そのまま保存します">自動で計算</button>
     </div>
     <p class="ticket-sub" id="pace-adjust-auto-info">${escapeHtml(paceAdjustAutoText(data.score_settings?.adjust_auto))}</p>
     <p class="ticket-sub">間隔は全レース共通(前走から6か月以上空いた馬の軸指数・相手指数から引く)。重賞・コースごとの評価点には出ません</p>
@@ -1247,6 +1247,7 @@ async function loadPaceWeights() {
     <!-- 標準の比率は最初は閉じる(2026-10-16 ユーザー要望。常に出ているとスクロールが増えるため)。開閉は評価点の欄と同じく覚える -->
     <details class="pace-adj-fold" data-open-key="std-weights" ${paceAdjOpen.has("std-weights") ? "open" : ""}>
     <summary><span class="pace-w-admin-title">標準の比率${data.default ? "" : "(未設定のため既定値)"}</span></summary>
+    <p class="ticket-sub">重賞・コースの比率が無いレースで使います。評価点の既定値の「自動で計算」で一緒に計算して保存します(5%刻み・全要素5%以上)。手で保存するときも0%は保存できません</p>
     ${paceWeightsLinesHtml(data.default, data.builtin)}
     ${paceWeightsLinesHtml(data.default, data.builtin, "partner")}
     </details>`;
@@ -1324,7 +1325,7 @@ function paceAdjustAutoMsg(text, ok) {
 }
 
 async function paceAdjustDefaultAuto(btn) {
-  if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値を計算し、そのまま保存します(約12万行を読みます。1〜2分かかります)。実行しますか？"))) return;
+  if (!(await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値と標準の比率を計算し、そのまま保存します(手で保存した標準の比率も置き換えます。約12万行を読みます。1〜2分かかります)。実行しますか？"))) return;
   const label = btn.textContent;
   btn.disabled = true;
   try {
@@ -1348,8 +1349,20 @@ async function paceAdjustDefaultAuto(btn) {
         adjust_auto: { computed_at: new Date().toISOString(), races: result.detail.races, values: pick, best: d.best, base: d.base },
       }),
     }, `${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`);
+    // 同じ計算で選んだ軸・相手の比率(全体・ペースごと。5%刻み・全要素5%以上)を標準の比率としても保存する(2026-10-28 ユーザー要望。
+    // 手で保存した標準の比率も置き換える)。保存後に一覧を読み直して標準の比率の欄に出す
+    let stdSaved = false;
+    if (saved) {
+      const r = await authedFetch("/api/admin/pace-weights/auto-result", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "standard", result }),
+      }).catch(() => null);
+      stdSaved = Boolean(r && r.ok);
+      if (stdSaved) await loadPaceWeights();
+    }
     // 保存後に一覧ごと描き直されるので、描き直した後のボタンの下に結果を出す
-    if (saved) paceAdjustAutoMsg(`${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`, true);
+    if (saved && stdSaved) paceAdjustAutoMsg(`${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})。標準の比率も保存しました`, true);
+    else if (saved) paceAdjustAutoMsg(`評価点の既定値は保存しましたが、標準の比率の保存に失敗しました: ${paceAdjustText(pick)}`, false);
     else paceAdjustAutoMsg("計算はできましたが、保存に失敗しました", false);
   } catch (e) {
     paceAdjustAutoMsg(`計算できませんでした: ${e.message}`, false);
