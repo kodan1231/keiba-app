@@ -1524,7 +1524,7 @@ function setupPaceCompute() {
   });
 }
 
-// ---- 重賞ごとの比率の一覧(2026-10-14: 1重賞1行の要約+タップで入力を開く。最初は今月・来月の重賞だけ) ----
+// ---- 重賞ごとの比率の一覧(2026-10-14: 1重賞1行の要約+タップで入力を開く。最初は前後2週間の重賞だけ〈2026-10-29。以前は今月・来月〉) ----
 let paceWeightsList = null; // { items, std }(GET /api/admin/pace-weights の結果。絞り込みの変更では読み直さない)
 const paceWeightsOpen = new Set(); // 開いている重賞のID(保存後の読み直しでも開いたままにする)
 
@@ -1534,11 +1534,18 @@ function paceWeightsVisibleItems() {
   const items = paceWeightsList?.items || [];
   if (q) return items.filter((g) => String(g.name || "").normalize("NFKC").toLowerCase().includes(q));
   if (all) return items;
-  // 今月・来月(日本時間)。開催月日が無い重賞は出さない(検索・すべて表示で出る)
-  const m = Number(new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(5, 7));
-  const months = new Set([m, (m % 12) + 1]);
-  return items.filter((g) => g.schedule_md && months.has(Number(String(g.schedule_md).slice(0, 2))));
+  // 今日(日本時間)の前後2週間に開催の重賞(2026-10-29 ユーザー要望。以前は今月・来月)。開催月日(MM-DD)は年をまたぐので
+  // 去年・今年・来年の同じ月日のうち今日にいちばん近い日で比べる。開催月日が無い重賞は出さない(検索・すべて表示で出る)
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const y = Number(today.slice(0, 4));
+  const t0 = Date.parse(today);
+  return items.filter((g) => {
+    const md = String(g.schedule_md || "");
+    if (!/^\d{2}-\d{2}$/.test(md)) return false;
+    return [y - 1, y, y + 1].some((yy) => Math.abs(Date.parse(`${yy}-${md}`) - t0) <= PACE_WEIGHTS_NEAR_DAYS * 86400000);
+  });
 }
+const PACE_WEIGHTS_NEAR_DAYS = 14;
 
 // 一覧の要約の行に出す最終更新日時(2026-10-14。開かなくても分かるように。比率の値は開いた中で見る)
 function paceUpdatedDateHtml(w) {
@@ -1553,7 +1560,7 @@ function renderPaceWeightsList() {
   const { items, std } = paceWeightsList;
   const shown = paceWeightsVisibleItems();
   const filtered = document.getElementById("pace-weights-search")?.value.trim() || document.getElementById("pace-weights-all")?.checked;
-  if (count) count.textContent = `${shown.length}件${filtered ? "" : "(今月・来月)"} / 全${items.length}件`;
+  if (count) count.textContent = `${shown.length}件${filtered ? "" : "(前後2週間)"} / 全${items.length}件`;
   if (!shown.length) {
     list.innerHTML = `<p class="ticket-sub">該当する重賞はありません</p>`;
     return;
