@@ -129,6 +129,20 @@ async function jsLoadDetail(name) {
   }
 }
 
+// 候補を「中央」→「地方・<競馬場>」(競馬場の並びは utils.js の TRACK_DISPLAY_ORDER。競馬場不明は最後)に分ける(2026-10-29 ユーザー要望)。
+// 区分は一覧API(jockeys.js)の region・track(直近1年の騎乗で決める)。各見出しの中は受け取った順(騎乗数の多い順)
+function jsGroupCandidates(list) {
+  const groups = new Map(); // 見出し -> { label, order, list }
+  for (const j of list) {
+    const local = j.region === "local";
+    const label = local ? `地方・${j.track || "競馬場不明"}` : "中央";
+    const order = local ? 1 + (j.track ? trackDisplayOrderIndex(j.track) : TRACK_DISPLAY_ORDER.length + 1) : 0;
+    if (!groups.has(label)) groups.set(label, { label, order, list: [] });
+    groups.get(label).list.push(j);
+  }
+  return [...groups.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "ja"));
+}
+
 function jsRenderCandidates() {
   const q = jsNorm(jsEls.search.value.trim());
   jsEls.detail.hidden = true;
@@ -148,13 +162,15 @@ function jsRenderCandidates() {
   const shown = matches.slice(0, JS_MAX_CANDIDATES);
   jsEls.searchStatus.textContent = `${matches.length}件${matches.length > shown.length ? `(上位${shown.length}件を表示。絞り込んでください)` : ""}`;
   jsEls.resultList.hidden = false;
-  jsEls.resultList.innerHTML = shown
+  jsEls.resultList.innerHTML = jsGroupCandidates(shown)
     .map(
-      (j) => `
+      (g) => `
+      <li class="js-group-head">${escapeHtml(g.label)}</li>
+      ${g.list.map((j) => `
       <li><button type="button" class="hi-result-btn" data-name="${escapeAttr(j.name)}">
         <span class="hi-result-name">${escapeHtml(j.name)}</span>
         <span class="hi-result-count">${j.rides}騎乗</span>
-      </button></li>`
+      </button></li>`).join("")}`
     )
     .join("");
   jsEls.resultList.querySelectorAll(".hi-result-btn").forEach((btn) => {

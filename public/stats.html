@@ -66,22 +66,27 @@
 
     <section class="stats-section stats-panel" data-panel="track" hidden>
       <h2 class="stats-heading">競馬場別収支</h2>
+      <!-- 中央・地方の絞り込み(2026-10-29。4つのタブで共通・馬券購入/購入履歴とも共通。stats.js の setupStatsRegionFilters) -->
+      <div id="track-region-filter" class="region-filter stats-region-filter"></div>
       <div class="table-wrap"><table class="stats-table" id="track-table"></table></div>
     </section>
 
     <section class="stats-section stats-panel" data-panel="course" hidden>
       <h2 class="stats-heading">コース別収支</h2>
+      <div id="course-region-filter" class="region-filter stats-region-filter"></div>
       <div class="table-wrap"><table class="stats-table" id="course-table"></table></div>
     </section>
 
     <section class="stats-section stats-panel" data-panel="jockey" hidden>
       <h2 class="stats-heading">騎手別収支</h2>
+      <div id="jockey-region-filter" class="region-filter stats-region-filter"></div>
       <div class="table-wrap"><table class="stats-table" id="jockey-table"></table></div>
     </section>
 
     <!-- 馬別収支(2026-10-15追加。docs/design/stats-rules.md「馬別収支」) -->
     <section class="stats-section stats-panel" data-panel="horse" hidden>
       <h2 class="stats-heading">馬別収支</h2>
+      <div id="horse-region-filter" class="region-filter stats-region-filter"></div>
       <p class="stats-note">1枚の馬券に複数の馬が絡む場合、各馬に全額を計上します(騎手別と同じ。按分しません)。購入回数はその馬を含む馬券を買ったレースの数です。
         枠連と、馬名が分からない購入(出走馬表の無いレースのCSV取込分など)は含まれません。</p>
       <div class="horse-stats-search">

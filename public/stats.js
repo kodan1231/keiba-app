@@ -559,11 +559,32 @@ async function loadAndRender() {
   renderOverall(filterByCategory(allTickets, categoryFilterState.overall));
   renderRatioBreakdowns(filterByCategory(allTickets, categoryFilterState.overall));
   renderRaceTable(filterByCategory(allTickets, categoryFilterState.race));
-  renderTrackTable(allTickets);
-  renderCourseTable(allTickets);
-  renderJockeyTable(allTickets);
-  renderHorseTables(allTickets);
+  renderRegionTables();
 }
+
+// ---------- 中央・地方の絞り込み(競馬場別・コース別・騎手別・馬別。2026-10-29 ユーザー要望) ----------
+// 4つのタブそれぞれにチェックを置き、状態は4つで共通(馬券購入・購入履歴とも共通。utils.js の setupRegionFilter。
+// ブラウザに覚える)。1つのタブで変えたら、ほかのタブのチェックも置き直してそろえる。競馬場が分からない購入はどちらでも出す。
+// 総合成績・レース別は今までどおり(上の「すべて/重賞のみ/条件戦のみ/JRA/地方」の切り替え)
+const REGION_FILTER_PANELS = ["track", "course", "jockey", "horse"];
+let regionFilter = loadRegionFilter();
+function setupStatsRegionFilters() {
+  for (const p of REGION_FILTER_PANELS) {
+    regionFilter = setupRegionFilter(document.getElementById(`${p}-region-filter`), (f) => {
+      regionFilter = f;
+      setupStatsRegionFilters();
+      renderRegionTables();
+    });
+  }
+}
+function renderRegionTables() {
+  const items = allTickets.filter((t) => trackPassesRegionFilter(String(t.track || "").trim(), regionFilter));
+  renderTrackTable(items);
+  renderCourseTable(items);
+  renderJockeyTable(items);
+  renderHorseTables(items);
+}
+setupStatsRegionFilters();
 
 setupCategoryFilter("overall-category-filter", "overall", () => {
   renderOverall(filterByCategory(allTickets, categoryFilterState.overall));

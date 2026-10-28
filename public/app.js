@@ -50,6 +50,40 @@ document.getElementById("history-today-btn")?.addEventListener("click", () => {
   renderHistoryCalendar();
   applyHistoryFilter();
 });
+// 年・月を選んで移動(2026-10-29 ユーザー要望。レース管理画面〈races.js の syncMonthJump〉と同じ)。年月の文字を押すと
+// 年・月の選択欄が開き、選ぶとその月へ移る(過去の購入を‹›で何十回も送らずに見られるように)。‹›と同じく月だけを移し、
+// 選んでいる日とその下の一覧はそのまま。年の選択肢は、いちばん古い購入の年〜今年
+const historyMonthJump = document.getElementById("history-month-jump");
+const historyJumpYear = document.getElementById("history-jump-year");
+const historyJumpMonth = document.getElementById("history-jump-month");
+function syncHistoryMonthJump() {
+  if (!historyJumpYear || !historyJumpMonth) return;
+  const thisYear = new Date().getFullYear();
+  const years = allItems.map((t) => Number(String(t.race_date || "").slice(0, 4))).filter(Boolean);
+  const minYear = Math.min(thisYear, historyCalendarMonth.getFullYear(), ...years);
+  const maxYear = Math.max(thisYear, historyCalendarMonth.getFullYear());
+  let yearHtml = "";
+  for (let y = maxYear; y >= minYear; y--) yearHtml += `<option value="${y}">${y}年</option>`;
+  historyJumpYear.innerHTML = yearHtml;
+  if (!historyJumpMonth.options.length) {
+    historyJumpMonth.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i}">${i + 1}月</option>`).join("");
+  }
+  historyJumpYear.value = String(historyCalendarMonth.getFullYear());
+  historyJumpMonth.value = String(historyCalendarMonth.getMonth());
+}
+historyCalendarMonthLabel?.addEventListener("click", () => {
+  if (!historyMonthJump) return;
+  historyMonthJump.hidden = !historyMonthJump.hidden;
+  historyCalendarMonthLabel.setAttribute("aria-expanded", String(!historyMonthJump.hidden));
+  if (!historyMonthJump.hidden) syncHistoryMonthJump();
+});
+const onHistoryJumpChange = () => {
+  historyCalendarMonth = new Date(Number(historyJumpYear.value), Number(historyJumpMonth.value), 1);
+  renderHistoryCalendar();
+};
+historyJumpYear?.addEventListener("change", onHistoryJumpChange);
+historyJumpMonth?.addEventListener("change", onHistoryJumpChange);
+
 // 2026-08-20: 「選択解除」ボタンは、選択中の日付を再クリックすると同じ挙動になり
 // 機能が重複していたため廃止した。フィルタ解除は renderHistoryCalendar() 内の
 // カレンダー日付クリックハンドラ(同じ日付を再クリックするとselectedHistoryDateを
@@ -75,6 +109,7 @@ function renderHistoryCalendar() {
   const year = historyCalendarMonth.getFullYear();
   const month = historyCalendarMonth.getMonth();
   historyCalendarMonthLabel.textContent = `${year}年${month + 1}月`;
+  if (historyMonthJump && !historyMonthJump.hidden) syncHistoryMonthJump();
 
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();

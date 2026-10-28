@@ -20,7 +20,7 @@
   <div id="history-calendar" class="race-calendar">
     <div class="race-calendar-toolbar">
       <button type="button" id="history-prev-month-btn" class="ghost-btn">‹</button>
-      <strong id="history-calendar-month-label"></strong>
+      <button type="button" id="history-calendar-month-label" class="calendar-month-jump-btn" aria-expanded="false" title="年・月を選んで移動"></button>
       <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
       <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
       <button type="button" id="history-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
@@ -29,6 +29,11 @@
       <!-- 購入履歴のCSVインポート(各ユーザーが自分の分を取り込む)。2026-10-15 にヘッダー(かごと退場の間)から移した(ヘッダーの段がずれるため) -->
       <input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />
       <button type="button" id="csv-import-btn" class="ghost-btn history-csv-import-btn">CSVインポート</button>
+    </div>
+    <!-- 年・月を選んで移動(2026-10-29。レース管理画面と同じ。app.js の syncHistoryMonthJump) -->
+    <div id="history-month-jump" class="race-calendar-jump" hidden>
+      <select id="history-jump-year" aria-label="年"></select>
+      <select id="history-jump-month" aria-label="月"></select>
     </div>
     <div id="history-calendar-grid" class="calendar-grid money-calendar"></div>
   </div>
