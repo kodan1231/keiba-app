@@ -164,7 +164,19 @@ async function loadMyKeyRaceIds() {
 // 2026-10-18: 表に出すレース(出走馬込み)は選んだ日の分だけ取る(?since=その日&until=その日。1日約36レース)。
 // カレンダーの「レースのある日」の印は一覧用の軽いキャッシュ(?index=1。読み取り約35行・変わらなければ 304)から作る。
 // 以前は開くたびに1か月分(約450レース・1回約900行)を出走馬込みで読んでいた
-let raceDates = new Set(); // レースのある日(カレンダーの印)
+// レースのある日(カレンダーの印)。日付 → その日の競馬場の Set(中央・地方の絞り込み〈2026-10-28〉で使う)
+const raceDateTracks = new Map();
+function addRaceDateTrack(date, track) {
+  if (!raceDateTracks.has(date)) raceDateTracks.set(date, new Set());
+  raceDateTracks.get(date).add(track || "");
+}
+// 中央・地方のチェック(utils.js の setupRegionFilter。購入履歴と共通)。カレンダーの印と、選んだ日の重賞・競馬場・レースを絞る
+let regionFilter = setupRegionFilter(document.getElementById("region-filter"), (f) => {
+  regionFilter = f;
+  selectedTrackTab = null;
+  renderCalendar();
+  renderGrid();
+});
 const loadedRaceDates = new Set();
 async function loadRacesOfDate(date) {
   if (loadedRaceDates.has(date)) return true;
@@ -173,7 +185,7 @@ async function loadRacesOfDate(date) {
   const list = await res.json().catch(() => null);
   if (!Array.isArray(list)) return false;
   races = [...races.filter((r) => r.race_date !== date), ...list];
-  list.forEach((r) => raceDates.add(r.race_date));
+  list.forEach((r) => addRaceDateTrack(r.race_date, r.track));
   loadedRaceDates.add(date);
   return true;
 }
@@ -184,8 +196,9 @@ async function loadRaceDates() {
     if (!res.ok) return;
     const data = await res.json();
     const di = (data.fields || []).indexOf("race_date");
+    const ti = (data.fields || []).indexOf("track");
     if (di < 0) return;
-    (data.rows || []).forEach((row) => raceDates.add(row[di]));
+    (data.rows || []).forEach((row) => addRaceDateTrack(row[di], ti >= 0 ? row[ti] : ""));
   } catch (_) {
     // 取れなくても、読み込んだ日の印だけで表示を続ける
   }
@@ -259,10 +272,14 @@ function renderGrid() {
     if (raceTrackTabs) raceTrackTabs.innerHTML = "";
     return;
   }
-  const day = races.filter(r => r.race_date === date);
+  // 中央・地方のチェックで外した方の競馬場は、重賞の一覧・競馬場のタブ・レースの一覧のどれにも出さない(2026-10-28)
+  const day = races.filter(r => r.race_date === date && trackPassesRegionFilter(r.track, regionFilter));
   renderGradedDayList(day);
   const tracks = sortTracksForDisplay([...new Set(day.map(r => r.track))]);
   noRaceHint.hidden = tracks.length > 0;
+  noRaceHint.textContent = races.some(r => r.race_date === date)
+    ? `この日は${regionFilter.central ? "地方" : "中央"}のレースだけです(上の「${regionFilter.central ? "地方" : "中央"}」にチェックを入れると表示します)。`
+    : "この日に登録済みのレースがありません。";
 
   if (!tracks.length) {
     raceGrid.innerHTML = "";
@@ -387,7 +404,7 @@ function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${year}-${String(month + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const hasRace = raceDates.has(key);
+    const hasRace = [...(raceDateTracks.get(key) || [])].some((t) => trackPassesRegionFilter(t, regionFilter));
     html += `<button type="button" class="calendar-day ${key === selected ? "selected" : ""} ${hasRace ? "has-race" : ""}" data-date="${key}">
       <span>${d}</span>${hasRace ? '<i></i>' : ''}
     </button>`;

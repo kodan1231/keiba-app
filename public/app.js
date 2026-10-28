@@ -24,6 +24,16 @@ const historyCalendar = document.getElementById("history-calendar");
 const historyCalendarGrid = document.getElementById("history-calendar-grid");
 const historyCalendarMonthLabel = document.getElementById("history-calendar-month-label");
 const historyFilterLabel = document.getElementById("history-filter-label");
+// 中央・地方のチェック(2026-10-28。utils.js の setupRegionFilter。馬券購入と共通)。カレンダーの日ごとの収支と、
+// その日のサマリー・一覧を、チェックの入っている方の競馬場の購入だけにする
+let regionFilter = setupRegionFilter(document.getElementById("region-filter"), (f) => {
+  regionFilter = f;
+  renderHistoryCalendar();
+  applyHistoryFilter();
+});
+function regionItems() {
+  return allItems.filter((t) => trackPassesRegionFilter(t.track, regionFilter));
+}
 
 document.getElementById("history-prev-month-btn")?.addEventListener("click", () => {
   historyCalendarMonth.setMonth(historyCalendarMonth.getMonth() - 1);
@@ -68,7 +78,7 @@ function renderHistoryCalendar() {
 
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const dailyTotals = computeDailyTotals(allItems);
+  const dailyTotals = computeDailyTotals(regionItems());
 
   const headers = ["日", "月", "火", "水", "木", "金", "土"];
   let html = headers.map((h) => `<span class="calendar-weekday">${h}</span>`).join("");
@@ -105,7 +115,7 @@ function applyHistoryFilter() {
   // 削除後に再読込したりしたタイミングで必ずクリアする(見えていない選択が
   // 残って誤削除されるのを防ぐ)。チェックは syncBulkSelectionUi() が付け直す。
   selectedTicketIds.clear();
-  const dayItems = allItems.filter((t) => t.race_date === selectedHistoryDate);
+  const dayItems = regionItems().filter((t) => t.race_date === selectedHistoryDate);
   renderSummary(dayItems);
   const filterRow = document.getElementById("history-filter-row");
   if (filterRow) filterRow.hidden = false;

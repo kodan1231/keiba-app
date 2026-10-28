@@ -53,7 +53,20 @@ export async function onRequestGet(context) {
     }
     // 表示名は「エイリアスで確定した正しい馬名」を優先する(admin/horses/index.js と同じ考え方)。
     if (aliasMap.get(key) && o.display !== aliasMap.get(key)) o.display = aliasMap.get(key);
-    o.raceCount += Number(row.n) || 0;
+  }
+  // 「◯走分」は結果(race_results)に載ったレースの数(2026-10-28 ユーザー要望)。以前は出走表に載ったレースの数で、
+  // 結果の無い出走予定のレースも数えていたため、詳細の全出走履歴(race_results)の行数より多く出ていた
+  // (例: マスカレードボールは天皇賞(秋)の出走表に載り「8走分」・履歴は7走)。候補を探すのは今までどおり出走表の馬名
+  // (出走予定だけの馬も候補に出す。その馬は0走)。結果の馬名は表記揺れがありうるので名寄せキーで突き合わせる。
+  // 結果の馬名は約3.4万件あり、全件を名寄せキーにすると1回約20ミリ秒かかる(入力のたびに走る)ため、
+  // 入力文字を含む馬名と、エイリアスの表記そのものの馬名だけを変換する(結果の馬名は取込時に正規化済みで、ほぼこれで足りる)
+  if (byKey.size) {
+    for (const [name, n] of counts.results) {
+      const s = String(name);
+      if (!s.toLowerCase().includes(qLower) && !aliasMap.has(s)) continue;
+      const o = byKey.get(horseAliasKeyOf(applyHorseAliasMap(aliasMap, s)));
+      if (o) o.raceCount += Number(n) || 0;
+    }
   }
 
   const matches = [...byKey.values()]

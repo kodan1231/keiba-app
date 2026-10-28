@@ -24,6 +24,8 @@
       <button type="button" id="history-next-month-btn" class="ghost-btn">›</button>
       <button type="button" id="history-today-btn" class="ghost-btn">今日</button>
       <button type="button" id="history-clear-filter-btn" class="ghost-btn" hidden>選択解除</button>
+      <!-- 中央・地方の絞り込み(2026-10-28。utils.js の setupRegionFilter。馬券購入と共通) -->
+      <span id="region-filter" class="region-filter"></span>
       <!-- 購入履歴のCSVインポート(各ユーザーが自分の分を取り込む)。2026-10-15 にヘッダー(かごと退場の間)から移した(ヘッダーの段がずれるため) -->
       <input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />
       <button type="button" id="csv-import-btn" class="ghost-btn history-csv-import-btn">CSVインポート</button>

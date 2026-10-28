@@ -21,12 +21,6 @@ function jsPct(v) {
   return v === null || v === undefined || !Number.isFinite(Number(v)) ? "—" : `${(Number(v) * 100).toFixed(1)}%`;
 }
 
-function jsCourseLabel(row) {
-  if (!row.track && !row.course_type && !row.distance) return "コース不明";
-  const course = formatCourseText(row.course_type, row.distance);
-  return `${row.track || "競馬場不明"} ${course || "コース不明"}`;
-}
-
 // コース別の並び順(2026-10-03): 競馬場(中央→ローカル→南関東→地方。utils.js の
 // TRACK_DISPLAY_ORDER)→ 芝/ダート/障害(芝優先)→ 距離(短い順。不明は最後)。
 // 当初はAPIが返す騎乗数の降順のまま表示していた。同じ競馬場で一覧に無いもの同士は名前順。
@@ -41,24 +35,59 @@ function jsSortCourses(rows) {
 
 // 通算・脚質別・年度別・コース別で共通の表。labelHead が null なら先頭の見出し列を出さない(通算)。
 // 列の並び(2026-10-27変更): 単勝率・連対率・複勝率 → 騎乗数・1着・2着・3着・着外(以前は騎乗数が先で率が後ろ)。
-function jsTableHtml(labelHead, rows, labelOf) {
-  const head = `
+function jsTableHeadHtml(labelHead) {
+  return `
     <thead><tr>
       ${labelHead ? `<th class="js-label-cell">${escapeHtml(labelHead)}</th>` : ""}
       <th>単勝率</th><th>連対率</th><th>複勝率</th>
       <th>騎乗数</th><th>1着</th><th>2着</th><th>3着</th><th>着外</th>
     </tr></thead>`;
-  const body = rows
-    .map(
-      (r) => `
-      <tr>
-        ${labelHead ? `<td class="js-label-cell">${escapeHtml(labelOf(r))}</td>` : ""}
+}
+
+function jsRowHtml(r, label, attrs = "") {
+  return `
+      <tr${attrs}>
+        ${label !== null ? `<td class="js-label-cell">${escapeHtml(label)}</td>` : ""}
         <td>${jsPct(r.winRate)}</td><td>${jsPct(r.quinellaRate)}</td><td>${jsPct(r.showRate)}</td>
         <td>${r.rides}</td><td>${r.first}</td><td>${r.second}</td><td>${r.third}</td><td>${r.other}</td>
-      </tr>`
-    )
+      </tr>`;
+}
+
+function jsTableHtml(labelHead, rows, labelOf) {
+  const body = rows.map((r) => jsRowHtml(r, labelHead ? labelOf(r) : null)).join("");
+  return `${jsTableHeadHtml(labelHead)}<tbody>${body}</tbody>`;
+}
+
+// コース別は競馬場ごとに開閉する(2026-10-28 ユーザー要望)。最初は全部閉じ、閉じている間は競馬場名の行だけ
+// (競馬場の集計は出さない)。競馬場名の行を押すとその競馬場のコースの行を出し入れする。1つの表のまま列をそろえる
+function jsCourseTableHtml(rows) {
+  const groups = [];
+  for (const r of jsSortCourses(rows)) {
+    const track = r.track || "競馬場不明";
+    if (!groups.length || groups[groups.length - 1].track !== track) groups.push({ track, rows: [] });
+    groups[groups.length - 1].rows.push(r);
+  }
+  const body = groups
+    .map((g, i) => {
+      const head = `
+      <tr class="js-track-row"><td colspan="9" class="js-label-cell">
+        <button type="button" class="js-track-toggle" data-group="${i}" aria-expanded="false">${escapeHtml(g.track)}</button>
+      </td></tr>`;
+      const course = (r) => (r.course_type || r.distance ? formatCourseText(r.course_type, r.distance) || "コース不明" : "コース不明");
+      return head + g.rows.map((r) => jsRowHtml(r, course(r), ` class="js-course-row" data-group="${i}" hidden`)).join("");
+    })
     .join("");
-  return `${head}<tbody>${body}</tbody>`;
+  return `${jsTableHeadHtml("コース")}<tbody>${body}</tbody>`;
+}
+
+function jsSetupCourseToggles(table) {
+  table.querySelectorAll(".js-track-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open));
+      table.querySelectorAll(`.js-course-row[data-group="${btn.dataset.group}"]`).forEach((tr) => { tr.hidden = !open; });
+    });
+  });
 }
 
 function jsRenderDetail(data) {
@@ -75,7 +104,8 @@ function jsRenderDetail(data) {
   jsEls.yearTable.innerHTML = years.length
     ? jsTableHtml("年度", years, (r) => `${r.year}年`)
     : `<tbody><tr><td>過去${JS_YEAR_TABLE_YEARS}年(${fromYear}年以降)の騎乗データはありません</td></tr></tbody>`;
-  jsEls.courseTable.innerHTML = jsTableHtml("コース", jsSortCourses(data.byCourse || []), jsCourseLabel);
+  jsEls.courseTable.innerHTML = jsCourseTableHtml(data.byCourse || []);
+  jsSetupCourseToggles(jsEls.courseTable);
   jsEls.detail.hidden = false;
 }
 

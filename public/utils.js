@@ -187,6 +187,54 @@ function trackDisplayOrderIndex(track) {
   const i = TRACK_DISPLAY_ORDER.indexOf(track);
   return i >= 0 ? i : TRACK_DISPLAY_ORDER.length + (track ? 0 : 1);
 }
+// 中央・地方の絞り込み(2026-10-28 ユーザー要望。馬券購入・購入履歴のカレンダーとその下の一覧)。
+// 中央 = JRA の10場(TRACK_DISPLAY_ORDER の先頭10)、地方 = それ以外。競馬場が分からないものはどちらでも出す。
+// チェックの状態は両画面で共通にし、この端末のブラウザに覚える(読めない・書けないときは両方入りのまま)。
+// 両方を外すことはできない(最後の1つを外そうとしたらチェックを戻す)
+const CENTRAL_TRACKS = new Set(TRACK_DISPLAY_ORDER.slice(0, 10));
+const REGION_FILTER_STORAGE_KEY = "kb_region_filter";
+function loadRegionFilter() {
+  try {
+    const v = JSON.parse(localStorage.getItem(REGION_FILTER_STORAGE_KEY) || "null");
+    if (v && (v.central || v.local)) return { central: Boolean(v.central), local: Boolean(v.local) };
+  } catch (_) {
+    // 読めなければ両方入り
+  }
+  return { central: true, local: true };
+}
+function saveRegionFilter(f) {
+  try {
+    localStorage.setItem(REGION_FILTER_STORAGE_KEY, JSON.stringify(f));
+  } catch (_) {
+    // 覚えられなくても、この画面の絞り込みは効く
+  }
+}
+function trackPassesRegionFilter(track, f) {
+  if (!track) return true;
+  return CENTRAL_TRACKS.has(track) ? f.central : f.local;
+}
+// container に「中央」「地方」のチェックボックスを置く。変えるたびに onChange(新しい状態) を呼ぶ
+function setupRegionFilter(container, onChange) {
+  if (!container) return loadRegionFilter();
+  const f = loadRegionFilter();
+  container.innerHTML = `
+    <label class="region-filter-item"><input type="checkbox" data-region="central" ${f.central ? "checked" : ""} />中央</label>
+    <label class="region-filter-item"><input type="checkbox" data-region="local" ${f.local ? "checked" : ""} />地方</label>`;
+  container.querySelectorAll("input[data-region]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const next = { ...f, [input.dataset.region]: input.checked };
+      if (!next.central && !next.local) {
+        input.checked = true; // 両方は外せない
+        return;
+      }
+      Object.assign(f, next);
+      saveRegionFilter(f);
+      onChange({ ...f });
+    });
+  });
+  return { ...f };
+}
+
 // コース種別の表示順(芝 → ダート → 障害 → 不明)。
 function courseTypeOrderIndex(courseType) {
   const i = ["芝", "ダート", "障害"].indexOf(courseType);

@@ -430,7 +430,7 @@ async function hiLoadSearch(q) {
         (h) => `
         <li><button type="button" class="hi-result-btn" data-name="${escapeAttr(h.name)}">
           <span class="hi-result-name">${escapeHtml(h.name)}</span>
-          <span class="hi-result-count">${h.raceCount}走分</span>
+          <span class="hi-result-count">${h.raceCount ? `${h.raceCount}走分` : "出走予定のみ"}</span>
         </button></li>`
       )
       .join("");
