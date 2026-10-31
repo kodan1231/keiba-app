@@ -510,21 +510,39 @@ export function paceIndexOf(factors, w) {
   return PACE_FACTORS.reduce((a, f) => a + wOf(f) * factors[f].score, 0) / wSum;
 }
 
-// 推奨馬の4頭を選ぶ(2026-10-25 ユーザー要望。docs/design/screens.md「推奨馬の印(◎〇▲☆)」)。
-// horses: [{ horse_number, axis, partner }] → [{ mark: "◎"|"〇"|"▲"|"☆", x: 要素 }](頭数が足りなければ短い)
-//   ◎・〇・▲ = 軸指数の1・2・3位(3着以内に入りやすい3頭。同じなら相手指数の高い方)
-//   ☆ = 3頭を除いた相手指数の1位(同じなら軸指数の高い方)
+// 推奨馬の4頭を選ぶ(2026-10-25 ユーザー要望。2026-10-31 選び方を変更。docs/design/screens.md「推奨馬の印(◎〇▲☆)」)。
+// horses: [{ horse_number, axis, partner, pace, time, timeMissing }] → [{ mark: "◎"|"〇"|"▲"|"☆", x: 要素 }](頭数が足りなければ短い)
+//   pace・time = 展開・補正タイムの点(評価点〈初距離・初競馬場〉を引いた後)、timeMissing = 補正タイムのデータが無い
+//   ◎ = 合計(軸指数+相手指数)の1位(同じなら軸指数の高い方)
+//   〇 = 残りの軸指数の1位(同じなら相手指数の高い方)
+//   ▲ = 残りの相手指数の1位(同じなら軸指数の高い方)
+//   ☆ = 残りのうち補正タイムの点が STAR_TIME_MIN 以上(データ無しの馬も含める)の馬の展開の点の1位(同じなら合計の高い方)。
+//       そういう馬がいなければ、残りの展開の点の1位
 //   すべて同じなら馬番の小さい方
-// 以前(2026-10-14〜10-25)は「軸 = 軸指数1位、相手 = 軸を除いた相手指数の上位3頭」(pickAxisPartners)。
-// 検討の途中で「◎ = 軸指数+相手指数の合計1位」も作ったが、ユーザーの考え(◎〇▲で的中率を確保し、☆で回収率を狙う)に合わせてこの形にした。
+// 以前(2026-10-25〜10-31)は「◎〇▲ = 軸指数の1・2・3位、☆ = 残りの相手指数の1位」。それより前(2026-10-14〜10-25)は
+// 「軸 = 軸指数1位、相手 = 軸を除いた相手指数の上位3頭」(pickAxisPartners)。
 // ☆の物差し(コース巧者・馬場巧者・一発・距離が合う)も試算したが、相手指数1位を上回らなかった(screens.md の同じ節)
 export const RECOMMEND_MARKS = ["◎", "〇", "▲", "☆"];
+export const STAR_TIME_MIN = 40;
 export function pickRecommended(horses) {
   const num = (h) => (h.horse_number == null ? 999 : Number(h.horse_number));
-  const top = [...horses].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b)).slice(0, 3);
-  const used = new Set(top);
-  const star = horses.filter((h) => !used.has(h)).sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))[0];
-  return [...top, star].filter(Boolean).map((x, i) => ({ mark: RECOMMEND_MARKS[i], x }));
+  const total = (h) => h.axis + h.partner;
+  const byTotal = (a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b);
+  const byAxis = (a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b);
+  const byPartner = (a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b);
+  const byPace = (a, b) => (Number(b.pace) || 0) - (Number(a.pace) || 0) || total(b) - total(a) || num(a) - num(b);
+  const used = [];
+  const take = (list, cmp) => {
+    const x = list.filter((h) => !used.includes(h)).sort(cmp)[0];
+    if (x) used.push(x);
+  };
+  take(horses, byTotal);
+  take(horses, byAxis);
+  take(horses, byPartner);
+  const timeOk = horses.filter((h) => h.timeMissing || Number(h.time) >= STAR_TIME_MIN);
+  if (timeOk.some((h) => !used.includes(h))) take(timeOk, byPace);
+  else take(horses, byPace);
+  return used.map((x, i) => ({ mark: RECOMMEND_MARKS[i], x }));
 }
 
 // 重賞検索タブの「総合推奨馬の検証」(2026-10-13追加。2026-10-14 軸・相手に変更): 過去の各年を、指定の比率で採点した
@@ -538,7 +556,8 @@ export function gradedPicksOf(bt, weights, adjust = null) {
     const wp = (y.pace_type && pw.paces?.[y.pace_type]) || pw;
     // 間隔(2026-10-15)は総合点から直接引く
     const extra = (h) => (adjust ? totalAdjustOf(h.flags, adjust).value : 0);
-    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa) + extra(h), partner: paceIndexOf(h.factors, wp) + extra(h) }));
+    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa) + extra(h), partner: paceIndexOf(h.factors, wp) + extra(h),
+      pace: h.factors.pace?.score, time: h.factors.time?.score, timeMissing: Boolean(h.factors.time?.missing) }));
     const picked = pickRecommended(horses); // ◎〇▲☆(2026-10-25)
     const finished = (x) => (x && x.h.status === "finished" && x.h.finish_position >= 1 ? x.h.finish_position : null);
     const axisPos = finished(picked[0]?.x);

@@ -1185,11 +1185,13 @@ function paceEffectiveWeights(d, pace) {
   return (pace && d.paces?.[pace]) || d;
 }
 
-// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。推奨馬の印(2026-10-25。「推奨馬の印(◎〇▲☆)」)は
-// サーバーの _lib/pace-score.js の pickRecommended と同じ規則: ◎〇▲ = 軸指数の1・2・3位(同じなら相手指数)、
-// ☆ = 3頭を除いた相手指数1位(同じなら軸指数)、すべて同じなら馬番の小さい方。
-// 以前(〜2026-10-25)は ◎軸 = 軸指数1位・○相手 = 軸を除いた相手指数の上位3頭
+// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。推奨馬の印(2026-10-25。2026-10-31 変更。「推奨馬の印(◎〇▲☆)」)は
+// サーバーの _lib/pace-score.js の pickRecommended と同じ規則: ◎ = 合計1位(同じなら軸指数)、〇 = 残りの軸指数1位(同じなら相手指数)、
+// ▲ = 残りの相手指数1位(同じなら軸指数)、☆ = 残りのうち補正タイムの点が40以上(データ無しも含める)の馬の展開の点1位
+// (同じなら合計。そういう馬がいなければ残りの展開の点1位)、すべて同じなら馬番の小さい方。
+// 以前(2026-10-25〜10-31)は ◎〇▲ = 軸指数の1・2・3位・☆ = 残りの相手指数1位。それより前は ◎軸 = 軸指数1位・○相手 = 軸を除いた相手指数の上位3頭
 const PACE_MARKS = ["◎", "〇", "▲", "☆"];
+const PACE_STAR_TIME_MIN = 40; // ☆の候補にする補正タイムの点の下限(サーバーの STAR_TIME_MIN と同じ)
 let paceTotalSort = "axis"; // 表の並び "axis" | "partner" | "total"(レースを切り替えても保つ)
 
 function paceIndexOf(factors, w) {
@@ -1201,11 +1203,26 @@ function paceIndexOf(factors, w) {
 // 戻り値: Map(行 -> 印)(◎〇▲☆の順に入る)
 function paceRecommendMarks(rows) {
   const num = (x) => (x.e.horse_number === null || x.e.horse_number === undefined ? 999 : Number(x.e.horse_number));
+  const total = (x) => x.axis + x.partner;
+  const paceOf = (x) => Number(x.f.pace?.score) || 0;
+  const byTotal = (a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b);
+  const byAxis = (a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b);
+  const byPartner = (a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b);
+  const byPace = (a, b) => paceOf(b) - paceOf(a) || total(b) - total(a) || num(a) - num(b);
+  const used = [];
+  const take = (list, cmp) => {
+    const x = list.filter(r => !used.includes(r)).sort(cmp)[0];
+    if (x) used.push(x);
+  };
+  take(rows, byTotal);
+  take(rows, byAxis);
+  take(rows, byPartner);
+  // 補正タイムの点(評価点を引いた後)が40以上か、データ無し
+  const timeOk = rows.filter(x => x.f.time?.missing || Number(x.f.time?.score) >= PACE_STAR_TIME_MIN);
+  if (timeOk.some(x => !used.includes(x))) take(timeOk, byPace);
+  else take(rows, byPace);
   const marks = new Map();
-  const top = [...rows].sort((a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b)).slice(0, 3);
-  const used = new Set(top);
-  const star = rows.filter(x => !used.has(x)).sort((a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b))[0];
-  [...top, star].filter(Boolean).forEach((x, i) => marks.set(x, PACE_MARKS[i]));
+  used.forEach((x, i) => marks.set(x, PACE_MARKS[i]));
   return marks;
 }
 
