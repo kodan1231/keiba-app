@@ -489,3 +489,16 @@ UPDATE races SET course_type = '障害'
    AND (class_flags LIKE '%障害%' OR race_name LIKE '%障害%');
 DELETE FROM course_pace_weights WHERE course_type = '芝' AND ((track = '京都' AND distance = 2910) OR (track = '東京' AND distance = 3110));
 INSERT INTO schema_migrations (name) VALUES ('jump_course_type');
+
+-- @STEP: race_signals
+-- 馬券購入画面のレース一覧の目印「複」「ワ」(2026-11-01)。_lib/race-signals.js。表とインデックスを作るだけ(データは読まない・書かない)。
+-- 適用前は画面に目印が出ないだけ(race-signals API が unavailable を返し、計算もしない)。
+CREATE TABLE IF NOT EXISTS race_signals (
+  race_id INTEGER PRIMARY KEY,
+  race_date TEXT NOT NULL,
+  fp TEXT NOT NULL,
+  signals TEXT NOT NULL,
+  computed_on TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_race_signals_date ON race_signals(race_date);
+INSERT INTO schema_migrations (name) VALUES ('race_signals');

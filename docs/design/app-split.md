@@ -23,7 +23,7 @@
   search の `/guest` へ(受け口の `functions/g/[key].js` は2026-10-15に削除。手元の all では `/guest` を開くとゲストの Cookie を渡す)。
 - **API**:
   - main: `/api/admin/*`・`/api/cron/*`・取り込み(`entries-import` `results-import`)・レースの編集(`POST /api/races`、
-    `PUT/DELETE /api/races/:id`、`PUT /api/races/:id/results`)・データ検索(予想登録画面が使う `race-factors` `jockey-course` を除く)は 404
+    `PUT/DELETE /api/races/:id`、`PUT /api/races/:id/results`)・データ検索(予想登録画面が使う `race-factors` `jockey-course`、馬券購入画面の目印の `race-signals` `race-signal`〈2026-11-01〉を除く)は 404
     (`blockedOnMain`)。ゲストの Cookie は見ない
   - search: ログインの Cookie・トークンは見ず、全員ゲスト(`searchApi`。使えるのは `_lib/guest.js` の `GUEST_API_RULES` だけ。
     レース単位のAPIは期間内の中央のレースだけ)。ログイン・新規登録・夜間計算は 404

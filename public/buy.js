@@ -37,6 +37,19 @@ let myMemoHorseNames = new Set();
 // GET /api/predictions (race_id省略) はログインユーザー自身の設定のみを返す。
 let myKeyRaceIds = new Set();
 
+// レース一覧の目印「複」「ワ」(2026-11-01。docs/design/screens.md「レース一覧の目印(複・ワ)」)。全ユーザー共通の計算結果。
+// 日付を選んだら保存済みの分(GET /api/data-search/race-signals)を出し、計算し直しが要るレース(pending)を
+// 表示中の競馬場の上から2件ずつ GET /api/data-search/race-signal で計算して、その行の目印だけ書き換える
+const raceSignals = new Map(); // レースID -> "複" | "ワ" | "複ワ"
+const signalLoadedDates = new Set();
+let signalPending = []; // 計算待ちのレースID
+let signalWorkers = 0;
+const SIGNAL_WORKERS_MAX = 2;
+const SIGNAL_TITLES = {
+  複: "複: ◎の合計が125以上で、2位と10点以上の差(複勝◎・ワイド◎-〇向き)",
+  ワ: "ワ: ◎〇の合計がどちらも120以上で、ほかの馬は全部10点以上下(〇の単複・◎-〇の馬連・馬単向き)",
+};
+
 function normalizeHorseNameForMemoCheck(v) {
   return String(v ?? "").replace(/[\u3000\s]+/g, " ").trim();
 }
@@ -176,6 +189,7 @@ let regionFilter = setupRegionFilter(document.getElementById("region-filter"), (
   selectedTrackTab = null;
   renderCalendar();
   renderGrid();
+  runRaceSignalQueue(); // 絞り込みで新しく出した競馬場の計算待ち
 });
 const loadedRaceDates = new Set();
 async function loadRacesOfDate(date) {
@@ -210,6 +224,76 @@ async function showDate(date) {
   if (dateInput.value !== date) return; // 取っている間に別の日を選んだ
   renderCalendar();
   renderGrid();
+  showRaceSignals(date);
+}
+
+// その日の保存済みの目印を取り、行へ出してから、計算し直しが要るレースを計算する。失敗しても一覧はそのまま(目印が出ないだけ)
+async function showRaceSignals(date) {
+  if (!signalLoadedDates.has(date)) {
+    try {
+      const res = await authedFetch(`/api/data-search/race-signals?date=${encodeURIComponent(date)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      signalLoadedDates.add(date);
+      Object.entries(data.signals || {}).forEach(([id, s]) => raceSignals.set(Number(id), s));
+      signalPending.push(...(data.pending || []).map(Number));
+    } catch (_) {
+      return;
+    }
+  }
+  if (dateInput.value !== date) return;
+  raceSignals.forEach((_, id) => updateRaceSignalBadge(id));
+  runRaceSignalQueue();
+}
+
+// 計算待ちから、表示中の日・中央地方の絞り込みに入る競馬場のレースを、競馬場の並び順・レース番号の順に1件取り出す
+function takeNextSignalRace() {
+  const date = dateInput.value;
+  const cands = signalPending
+    .map((id) => races.find((r) => Number(r.id) === id))
+    .filter((r) => r && r.race_date === date && trackPassesRegionFilter(r.track, regionFilter))
+    .sort((a, b) => trackSortIndex(a.track) - trackSortIndex(b.track) || Number(a.race_number) - Number(b.race_number));
+  if (!cands.length) return null;
+  const id = Number(cands[0].id);
+  signalPending = signalPending.filter((x) => x !== id);
+  return id;
+}
+
+function runRaceSignalQueue() {
+  while (signalWorkers < SIGNAL_WORKERS_MAX) {
+    const id = takeNextSignalRace();
+    if (id === null) return;
+    signalWorkers++;
+    computeRaceSignal(id).finally(() => {
+      signalWorkers--;
+      runRaceSignalQueue();
+    });
+  }
+}
+
+async function computeRaceSignal(id) {
+  try {
+    const res = await authedFetch(`/api/data-search/race-signal?race_id=${id}`);
+    if (res.status === 503) { signalPending = []; return; } // D1 の使用量が多い日の一時停止。残りは計算しない
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.signals) raceSignals.set(id, data.signals);
+    else raceSignals.delete(id);
+    updateRaceSignalBadge(id);
+  } catch (_) {
+    // 目印が出ないだけ
+  }
+}
+
+function raceSignalHtml(id) {
+  return [...(raceSignals.get(Number(id)) || "")]
+    .map((c) => `<span class="race-signal-badge race-signal-${c === "複" ? "fuku" : "wide"}" title="${escapeAttr(SIGNAL_TITLES[c] || "")}">${escapeHtml(c)}</span>`)
+    .join("");
+}
+
+function updateRaceSignalBadge(id) {
+  const el = raceGrid.querySelector(`[data-signal-race="${Number(id)}"]`);
+  if (el) el.innerHTML = raceSignalHtml(id);
 }
 
 async function loadRaces() {
@@ -224,6 +308,7 @@ async function loadRaces() {
   if (!ok) return;
   renderCalendar();
   renderGrid();
+  showRaceSignals(date);
 
   const id = Number(new URLSearchParams(location.search).get("race"));
   if (id) {
@@ -337,7 +422,7 @@ function renderGrid() {
                   data-id="${r.id}" type="button">
                   <b>${i+1}R</b>
                   <span>${escapeHtml(r.race_name || "")}</span>
-                  <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}</small>
+                  <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}<span class="race-signal" data-signal-race="${r.id}">${raceSignalHtml(r.id)}</span></small>
                 </button>
                 <button type="button" class="key-race-mini ${isKey ? "active" : ""}" data-key-race-id="${r.id}"
                   aria-pressed="${isKey}" title="勝負レース(${isKey ? "ON" : "OFF"})">${isKey ? "★" : "☆"}</button>

@@ -44,3 +44,4 @@ export * from "./_lib/guest.js";
 export * from "./_lib/pace-queue.js";
 export * from "./_lib/app-role.js";
 export * from "./_lib/distance-ratios.js";
+export * from "./_lib/race-signals.js";

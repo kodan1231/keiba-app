@@ -1,32 +1,11 @@
-import {
-  jsonError,
-  parsePositiveIntId,
-  parseJsonSafe,
-  loadHorseAliasMapCached,
-  buildHorseSearchKeys,
-  applyHorseAliasMap,
-  horseAliasKeyOf,
-  loadJockeyAliasMapCached,
-  getRaceLineups,
-  getRaceTimes,
-  createFactorContext,
-  computeRaceFactors,
-  FACTOR_KEYS, GLOBAL_ADJUST_KEYS,
-  getDistanceRatios,
-  getPaceScoreSettings,
-  getPaceWeights,
-  prevYearGradedRaceId,
-  loadGradedRaceMapCached,
-  gradedRaceOf,
-  memoizedKeyed,
-  textFingerprint,
-} from "../_shared.js";
+import { parsePositiveIntId, jsonError, getRaceFactorsBody, RACE_FACTOR_COLUMNS } from "../_shared.js";
 
 // 予想登録画面「展開・時計」タブの総合推奨馬・推奨馬(2026-10-13追加)。
 // GET /api/data-search/race-factors?race_id=N
 //   → { pace_type, counts: { nige, senko, unknown, n }, horses: [{ horse_name, horse_number, waku_number, jockey,
 //        factors: { pace|number|jockey|time|sexage|weight|course: { score, rank, value, missing } } }] }(後ろ3つは2026-10-14追加)
 // 点数の規則は _lib/race-factors.js(重賞の比率の自動算出と同じ1か所)。仕様は docs/design/screens.md「総合推奨馬」。
+// 応答を作る処理は _lib/race-signals.js の getRaceFactorsBody(2026-11-01 にレース一覧の目印と共用にするため移した)。
 // /api/data-search/ の下なので、使用量が多い日の自動一時停止(データ検索)の対象。
 //
 // D1の読み取り: races 1行 + 出走馬の全戦績(race_results の horse_key インデックス。18頭×数十走で数百行)+
@@ -41,83 +20,7 @@ export async function onRequestGet(context) {
   const { id: raceId, error } = parsePositiveIntId(url.searchParams.get("race_id"), "race_id");
   if (error) return error;
 
-  const race = await db
-    .prepare("SELECT id, race_date, track, course_type, distance, race_name, class_flags, entries FROM races WHERE id = ?")
-    .bind(raceId)
-    .first();
+  const race = await db.prepare(`SELECT ${RACE_FACTOR_COLUMNS} FROM races WHERE id = ?`).bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
-  // 出走取消の印(entries[].scratched。2026-10-15)の馬は採点・ペース予想から外す
-  const entries = (parseJsonSafe(race.entries, []) || []).filter((e) => e && e.horse_name && !e.scratched);
-  if (!entries.length || !race.course_type || !race.distance || !race.race_date) {
-    return Response.json({ pace_type: null, counts: null, horses: [] });
-  }
-
-  // 同じ実行環境で60秒、同じレース・同じ出走馬表の結果を使い回す(2026-10-16。D1 の負荷軽減)。週末は同じレースを
-  // 何人も(ゲストを含む)開き、1回あたり数百行の戦績を読んでいた。出走馬表やコースが変われば名前が変わるので、
-  // 出馬表の取り込み直しはすぐ反映される。他のレースの結果の取り込み・比率の変更は最大60秒遅れる
-  const memoName = `race_factors:${raceId}:${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}:${textFingerprint(race.entries)}`;
-  const body = await memoizedKeyed(memoName, () => computeResponse(db, race, entries), 60 * 1000);
-  return Response.json(body);
-}
-
-async function computeResponse(db, race, entries) {
-  const [horseAliasMap, jockeyAliasMap, lineups, raceTimes, scoreSettings, gradedMap, distanceRatios] = await Promise.all([
-    loadHorseAliasMapCached(db),
-    loadJockeyAliasMapCached(db),
-    getRaceLineups(db),
-    getRaceTimes(db),
-    getPaceScoreSettings(db), // データ無しの点・評価点の既定値(2026-10-14。app_settings 1行。2分使い回し)
-    loadGradedRaceMapCached(db),
-    getDistanceRatios(db), // 同じ馬の組から出した距離の比(2026-10-16。app_settings 1行。10分使い回し)
-  ]);
-  const graded = gradedRaceOf(gradedMap, race);
-  const [weights, prevRaceId] = await Promise.all([
-    getPaceWeights(db, graded ? graded.id : 0, race),
-    graded ? prevYearGradedRaceId(db, graded.id, race) : null,
-  ]);
-  // 重賞・コースの評価点に無い項目(後から足した前年の同レース等)は設定の既定値
-  // 間隔(2026-10-15)など全レース共通の項目は、いつも設定の既定値
-  const adjust = { ...scoreSettings.adjust, ...(weights.adjust || {}) };
-  for (const k of GLOBAL_ADJUST_KEYS) adjust[k] = scoreSettings.adjust[k];
-  const { searchKeyToKey } = buildHorseSearchKeys(horseAliasMap, entries.map((e) => e.horse_name));
-  const searchKeys = [...searchKeyToKey.keys()];
-  const runsByHorse = new Map();
-  // IN句のキー数: 出走馬の馬名+逆引きエイリアス。重賞の特別登録を手で入れると頭数に上限が無く(2026-10-15)、
-  // 100バインドを超えうるため90件ずつ(+日付1)に分ける
-  for (let i = 0; i < searchKeys.length; i += 90) {
-    const keys = searchKeys.slice(i, i + 90);
-    const { results } = await db
-      .prepare(
-        `SELECT rr.horse_key, rr.race_id, rr.status, rr.finish_position, rr.corner_positions, rr.time_text, rr.final_furlong_time,
-                rr.body_weight, rr.jockey, rr.weight_carried, r.race_date, r.race_number, r.track, r.course_type, r.distance, r.track_condition
-           FROM race_results rr JOIN races r ON r.id = rr.race_id
-          WHERE rr.horse_key IN (${keys.map(() => "?").join(",")}) AND r.race_date < ?`
-      )
-      .bind(...keys, race.race_date)
-      .all();
-    for (const row of results || []) {
-      const key = searchKeyToKey.get(row.horse_key);
-      if (!key) continue;
-      if (!runsByHorse.has(key)) runsByHorse.set(key, []);
-      runsByHorse.get(key).push(row);
-    }
-  }
-
-  const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
-  const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null, weight_carried: e.weight_carried ?? null }));
-  const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
-  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios });
-
-  const horses = entries.map((e, i) => {
-    const key = runners[i].key;
-    const factors = {};
-    for (const f of FACTOR_KEYS) {
-      const v = rf.factors[f].get(key);
-      factors[f] = { score: Math.round(v.score * 10) / 10, rank: v.rank, value: v.value, missing: v.missing };
-    }
-    // total_adjust: 総合点(軸指数・相手指数)へ直接足す点と内訳(間隔。2026-10-15。無ければ value 0)
-    const ta = rf.totalAdjust.get(key) || { value: 0, note: "" };
-    return { horse_name: e.horse_name, horse_number: e.horse_number ?? null, waku_number: e.waku_number ?? null, jockey: e.jockey || null, factors, total_adjust: ta };
-  });
-  return { pace_type: rf.pace_type, counts: rf.counts, horses };
+  return Response.json(await getRaceFactorsBody(db, race));
 }

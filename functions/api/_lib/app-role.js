@@ -67,7 +67,8 @@ export function blockedOnMain(request, url) {
   if (p === "/api/races" && m !== "GET") return true;
   if (/^\/api\/races\/\d+$/.test(p) && m !== "GET") return true;
   if (/^\/api\/races\/\d+\/results$/.test(p) && m !== "GET") return true;
-  if (p.startsWith("/api/data-search/") && !/^\/api\/data-search\/(race-factors|jockey-course)$/.test(p)) return true;
+  // race-signal(s): 馬券購入画面のレース一覧の目印「複」「ワ」(2026-11-01)
+  if (p.startsWith("/api/data-search/") && !/^\/api\/data-search\/(race-factors|jockey-course|race-signals?)$/.test(p)) return true;
   return false;
 }
 

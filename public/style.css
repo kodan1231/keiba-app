@@ -3117,6 +3117,20 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
   font-size: 10px;
 }
 
+/* レース一覧の目印「複」「ワ」(2026-11-01。buy.js の raceSignalHtml) */
+.race-signal-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #fff;
+}
+.race-signal-fuku { background: #2f6fb3; }
+.race-signal-wide { background: #c46a12; }
+
 /* 勝負レース(自分の個人設定)の★/☆トグル。購入画面のレース一覧の行の右端に重ねる
    (2026-09-25。以前は勝負レースのレース名の後ろに表示のみの「★」を出していた)。 */
 .race-row-wrap { position: relative; }

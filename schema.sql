@@ -520,6 +520,18 @@ CREATE TABLE IF NOT EXISTS pace_jobs (
   PRIMARY KEY (kind, key)
 );
 
+-- 馬券購入画面のレース一覧の目印「複」「ワ」(2026-11-01追加。@STEP: race_signals)。_lib/race-signals.js。
+-- signals: '' | '複' | 'ワ' | '複ワ'。fp: 計算したときの出走馬表・コース等の指紋。computed_on: 計算した日(日本時間)。
+-- 画面で日付を選んだときに、まだ無い・古いレースだけ計算して保存する(1行1レース)。
+CREATE TABLE IF NOT EXISTS race_signals (
+  race_id INTEGER PRIMARY KEY,
+  race_date TEXT NOT NULL,
+  fp TEXT NOT NULL,
+  signals TEXT NOT NULL,
+  computed_on TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_race_signals_date ON race_signals(race_date);
+
 -- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
 -- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。
 -- races.id ではなく重賞マスタの id と年で持つので、レースを登録する前・取り込んでいない年にも書ける。
