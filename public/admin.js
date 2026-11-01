@@ -331,21 +331,30 @@ function renderServiceGuard(d) {
   if (!statusEl) return;
   if (!d || !d.settings) { statusEl.textContent = "設定を読み込めませんでした。"; return; }
   const s = d.settings;
-  const pct = d.state.ratio === null || d.state.ratio === undefined ? null : (d.state.ratio * 100).toFixed(1);
+  const pctOf = (r) => (r === null || r === undefined ? null : (r * 100).toFixed(1));
+  const readPct = pctOf(d.state.readRatio), writePct = pctOf(d.state.writeRatio);
+  const usageText = readPct !== null ? `読み取り ${readPct}%・書き込み ${writePct}%` : null;
   const overriding = s.overrideUntil && Date.parse(s.overrideUntil) > Date.now();
   let text;
   if (d.state.active && d.state.reason === "manual") text = "現在: 手動で一時停止中です。";
-  else if (d.state.active) text = `現在: 一時停止中です(使用量 ${pct}% がしきい値 ${s.thresholdPercent}% 以上)。`;
-  else if (overriding) text = `現在: 解除中です(${formatDateTime(s.overrideUntil)}まで自動では止めません)。`;
+  else if (d.state.active) {
+    const parts = [];
+    if (d.state.readActive) parts.push(`読み取り ${readPct}% がしきい値 ${s.thresholdPercent}% 以上`);
+    if (d.state.writeActive) parts.push(`書き込み ${writePct}% がしきい値 ${s.writeThresholdPercent}% 以上`);
+    text = `現在: 一時停止中です(${parts.join("、")})。`;
+  } else if (overriding) text = `現在: 解除中です(${formatDateTime(s.overrideUntil)}まで自動では止めません)。`;
   else if (!s.enabled) text = "現在: 自動一時停止は使っていません。";
-  else text = `現在: 動作中です${pct !== null ? `(使用量 ${pct}%)` : ""}。`;
+  else text = `現在: 動作中です${usageText ? `(${usageText})` : ""}。`;
   if (!d.tokenConfigured) text += " ※ CF_ANALYTICS_TOKEN が未設定のため、使用量による自動停止は働きません(手動停止は使えます)。";
   statusEl.textContent = text;
   document.getElementById("guard-enabled").checked = s.enabled;
   document.getElementById("guard-threshold").value = s.thresholdPercent;
+  document.getElementById("guard-write-threshold").value = s.writeThresholdPercent;
   document.getElementById("guard-manual").checked = s.manualPause;
-  document.getElementById("guard-targets").innerHTML = d.features.map((f) => `
-    <label style="display:block"><input type="checkbox" name="guard-target" value="${escapeAttr(f.key)}" ${s.targets.includes(f.key) ? "checked" : ""}/> ${escapeHtml(f.label)}</label>`).join("");
+  const checks = (name, selected) => d.features.map((f) => `
+    <label style="display:block"><input type="checkbox" name="${name}" value="${escapeAttr(f.key)}" ${selected.includes(f.key) ? "checked" : ""}/> ${escapeHtml(f.label)}</label>`).join("");
+  document.getElementById("guard-targets").innerHTML = checks("guard-target", s.targets);
+  document.getElementById("guard-write-targets").innerHTML = checks("guard-write-target", s.writeTargets);
   document.getElementById("guard-clear-override-btn").hidden = !overriding;
 }
 
@@ -384,6 +393,8 @@ function setupServiceGuardForm() {
       enabled: document.getElementById("guard-enabled").checked,
       thresholdPercent: Number(document.getElementById("guard-threshold").value),
       targets: [...form.querySelectorAll('input[name="guard-target"]:checked')].map((i) => i.value),
+      writeThresholdPercent: Number(document.getElementById("guard-write-threshold").value),
+      writeTargets: [...form.querySelectorAll('input[name="guard-write-target"]:checked')].map((i) => i.value),
       manualPause: document.getElementById("guard-manual").checked,
     }, "保存しました(反映まで最大1分かかります)。");
   });

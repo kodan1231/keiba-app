@@ -42,18 +42,26 @@
       <!-- 重い機能の自動一時停止(2026-10-08。docs/design/ops.md「重い機能の自動一時停止」) -->
       <section class="stats-section" data-admin-tab="status" hidden>
         <h2 class="stats-section-title">重い機能の自動一時停止</h2>
-        <p class="ticket-sub">D1の使用量がしきい値を超えたら、選んだ機能だけを一時停止します(購入・履歴・予想などの普段の操作は止めません)。止めた画面には「混雑のため一時停止中」とだけ表示されます。日本時間の朝9時に使用量がリセットされると自動で再開します。</p>
+        <p class="ticket-sub">D1の使用量(読み取り・書き込みそれぞれ)がしきい値を超えたら、選んだ機能だけを一時停止します(購入・履歴・予想などの普段の操作は止めません)。止めた画面には「混雑のため一時停止中」とだけ表示されます。日本時間の朝9時に使用量がリセットされると自動で再開します。</p>
         <p id="guard-status" class="ticket-sub">読み込み中…</p>
         <form id="guard-form" class="hi-edit-form">
           <label><input type="checkbox" id="guard-enabled" /> 自動一時停止を使う</label>
-          <label style="display:block;margin:6px 0">しきい値(使用量 %)
-            <input type="number" id="guard-threshold" min="10" max="99" step="1" style="width:5em" />%以上で停止
-          </label>
+          <!-- 2026-11-02〜 読み取り・書き込みで別々に(以前は大きい方1つで判定していた) -->
           <fieldset style="border:none;padding:0;margin:6px 0">
-            <legend class="ticket-sub">止める機能</legend>
+            <legend class="ticket-sub">読み取り(1日500万行)</legend>
+            <label style="display:block;margin:4px 0">しきい値
+              <input type="number" id="guard-threshold" min="10" max="99" step="1" style="width:5em" />%以上で、次の機能を停止
+            </label>
             <div id="guard-targets"></div>
           </fieldset>
-          <label><input type="checkbox" id="guard-manual" /> 使用量に関係なく今すぐ止める(緊急用。上で選んだ機能を止めます)</label>
+          <fieldset style="border:none;padding:0;margin:6px 0">
+            <legend class="ticket-sub">書き込み(1日10万行)</legend>
+            <label style="display:block;margin:4px 0">しきい値
+              <input type="number" id="guard-write-threshold" min="10" max="99" step="1" style="width:5em" />%以上で、次の機能を停止
+            </label>
+            <div id="guard-write-targets"></div>
+          </fieldset>
+          <label><input type="checkbox" id="guard-manual" /> 使用量に関係なく今すぐ止める(緊急用。上で選んだ機能〈読み取り・書き込みの両方〉を止めます)</label>
           <div style="margin-top:8px"><button type="submit" class="stamp-btn">保存</button></div>
         </form>
         <div style="margin-top:8px">

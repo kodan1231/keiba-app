@@ -9,8 +9,9 @@ import {
 } from "../_shared.js";
 
 // 管理者向け: 重い機能の自動一時停止の設定と状態(2026-10-08追加。_lib/service-guard.js、docs/design/ops.md「重い機能の自動一時停止」)。
-//   GET … { settings, features: [{ key, label }], state: { active, reason, ratio }, tokenConfigured }
-//   PUT { enabled, thresholdPercent, targets, manualPause } … 設定を保存
+//   GET … { settings, features: [{ key, label }], state: { active, reason, ratio, readRatio, writeRatio, readActive, writeActive }, tokenConfigured }
+//   PUT { enabled, thresholdPercent, targets, writeThresholdPercent, writeTargets, manualPause } … 設定を保存
+//     (2026-11-02〜 読み取り〈thresholdPercent・targets〉と書き込み〈write*〉を別々に)
 //   PUT { action: "override" }       … 一時停止を解除(次のリセット〈日本時間9時〉まで自動停止しない)
 //   PUT { action: "clear_override" } … 解除をやめる(自動停止を有効に戻す)
 
@@ -19,7 +20,10 @@ async function respond(context, settings) {
   return Response.json({
     settings,
     features: Object.entries(SERVICE_GUARD_FEATURES).map(([key, f]) => ({ key, label: f.label })),
-    state: { active: state.active, reason: state.reason, ratio: state.ratio },
+    state: {
+      active: state.active, reason: state.reason, ratio: state.ratio,
+      readRatio: state.readRatio, writeRatio: state.writeRatio, readActive: state.readActive, writeActive: state.writeActive,
+    },
     tokenConfigured: Boolean(context.env.CF_ANALYTICS_TOKEN),
   });
 }
@@ -50,6 +54,8 @@ export async function onRequestPut(context) {
       enabled: data.enabled ?? current.enabled,
       thresholdPercent: data.thresholdPercent ?? current.thresholdPercent,
       targets: Array.isArray(data.targets) ? data.targets : current.targets,
+      writeThresholdPercent: data.writeThresholdPercent ?? current.writeThresholdPercent,
+      writeTargets: Array.isArray(data.writeTargets) ? data.writeTargets : current.writeTargets,
       manualPause: data.manualPause ?? current.manualPause,
     };
   } else {

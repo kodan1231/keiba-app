@@ -5,11 +5,16 @@
 // 上限に近づいたら重い機能(データ検索・一括補正等)だけを止め、購入・履歴・予想などの普段の操作は続けられるようにする。
 //
 // 設定(管理画面「重い機能の自動一時停止」で変更。app_settings の key='service_guard' に JSON で保存):
-//   enabled          … 自動一時停止を使うか
-//   thresholdPercent … 使用量(読み取り・書き込みの大きい方)がこの割合(%)以上で止める
-//   targets          … 止める機能(下の FEATURES のキー)
-//   manualPause      … 使用量に関係なく今すぐ止める(緊急用)
-//   overrideUntil    … この時刻までは自動停止しない(管理者の「一時停止を解除」。次のリセット〈日本時間9時〉まで)
+//   enabled               … 自動一時停止を使うか
+//   thresholdPercent      … 読み取りの使用量がこの割合(%)以上で targets を止める
+//   targets               … 読み取りで止める機能(下の FEATURES のキー)
+//   writeThresholdPercent … 書き込みの使用量がこの割合(%)以上で writeTargets を止める(2026-11-02)
+//   writeTargets          … 書き込みで止める機能
+//   manualPause           … 使用量に関係なく今すぐ止める(緊急用。targets と writeTargets の両方)
+//   overrideUntil         … この時刻までは自動停止しない(管理者の「一時停止を解除」。次のリセット〈日本時間9時〉まで)
+// 2026-11-02 変更: 以前は「読み取り・書き込みの割合の大きい方」1つで targets を止めていた。書き込みが上限に近づいても
+// 止まるのは読み取りの重い機能(データ検索・全期間表示等)で書き込みは減らず、過去の結果の取り込み(1日に約900レース・
+// race_results 約7.3万行)で書き込みが上限(10万行)を超え、全画面が止まった(10/14・10/15・11/01)。読み・書きを分けた。
 // 使用量は Cloudflare の分析API(_lib/d1-usage.js。CF_ANALYTICS_TOKEN が必要。未設定なら自動停止は働かない)。
 // 普段の操作を遅くしないよう、判定は「止める対象の機能」へのリクエストのときだけ行い、設定は1分・使用量は5分
 // 同じ実行環境で使い回す(古い使用量はすぐ返して裏で取り直す)。
@@ -62,16 +67,25 @@ export const SERVICE_GUARD_DEFAULTS = {
   enabled: true,
   thresholdPercent: 80,
   targets: ["data_search", "admin_bulk", "nightly"],
+  writeThresholdPercent: 80,
+  writeTargets: ["imports", "admin_bulk"],
   manualPause: false,
   overrideUntil: null,
 };
 
+const percentOf = (v, fallback) => {
+  const t = Number(v);
+  return Number.isFinite(t) ? Math.min(99, Math.max(10, Math.round(t))) : fallback;
+};
+const featureKeys = (list) => (Array.isArray(list) ? list : []).filter((k) => SERVICE_GUARD_FEATURES[k]);
+
 function normalizeSettings(raw) {
   const s = { ...SERVICE_GUARD_DEFAULTS, ...(raw && typeof raw === "object" ? raw : {}) };
   s.enabled = Boolean(s.enabled);
-  const t = Number(s.thresholdPercent);
-  s.thresholdPercent = Number.isFinite(t) ? Math.min(99, Math.max(10, Math.round(t))) : SERVICE_GUARD_DEFAULTS.thresholdPercent;
-  s.targets = (Array.isArray(s.targets) ? s.targets : []).filter((k) => SERVICE_GUARD_FEATURES[k]);
+  s.thresholdPercent = percentOf(s.thresholdPercent, SERVICE_GUARD_DEFAULTS.thresholdPercent);
+  s.targets = featureKeys(s.targets);
+  s.writeThresholdPercent = percentOf(s.writeThresholdPercent, SERVICE_GUARD_DEFAULTS.writeThresholdPercent);
+  s.writeTargets = featureKeys(s.writeTargets);
   s.manualPause = Boolean(s.manualPause);
   s.overrideUntil = s.overrideUntil ? String(s.overrideUntil) : null;
   return s;
@@ -103,11 +117,13 @@ export async function saveServiceGuardSettings(db, settings) {
   return s;
 }
 
-// 今止めているか。{ active, reason: "manual"|"usage"|null, ratio, settings, usage }
+// 今止めているか。{ active, reason: "manual"|"usage"|null, readActive, writeActive, ratio, readRatio, writeRatio, settings, usage }
+// readActive … 読み取りがしきい値以上(targets を止める)、writeActive … 書き込みがしきい値以上(writeTargets を止める)
 export async function getServiceGuardState(env, { waitUntil = null, freshUsage = false, settings = null } = {}) {
   const s = settings || (await getServiceGuardSettings(env.DB));
-  if (s.manualPause) return { active: true, reason: "manual", ratio: null, settings: s, usage: null };
-  if (!s.enabled || !env.CF_ANALYTICS_TOKEN) return { active: false, reason: null, ratio: null, settings: s, usage: null };
+  const none = { ratio: null, readRatio: null, writeRatio: null, settings: s, usage: null };
+  if (s.manualPause) return { ...none, active: true, reason: "manual", readActive: true, writeActive: true };
+  if (!s.enabled || !env.CF_ANALYTICS_TOKEN) return { ...none, active: false, reason: null, readActive: false, writeActive: false };
   let usage = null;
   try {
     usage = await getD1Usage(env.CF_ANALYTICS_TOKEN, { maxAgeMs: USAGE_MAX_AGE_MS, fresh: freshUsage, waitUntil });
@@ -115,9 +131,13 @@ export async function getServiceGuardState(env, { waitUntil = null, freshUsage =
     usage = null; // 使用量が取れないときは止めない
   }
   const ratio = d1UsageRatio(usage);
+  const readRatio = ratio === null ? null : usage.total.rowsRead / usage.limits.rowsRead;
+  const writeRatio = ratio === null ? null : usage.total.rowsWritten / usage.limits.rowsWritten;
   const overridden = s.overrideUntil && Date.parse(s.overrideUntil) > Date.now();
-  const active = ratio !== null && ratio * 100 >= s.thresholdPercent && !overridden;
-  return { active, reason: active ? "usage" : null, ratio, settings: s, usage };
+  const readActive = readRatio !== null && readRatio * 100 >= s.thresholdPercent && !overridden;
+  const writeActive = writeRatio !== null && writeRatio * 100 >= s.writeThresholdPercent && !overridden;
+  const active = readActive || writeActive;
+  return { active, reason: active ? "usage" : null, readActive, writeActive, ratio, readRatio, writeRatio, settings: s, usage };
 }
 
 // _middleware.js から呼ぶ。止める対象の機能へのリクエストで、今止めているなら 503 の応答を返す(それ以外は null)。
@@ -130,11 +150,17 @@ export async function serviceGuardResponse(context) {
   }
   if (!feature) return null;
   const settings = await getServiceGuardSettings(env.DB);
-  if (!settings.targets.includes(feature)) return null; // 手動停止も「止める機能」に選んだものだけ止める
+  const byRead = settings.targets.includes(feature), byWrite = settings.writeTargets.includes(feature);
+  if (!byRead && !byWrite) return null; // 手動停止も「止める機能」に選んだものだけ止める
   const state = await getServiceGuardState(env, { settings, waitUntil: context.waitUntil?.bind(context) });
-  if (!state.active) return null;
+  const stopByWrite = byWrite && state.writeActive;
+  if (!(byRead && state.readActive) && !stopByWrite) return null;
+  // 書き込みで止めた取り込み等は、その日のうちには再開しないことが多い(書き込みは減らない)ので、やり直す時刻を書く
+  const error = stopByWrite && state.reason === "usage"
+    ? "ただいまデータベースへの書き込みが多いため、この機能を一時的に停止しています。日本時間の朝9時以降にもう一度お試しください。"
+    : "ただいま混雑のため、この機能を一時的に停止しています。時間をおいてお試しください。";
   return new Response(
-    JSON.stringify({ error: "ただいま混雑のため、この機能を一時的に停止しています。時間をおいてお試しください。", guard: true }),
+    JSON.stringify({ error, guard: true }),
     { status: 503, headers: { "Content-Type": "application/json", "X-Service-Guard": "1", "Retry-After": "600" } }
   );
 }
