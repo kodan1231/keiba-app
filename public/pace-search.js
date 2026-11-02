@@ -6,7 +6,7 @@
 //
 // 入力 races: [{ race_id, race_date, pace_type, runners: [{ horse_number, place(1〜3。それ以外0), scores: [7要素の点], adj: [0/1 ×6] }] }]
 //   scores の並びは FACTORS の順(サーバーの _lib/race-factors.js の FACTOR_KEYS と同じ)。評価点は掛けていない点。
-//   adj は評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・間隔。ADJUST_KEYS の順。2026-10-14追加。古い採点で足りなければ0)。
+//   adj は評価点の印(初距離・初競馬場・継続騎乗・前年掲示板・前年1着・間隔・中央騎手・地元騎手〈2026-11-03〉。ADJUST_KEYS の順。2026-10-14追加。古い採点で足りなければ0)。
 //   間隔(2026-10-15)は総合点から直接引く(1/0)。同日に足した位置取りは、展開の点に脚質を入れたため同日に削除
 // 規則:
 //   - 軸指数の比率: その指数1位の馬(軸)が3着以内に入ったレースが一番多い比率(同じなら1着 → 2着以内 → 均等に近い方。1位の同点は按分)
@@ -19,7 +19,7 @@
 //     よりよい比率を見落としていた(過去の重賞156レースの試算で、選ぶときに使わなかった年の軸の3着以内 29.5% → 41.0%)
 //     2026-10-15 に8要素(週目)になり、出発点は各要素30%・残り10%の8通り+(20,20,10,…)、移し方は最大56通り
 //   - 評価点(2026-10-14 ユーザー要望。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): 初距離・初競馬場はタイムの点から引き、
-//     継続騎乗は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。間隔(2026-10-15)は総合点から直接引く。
+//     継続騎乗・中央騎手・地元騎手(2026-11-03。地方のレースだけ。下限 中央10・地元5)は騎手の点、前年の同レース(掲示板・1着。重賞だけ)は同コースの点に足す(偏差値の点)。間隔(2026-10-15)は総合点から直接引く。
 //     間隔は全レース共通(GLOBAL_ADJUST_KEYS)で、重賞・コースの計算では動かさず既定値のまま。「評価点の既定値」の自動計算(採点の kind="all")だけ選ぶ。全体の軸の比率(既定の評価点で選ぶ)を決めた後、
 //     その比率のまま評価点を1つずつ 0〜30(5刻み)で動かして選ぶ(最大3周)。ものさし(2026-10-14 変更。ユーザー確認済み)は
 //     「並びの一致」= 各レースで、3着以内の馬と3着外の馬の組のうち、3着以内の馬の指数が上だった割合(同じなら半分)の平均。
@@ -36,12 +36,16 @@ export const PACE_TYPES = ["high", "middle", "slow"];
 // 比率を選ぶのに使っていないレースの試算で、◎の補正タイムが40点未満のレースが 南関東 3.2% → 0.2%・重賞 4.7% → 0.4%、
 // ◎の複勝圏が 南関東 47.3% → 49.4%(ペースごとは全体と半分ずつ混ぜたとき)・重賞 35.7% → 36.8%
 export const TIME_MIN_WEIGHT = 30;
-export const METHOD_VERSION = 17; // サーバー側 detail.version と同じ意味(17: 2026-10-25 補正タイムの比率は30%以上。16: 2026-10-18 総当たり・差がつかない要素を外す・重賞はペースごとを作らない。15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
+export const METHOD_VERSION = 18; // サーバー側 detail.version と同じ意味(18: 2026-11-03 評価点に中央騎手。17: 2026-10-25 補正タイムの比率は30%以上。16: 2026-10-18 総当たり・差がつかない要素を外す・重賞はペースごとを作らない。15: 2026-10-15 展開の点に脚質・位置取りを削除・間隔。14: 評価点に位置取り。11: 2026-10-14 計算をブラウザ・夜間へ移した。12: 評価点も選ぶ。13: 評価点のものさしを並びの一致に)
 // 評価点(サーバーの _lib/race-factors.js の ADJUST_KEYS・DEFAULT_ADJUST と同じ)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff", "jra_jockey", "home_jockey"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 };
 export const GLOBAL_ADJUST_KEYS = ["layoff"];
+// 項目ごとの選ぶ値の下限(2026-11-03。中央騎手は10以上・地元騎手は5以上。ユーザー要望)
+export const ADJUST_MIN_BY_KEY = { jra_jockey: 10, home_jockey: 5 };
 const I_LAYOFF = ADJUST_KEYS.indexOf("layoff");
+const I_JRA = ADJUST_KEYS.indexOf("jra_jockey");
+const I_HOME = ADJUST_KEYS.indexOf("home_jockey");
 const NA = ADJUST_KEYS.length;
 const ADJUST_VALUES = [0, 5, 10, 15, 20, 25, 30];
 const ADJUST_ROUNDS = 3;
@@ -79,7 +83,7 @@ function fillTotals(r, w) {
     for (let k = 0; k < F; k++) t += w[k] * S[h * F + k];
     if (adj) {
       const a = h * NA;
-      t += w[I_TIME] * -((adj[0] || 0) * A[a] + (adj[1] || 0) * A[a + 1]) + w[I_JOCKEY] * (adj[2] || 0) * A[a + 2]
+      t += w[I_TIME] * -((adj[0] || 0) * A[a] + (adj[1] || 0) * A[a + 1]) + w[I_JOCKEY] * ((adj[2] || 0) * A[a + 2] + (adj[I_JRA] || 0) * A[a + I_JRA] + (adj[I_HOME] || 0) * A[a + I_HOME])
         + w[I_COURSE] * ((adj[3] || 0) * A[a + 3] + (adj[4] || 0) * A[a + 4])
         - wSum * (adj[I_LAYOFF] || 0) * A[a + I_LAYOFF]; // 間隔: 総合点(Σ比率×点 ÷ Σ比率)から直接引くので Σ比率 を掛ける
     }
@@ -108,9 +112,11 @@ function orderAgreement(r, w) {
 // 評価点を選ぶ(全体の軸の比率 axisArr で、並びの一致の平均が一番高い値。1つずつ動かす)。def: 既定値(配列)
 // fixed: 動かさない項目の位置(重賞・コースの計算では全レース共通の項目)
 // adjustMin(2026-10-28): 選ぶ値の下限(評価点の既定値の自動計算は5。0を選ばない)。既定値が下限より小さければ下限にしてから選ぶ
+// 項目ごとの下限(ADJUST_MIN_BY_KEY。2026-11-03)も同じ扱い
 function searchAdjust(rs, axisArr, def0, fixed = [], adjustMin = 0) {
-  const def = def0.map((v, i) => (fixed.includes(i) ? v : Math.max(v, adjustMin)));
-  const values = ADJUST_VALUES.filter((v) => v >= adjustMin);
+  const minOf = (i) => Math.max(adjustMin, ADJUST_MIN_BY_KEY[ADJUST_KEYS[i]] || 0);
+  const def = def0.map((v, i) => (fixed.includes(i) ? v : Math.max(v, minOf(i))));
+  const valuesOf = (i) => ADJUST_VALUES.filter((v) => v >= minOf(i));
   const r2 = (x) => Math.round(x * 100) / 100;
   const evalAdj = (adj) => {
     let agree = 0, cnt = 0, win = 0, quin = 0, show = 0;
@@ -131,7 +137,7 @@ function searchAdjust(rs, axisArr, def0, fixed = [], adjustMin = 0) {
     let moved = false;
     for (let i = 0; i < def.length; i++) {
       if (fixed.includes(i)) continue;
-      for (const v of values) {
+      for (const v of valuesOf(i)) {
         if (v === best.adj[i]) continue;
         const a = [...best.adj];
         a[i] = v;

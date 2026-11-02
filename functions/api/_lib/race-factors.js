@@ -49,6 +49,7 @@ import { buildTrackTrends, trackTimeOffsets, condOffOf, sameTrackDistanceRatio, 
 import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 import { pairDistanceRatioOf } from "./distance-ratios.js";
+import { JRA_TRACKS } from "./guest.js";
 
 // 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加。2026-10-15: week(週目)を追加
 export const FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"];
@@ -129,13 +130,30 @@ export function weightAdjOf(todayKg, runKg, secPerKg = DEFAULT_WEIGHT_SEC_PER_KG
 //   - 間隔(layoff。2026-10-15 ユーザー要望・仕様確認済み): 前走(取消・除外を除く一番新しい走。中止は含む)の6か月後の同じ日以降のレース
 //     (例: 前走 4/20 → 10/20 以降。月末は短い月に合わせる)なら、**総合点(軸指数・相手指数)から直接**引く。どの要素の点も変えない。
 //     **全レース共通**の値だけ(管理画面「評価点の既定値」。重賞・コースごとには持たない = GLOBAL_ADJUST_KEYS)。初出走の馬には掛けない。印 lo は 1/0
+//   - 中央騎手(jra_jockey。2026-11-03 ユーザー要望・仕様確認済み): 騎手の点に足す。地方のレース(競馬場が中央10場〈JRA_TRACKS〉以外)で、
+//     今回の騎手が中央所属。所属の情報は無いため、直前の12か月(今回の月は含まない。月ごとに数える)の騎乗で、中央10場の騎乗が地方の騎乗より
+//     多い騎手を中央所属とみなす(ctx.jockeyHomeOf)。重賞・コースごとに自動で選ぶ(下限10。public/pace-search.js の ADJUST_MIN_BY_KEY)。印 cr は 1/0
+//   - 地元騎手(home_jockey。2026-11-03 ユーザー要望・仕様確認済み): 騎手の点に足す。地方のレースで、今回の騎手の同じ12か月の騎乗が
+//     一番多い競馬場(同数なら並んだどれも)が今回の競馬場(その競馬場の所属とみなす)。中央騎手に当たる騎手は中央騎手を優先(両方は掛けない)。
+//     下限5。印 ch は 1/0。中央騎手・地元騎手のどちらでもない騎手は加点なし
 //   いずれもその要素のデータがある馬だけ(データ無しの点の馬には掛けない)。値は偏差値の点。重賞・コースごとに自動で選ぶか管理者が入力し、
 //   無ければ管理画面の既定値(_lib/pace-settings.js)。どれを使うかは _lib/pace-score.js の getPaceWeights(adjust)
-export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5 };
+export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff", "jra_jockey", "home_jockey"];
+export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 };
 // 全レース共通の評価点(重賞・コースごとの評価点には持たない。設定の既定値だけ使う)
 export const GLOBAL_ADJUST_KEYS = ["layoff"];
-const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", layoff: "間隔" };
+const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", layoff: "間隔", jra_jockey: "中央騎手", home_jockey: "地元騎手" };
+// 中央所属・地元(一番多く乗る競馬場)とみなすのに数える騎乗の期間(か月。今回の月の前の月から)
+const JRA_JOCKEY_MONTHS = 12;
+const monthIndexOf = (iso) => {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})/);
+  return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : null;
+};
+// 地方のレースか(中央10場以外。競馬場が無ければ false)
+export function isLocalRace(race) {
+  const t = String(race?.track || "").trim();
+  return Boolean(t) && !JRA_TRACKS.includes(t);
+}
 const LAYOFF_MONTHS = 6;
 
 // "YYYY-MM-DD" の months か月後の同じ日(無い日は月末)
@@ -174,7 +192,7 @@ export function paceFavoredRank(list) {
   return rankBy(withV, (x) => -x.v);
 }
 
-// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj, pb, pw }(0/1)、
+// 1頭の要素の点に評価点を掛ける。factors: { f: { score, missing, value, ... } }、flags: { fd, ft, cj, pb, pw, cr, ch }(0/1)、
 // adjust: { first_distance, …, prev_win }(足りない項目は0)。戻り値は新しい factors(pace・time・jockey・course だけ作り直す)
 export function applyAdjust(factors, flags, adjust) {
   if (!adjust || !flags) return factors;
@@ -193,7 +211,7 @@ export function applyAdjust(factors, flags, adjust) {
     if (d) out[f] = { ...x, score: x.score + d, value: `${x.value || ""} ${notes.join(" ")}`.trim() };
   };
   mod("time", [["first_distance", -1, flags.fd], ["first_track", -1, flags.ft]]);
-  mod("jockey", [["same_jockey", 1, flags.cj]]);
+  mod("jockey", [["same_jockey", 1, flags.cj], ["jra_jockey", 1, flags.cr], ["home_jockey", 1, flags.ch]]);
   mod("course", [["prev_board", 1, flags.pb], ["prev_win", 1, flags.pw]]);
   return out;
 }
@@ -381,10 +399,49 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     return (allCounts[kind] = out);
   };
 
+  // 中央騎手・地元騎手(2026-11-03): 騎手キー -> Map(月の通し番号 -> Map(競馬場 -> 騎乗数))。地方のレースで初めて要るときに1回だけ数える
+  let ridesByMonth = null;
+  const homeMemo = new Map();
+  // 今回の月の前の JRA_JOCKEY_MONTHS か月の騎乗から { jra(中央10場の騎乗が地方より多い), top(一番多く乗った競馬場の Set。同数は全部) }
+  const jockeyHomeOf = (jk, iso) => {
+    const mi = monthIndexOf(iso);
+    if (!jk || mi == null) return { jra: false, top: new Set() };
+    const mk = `${jk}|${mi}`;
+    let v = homeMemo.get(mk);
+    if (v !== undefined) return v;
+    if (!ridesByMonth) {
+      ridesByMonth = new Map();
+      const S = LINEUP_STRIDE;
+      for (const r of lineups) {
+        const flat = r.flat, m = monthIndexOf(r.race_date), t = String(r.track || "").trim();
+        if (!flat || m == null || !t) continue;
+        const jks = keysOfDict(r.dict);
+        for (let i = 0; i < flat.length; i += S) {
+          const k = flat[i + 1] >= 0 ? jks[flat[i + 1]] : "";
+          if (!k) continue;
+          let byM = ridesByMonth.get(k);
+          if (!byM) ridesByMonth.set(k, (byM = new Map()));
+          let c = byM.get(m);
+          if (!c) byM.set(m, (c = new Map()));
+          c.set(t, (c.get(t) || 0) + 1);
+        }
+      }
+    }
+    const byTrack = new Map();
+    const byM = ridesByMonth.get(jk);
+    if (byM) for (let m = mi - JRA_JOCKEY_MONTHS; m < mi; m++) for (const [t, n] of byM.get(m) || []) byTrack.set(t, (byTrack.get(t) || 0) + n);
+    let jra = 0, local = 0, max = 0;
+    for (const [t, n] of byTrack) { if (JRA_TRACKS.includes(t)) jra += n; else local += n; if (n > max) max = n; }
+    const top = new Set([...byTrack].filter(([, n]) => max > 0 && n === max).map(([t]) => t));
+    v = { jra: jra > local, top };
+    homeMemo.set(mk, v);
+    return v;
+  };
+
   // 芝ダ障・距離ごとの勝ちタイム(補正値と平均)
   const courseOf = makeCourseOf(raceTimes);
 
-  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf, weekBandOf };
+  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf, weekBandOf, jockeyHomeOf };
   contextCache.set(lineups, { raceTimes, aliasMap, ctx });
   return ctx;
 }
@@ -447,13 +504,14 @@ export function convertTime(ctx, sec, run, race, distanceRatios = null) {
 // opts.missingScore: データの無い馬の点(偏差値。設定 getPaceScoreSettings の missing_score。省略時は既定40)
 // opts.adjust: 評価点 { first_distance, …, prev_win }(null なら掛けない。過去の採点〈比率の計算の材料〉は掛けずに flags を渡す)
 // opts.prevRaceId: 前年の同じ重賞のレースID(重賞でなければ・前年が無ければ null)
-// 戻り値の flags: Map(key -> { fd, ft, cj, pb, pw, po, lo })(評価点の印。その要素のデータがある馬だけ 1〈po は ±1〉。runsByHorse の各走に jockey が要る)
+// 戻り値の flags: Map(key -> { fd, ft, cj, pb, pw, po, lo, cr, ch })(評価点の印。その要素のデータがある馬だけ 1〈po は ±1〉。runsByHorse の各走に jockey が要る)
 // 戻り値の totalAdjust: Map(key -> { value, note })(総合点へ直接足す点。間隔。adjust があるときだけ)
 // opts.weightSecPerKg: 斤量1kgあたりの補正の秒数(設定 getPaceScoreSettings の weight_sec_per_kg。省略時は既定0.1)。runsByHorse の各走に weight_carried が要る
 // opts.distanceRatios: 同じ馬の組から出した距離の比(2026-10-16。_lib/distance-ratios.js の getDistanceRatios。省略可)
 export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG, distanceRatios = null } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
+  const localRace = isLocalRace(race);
 
   // 戦績: 脚質・タイム・上がり
   const styles = [];
@@ -477,6 +535,11 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 評価点の印(2026-10-14): 同じ芝ダ障・距離 / 同じ競馬場・芝ダ障を完走したか、今回の騎手が乗ったことがあるか
     let ranDistance = false, ranTrack = false, rodeBefore = false, prevPos = null;
     const jkNow = ctx.keyOf(h.jockey);
+    // 中央騎手・地元騎手(2026-11-03): 地方のレースで、今回の騎手が中央所属か、今回の競馬場に一番多く乗っているか(直前の12か月の騎乗で判定)。
+    // 両方に当たれば中央騎手だけ
+    const home = localRace && jkNow ? ctx.jockeyHomeOf(jkNow, date) : null;
+    const jraJockey = Boolean(home?.jra);
+    const homeJockey = Boolean(home && !home.jra && home.top.has(String(race.track).trim()));
     for (const x of runs) {
       if (jkNow && x.status !== "scratched" && x.status !== "excluded" && x.jockey && ctx.keyOf(x.jockey) === jkNow) rodeBefore = true;
       if (x.status !== "finished") continue;
@@ -518,7 +581,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       : lastRuns.length ? pickTimeRuns(lastRuns.map((c) => ({ ...c, tier: 1 })), date, { recent: false })
       : pickTimeRuns(timeCands, date);
     if (sel) ({ time, tier: timeTier, run: timeRun, kgAdj: timeKgAdj, used: timeUsed, total: timeTotal } = sel);
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal, timeMode };
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, jraJockey, homeJockey, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal, timeMode };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -725,7 +788,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   for (const x of horses) {
     const timeOk = !factors.time.get(x.key)?.missing, jkOk = !factors.jockey.get(x.key)?.missing;
     flags.set(x.key, {
-      fd: timeOk && !x.ranDistance ? 1 : 0, ft: timeOk && !x.ranTrack ? 1 : 0, cj: jkOk && x.rodeBefore ? 1 : 0,
+      fd: timeOk && !x.ranDistance ? 1 : 0, ft: timeOk && !x.ranTrack ? 1 : 0, cj: jkOk && x.rodeBefore ? 1 : 0, cr: jkOk && x.jraJockey ? 1 : 0, ch: jkOk && x.homeJockey ? 1 : 0,
       pw: x.prevPos === 1 ? 1 : 0, pb: x.prevPos >= 2 && x.prevPos <= BOARD_POSITION ? 1 : 0,
       lo: x.layoff ? 1 : 0,
     });
