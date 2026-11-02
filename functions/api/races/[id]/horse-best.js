@@ -23,7 +23,6 @@ import {
   addMonthsIso,
   TIME_RECENT_MONTHS,
   PAST_RUNS_FOR_NEW_COURSE,
-  TIME_LAST_RUNS_ALWAYS,
   memoizedKeyed,
   textFingerprint,
 } from "../../_shared.js";
@@ -215,11 +214,10 @@ async function buildBest(env, race) {
       const kgAdj = weightAdjOf(todayKgByName.get(name), row.weight_carried, secPerKg);
       const corrected = Math.round((c.seconds + kgAdj) * 100) / 100;
       // 候補として持っておき、最後に選ぶ(下の pickTimeRuns)。
-      //   pool: 同じ距離(全場)と同じ競馬場の ±200m は "course"(経験のある馬に使う)、それ以外は "other"(初コースの馬の過去5走だけで使う)
+      //   sameCourse: 今回のコースの走(経験のある馬はこれだけを使う。2026-11-02)。それ以外は初コースの馬の過去5走だけで使う
       //   run_distance: 距離を換算した走ならその距離、run_track_converted: ほかの競馬場の別の距離を換算した走(画面の表示用)
       (candsByName.get(name) || candsByName.set(name, []).get(name)).push({
         tier: 1, c: corrected, date: String(row.race_date), num: Number(row.race_number) || 0, kgAdj,
-        pool: sameDistance || (sameTrack && Math.abs(runDist - d) <= 200) ? "course" : "other",
         sameCourse: sameTrack && sameDistance,
         info: { ...timeInfo(row, sec, base), corrected_seconds: corrected, adj: c.adj, partial: c.partial, kg_adj: kgAdj, today_weight: todayKgByName.get(name) ?? null,
           run_distance: sameDistance ? null : runDist },
@@ -227,19 +225,19 @@ async function buildBest(env, race) {
     }
   }
   // 補正タイム(_lib/race-factors.js の pickTimeRuns。総合推奨馬と同じ選び方):
-  //   今回の競馬場で今回の距離を走ったことがある馬 → 直近1年の「同じ距離(全場)+同じ競馬場の ±200m」(無ければ全期間)の
-  //     最速と最遅を除いた平均(2026-10-16)
+  //   今回の競馬場で今回の距離を走ったことがある馬 → 直近1年のそのコースの走(無ければ全期間)の
+  //     最遅だけを除いた平均(2026-11-02。最速は除かない。以前は同じ距離〈全場〉+同じ競馬場の ±200m+直近2走の最速と最遅を除いた平均)
   //   ない馬(初コース) → 同じ芝ダの過去5走(期間は問わない)をすべて換算し、最速と最遅を除いた平均(2026-10-16 ユーザー要望)
   // corrected_seconds は平均、そのほかの項目(元のタイム・競馬場・馬場・補正・斤量・その走)は使った中の最速の走。
   // runs_used: 平均に使った走数、runs_total: 対象の走数、recent_only: 直近1年だけで出したか、mode: "course" | "last"(初コース)
   for (const [name, cands] of candsByName) {
-    const ranCourse = cands.some((r) => r.sameCourse);
+    // 2026-11-02: 今回のコースを走ったことがある馬は、そのコースの走だけ(_lib/race-factors.js の computeRaceFactors と同じ)。
+    // 以前は同じ距離(全場)・同じ競馬場の ±200m・直近2走(2026-10-25〜)も混ぜていた
+    const courseRuns = cands.filter((r) => r.sameCourse);
+    const ranCourse = courseRuns.length > 0;
     const newestFirst = [...cands].sort((a, b) => b.date.localeCompare(a.date) || b.num - a.num);
-    const last = ranCourse ? [] : newestFirst.slice(0, PAST_RUNS_FOR_NEW_COURSE);
-    // 2026-10-25: 経験のある馬も、直近2走(同じ芝ダ。距離・競馬場は問わない)は入れる(_lib/race-factors.js の TIME_LAST_RUNS_ALWAYS と同じ)
-    const recentTwo = new Set(newestFirst.slice(0, TIME_LAST_RUNS_ALWAYS));
-    const pool = ranCourse ? cands.filter((r) => r.pool === "course" || recentTwo.has(r)) : last;
-    const sel = ranCourse ? pickTimeRuns(pool, race.race_date) : pickTimeRuns(pool, race.race_date, { recent: false });
+    const pool = ranCourse ? courseRuns : newestFirst.slice(0, PAST_RUNS_FOR_NEW_COURSE);
+    const sel = ranCourse ? pickTimeRuns(pool, race.race_date, { dropFastest: false }) : pickTimeRuns(pool, race.race_date, { recent: false });
     if (!sel) continue;
     const fastest = sel.runs[0].info;
     const from = addMonthsIso(race.race_date, -TIME_RECENT_MONTHS);
