@@ -26,8 +26,9 @@
 //     差し替えを保存するときに、印が1のままの控えだけを消す(同じ batch の中。保存が失敗すれば控えも残る)。
 //   - 差し替えは「読んだときの行(updated_at)」が今も同じときだけ保存する(別の実行環境が先に差し替えていたら保存せず、
 //     控えも残して次回やり直す)。
-//   - 差し替えの仕組みが無い表(horse_names_cache。中身が範囲ごとの合計で、レースごとに引けない)は、その範囲を作り直す。
-//     ただし minRebuildMs より新しい行は作り直さず、少し古い内容のまま使う(取り込みが続く日に作り直しを1回にまとめる)。
+//   - 差し替えの仕組みが無い表と、変わったレースが MAX_PATCH_RACES を超えたときは、その範囲を作り直す。
+//     ただし minRebuildMs を渡した表は、それより新しい行は作り直さず、少し古い内容のまま使う(作り直しを1回にまとめる)。
+//     (2026-11-02〜 horse_names_cache もレースごとの形にして差し替える。以前は差し替えが無く、取り込みのたびに範囲を作り直していた)
 //   - 控えの表が無い(マイグレーション前)ときは、以前と同じく「トリガーが消した範囲を作り直す」だけで正しく動く。
 
 export const RANGE_SIZE = 200;
@@ -139,7 +140,8 @@ function clearDirtyStatements(db, table, ids, guard = null) {
 // version: payload の版数(省略時 PAYLOAD_VERSION)。中身の形を変えたら上げると、その表だけ全部作り直す。
 // patch(payload, idSet, partial): 範囲の payload から idSet のレースを除き、partial(build(db,{ids}) のその範囲の分。
 //   無ければ null = レースが消えた)を足した新しい payload を返す(payload は書き換えず新しく作る)。無い表はその範囲を作り直す。
-// minRebuildMs: patch の無い表で、控えのある範囲を作り直すのは、行の保存からこの時間が過ぎてから(既定0=すぐ)。
+// minRebuildMs: 控えのある範囲を差し替えずに作り直すとき(patch が無い・変わったレースが多すぎる)、作り直すのは行の保存から
+//   この時間が過ぎてから(既定0=すぐ)。
 // 戻り値: 範囲の番号順の payload オブジェクトの配列。
 export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERSION, patch = null, minRebuildMs = 0 } = {}) {
   const dirtyIds = await claimDirty(db, table);
@@ -176,7 +178,7 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
   const dirtyRaceCount = dirtyInHave.reduce((s, ci) => s + dirtyByChunk.get(ci).length, 0);
   for (const ci of dirtyInHave) {
     if (patch && dirtyRaceCount <= MAX_PATCH_RACES) patchChunks.push(ci);
-    else if (!patch && minRebuildMs > 0 && Date.now() - tokenTime(tokens.get(ci)) < minRebuildMs) continue; // 少し古いまま使う
+    else if (minRebuildMs > 0 && Date.now() - tokenTime(tokens.get(ci)) < minRebuildMs) continue; // 少し古いまま使う
     else rebuildChunks.add(ci);
   }
 
