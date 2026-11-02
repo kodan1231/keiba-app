@@ -133,8 +133,10 @@ export function weightAdjOf(todayKg, runKg, secPerKg = DEFAULT_WEIGHT_SEC_PER_KG
 //   - 中央騎手(jra_jockey。2026-11-03 ユーザー要望・仕様確認済み): 騎手の点に足す。地方のレース(競馬場が中央10場〈JRA_TRACKS〉以外)で、
 //     今回の騎手が中央所属。所属の情報は無いため、直前の12か月(今回の月は含まない。月ごとに数える)の騎乗で、中央10場の騎乗が地方の騎乗より
 //     多い騎手を中央所属とみなす(ctx.jockeyHomeOf)。重賞・コースごとに自動で選ぶ(下限10。public/pace-search.js の ADJUST_MIN_BY_KEY)。印 cr は 1/0
-//   - 地元騎手(home_jockey。2026-11-03 ユーザー要望・仕様確認済み): 騎手の点に足す。地方のレースで、今回の騎手の同じ12か月の騎乗が
-//     一番多い競馬場(同数なら並んだどれも)が今回の競馬場(その競馬場の所属とみなす)。中央騎手に当たる騎手は中央騎手を優先(両方は掛けない)。
+//   - 地元騎手(home_jockey。2026-11-03 ユーザー要望・仕様確認済み): 騎手の点に足す。地方のレースで、同じ12か月に今回の競馬場で行われた
+//     レース(集計用キャッシュにあるもの)が HOME_MIN_RACES(10)以上あり、今回の騎手がその HOME_MIN_SHARE(10%)を超える割合のレースに乗った
+//     (その競馬場の所属とみなす。盛岡と水沢・南関東の4場など複数の競馬場もありうる。ユーザー確認済み)。中央騎手に当たる騎手は中央騎手を優先(両方は掛けない)。
+//     同日の最初の案「一番多く乗った競馬場」は、取り込みの少ない競馬場の騎手を誤った(金沢の吉原寛人が、取り込みの多い大井の所属になった)。
 //     下限5。印 ch は 1/0。中央騎手・地元騎手のどちらでもない騎手は加点なし
 //   いずれもその要素のデータがある馬だけ(データ無しの点の馬には掛けない)。値は偏差値の点。重賞・コースごとに自動で選ぶか管理者が入力し、
 //   無ければ管理画面の既定値(_lib/pace-settings.js)。どれを使うかは _lib/pace-score.js の getPaceWeights(adjust)
@@ -145,6 +147,9 @@ export const GLOBAL_ADJUST_KEYS = ["layoff"];
 const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", layoff: "間隔", jra_jockey: "中央騎手", home_jockey: "地元騎手" };
 // 中央所属・地元(一番多く乗る競馬場)とみなすのに数える騎乗の期間(か月。今回の月の前の月から)
 const JRA_JOCKEY_MONTHS = 12;
+// 地元騎手: その競馬場のレースのこの割合を超えて乗れば地元(その競馬場のレースが HOME_MIN_RACES 以上あるときだけ)
+const HOME_MIN_SHARE = 0.1;
+const HOME_MIN_RACES = 10;
 const monthIndexOf = (iso) => {
   const m = String(iso || "").match(/^(\d{4})-(\d{2})/);
   return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : null;
@@ -399,26 +404,34 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     return (allCounts[kind] = out);
   };
 
-  // 中央騎手・地元騎手(2026-11-03): 騎手キー -> Map(月の通し番号 -> Map(競馬場 -> 騎乗数))。地方のレースで初めて要るときに1回だけ数える
-  let ridesByMonth = null;
+  // 中央騎手・地元騎手(2026-11-03): 騎手キー -> Map(月の通し番号 -> Map(競馬場 -> 騎乗したレース数))と、
+  // 競馬場 -> Map(月の通し番号 -> レース数)。地方のレースで初めて要るときに1回だけ数える
+  let ridesByMonth = null, racesByMonth = null;
   const homeMemo = new Map();
-  // 今回の月の前の JRA_JOCKEY_MONTHS か月の騎乗から { jra(中央10場の騎乗が地方より多い), top(一番多く乗った競馬場の Set。同数は全部) }
+  // 今回の月の前の JRA_JOCKEY_MONTHS か月の騎乗から { jra(中央10場の騎乗が地方より多い), homes(地元とみなす地方の競馬場の Set) }。
+  // 地元 = その競馬場のレースが HOME_MIN_RACES 以上あり、その HOME_MIN_SHARE を超える割合のレースに乗った(複数の競馬場もありうる)
   const jockeyHomeOf = (jk, iso) => {
     const mi = monthIndexOf(iso);
-    if (!jk || mi == null) return { jra: false, top: new Set() };
+    if (!jk || mi == null) return { jra: false, homes: new Set() };
     const mk = `${jk}|${mi}`;
     let v = homeMemo.get(mk);
     if (v !== undefined) return v;
     if (!ridesByMonth) {
       ridesByMonth = new Map();
+      racesByMonth = new Map();
       const S = LINEUP_STRIDE;
       for (const r of lineups) {
         const flat = r.flat, m = monthIndexOf(r.race_date), t = String(r.track || "").trim();
         if (!flat || m == null || !t) continue;
+        let rm = racesByMonth.get(t);
+        if (!rm) racesByMonth.set(t, (rm = new Map()));
+        rm.set(m, (rm.get(m) || 0) + 1);
         const jks = keysOfDict(r.dict);
+        const seen = new Set(); // 同じレースの同じ騎手は1回(騎手名の表記ゆれで2頭に出ることがあっても)
         for (let i = 0; i < flat.length; i += S) {
           const k = flat[i + 1] >= 0 ? jks[flat[i + 1]] : "";
-          if (!k) continue;
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
           let byM = ridesByMonth.get(k);
           if (!byM) ridesByMonth.set(k, (byM = new Map()));
           let c = byM.get(m);
@@ -427,13 +440,19 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
         }
       }
     }
+    const sumMonths = (byM, f) => { if (byM) for (let m = mi - JRA_JOCKEY_MONTHS; m < mi; m++) { const c = byM.get(m); if (c) f(c); } };
     const byTrack = new Map();
-    const byM = ridesByMonth.get(jk);
-    if (byM) for (let m = mi - JRA_JOCKEY_MONTHS; m < mi; m++) for (const [t, n] of byM.get(m) || []) byTrack.set(t, (byTrack.get(t) || 0) + n);
-    let jra = 0, local = 0, max = 0;
-    for (const [t, n] of byTrack) { if (JRA_TRACKS.includes(t)) jra += n; else local += n; if (n > max) max = n; }
-    const top = new Set([...byTrack].filter(([, n]) => max > 0 && n === max).map(([t]) => t));
-    v = { jra: jra > local, top };
+    sumMonths(ridesByMonth.get(jk), (c) => { for (const [t, n] of c) byTrack.set(t, (byTrack.get(t) || 0) + n); });
+    let jra = 0, local = 0;
+    const homes = new Set();
+    for (const [t, n] of byTrack) {
+      if (JRA_TRACKS.includes(t)) { jra += n; continue; }
+      local += n;
+      let held = 0;
+      sumMonths(racesByMonth.get(t), (c) => { held += c; });
+      if (held >= HOME_MIN_RACES && n / held > HOME_MIN_SHARE) homes.add(t);
+    }
+    v = { jra: jra > local, homes };
     homeMemo.set(mk, v);
     return v;
   };
@@ -539,7 +558,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 両方に当たれば中央騎手だけ
     const home = localRace && jkNow ? ctx.jockeyHomeOf(jkNow, date) : null;
     const jraJockey = Boolean(home?.jra);
-    const homeJockey = Boolean(home && !home.jra && home.top.has(String(race.track).trim()));
+    const homeJockey = Boolean(home && !home.jra && home.homes.has(String(race.track).trim()));
     for (const x of runs) {
       if (jkNow && x.status !== "scratched" && x.status !== "excluded" && x.jockey && ctx.keyOf(x.jockey) === jkNow) rodeBefore = true;
       if (x.status !== "finished") continue;
