@@ -1701,6 +1701,25 @@ async function paceComputeAdminInBrowser(kind, key, btn, { reload = true } = {})
 // ---- コースごとの比率の一覧(2026-10-14。計算・保存したコースだけ。重賞の一覧と同じ形) ----
 let courseWeightsList = null; // { courses, std }
 const courseWeightsOpen = new Set();
+const courseTracksOpen = new Set(); // 開いている競馬場(2026-11-04。最初は全部閉じる)
+
+// 競馬場の並び(2026-11-04 ユーザー要望): 中央(utils.js の TRACK_DISPLAY_ORDER と同じ)→ 南関東(同じ)→ その他地方は北東から南西へ
+// (緯度・経度を北東→南西の線に置いた順。北からの順とは園田・姫路だけ逆)。
+// この並びはこの一覧だけ(ほかの画面は utils.js の東からの並びのまま)。一覧に無い競馬場は末尾に名前順
+const COURSE_TRACK_ORDER = [
+  ...TRACK_DISPLAY_ORDER.slice(0, 14), // 中央10場・南関東4場
+  "帯広", "門別", "盛岡", "水沢", "金沢", "笠松", "名古屋", "園田", "姫路", "高知", "佐賀",
+];
+const COURSE_TYPE_ORDER = ["芝", "ダート", "障害"];
+function courseTrackIndex(track) {
+  const i = COURSE_TRACK_ORDER.indexOf(track);
+  return i >= 0 ? i : COURSE_TRACK_ORDER.length;
+}
+function compareCourses(a, b) {
+  const ct = (t) => { const i = COURSE_TYPE_ORDER.indexOf(t); return i >= 0 ? i : COURSE_TYPE_ORDER.length; };
+  return courseTrackIndex(a.track) - courseTrackIndex(b.track) || String(a.track).localeCompare(String(b.track), "ja")
+    || ct(a.course_type) - ct(b.course_type) || Number(a.distance) - Number(b.distance);
+}
 
 function renderCourseWeightsList() {
   const list = document.getElementById("course-weights-list");
@@ -1709,13 +1728,31 @@ function renderCourseWeightsList() {
   const { courses, std } = courseWeightsList;
   const q = (document.getElementById("course-weights-search")?.value || "").normalize("NFKC").replace(/\s/g, "").toLowerCase();
   const labelOf = (c) => `${c.track} ${c.course_type}${c.distance}m`;
-  const shown = q ? courses.filter((c) => labelOf(c).replace(/\s/g, "").toLowerCase().includes(q)) : courses;
+  const shown = (q ? courses.filter((c) => labelOf(c).replace(/\s/g, "").toLowerCase().includes(q)) : courses).slice().sort(compareCourses);
   if (count) count.textContent = `${shown.length}件 / 全${courses.length}件`;
   if (!shown.length) {
     list.innerHTML = courses.length ? `<p class="ticket-sub">該当するコースはありません</p>` : ""; // 説明文は2026-10-14に外した
     return;
   }
-  list.innerHTML = shown.map((c) => {
+  // 競馬場ごとにまとめて開閉する(2026-11-04 ユーザー要望)。検索中は当たった競馬場を開いて出す
+  const groups = [];
+  for (const c of shown) {
+    const last = groups[groups.length - 1];
+    if (last && last.track === c.track) last.items.push(c);
+    else groups.push({ track: c.track, items: [c] });
+  }
+  list.innerHTML = groups.map((g) => `
+    <details class="course-w-track" data-track="${escapeAttr(g.track)}" ${q || courseTracksOpen.has(g.track) ? "open" : ""}>
+      <summary class="course-w-track-summary">${escapeHtml(g.track || "競馬場不明")} <span class="pace-w-item-sub">${g.items.length}コース</span></summary>
+      ${g.items.map(courseWeightsItemHtml).join("")}
+    </details>`).join("");
+  list.querySelectorAll(".course-w-track").forEach((d) => d.addEventListener("toggle", () => {
+    if (q) return; // 検索で開いたものは覚えない
+    if (d.open) courseTracksOpen.add(d.dataset.track);
+    else courseTracksOpen.delete(d.dataset.track);
+  }));
+
+  function courseWeightsItemHtml(c) {
     const w = c.weights;
     return `
       <details class="pace-w-item" data-course-key="${escapeAttr(c.course_key)}" ${courseWeightsOpen.has(c.course_key) ? "open" : ""}>
@@ -1738,7 +1775,7 @@ function renderCourseWeightsList() {
           </div>
         </div>
       </details>`;
-  }).join("");
+  }
   list.querySelectorAll(".pace-w-item").forEach((d) => d.addEventListener("toggle", () => {
     if (d.open) courseWeightsOpen.add(d.dataset.courseKey);
     else courseWeightsOpen.delete(d.dataset.courseKey);
