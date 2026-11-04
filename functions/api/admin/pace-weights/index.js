@@ -1,6 +1,7 @@
 import {
   requireAdmin, readJsonBody, jsonError, normalizePaceWeights, allPositiveWeights, DEFAULT_PACE_WEIGHTS, PACE_TYPES, PACE_WEIGHT_COLUMNS,
   parseByPace, parsePartner, getPaceScoreSettings, parseCourseKey, parseAdjust, normalizeAdjust, ADJUST_KEYS, GLOBAL_ADJUST_KEYS,
+  markRaceSignalsStale,
 } from "../../_shared.js";
 
 const COLS = PACE_WEIGHT_COLUMNS; // w_pace … w_course(2026-10-14 に性齢・馬体重・同コースを追加)
@@ -79,7 +80,26 @@ async function targetOf(db, src) {
   return { table: "pace_weights", keyCols: ["graded_race_id"], keyBinds: [id] };
 }
 
-export async function onRequestPut(context) {
+// 保存先 → 目印の「計算し直しが要る」印を付ける範囲(_lib/race-signals.js の markRaceSignalsStale。2026-11-04)
+function signalScopeOf(t) {
+  if (t.table === "course_pace_weights") {
+    const [track, course_type, distance] = t.keyBinds;
+    return { course: { track, course_type, distance } };
+  }
+  return Number(t.keyBinds[0]) === 0 ? { all: true } : { gradedId: Number(t.keyBinds[0]) };
+}
+
+// 比率・評価点を保存・削除できたら、影響する今日以降のレースの一覧の目印「複」「ワ」に計算し直しの印を付ける(2026-11-04)
+async function withSignalMark(context, handler) {
+  const res = await handler(context);
+  if (res.ok && context.paceTarget) await markRaceSignalsStale(context.env.DB, signalScopeOf(context.paceTarget));
+  return res;
+}
+
+export const onRequestPut = (context) => withSignalMark(context, putWeights);
+export const onRequestDelete = (context) => withSignalMark(context, deleteWeights);
+
+async function putWeights(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
@@ -87,6 +107,7 @@ export async function onRequestPut(context) {
   if (error) return error;
   const t = await targetOf(db, data || {});
   if (t.error) return t.error;
+  context.paceTarget = t;
   if (data?.kind === "adjust") return putAdjust(db, t, data);
   const { pace, error: pErr } = paceTypeOf(data?.pace_type);
   if (pErr) return pErr;
@@ -135,13 +156,14 @@ export async function onRequestPut(context) {
   return Response.json({ ok: true, ...w, source: "manual", updated_at: now });
 }
 
-export async function onRequestDelete(context) {
+async function deleteWeights(context) {
   const deny = requireAdmin(context);
   if (deny) return deny;
   const db = context.env.DB;
   const url = new URL(context.request.url);
   const t = await targetOf(db, { course_key: url.searchParams.get("course_key"), graded_race_id: url.searchParams.get("graded_race_id") });
   if (t.error) return t.error;
+  context.paceTarget = t;
   const { pace, error: pErr } = paceTypeOf(url.searchParams.get("pace_type"));
   if (pErr) return pErr;
   const where = t.keyCols.map((c) => `${c} = ?`).join(" AND ");

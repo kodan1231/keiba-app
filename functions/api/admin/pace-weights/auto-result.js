@@ -1,4 +1,4 @@
-import { requireAdmin, readJsonBody, jsonError, saveAutoPaceResult } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, saveAutoPaceResult, markRaceSignalsStale, parseCourseKey } from "../../_shared.js";
 
 // 管理者向け(APIトークンでも可): ブラウザ・夜間の定時実行が選んだ比率を保存する(2026-10-14追加)。
 // PUT { kind: "graded"|"course"|"standard", key: <重賞ID | 競馬場|芝ダ障|距離 | 無し(標準)>, result: public/pace-search.js の choosePaceWeights の戻り値 }
@@ -12,5 +12,8 @@ export async function onRequestPut(context) {
   if (error) return error;
   const r = await saveAutoPaceResult(context.env.DB, data?.kind, data?.key, data?.result);
   if (r.error) return jsonError(r.error, 400);
+  // 比率が変わったので、影響する今日以降のレースの一覧の目印「複」「ワ」に計算し直しの印を付ける(2026-11-04。_lib/race-signals.js)
+  const scope = data.kind === "course" ? { course: parseCourseKey(data.key) } : data.kind === "graded" ? { gradedId: Number(data.key) } : { all: true };
+  await markRaceSignalsStale(context.env.DB, scope);
   return Response.json(r);
 }

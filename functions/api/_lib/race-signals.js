@@ -178,6 +178,43 @@ export async function computeAndSaveRaceSignal(db, race) {
   return signals;
 }
 
+// 比率・点数の設定を保存したとき、影響する今日以降のレースの保存済みの目印に「計算し直しが要る」印を付ける(2026-11-04)。
+// 目印はここでは計算しない。計算日(computed_on)を空にするだけで、一覧を次に開いたときに raceSignalStale が拾い、2件ずつ計算し直される。
+// scope: { all: true }(標準の比率・点数の設定)| { gradedId }(重賞の比率)| { course: { track, course_type, distance } }(コースの比率。
+//   重賞のレースもコースのペースの比率を混ぜて使うので、そのコースのレースは全部)。
+// 読み取り: 今日以降の races(race_date の索引。2〜3日分で約200行)+ 印を付ける race_signals(主キー。最大その件数)。
+//   夜間の計算は比率を1件ずつ保存するので、1晩に数百回呼ばれても読み取りは数万行。
+// 書き込み: まだ印の無い目印だけ(1日に今日以降のレースの数〈約200行〉まで)。失敗は無視
+export async function markRaceSignalsStale(db, scope) {
+  try {
+    const { results } = await db
+      .prepare("SELECT id, race_date, track, course_type, distance, race_name, class_flags FROM races WHERE race_date >= ?")
+      .bind(todayJst())
+      .all();
+    let races = results || [];
+    if (scope?.course) {
+      const c = scope.course;
+      // コースのキーは races の値から作る(_lib/pace-queue.js の courseKeyOf。前後の空白を除く)ので、同じ形にして比べる
+      races = races.filter((r) => String(r.track || "").trim() === c.track && String(r.course_type || "").trim() === c.course_type && Number(r.distance) === Number(c.distance));
+    } else if (scope?.gradedId) {
+      const gradedMap = await loadGradedRaceMapCached(db);
+      races = races.filter((r) => gradedRaceOf(gradedMap, r)?.id === Number(scope.gradedId));
+    } else if (!scope?.all) {
+      return;
+    }
+    const ids = races.map((r) => Number(r.id));
+    // IN に渡す数: 今日以降のレース(2〜3日分で約200。取り込み次第でさらに増えうる)ので90件ずつ
+    const stmts = [];
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90);
+      stmts.push(db.prepare(`UPDATE race_signals SET computed_on = '' WHERE computed_on <> '' AND race_id IN (${part.map(() => "?").join(",")})`).bind(...part));
+    }
+    if (stmts.length) await db.batch(stmts);
+  } catch (e) {
+    console.error("race_signals mark stale failed (ignored)", e);
+  }
+}
+
 // 展開・時計タブ(race-factors)を開いたとき、そのレースの目印を今の点数で確かめ、保存した目印・指紋と違えば保存し直す(2026-11-04)。
 // 騎手エイリアスの一括補正・比率の変更等で表の合計が変わっても、一覧の目印が当日中は古いまま残っていたため。
 // 読み取り: 保存済みの目印1行(主キー)+ 比率(主キーで最大3行)。書き込みは違ったときだけ1行。失敗は無視(表が無い等)

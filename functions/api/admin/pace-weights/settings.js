@@ -1,4 +1,4 @@
-import { requireAdmin, readJsonBody, jsonError, getPaceScoreSettings, savePaceScoreSettings } from "../../_shared.js";
+import { requireAdmin, readJsonBody, jsonError, getPaceScoreSettings, savePaceScoreSettings, markRaceSignalsStale } from "../../_shared.js";
 
 // 管理者向け: 総合推奨馬の点数の設定(2026-10-14追加)。仕様は docs/design/screens.md「総合推奨馬」の「点数を偏差値に変更」。
 //   GET → { missing_score, adjust }(データの無い馬の点〈偏差値〉・評価点の既定値〈2026-10-14追加〉)
@@ -17,5 +17,7 @@ export async function onRequestPut(context) {
   if (error) return error;
   const s = await savePaceScoreSettings(context.env.DB, data);
   if (!s) return jsonError("データ無しの点は0〜100、評価点は0〜50、斤量の補正は0〜1秒の数で入力してください", 400);
+  // 点数の設定は全レースに効くので、今日以降の全レースの一覧の目印に計算し直しの印を付ける(2026-11-04。_lib/race-signals.js)
+  await markRaceSignalsStale(context.env.DB, { all: true });
   return Response.json({ ok: true, ...s });
 }
