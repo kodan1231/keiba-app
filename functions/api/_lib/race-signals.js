@@ -148,26 +148,48 @@ export function raceSignalStale(race, saved, today = todayJst()) {
   return race.race_date >= today && saved.computed_on < today;
 }
 
+// body(getRaceFactorsBody の戻り値)から目印を出す。比率は主キーで最大3行
+async function signalsOfBody(db, race, body) {
+  if (!body.pace_type) return "";
+  const gradedMap = await loadGradedRaceMapCached(db);
+  const graded = gradedRaceOf(gradedMap, race);
+  const weights = await getPaceWeights(db, graded ? graded.id : 0, race);
+  return raceSignalsOf(body, weights);
+}
+
+async function saveRaceSignal(db, race, signals) {
+  await db
+    .prepare(
+      `INSERT INTO race_signals (race_id, race_date, fp, signals, computed_on) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(race_id) DO UPDATE SET race_date = excluded.race_date, fp = excluded.fp, signals = excluded.signals, computed_on = excluded.computed_on`
+    )
+    .bind(Number(race.id), race.race_date, raceSignalFingerprint(race), signals, todayJst())
+    .run();
+}
+
 // 1レースの目印を計算して保存する。保存は best-effort(失敗しても目印は返す)
 export async function computeAndSaveRaceSignal(db, race) {
-  const body = await getRaceFactorsBody(db, race);
-  let signals = "";
-  if (body.pace_type) {
-    const gradedMap = await loadGradedRaceMapCached(db);
-    const graded = gradedRaceOf(gradedMap, race);
-    const weights = await getPaceWeights(db, graded ? graded.id : 0, race);
-    signals = raceSignalsOf(body, weights);
-  }
+  const signals = await signalsOfBody(db, race, await getRaceFactorsBody(db, race));
   try {
-    await db
-      .prepare(
-        `INSERT INTO race_signals (race_id, race_date, fp, signals, computed_on) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(race_id) DO UPDATE SET race_date = excluded.race_date, fp = excluded.fp, signals = excluded.signals, computed_on = excluded.computed_on`
-      )
-      .bind(Number(race.id), race.race_date, raceSignalFingerprint(race), signals, todayJst())
-      .run();
+    await saveRaceSignal(db, race, signals);
   } catch (e) {
     console.error("race_signals save failed (ignored)", e);
   }
   return signals;
+}
+
+// 展開・時計タブ(race-factors)を開いたとき、そのレースの目印を今の点数で確かめ、保存した目印・指紋と違えば保存し直す(2026-11-04)。
+// 騎手エイリアスの一括補正・比率の変更等で表の合計が変わっても、一覧の目印が当日中は古いまま残っていたため。
+// 読み取り: 保存済みの目印1行(主キー)+ 比率(主キーで最大3行)。書き込みは違ったときだけ1行。失敗は無視(表が無い等)
+export async function syncRaceSignal(db, race, body) {
+  try {
+    const [signals, saved] = await Promise.all([
+      signalsOfBody(db, race, body),
+      db.prepare("SELECT fp, signals FROM race_signals WHERE race_id = ?").bind(Number(race.id)).first(),
+    ]);
+    if (saved && saved.signals === signals && saved.fp === raceSignalFingerprint(race)) return;
+    await saveRaceSignal(db, race, signals);
+  } catch (e) {
+    console.error("race_signals sync failed (ignored)", e);
+  }
 }

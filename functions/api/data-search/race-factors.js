@@ -1,4 +1,4 @@
-import { parsePositiveIntId, jsonError, getRaceFactorsBody, RACE_FACTOR_COLUMNS } from "../_shared.js";
+import { parsePositiveIntId, jsonError, getRaceFactorsBody, RACE_FACTOR_COLUMNS, canScoreRace, syncRaceSignal } from "../_shared.js";
 
 // 予想登録画面「展開・時計」タブの総合推奨馬・推奨馬(2026-10-13追加)。
 // GET /api/data-search/race-factors?race_id=N
@@ -14,6 +14,7 @@ import { parsePositiveIntId, jsonError, getRaceFactorsBody, RACE_FACTOR_COLUMNS 
 // 評価点(初距離・初競馬場・継続騎乗。2026-10-14)は、このレースの重賞・コースの評価点(_lib/pace-score.js の getPaceWeights の adjust)、
 //   無ければ設定の既定値を掛ける。value に「継続騎乗+5」等を足し、タイム・騎手の順位は掛けた後の点で付け直す
 //   (初距離・初競馬場の減点は 2026-11-04 にやめた)。
+// 2026-11-04〜 開いたときにレース一覧の目印(race_signals)も確かめ、違えば保存し直す(_lib/race-signals.js の syncRaceSignal)。
 // バインド数: 出走馬の名寄せキー(最大18頭 ×〈1+その馬のエイリアス数〉)+ 1。horse-best と同じく100バインド上限内。
 export async function onRequestGet(context) {
   const db = context.env.DB;
@@ -23,5 +24,13 @@ export async function onRequestGet(context) {
 
   const race = await db.prepare(`SELECT ${RACE_FACTOR_COLUMNS} FROM races WHERE id = ?`).bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
-  return Response.json(await getRaceFactorsBody(db, race));
+  const body = await getRaceFactorsBody(db, race);
+  // レース一覧の目印「複」「ワ」も今の点数に合わせる(2026-11-04。違ったときだけ保存。応答を返した後に行う)。
+  // 追加の読み取りは保存済みの目印1行+比率(主キーで最大3行)。書き込みは目印か指紋が違ったときだけ race_signals 1行
+  if (canScoreRace(race)) {
+    const sync = syncRaceSignal(db, race, body);
+    if (typeof context.waitUntil === "function") context.waitUntil(sync);
+    else await sync;
+  }
+  return Response.json(body);
 }
