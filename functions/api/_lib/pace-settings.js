@@ -11,7 +11,7 @@
 //     予想登録画面の補正タイム順位(horse-best)の両方で使う
 // 仕様は docs/design/screens.md「総合推奨馬」の「点数を偏差値に変更」「評価点(初距離・初競馬場・継続騎乗)」。
 import { memoized, invalidateMemo } from "./memo-cache.js";
-import { DEFAULT_MISSING_SCORE, DEFAULT_ADJUST, ADJUST_KEYS, DEFAULT_WEIGHT_SEC_PER_KG } from "./race-factors.js";
+import { DEFAULT_MISSING_SCORE, DEFAULT_ADJUST, ADJUST_KEYS, RETIRED_ADJUST_KEYS, DEFAULT_WEIGHT_SEC_PER_KG } from "./race-factors.js";
 
 const PACE_SCORE_KEY = "pace_score";
 const MEMO_PACE_SCORE = "pace_score_settings";
@@ -27,6 +27,7 @@ export function normalizeAdjust(raw, def = DEFAULT_ADJUST) {
   if (!raw || typeof raw !== "object") return null;
   const out = {};
   for (const k of ADJUST_KEYS) {
+    if (RETIRED_ADJUST_KEYS.includes(k)) { out[k] = 0; continue; } // 初距離・初競馬場は 2026-11-04 にやめた(いつも0)
     if (raw[k] === undefined || raw[k] === null || raw[k] === "") { out[k] = def[k]; continue; }
     const v = Number(raw[k]);
     if (!Number.isFinite(v) || v < 0 || v > ADJUST_MAX) return null;
@@ -41,7 +42,7 @@ function normalizeAdjustAuto(raw) {
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
   const stat = (x) => ({ agree: num(x?.agree), show: num(x?.show) });
   const values = {};
-  for (const k of ["first_distance", "first_track", "same_jockey", "layoff", "jra_jockey", "home_jockey"]) values[k] = num(raw.values?.[k]);
+  for (const k of ["same_jockey", "layoff", "jra_jockey", "home_jockey"]) values[k] = num(raw.values?.[k]); // 初距離・初競馬場は 2026-11-04 にやめた
   return { computed_at: raw.computed_at.slice(0, 40), races: num(raw.races), values, best: stat(raw.best), base: stat(raw.base) };
 }
 

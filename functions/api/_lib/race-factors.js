@@ -140,8 +140,13 @@ export function weightAdjOf(todayKg, runKg, secPerKg = DEFAULT_WEIGHT_SEC_PER_KG
 //     下限5。印 ch は 1/0。中央騎手・地元騎手のどちらでもない騎手は加点なし
 //   いずれもその要素のデータがある馬だけ(データ無しの点の馬には掛けない)。値は偏差値の点。重賞・コースごとに自動で選ぶか管理者が入力し、
 //   無ければ管理画面の既定値(_lib/pace-settings.js)。どれを使うかは _lib/pace-score.js の getPaceWeights(adjust)
+//   2026-11-04: 初距離・初競馬場の減点をやめた(ユーザー判断。RETIRED_ADJUST_KEYS。docs/design/screens.md「初距離・初競馬場の減点をやめた」)。
+//   南関東・中央の8月以降の試算で、減点を受けた馬は合計の順位から見た期待より3着内が 南関東1.24倍・中央1.07倍多く(低く見すぎ)、
+//   やめると 1.11倍・1.00倍。◎の3着内は 南関東 62.1% → 63.2%・中央 54.4% → 55.2%。保存済みの採点の adj の並びを変えないため
+//   キーは残し、値はいつも0(設定・重賞・コースに値が残っていても掛けない)。印 fd・ft は採点にそのまま残す
 export const ADJUST_KEYS = ["first_distance", "first_track", "same_jockey", "prev_board", "prev_win", "layoff", "jra_jockey", "home_jockey"];
-export const DEFAULT_ADJUST = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 };
+export const RETIRED_ADJUST_KEYS = ["first_distance", "first_track"];
+export const DEFAULT_ADJUST = { first_distance: 0, first_track: 0, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 };
 // 全レース共通の評価点(重賞・コースごとの評価点には持たない。設定の既定値だけ使う)
 export const GLOBAL_ADJUST_KEYS = ["layoff"];
 const ADJUST_LABEL = { first_distance: "初距離", first_track: "初競馬場", same_jockey: "継続騎乗", prev_board: "前年掲示板", prev_win: "前年1着", layoff: "間隔", jra_jockey: "中央騎手", home_jockey: "地元騎手" };
@@ -215,7 +220,7 @@ export function applyAdjust(factors, flags, adjust) {
     }
     if (d) out[f] = { ...x, score: x.score + d, value: `${x.value || ""} ${notes.join(" ")}`.trim() };
   };
-  mod("time", [["first_distance", -1, flags.fd], ["first_track", -1, flags.ft]]);
+  // 初距離・初競馬場(タイムの点から引いていた)は 2026-11-04 にやめた(RETIRED_ADJUST_KEYS)
   mod("jockey", [["same_jockey", 1, flags.cj], ["jra_jockey", 1, flags.cr], ["home_jockey", 1, flags.ch]]);
   mod("course", [["prev_board", 1, flags.pb], ["prev_win", 1, flags.pw]]);
   return out;

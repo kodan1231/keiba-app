@@ -1055,7 +1055,8 @@ const PACE_W_TYPES = [["high", "ハイ"], ["middle", "ミドル"], ["slow", "ス
 
 // 評価点(2026-10-14追加。docs/design/screens.md「評価点(初距離・初競馬場・継続騎乗)」): [キー, 名前, 符号]
 // 前年掲示板・前年1着(2026-10-14追加)は重賞で前年の同じ重賞を2〜5着・1着の馬の「同コース」の点に足す
-const PACE_ADJ_KEYS = [["first_distance", "初距離", "−"], ["first_track", "初競馬場", "−"], ["same_jockey", "継続騎乗", "+"],
+// 初距離・初競馬場(タイムの点から引いていた)は 2026-11-04 にやめた(いつも0。入力欄も出さない)
+const PACE_ADJ_KEYS = [["same_jockey", "継続騎乗", "+"],
   ["prev_board", "前年掲示板", "+"], ["prev_win", "前年1着", "+"], ["layoff", "間隔", "−"], ["jra_jockey", "中央騎手", "+"], ["home_jockey", "地元騎手", "+"]];
 // 中央騎手・地元騎手(2026-11-03追加)は地方のレースで中央所属の騎手・その競馬場に一番多く乗る騎手が乗る馬の「騎手」の点に足す
 // 間隔(2026-10-15追加)は前走から6か月以上空いた馬の総合点から引く。全レース共通なので「評価点の既定値」だけに出す
@@ -1063,7 +1064,7 @@ const PACE_ADJ_GLOBAL = ["layoff"];
 const PACE_ADJ_ROW_KEYS = PACE_ADJ_KEYS.filter(([k]) => !PACE_ADJ_GLOBAL.includes(k));
 // 評価点の入力欄は開閉できる(2026-10-15 ユーザー要望)。開いている欄のキー(保存後の読み直しでも開いたままにする)
 const paceAdjOpen = new Set();
-let paceAdjustDefault = { first_distance: 10, first_track: 5, same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
+let paceAdjustDefault = { same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
 
 function paceAdjustText(a) {
   return PACE_ADJ_KEYS.filter(([k]) => a[k] != null).map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
@@ -1395,8 +1396,8 @@ async function paceAdjustDefaultAuto(btn) {
     }
     paceAdjustAutoMsg("計算できました。保存しています…", null);
     const d = result.detail.adjust;
-    const pick = { first_distance: result.adjust.first_distance, first_track: result.adjust.first_track, same_jockey: result.adjust.same_jockey, layoff: result.adjust.layoff, jra_jockey: result.adjust.jra_jockey, home_jockey: result.adjust.home_jockey };
-    // 前年の同レースは今の既定値のまま、6つだけ置き換えて保存する(間隔は 2026-10-15、中央騎手・地元騎手は 2026-11-03 追加)
+    const pick = { same_jockey: result.adjust.same_jockey, layoff: result.adjust.layoff, jra_jockey: result.adjust.jra_jockey, home_jockey: result.adjust.home_jockey };
+    // 前年の同レースは今の既定値のまま、4つだけ置き換えて保存する(間隔は 2026-10-15、中央騎手・地元騎手は 2026-11-03 追加。初距離・初競馬場は 2026-11-04 にやめた)
     const saved = await paceWeightsRequest("/api/admin/pace-weights/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
