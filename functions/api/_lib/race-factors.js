@@ -48,7 +48,7 @@ import { runningStyleOf, firstCornerPosition, timeTextToSeconds } from "./graded
 import { buildTrackTrends, trackTimeOffsets, condOffOf, sameTrackDistanceRatio, TREND_MIN_RACES } from "./track-trends.js";
 import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf, WEIGHT_BAND_LABELS, LINEUP_STRIDE, styleGroupOf, STYLE_GROUP_LABELS } from "./race-lineup-cache.js";
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
-import { pairDistanceRatioOf } from "./distance-ratios.js";
+import { pairDistanceRatioOf, pairBiasOf } from "./distance-ratios.js";
 import { JRA_TRACKS } from "./guest.js";
 
 // 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加。2026-10-15: week(週目)を追加
@@ -496,7 +496,13 @@ function tierOf(run, race) {
 // 走のタイムを今回の競馬場・良馬場・芝ダ・距離に換算する
 // distanceRatios: 同じ馬の組から出した距離の比(_lib/distance-ratios.js の getDistanceRatios。無ければ null)
 // ctx は courseOf だけ使う(補正タイム順位〈horse-best〉は { courseOf: makeCourseOf(raceTimes) } を渡す。2026-10-16 から export)
+// 2026-11-04: 換算の組み合わせ(換算元のコース → 今回のコース)ごとの偏りを差し引く(distanceRatios.pairBias。_lib/distance-ratios.js の
+// pairBiasOf。同じ馬が両方を走った組から夜間に測る。20組未満の組み合わせ・同じコースは0)。偏りを測るときは pairBias の無い Map を渡す
 export function convertTime(ctx, sec, run, race, distanceRatios = null) {
+  return convertTimeRaw(ctx, sec, run, race, distanceRatios) - pairBiasOf(distanceRatios, run, race);
+}
+
+function convertTimeRaw(ctx, sec, run, race, distanceRatios) {
   const src = ctx.courseOf(run.course_type, run.distance);
   const off = (m, k) => (k != null && m.get(k) != null ? m.get(k) : 0);
   // 同じ競馬場・同じ芝ダで距離だけ違う走(2026-10-16): その競馬場の中の距離の比で換算する(全場の比は競馬場の混ざり方で偏るため)。

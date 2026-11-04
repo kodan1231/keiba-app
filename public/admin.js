@@ -1291,7 +1291,7 @@ async function loadPaceWeights() {
   const drInfo = document.getElementById("distance-ratios-info");
   const drText = (s) => (s.computed_at
     ? `最後の計算 ${formatDateTime(s.computed_at)}・${s.usable}/${s.count}組み合わせで使用${s.running ? "(計算中)" : s.stale ? "(新しい結果あり。今夜計算し直します)"
-      : s.next_after ? `(新しい結果あり。${formatDateTime(s.next_after)}以降の夜に計算し直します。夜間は週1回)` : ""}`
+      : s.next_after ? `(新しい結果あり。${formatDateTime(s.next_after)}以降の夜に計算し直します。夜間は毎晩1回)` : ""}`
     : s.running ? "計算中です" : "まだ計算していません(今夜計算します)");
   authedFetch("/api/admin/distance-ratios").then((r) => (r.ok ? r.json() : null)).then((s) => { if (drInfo) drInfo.textContent = s ? drText(s) : "読み込みに失敗しました"; })
     .catch(() => { if (drInfo) drInfo.textContent = "読み込みに失敗しました"; });

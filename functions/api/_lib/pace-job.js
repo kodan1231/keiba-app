@@ -14,7 +14,9 @@ export async function paceJobStep(db) {
     await db.prepare("DELETE FROM pace_jobs WHERE kind <> 'distance'").run();
     return { did: `cleared ${old.n} old pace jobs` };
   }
-  // 同じ馬の組から出す距離の比(週1回。新しい結果があり前回から7日たったときに始める)。失敗しても次の晩にやり直す
+  // 同じ馬の組から出す距離の比(新しい結果があり前回から20時間たったときに始める。2026-10-18〜11-04 は7日)。失敗しても次の晩にやり直す。
+  // 2026-11-04〜 夜間は GitHub Actions の Node が先に距離の比と換算の偏りをまとめて保存する(scripts/pace-nightly.mjs の 2a)ので、
+  // ここは D1 を読めないときの予備と、管理画面の「今すぐ計算」だけ
   try {
     const r = await distanceRatiosStep(db);
     if (!r.idle) return { did: `distance-ratios ${r.did}${r.read != null ? ` ${r.read}` : ""}${r.count != null ? ` ${r.usable}/${r.count}` : ""}` };
