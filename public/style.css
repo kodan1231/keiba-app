@@ -3458,6 +3458,8 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .pace-w-summary-btn { flex-shrink: 0; white-space: nowrap; }
 .pace-w-item-date { white-space: nowrap; margin-left: 4px; } /* 要約の行の最終更新日(2026-10-14) */
 .pace-w-item-body { padding: 4px 4px 12px; }
+/* 総合推奨馬のデータ不足の注記(2026-11-04。地方だけ) */
+.pace-data-shortage { margin: 6px 0 0; font-size: 13px; color: var(--ink-soft); }
 /* コースの比率: 競馬場ごとの開閉(2026-11-04) */
 .course-w-track { border-bottom: 2px solid var(--rule); }
 .course-w-track > summary { cursor: pointer; padding: 10px 4px; font-weight: 700; font-size: 15px; }

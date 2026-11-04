@@ -5,7 +5,7 @@ import { loadHorseAliasMapCached, buildHorseSearchKeys, applyHorseAliasMap, hors
 import { loadJockeyAliasMapCached } from "./jockey-alias.js";
 import { getRaceLineups } from "./race-lineup-cache.js";
 import { getRaceTimes } from "./race-time-cache.js";
-import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEYS } from "./race-factors.js";
+import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEYS, isLocalRace } from "./race-factors.js";
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
 import { getPaceWeights, prevYearGradedRaceId, paceIndexOf, pickRecommended } from "./pace-score.js";
@@ -95,7 +95,22 @@ async function computeRaceFactorsBody(db, race, entries) {
     const ta = rf.totalAdjust.get(key) || { value: 0, note: "" };
     return { horse_name: e.horse_name, horse_number: e.horse_number ?? null, waku_number: e.waku_number ?? null, jockey: e.jockey || null, factors, total_adjust: ta };
   });
-  return { pace_type: rf.pace_type, counts: rf.counts, horses };
+  return { pace_type: rf.pace_type, counts: rf.counts, horses, data_shortage: dataShortageOf(race, rf, runners) };
+}
+
+// データ不足の注記(2026-11-04 ユーザー要望・仕様確認済み。docs/design/screens.md「データ不足の注記」)。地方のレースだけ。
+// 初競馬場かつ初距離(その競馬場の同じ芝ダも、その距離も走ったことがない。評価点の印 fd・ft)の馬と、補正タイムのデータが無い馬が
+// 出走馬の DATA_SHORTAGE_SHARE 以上なら flagged。補正タイムが当てになりにくい(南関東の試算: 補正タイム1位の3着内 58.7% → 51.1%)。
+// 中央は換算が多くても当たりが落ちないため出さない(null)。印・複・ワは変えず、予想登録画面に注記を出すだけ
+export const DATA_SHORTAGE_SHARE = 0.2;
+function dataShortageOf(race, rf, runners) {
+  if (!isLocalRace(race) || !runners.length) return null;
+  let count = 0;
+  for (const r of runners) {
+    const f = rf.flags.get(r.key);
+    if (rf.factors.time.get(r.key)?.missing || (f?.fd && f?.ft)) count++;
+  }
+  return { count, total: runners.length, flagged: count / runners.length >= DATA_SHORTAGE_SHARE };
 }
 
 // ---- レース一覧の目印(2026-11-01 ユーザー要望。試算は docs/design/screens.md「レース一覧の目印(複・ワ)」) ----

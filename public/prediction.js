@@ -1259,7 +1259,9 @@ function paceTotalSectionHtml(entries) {
       <div class="pace-pick-row">
         ${marks.size ? [...marks].map(([x, m]) => `<span class="pace-chip"><b class="pace-pick-mark">${m}</b> ${paceHorseLabelHtml(x.e)}</span>`).join("") : `<span class="pace-none">—</span>`}
         ${marks.size && !GUEST_VIEW ? `<button type="button" class="ghost-btn pace-apply-marks-btn">予想を反映</button><span class="pace-apply-marks-msg ticket-sub"></span>` : ""}</div>
+      ${rf.data_shortage?.flagged ? `<p class="pace-data-shortage" title="初競馬場かつ初距離の馬・補正タイムのデータが無い馬が出走馬の2割以上。補正タイムが当てになりにくいレースです">データ不足(初競馬場・初距離 ${rf.data_shortage.count}頭/${rf.data_shortage.total}頭)</p>` : ""}
     </div>`;
+  // データ不足の注記(2026-11-04。地方だけ。サーバーの race-factors の data_shortage。印・複・ワは変えない)
   const sortKey = ["axis", "partner"].includes(paceTotalSort) ? paceTotalSort : "total";
   const ranked = paceRanked(rows, x => -Math.round(x[sortKey] * 10));
   // 点は偏差値(2026-10-14〜)。データ無しの点は管理画面の設定(サーバーで入っている)
