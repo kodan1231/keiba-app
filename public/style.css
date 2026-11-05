@@ -1652,6 +1652,20 @@ body.history-selection-mode .group-detail-actions {
 .hi-result-btn:hover { background: rgba(0, 0, 0, .04); }
 .hi-result-name { font-weight: 700; }
 .hi-result-count { font-size: .75rem; opacity: .7; }
+/* 出走回数・勝利回数トップ10(2026-11-05) */
+.hi-ranking { margin-top: 12px; }
+.hi-ranking-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.hi-ranking-head .stats-heading { margin: 0; }
+.hi-ranking-switch { display: inline-flex; gap: 6px; }
+.hi-ranking-btn {
+  padding: 5px 14px; border: 1px solid var(--rule-strong, rgba(0,0,0,.2)); border-radius: 999px;
+  background: var(--paper-raised, #fff); color: var(--ink); cursor: pointer; font-size: 13px;
+}
+.hi-ranking-btn.active { background: var(--ink); color: var(--paper-raised, #fff); border-color: var(--ink); }
+.hi-ranking-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 24px; }
+.hi-ranking-grid .stats-subheading { margin-top: 8px; }
+.hi-ranking-name { background: none; border: none; padding: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.hi-ranking-name:hover { color: var(--hanko); }
 /* 縦スクロールを減らすための詰め(2026-09-29)。馬名の右に馬齢・性別を並べ、
    見出し・段間のmarginも合わせて詰めている。 */
 .hi-detail-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }

@@ -83,6 +83,27 @@
       <p class="ticket-sub" id="hi-search-status">馬名の一部を2文字以上入力してください。</p>
       <ul class="hi-result-list" id="hi-result-list" hidden></ul>
 
+      <div id="hi-ranking" class="hi-ranking" hidden>
+        <div class="hi-ranking-head">
+          <h2 class="stats-heading">出走回数・勝利回数トップ10</h2>
+          <div class="hi-ranking-switch" role="group" aria-label="中央・地方">
+            <button type="button" class="hi-ranking-btn active" data-hi-ranking="jra">中央</button>
+            <button type="button" class="hi-ranking-btn" data-hi-ranking="local">地方</button>
+          </div>
+        </div>
+        <p class="ticket-sub" id="hi-ranking-note"></p>
+        <div class="hi-ranking-grid">
+          <div>
+            <h3 class="stats-subheading">出走回数</h3>
+            <div class="table-wrap"><table class="stats-table" id="hi-ranking-starts"></table></div>
+          </div>
+          <div>
+            <h3 class="stats-subheading">勝利回数</h3>
+            <div class="table-wrap"><table class="stats-table" id="hi-ranking-wins"></table></div>
+          </div>
+        </div>
+      </div>
+
       <div id="hi-detail" hidden>
         <div class="hi-detail-title">
           <h2 class="stats-heading" id="hi-detail-name"></h2>

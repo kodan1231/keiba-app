@@ -442,6 +442,83 @@ async function hiLoadSearch(q) {
   }
 }
 
+// 出走回数・勝利回数のトップ10(2026-11-05)。夜間に数えた1行を読む(GET /api/data-search/horse-ranking)。
+// 中央・地方を切り替える。検索欄が空で詳細を出していないときだけ表示する。馬名を押すと詳細を開く
+let hiRanking = null;
+let hiRankingKind = "jra";
+
+function hiUpdateRankingVisibility() {
+  if (!hiEls.ranking) return;
+  hiEls.ranking.hidden = !hiRanking || Boolean(hiEls.search.value.trim()) || !hiEls.detail.hidden;
+}
+
+function hiRankingTableHtml(rows, field) {
+  if (!rows || !rows.length) return `<tr><td class="table-empty">データがありません</td></tr>`;
+  const head = `<tr><th>順位</th><th>馬名</th><th>出走</th><th>勝利</th><th>勝率</th></tr>`;
+  let rank = 0, prev = null;
+  const body = rows.map(([name, starts, wins], i) => {
+    const v = field === "starts" ? starts : wins;
+    if (v !== prev) { rank = i + 1; prev = v; }
+    const rate = starts ? `${((wins / starts) * 100).toFixed(1)}%` : "-";
+    return `<tr><td>${rank}</td>`
+      + `<td class="table-name"><button type="button" class="hi-ranking-name" data-name="${escapeAttr(name)}">${escapeHtml(name)}</button></td>`
+      + `<td>${starts}</td><td>${wins}</td><td>${rate}</td></tr>`;
+  }).join("");
+  return head + body;
+}
+
+function hiRenderRanking() {
+  const g = hiRanking?.[hiRankingKind];
+  hiEls.rankingStarts.innerHTML = hiRankingTableHtml(g?.starts, "starts");
+  hiEls.rankingWins.innerHTML = hiRankingTableHtml(g?.wins, "wins");
+  hiEls.ranking.querySelectorAll("[data-hi-ranking]").forEach((b) => b.classList.toggle("active", b.dataset.hiRanking === hiRankingKind));
+  const at = hiRanking?.computed_at ? new Date(hiRanking.computed_at) : null;
+  hiEls.rankingNote.textContent = `取り込んである全期間のレース結果から数えています(取消・除外は数えない。10位と同数の馬も出します)。`
+    + (at && !Number.isNaN(at.getTime()) ? `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")} 時点。毎晩更新します。` : "");
+}
+
+async function hiLoadRanking() {
+  try {
+    const res = await authedFetch("/api/data-search/horse-ranking");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.jra && !data.local) return; // まだ夜間の計算をしていない
+    hiRanking = data;
+    hiRenderRanking();
+    hiUpdateRankingVisibility();
+  } catch {
+    // 表示しないだけ
+  }
+}
+
+function setupHiRanking() {
+  hiEls.ranking = document.getElementById("hi-ranking");
+  hiEls.rankingNote = document.getElementById("hi-ranking-note");
+  hiEls.rankingStarts = document.getElementById("hi-ranking-starts");
+  hiEls.rankingWins = document.getElementById("hi-ranking-wins");
+  hiEls.ranking.querySelectorAll("[data-hi-ranking]").forEach((b) => {
+    b.addEventListener("click", () => {
+      hiRankingKind = b.dataset.hiRanking;
+      hiRenderRanking();
+    });
+  });
+  hiEls.ranking.addEventListener("click", (e) => {
+    const btn = e.target.closest(".hi-ranking-name");
+    if (!btn) return;
+    hiEls.ranking.hidden = true;
+    hiLoadDetail(btn.dataset.name).then(() => {
+      if (hiEls.search.value.trim()) return; // その間に検索を始めた
+      hiEls.searchStatus.innerHTML = `<button type="button" class="hi-ranking-name" id="hi-ranking-back">← トップ10に戻る</button>`;
+      document.getElementById("hi-ranking-back").addEventListener("click", () => {
+        hiEls.detail.hidden = true;
+        hiEls.searchStatus.textContent = "馬名の一部を2文字以上入力してください。";
+        hiUpdateRankingVisibility();
+      });
+    });
+  });
+  hiLoadRanking();
+}
+
 function hiApplyMasterUpdate(master) {
   hiCurrentMaster = master;
   hiRenderMasterGrids(master);
@@ -527,6 +604,7 @@ function hiInit() {
     hiSearchPending = null;
     const q = hiEls.search.value.trim();
     hiEls.detail.hidden = true;
+    hiUpdateRankingVisibility();
     if (!q) {
       hiEls.resultList.hidden = true;
       hiEls.searchStatus.textContent = "馬名の一部を2文字以上入力してください。";
@@ -542,6 +620,7 @@ function hiInit() {
   });
 
   setupHiEditForm();
+  setupHiRanking();
 }
 
 setupAuth(dsInit);

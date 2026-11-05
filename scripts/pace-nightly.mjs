@@ -11,6 +11,8 @@
 //   2a.(2026-11-04)毎晩1回、結果の表を Node で読み、距離の換算の比と換算の組み合わせごとの偏りを出して POST /api/cron/conversion で保存する。
 //   2. 同じ馬の組から出す距離の換算の比を、POST /api/cron/pace-step を「やることが無い」と返るまで呼んで1歩ずつ進める
 //      (2a で保存した晩は何もしない。D1 を読めないときの予備)。
+//   2a'.(2026-11-05)2a と同じ読み取りで、馬情報検索タブの出走回数・勝利回数のトップ10を数えて POST /api/cron/horse-ranking で保存する
+//      (2a で計算する晩と、まだ一度も保存していない晩)。
 // 失敗した条件は計算待ちに残し、最後に1分待ってもう一度やり直す。それでも残ったものを一覧に出し、終了コード1(GitHub のメールで分かる)。
 // 環境変数: KEIBA_BASE_URL(管理者用アプリ)、KEIBA_CRON_SECRET(管理者用アプリの秘密情報 PACE_CRON_SECRET と同じ値。ヘッダー X-Cron-Secret)
 //   CF_D1_TOKEN(D1 を読める Cloudflare の API トークン)、CF_ACCOUNT_ID・CF_D1_DATABASE_ID(省略時は本番の値)
@@ -116,20 +118,27 @@ async function processItem(it) {
 // 距離の比(同じ競馬場の ±200m の組)と換算の組み合わせごとの偏り(_lib/distance-ratios.js の computeConversionTables)を出して
 // POST /api/cron/conversion で保存する。Cloudflare 側の1歩ずつの計算(下の 2)は、保存した後は「やることが無い」になる。
 // FORCE_CONVERSION=1 なら前回からの時間を問わず計算する(手で動かすとき)
+// 2026-11-05〜 同じ読み取りで、馬情報検索タブの出走回数・勝利回数のトップ10も数えて POST /api/cron/horse-ranking で保存する
 let conversionFailed = null;
+let rankingFailed = null;
 if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
   try {
     const { distanceRatiosState, computeConversionTables } = await import("../functions/api/_lib/distance-ratios.js");
+    const { computeHorseRanking, loadHorseRanking } = await import("../functions/api/_lib/horse-ranking.js");
+    const { loadHorseAliasMap } = await import("../functions/api/_lib/horse-alias.js");
     const st = await distanceRatiosState(d1);
+    // 馬情報検索タブの出走回数・勝利回数のトップ10(2026-11-05)は、同じ読み取りのついでに数える。
+    // 換算の比を計算する晩に一緒に出し、まだ一度も保存していなければ換算の比を計算しない晩でも出す(主キーで1行読む)
+    const rankingMissing = !(await loadHorseRanking(d1).catch(() => null));
+    const doConversion = !st.running && (st.stale || process.env.FORCE_CONVERSION === "1");
     if (st.running) {
       console.log("換算の比と偏り: Cloudflare 側の距離の比の計算の途中なので、今夜はそちらに任せる");
-    } else if (!st.stale && process.env.FORCE_CONVERSION !== "1") {
+    } else if (!doConversion) {
       console.log(`換算の比と偏り: 計算しない(前回 ${st.computed_at}${st.newer ? "・新しい結果あり(20時間たっていない)" : "・新しい結果なし"})`);
-    } else {
-      const started = Date.now();
-      const { convertTime, makeCourseOf } = await import("../functions/api/_lib/race-factors.js");
-      const { getRaceTimes } = await import("../functions/api/_lib/race-time-cache.js");
-      const { timeTextToSeconds } = await import("../functions/api/_lib/graded-race-search.js");
+    }
+    const started = Date.now();
+    let races = null, results = null, marker = 0;
+    if (doConversion || rankingMissing) {
       const readAll = async (sql, page) => {
         const out = [];
         for (let last = 0; ;) {
@@ -139,8 +148,24 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
           last = results[results.length - 1].id;
         }
       };
-      const races = new Map((await readAll("SELECT id, race_date, race_number, track, course_type, distance, track_condition FROM races", 3000)).map((r) => [r.id, r]));
-      const results = await readAll("SELECT id, horse_key, race_id, status, time_text FROM race_results", 5000);
+      races = new Map((await readAll("SELECT id, race_date, race_number, track, course_type, distance, track_condition FROM races", 3000)).map((r) => [r.id, r]));
+      results = await readAll("SELECT id, horse_key, horse_name, race_id, status, finish_position, time_text FROM race_results", 5000);
+      marker = results.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
+      // 出走回数・勝利回数のトップ10(失敗しても換算の比は続ける)
+      try {
+        const ranking = computeHorseRanking(results, races, await loadHorseAliasMap(d1));
+        await api("/api/cron/horse-ranking", { method: "POST", body: JSON.stringify({ marker, ranking }) });
+        const n = (g) => `出走${g.starts.length}頭・勝利${g.wins.length}頭`;
+        console.log(`出走回数・勝利回数のトップ10: 中央 ${n(ranking.jra)} / 地方 ${n(ranking.local)} を保存`);
+      } catch (e) {
+        rankingFailed = `失敗(次の晩にやり直す) ${e.message}`;
+        console.error(`出走回数・勝利回数のトップ10: ${rankingFailed}`);
+      }
+    }
+    if (doConversion) {
+      const { convertTime, makeCourseOf } = await import("../functions/api/_lib/race-factors.js");
+      const { getRaceTimes } = await import("../functions/api/_lib/race-time-cache.js");
+      const { timeTextToSeconds } = await import("../functions/api/_lib/graded-race-search.js");
       const runsByHorse = new Map();
       for (const x of results) {
         if (x.status !== "finished" || !x.horse_key) continue;
@@ -153,7 +178,6 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
       const ctx = { courseOf: makeCourseOf(await getRaceTimes(d1)) };
       // 偏りを測る換算は、新しく出した距離の比を使い、偏りは掛けない(ratios は pairBias を持たない Map)
       const { pairs, bias } = computeConversionTables(runsByHorse, (sec, run, dst, ratios) => convertTime(ctx, sec, run, dst, ratios));
-      const marker = results.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
       const saved = await api("/api/cron/conversion", { method: "POST", body: JSON.stringify({ marker, pairs, bias: Object.fromEntries(bias) }) });
       console.log(`換算の比と偏り: 結果${results.length}行・${runsByHorse.size}頭から 距離の比${saved.ratios}件・偏り${saved.bias_pairs}件(${saved.bias_tracks}場)を保存(${((Date.now() - started) / 1000).toFixed(1)}秒)`);
     }
@@ -208,6 +232,6 @@ if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
 
 // ---- まとめ ----
 if (d1) console.log(`D1 の読み取り: ${d1.stats().rowsRead}行(${d1.stats().queries}回)`);
-console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}`);
+console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}`);
 for (const [k, msg] of failures) console.log(`  残り: ${k} … ${msg}`);
-if (failures.size || distanceFailed || conversionFailed) process.exit(1);
+if (failures.size || distanceFailed || conversionFailed || rankingFailed) process.exit(1);
