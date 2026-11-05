@@ -1065,6 +1065,7 @@ const PACE_ADJ_ROW_KEYS = PACE_ADJ_KEYS.filter(([k]) => !PACE_ADJ_GLOBAL.include
 // 評価点の入力欄は開閉できる(2026-10-15 ユーザー要望)。開いている欄のキー(保存後の読み直しでも開いたままにする)
 const paceAdjOpen = new Set();
 let paceAdjustDefault = { same_jockey: 5, prev_board: 5, prev_win: 10, layoff: 5, jra_jockey: 10, home_jockey: 5 }; // 設定の既定値(loadPaceWeights で入れ直す)
+let paceAdjustAuto = null; // 最後に自動で計算した結果(設定の adjust_auto。loadPaceWeights で入れ直す。2026-11-05)
 
 function paceAdjustText(a) {
   return PACE_ADJ_KEYS.filter(([k]) => a[k] != null).map(([k, label, sign]) => `${label}${sign}${a[k]}`).join("・");
@@ -1241,6 +1242,7 @@ async function loadPaceWeights() {
   const secPerKg = data.score_settings?.weight_sec_per_kg ?? 0.1;
   // 評価点の既定値(2026-10-14追加): 重賞・コースの評価点(自動・手動)が無いときに使う
   paceAdjustDefault = { ...paceAdjustDefault, ...(data.score_settings?.adjust || {}) };
+  paceAdjustAuto = data.score_settings?.adjust_auto || null;
   defBox.innerHTML = `
     <div class="pace-w-line">
       <span class="pace-w-admin-title">データ無しの点(偏差値)</span>
@@ -1349,7 +1351,7 @@ async function loadPaceWeights() {
 }
 
 // 評価点の既定値を自動で出す(2026-10-14。docs/design/screens.md「評価点の既定値の自動計算」): 全コースの直近1年から最大600レースを
-// 採点し(GET /api/admin/pace-backtest?kind=all)、比率と同じ計算(public/pace-search.js)で評価点を選ぶ。選んだ値をそのまま既定値として保存し、
+// 採点し(採点の kind=all。2026-11-05〜 GitHub Actions の Node で。下の paceAdjustDefaultAuto 参照)、比率と同じ計算(public/pace-search.js)で評価点を選ぶ。選んだ値をそのまま既定値として保存し、
 // 計算の結果(日時・レース数・成績)も設定の adjust_auto に保存して入力欄の下に出す(2026-10-14 ユーザー要望。以前は入力欄に入れるだけで、
 // 保存し忘れや一覧の読み直しで消えていた)。前年の同レース(重賞だけの項目)はこの計算では選べないので、今の値のまま。
 // D1: 1回の計算全体で約16万行を読む(1日の上限の約3%)。
@@ -1371,7 +1373,7 @@ async function paceAdjustDefaultAuto(btn) {
   paceAdjustAutoMsg("今日の D1 の使用量を確認しています…", null);
   let ok = false;
   try {
-    ok = await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値と標準の比率を計算し、そのまま保存します(手で保存した標準の比率も置き換えます。約12万行を読みます。1〜2分かかります)。実行しますか？");
+    ok = await confirmHeavyOperation("全コースの直近1年(最大600レース)を採点して、評価点の既定値と標準の比率を計算し、そのまま保存します(手で保存した標準の比率も置き換えます。約12万行を読みます。GitHub で計算し、数分かかります。計算待ちがあれば一緒に計算します)。実行しますか？");
   } catch (e) {
     paceAdjustAutoMsg(`計算を始められませんでした: ${e.message}`, false);
     btn.disabled = false;
@@ -1384,42 +1386,25 @@ async function paceAdjustDefaultAuto(btn) {
     return;
   }
   const label = btn.textContent;
+  // 2026-11-05〜 計算は GitHub Actions(scripts/pace-nightly.mjs の ADJUST_DEFAULT)に頼む。以前はこのブラウザから Cloudflare の採点の API
+  // (kind=all)を呼んでいたが、CPU 時間の上限を続けて超えて止められ、計算できなくなった(11/5 15時台に43回)。
+  // 保存の内容(評価点の既定値の4つ・adjust_auto・標準の比率)は以前と同じで、GitHub 側が保存する
   try {
-    const { collectAndChoose } = await import("./pace-search.js");
-    const { result } = await collectAndChoose((offset) => paceFetchBacktestChunk("all", "all", offset), (done, total) => {
-      btn.textContent = `採点中…(${done}/${total})`;
-      paceAdjustAutoMsg(`採点中です(${done}/${total}レース)。画面を閉じずにお待ちください`, null);
+    const prevComputedAt = paceAdjustAuto?.computed_at || null;
+    const g = await runPaceViaGithub({ job: "adjust_default" }, (text) => {
+      const t = text.replace(/計算待ち 残り[^・)]*件・?/, "");
+      btn.textContent = t;
+      paceAdjustAutoMsg(`${t} 全コースを採点して評価点の既定値と標準の比率を保存します(数分かかります)`, null);
     });
-    if (result.error || !result.adjust) {
-      paceAdjustAutoMsg(`計算できませんでした: ${result.error || "評価点を選べませんでした"}`, false);
-      return;
+    if (g.via === "error") { paceAdjustAutoMsg(`計算を頼めませんでした: ${g.message}`, false); return; }
+    if (g.via === "fallback") { paceAdjustAutoMsg(`GitHub で計算できませんでした: ${g.reason}`, false); return; }
+    await loadPaceWeights();
+    const a = paceAdjustAuto;
+    if (g.ok && a?.computed_at && a.computed_at !== prevComputedAt) {
+      paceAdjustAutoMsg(`${a.races}レースで計算して保存しました: ${paceAdjustText(a.values || {})}(${paceAdjustStatText(a.best, a.base)})。標準の比率も保存しました`, true);
+    } else {
+      paceAdjustAutoMsg(`GitHub の計算が失敗しました(${g.conclusion || "保存されていません"})。${g.url ? `記録: ${g.url}` : ""}`, false);
     }
-    paceAdjustAutoMsg("計算できました。保存しています…", null);
-    const d = result.detail.adjust;
-    const pick = { same_jockey: result.adjust.same_jockey, layoff: result.adjust.layoff, jra_jockey: result.adjust.jra_jockey, home_jockey: result.adjust.home_jockey };
-    // 前年の同レースは今の既定値のまま、4つだけ置き換えて保存する(間隔は 2026-10-15、中央騎手・地元騎手は 2026-11-03 追加。初距離・初競馬場は 2026-11-04 にやめた)
-    const saved = await paceWeightsRequest("/api/admin/pace-weights/settings", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        adjust: { ...paceAdjustDefault, ...pick },
-        adjust_auto: { computed_at: new Date().toISOString(), races: result.detail.races, values: pick, best: d.best, base: d.base },
-      }),
-    }, `${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})`);
-    // 同じ計算で選んだ軸・相手の比率(全体・ペースごと。5%刻み・全要素5%以上)を標準の比率としても保存する(2026-10-28 ユーザー要望。
-    // 手で保存した標準の比率も置き換える)。保存後に一覧を読み直して標準の比率の欄に出す
-    let stdSaved = false;
-    if (saved) {
-      const r = await authedFetch("/api/admin/pace-weights/auto-result", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "standard", result }),
-      }).catch(() => null);
-      stdSaved = Boolean(r && r.ok);
-      if (stdSaved) await loadPaceWeights();
-    }
-    // 保存後に一覧ごと描き直されるので、描き直した後のボタンの下に結果を出す
-    if (saved && stdSaved) paceAdjustAutoMsg(`${result.detail.races}レースで計算して保存しました: ${paceAdjustText(pick)}(${paceAdjustStatText(d.best, d.base)})。標準の比率も保存しました`, true);
-    else if (saved) paceAdjustAutoMsg(`評価点の既定値は保存しましたが、標準の比率の保存に失敗しました: ${paceAdjustText(pick)}`, false);
-    else paceAdjustAutoMsg("計算はできましたが、保存に失敗しました", false);
   } catch (e) {
     paceAdjustAutoMsg(`計算できませんでした: ${e.message}`, false);
   } finally {

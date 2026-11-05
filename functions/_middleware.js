@@ -54,7 +54,8 @@ export async function onRequest(context) {
 }
 
 // 夜間の比率の計算(GitHub Actions)が秘密情報で呼べる管理の API(2026-10-18)
-const CRON_ADMIN_PATHS = new Set(["/api/admin/pace-queue", "/api/admin/pace-backtest", "/api/admin/pace-weights/auto-result"]);
+// 2026-11-05: 評価点の既定値の「自動で計算」を GitHub で行うため、点数の設定の保存(pace-weights/settings)も足した
+const CRON_ADMIN_PATHS = new Set(["/api/admin/pace-queue", "/api/admin/pace-backtest", "/api/admin/pace-weights/auto-result", "/api/admin/pace-weights/settings"]);
 
 async function handle(context) {
   const { request, env, next } = context;

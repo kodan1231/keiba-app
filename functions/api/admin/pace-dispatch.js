@@ -7,6 +7,7 @@ import { requireAdmin, jsonError, readJsonBody, parseCourseKey } from "../_share
 // 秘密情報 GITHUB_DISPATCH_TOKEN(keiba-app だけ・権限 Actions: Read and write の fine-grained トークン)。無ければ dispatched: false を返し、
 // 画面は今までどおりブラウザで計算する(public/pace-runner.js の runPaceViaGithub)。
 //   POST { kind?, key? } → kind・key があれば計算待ちに1件入れてから、手動実行を頼む。{ ok, dispatched, since, reason? }
+//   POST { job: "adjust_default" } → 評価点の既定値と標準の比率の計算を頼む(2026-11-05。入力 adjust_default=true)
 //   GET ?since=ISO      → since 以降に頼んだ実行の状態と計算待ちの残り。{ ok, run: { status, conclusion, html_url } | null, remaining, busy }
 //   GET(since なし)    → GitHub で計算中か。{ ok, running, remaining }(管理画面を開いたとき)
 // D1: POST は計算待ちへの書き込み1行(kind・key があるとき)。GET は計算待ちの件数(表は数十行まで)。
@@ -34,7 +35,10 @@ export async function onRequestPost(context) {
   const { data, error } = await readJsonBody(request);
   if (error) return error;
 
-  if (data?.kind || data?.key) {
+  // job=adjust_default(2026-11-05): 評価点の既定値の「自動で計算」。全コースを採点して評価点の既定値と標準の比率を保存する(計算待ちには入れない)
+  const adjustDefault = data?.job === "adjust_default";
+  if (data?.job && !adjustDefault) return jsonError("job が不正です", 400);
+  if (!adjustDefault && (data?.kind || data?.key)) {
     const kind = String(data.kind || "");
     const key = String(data.key || "");
     if (kind === "graded" ? !(Number(key) > 0) : kind === "course" ? !parseCourseKey(key) : true) {
@@ -50,7 +54,7 @@ export async function onRequestPost(context) {
     // 手動実行は距離の換算の比を飛ばす(30秒ほどかかるため。距離の換算の比は夜間に任せる)
     const res = await githubFetch(env, `/actions/workflows/${WORKFLOW}/dispatches`, {
       method: "POST",
-      body: JSON.stringify({ ref: "main", inputs: { skip_distance: "true" } }),
+      body: JSON.stringify({ ref: "main", inputs: { skip_distance: "true", ...(adjustDefault ? { adjust_default: "true" } : {}) } }),
     });
     if (res.status === 204) return Response.json({ ok: true, dispatched: true, since });
     const reason = res.status === 401 ? "GitHub のトークンが無効か期限切れです" : `GitHub に頼めませんでした(HTTP ${res.status})`;

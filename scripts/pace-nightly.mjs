@@ -187,6 +187,38 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
   }
 }
 
+// ---- 0. 評価点の既定値と標準の比率(2026-11-05。管理画面の「自動で計算」から ADJUST_DEFAULT=true で頼まれたときだけ) ----
+// 全コースの直近1年(最大600レース)を採点し(採点の kind="all")、public/pace-search.js で評価点と軸・相手の比率を選んで、
+// 評価点の既定値(PUT /api/admin/pace-weights/settings)と標準の比率(PUT /api/admin/pace-weights/auto-result の kind="standard")を保存する。
+// 以前は管理画面のブラウザが Cloudflare の採点の API を呼んでいたが、11/5 に CPU 時間の上限を続けて超えて止められた(15時台に43回)。
+// 保存の内容は以前の admin.js の paceAdjustDefaultAuto と同じ(前年の同レースは今の既定値のまま、4つだけ置き換える)。
+let adjustFailed = null;
+if (process.env.ADJUST_DEFAULT === "true") {
+  try {
+    if (!d1) throw new Error("CF_D1_TOKEN が要ります");
+    const started = Date.now();
+    const { result } = await collectAndChoose((offset) => fetchChunk("all", "all", offset));
+    if (result.error || !result.adjust) throw new Error(result.error || "評価点を選べませんでした");
+    const d = result.detail.adjust;
+    const pick = { same_jockey: result.adjust.same_jockey, layoff: result.adjust.layoff, jra_jockey: result.adjust.jra_jockey, home_jockey: result.adjust.home_jockey };
+    const s = await getPaceScoreSettings(d1, { fresh: true });
+    if (!DRY_RUN) {
+      await api("/api/admin/pace-weights/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          adjust: { ...s.adjust, ...pick },
+          adjust_auto: { computed_at: new Date().toISOString(), races: result.detail.races, values: pick, best: d.best, base: d.base },
+        }),
+      });
+      await api("/api/admin/pace-weights/auto-result", { method: "PUT", body: JSON.stringify({ kind: "standard", result }) });
+    }
+    console.log(`評価点の既定値と標準の比率: ${result.detail.races}レースで計算${DRY_RUN ? "(DRY_RUN・保存しない)" : "・保存"}(${((Date.now() - started) / 1000).toFixed(1)}秒) ${JSON.stringify(pick)}`);
+  } catch (e) {
+    adjustFailed = e.message;
+    console.error(`評価点の既定値と標準の比率: 失敗 ${e.message}`);
+  }
+}
+
 // ---- 1. 比率 ----
 const items = await loadQueue();
 console.log(`比率の計算待ち ${items.length}件(採点: ${d1 ? "Node〈D1 を API で読む〉" : "採点の API"})`);
@@ -232,6 +264,6 @@ if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
 
 // ---- まとめ ----
 if (d1) console.log(`D1 の読み取り: ${d1.stats().rowsRead}行(${d1.stats().queries}回)`);
-console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}`);
+console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}${adjustFailed ? " / 評価点の既定値 失敗" : ""}`);
 for (const [k, msg] of failures) console.log(`  残り: ${k} … ${msg}`);
-if (failures.size || distanceFailed || conversionFailed || rankingFailed) process.exit(1);
+if (failures.size || distanceFailed || conversionFailed || rankingFailed || adjustFailed) process.exit(1);
