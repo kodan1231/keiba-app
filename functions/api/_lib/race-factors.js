@@ -31,6 +31,7 @@
 //   以下3つは 2026-10-14 追加(ユーザー確認済み):
 //   - 性齢: 同コースの性齢(牝3・牡4 等。そのレースの時点の年齢)別の複勝率順。今回の馬の性齢は出走馬表(過去の年の採点は結果)の値。
 //     騎乗が20回未満なら同場→全場(馬番と同じ)
+//   - 2026-11-07〜 馬番帯・性齢・体重帯の点は「過去の成績の組の偏差値」に変えた(重賞はその重賞の過去10年を優先。SCOPE_LABEL の下の注記)
 //   - 馬体重: 前走(体重のある一番新しい走)の馬体重を20kg刻みの体重帯(〜439, 440-459, … 520〜)にし、同コースの体重帯別の
 //     複勝率順(騎乗が20回未満なら同場→全場)。今回の馬体重は発走前に無いため前走を使う
 //   - 同コース: その馬の同コース(競馬場・芝ダ障・距離)の過去の走ごとに、5着以内(掲示板)なら+1、6着以下なら−1 の合計の順。
@@ -362,9 +363,11 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   };
   const fieldSizeByRace = new Map();
   const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, flat, jk, week }]
+  const flatById = new Map(); // レースID -> { race_date, flat }(重賞の過去の年の帯の成績用。2026-11-07)
   for (const r of lineups) {
     if (!r.flat) continue;
     fieldSizeByRace.set(Number(r.id), r.size);
+    flatById.set(Number(r.id), { race_date: String(r.race_date), flat: r.flat });
     const g = `${r.track}|${r.course_type}`;
     if (!byTrackCt.has(g)) byTrackCt.set(g, []);
     byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)) });
@@ -465,7 +468,7 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   // 芝ダ障・距離ごとの勝ちタイム(補正値と平均)
   const courseOf = makeCourseOf(raceTimes);
 
-  const ctx = { fieldSizeByRace, byTrackCt, allOf, keyOf, courseOf, weekBandOf, jockeyHomeOf };
+  const ctx = { fieldSizeByRace, byTrackCt, flatById, allOf, keyOf, courseOf, weekBandOf, jockeyHomeOf };
   contextCache.set(lineups, { raceTimes, aliasMap, ctx });
   return ctx;
 }
@@ -479,7 +482,22 @@ const fmtSec = (sec) => {
 };
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 const TIER_LABEL = { 1: "", 2: "±200m換算", 3: "距離換算", 4: "芝ダ換算" };
-const SCOPE_LABEL = { course: "同コース", track: "同場", all: "全場" };
+const SCOPE_LABEL = { graded: "同重賞", course: "同コース", track: "同場", all: "全場" };
+// 馬番帯・性齢・体重帯の点(2026-11-07 ユーザー要望・仕様確認済み。docs/design/screens.md「帯の要素の点(過去の成績の組の偏差値)」):
+// 過去の成績の組(帯)ごとの複勝率で物差し(組どうしの平均・標準偏差。組を同じ重さで)を作り、今回の馬は自分の組の複勝率を
+// その物差しで偏差値にした点を受け取る。今回の出走馬の顔ぶれで点は変わらない(組が2つなら 60 / 40)。以前は今回の出走馬の中で
+// 偏差値にしており、10頭中1頭だけ違う組の馬は複勝率の差が2ポイントでも80(または20)になった
+// (11/7 京王杯2歳S のアテナブレイブ: 東京芝1400 の2歳 牝21.6%・牡19.2% で性齢80。京王杯2歳S だけなら牝13.3%・牡21.3%)。
+//   物差しの段: 重賞のレースはその重賞の過去の年(最大10年。opts.gradedPastIds)で、組が2つ以上 GRADED_GROUP_MIN_RIDES 騎乗あれば使う。
+//     重賞でない・足りなければ 同コース → 同場 → 全場(組が2つ以上 NUMBER_MIN_RIDES 騎乗ある最初の段)。物差しの組は騎乗が足りる組だけ
+//   組の複勝率: 重賞の段では、その重賞の成績に同コース等の複勝率を GRADED_PRIOR_RIDES 騎乗分混ぜる(重賞で走っていない組は同コース等)。
+//     それ以外の段では、組ごとに 同コース → 同場 → 全場(騎乗が NUMBER_MIN_RIDES 未満なら次の段。以前と同じ)
+//   帯の値が分からない・成績が無い馬はデータ無し(設定の点)
+// 試算(mirror。重賞619レース): 性齢の AUC 以前 0.559、今回の方式で重賞を使わない 0.556、重賞を使う(混ぜる5騎乗)0.542(20騎乗 0.550)。
+//   重賞以外の600レースは以前とほぼ同じ(0.543 → 0.544)
+const GRADED_GROUP_MIN_RIDES = 5;
+const GRADED_PRIOR_RIDES = 5;
+const BAND_NEUTRAL_SCORE = 50; // 物差しの組の複勝率が全部同じとき
 
 // 走の段(1〜4。対象外は 0)
 function tierOf(run, race) {
@@ -538,7 +556,8 @@ function convertTimeRaw(ctx, sec, run, race, distanceRatios) {
 // 戻り値の totalAdjust: Map(key -> { value, note })(総合点へ直接足す点。間隔。adjust があるときだけ)
 // opts.weightSecPerKg: 斤量1kgあたりの補正の秒数(設定 getPaceScoreSettings の weight_sec_per_kg。省略時は既定0.1)。runsByHorse の各走に weight_carried が要る
 // opts.distanceRatios: 同じ馬の組から出した距離の比(2026-10-16。_lib/distance-ratios.js の getDistanceRatios。省略可)
-export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG, distanceRatios = null } = {}) {
+// opts.gradedPastIds: 重賞のレースなら、その重賞の過去の年のレースID(最大10年。2026-11-07。帯の要素の元の成績。そのレースより前の年だけ数える)
+export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, gradedPastIds = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG, distanceRatios = null } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
   const localRace = isLocalRace(race);
@@ -688,13 +707,61 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       }
     }
   }
-  // 馬番帯・性齢・体重帯: 同コース → 同場 → 全場(騎乗が NUMBER_MIN_RIDES 未満なら次の段)の複勝率
-  const groupRate = (k, course, track, allKey) => {
+  // 馬番帯・性齢・体重帯(2026-11-07〜 過去の成績の組の偏差値。SCOPE_LABEL の下の注記): 重賞の過去の年 → 同コース → 同場 → 全場
+  const gradedNum = new Map(), gradedSex = new Map(), gradedWt = new Map();
+  for (const id of gradedPastIds || []) {
+    const L = ctx.flatById.get(Number(id));
+    if (!L || L.race_date >= date) continue; // そのレースより前の年だけ(過去の年の採点で先の年を見ない)
+    const flat = L.flat;
+    for (let i = 0; i < flat.length; i += S) {
+      const hn = flat[i], pos = flat[i + 2], sa = flat[i + 3], wb = flat[i + 4];
+      if (hn > 0) addRide(gradedNum, numberGroupOf(hn), pos);
+      if (sa) addRide(gradedSex, sa, pos);
+      if (wb) addRide(gradedWt, wb, pos);
+    }
+  }
+  // 組の複勝率(重賞でない段): 同コース → 同場 → 全場(騎乗が NUMBER_MIN_RIDES 未満なら次の段)
+  const chainRate = (k, course, track, allKey) => {
     let c = course.get(k), scope = "course";
     if (!c || c.rides < NUMBER_MIN_RIDES) { c = track.get(k); scope = "track"; }
     if (!c || c.rides < NUMBER_MIN_RIDES) { c = (ctx.allOf(allKey).get(race.course_type) || new Map()).get(k); scope = "all"; }
     return c && c.rides ? { show: c.show / c.rides, win: c.first / c.rides, rides: c.rides, scope } : null;
   };
+  // 組の複勝率(重賞): その重賞の成績に、同コース等の複勝率を GRADED_PRIOR_RIDES 騎乗分混ぜる(騎乗が少ない組ほど同コース寄り)
+  const gradedRate = (k, graded, course, track, allKey) => {
+    const g = graded.get(k), base = chainRate(k, course, track, allKey);
+    if (!g || !g.rides) return base;
+    if (!base) return { show: g.show / g.rides, win: g.first / g.rides, rides: g.rides, scope: "graded" };
+    const K = GRADED_PRIOR_RIDES;
+    return { show: (g.show + K * base.show) / (g.rides + K), win: (g.first + K * base.win) / (g.rides + K), rides: g.rides, scope: "graded", raw: g.show / g.rides };
+  };
+  // 物差し: 重賞(組が2つ以上 GRADED_GROUP_MIN_RIDES 騎乗)→ 同コース → 同場 → 全場(組が2つ以上 NUMBER_MIN_RIDES 騎乗)の最初の段の
+  // 組の複勝率の平均・標準偏差(組を同じ重さで)。今回の馬の組の複勝率(rateOf)をこの物差しで偏差値にする。どの段も無ければ null
+  const bandTable = (graded, course, track, allKey) => {
+    const levels = [["graded", () => graded, GRADED_GROUP_MIN_RIDES], ["course", () => course, NUMBER_MIN_RIDES],
+      ["track", () => track, NUMBER_MIN_RIDES], ["all", () => ctx.allOf(allKey).get(race.course_type) || new Map(), NUMBER_MIN_RIDES]];
+    for (const [scope, get, min] of levels) {
+      const keys = [...get().entries()].filter(([, c]) => c.rides >= min).map(([k]) => k);
+      if (keys.length < 2) continue;
+      const isGraded = scope === "graded";
+      const rateOf = (k) => (isGraded ? gradedRate(k, graded, course, track, allKey) : chainRate(k, course, track, allKey));
+      const rates = keys.map((k) => rateOf(k).show);
+      const mean = rates.reduce((a, b) => a + b, 0) / rates.length;
+      const sd = Math.sqrt(rates.reduce((a, v) => a + (v - mean) ** 2, 0) / rates.length);
+      return { scope, mean, sd, rateOf };
+    }
+    return null;
+  };
+  // 今回の馬の組 → { v(点), direct, show, win, rides, scope }。段が無い・その組の成績が無ければ null(データ無し)
+  const bandScore = (table, k) => {
+    if (!table) return null;
+    const r = table.rateOf(k);
+    if (!r) return null;
+    return { ...r, v: table.sd > 1e-9 ? 50 + (10 * (r.show - table.mean)) / table.sd : BAND_NEUTRAL_SCORE, direct: true };
+  };
+  const numTable = bandTable(gradedNum, numCourse, numTrack, "numberAllByCt");
+  const sexTable = bandTable(gradedSex, sexCourse, sexTrack, "sexAllByCt");
+  const wtTable = bandTable(gradedWt, wtCourse, wtTrack, "weightAllByCt");
   const numberList = [], sexList = [], weightList = [], weekList = [];
   // 週目: 同じ週の帯の複勝率 ÷ 全部の週の複勝率(同場で同じ週の帯の騎乗が NUMBER_MIN_RIDES 未満なら全場)
   const rateOf = (c) => (c && c.rides ? c.show / c.rides : null);
@@ -714,19 +781,19 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     const hn = Number(h.horse_number);
     if (!(hn > 0)) continue;
     const g = numberGroupOf(hn);
-    const r = groupRate(g, numCourse, numTrack, "numberAllByCt");
+    const r = bandScore(numTable, g);
     if (r) numberList.push({ key: h.key, ...r, group: g });
   }
   for (const h of runners) {
     const sa = sexAgeCodeOf(h.sex_age);
     if (!sa) continue;
-    const r = groupRate(sa, sexCourse, sexTrack, "sexAllByCt");
+    const r = bandScore(sexTable, sa);
     if (r) sexList.push({ key: h.key, ...r, sa });
   }
   for (const x of horses) {
     const wb = weightBandOf(x.bodyWeight);
     if (!wb) continue;
-    const r = groupRate(wb, wtCourse, wtTrack, "weightAllByCt");
+    const r = bandScore(wtTable, wb);
     if (r) weightList.push({ key: x.key, ...r, wb, kg: x.bodyWeight });
   }
   // 騎手: 段ごとの平均(そのコース等の全騎乗の複勝率・単勝率)に、騎乗が少ないほど寄せる
@@ -762,6 +829,20 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     });
   };
 
+  // 帯の要素(2026-11-07): 点(v)の高い順。同じ点は同じ順位。内訳は複勝率・単勝率・騎乗数・段(騎乗不足の組は「騎乗不足のため50」)
+  const bandRank = (list) => {
+    const sorted = [...list].sort((a, b) => b.v - a.v || b.rides - a.rides);
+    let rank = 0;
+    return sorted.map((x, i) => {
+      if (i === 0 || x.v !== sorted[i - 1].v) rank = i + 1;
+      return { ...x, rank };
+    });
+  };
+  // 重賞の段は、混ぜる前の重賞の複勝率も出す(「同重賞 15騎乗 複13.3%→15.4%」)
+  const bandText = (x) => (x.scope === "graded" && x.raw != null
+    ? `複${pct(x.raw)}→${pct(x.show)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]}。同コースを混ぜた値)`
+    : `複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})`);
+
   // 並び(rank は表示用)と偏差値の元の値 v(大きいほど良い。2026-10-14〜)
   const withTime = horses.filter((x) => x.time != null);
   const withL3 = horses.filter((x) => x.l3 != null);
@@ -788,14 +869,14 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const ranked = {
     pace: paceRanked,
     time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, v: -x.time, value: timeText(x) })),
-    number: rateRank(numberList).map((x) => ({ ...x, v: x.show, value: `${numberGroupLabel(x.group)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    number: bandRank(numberList).map((x) => ({ ...x, value: `${numberGroupLabel(x.group)} ${bandText(x)}` })),
     jockey: rateRank(jockeyList).map((x) => ({ ...x, v: x.show, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
-    sexage: rateRank(sexList).map((x) => ({ ...x, v: x.show, value: `${sexAgeLabelOf(x.sa)} 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    sexage: bandRank(sexList).map((x) => ({ ...x, value: `${sexAgeLabelOf(x.sa)} ${bandText(x)}` })),
     week: rankBy(weekList, (x) => -x.ratio).map((x) => ({
       ...x, v: x.ratio,
       value: `${WEEK_BAND_LABELS[weekBand]} ${STYLE_GROUP_LABELS[x.sg]} 複${pct(x.show)}(全週${pct(x.base)}・${x.rides}騎乗・${SCOPE_LABEL[x.scope]})`,
     })),
-    weight: rateRank(weightList).map((x) => ({ ...x, v: x.show, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) 複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    weight: bandRank(weightList).map((x) => ({ ...x, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) ${bandText(x)}` })),
     // 同コース: 全頭を並べる(走っていない馬は0)。多い順
     course: rankBy(horses.map((x) => ({ ...x, sum: x.boardIn - x.boardOut })), (x) => -x.sum).map((x) => ({
       ...x,

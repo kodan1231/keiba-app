@@ -240,7 +240,8 @@ function resolvePaceWeights(specifics, d, pace, kind = "axis") {
 // runsCache(2026-10-27。省略可): Map(horse_key -> 全戦績の行)。夜間の Node(scripts/pace-nightly.mjs)が1回の実行の間ずっと渡し、
 //   同じ馬の戦績を読み直さない。以前はレース30件の塊・重賞・コースごとに出走馬の全戦績を読み直し、計算方法の版を変えて全部を計算し直した
 //   2026-10-22 は1晩でこの問い合わせだけで約290万行(D1 の1日の上限の6割)を読んでいた。採点は戦績の配列を書き換えない(絞り込んだ写しを使う)
-async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null, runsCache = null } = {}) {
+// pastOf(2026-11-07。重賞の採点のとき): Map(レースID -> その重賞の過去の年のレースID)。帯の要素(馬番帯・性齢・体重帯)の元の成績
+async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, prevOf = null, pastOf = null, runsCache = null } = {}) {
   if (!races.length) return [];
   // 騎手名エイリアスは使い回し版(読み取り専用。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
   // 斤量の補正の秒数(2026-10-15)は設定から(app_settings 1行。2分使い回し)
@@ -292,7 +293,7 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
     const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age, weight_carried: h.weight_carried })), runsByHorse, {
-      missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios,
+      missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null, gradedPastIds: pastOf ? pastOf.get(Number(race.id)) || null : null, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios,
     });
     out.push({
       race,
@@ -338,21 +339,35 @@ async function gradedTargets(db, gradedRaceId) {
     .filter(([year, r]) => year >= currentYear - GRADED_PAST_YEARS && String(r.race_date) <= today)
     .sort((a, b) => b[0] - a[0]).map(([, r]) => r);
   const prevOf = new Map();
+  const pastOf = new Map();
   for (const [year, r] of byYear) {
     const p = byYear.get(year - 1);
     if (p) prevOf.set(Number(r.id), Number(p.id));
+    pastOf.set(Number(r.id), pastYearIdsOf(byYear, year, r.race_date));
   }
-  return { master, targets, prevOf };
+  return { master, targets, prevOf, pastOf };
 }
 
-// 前年の同じ重賞のレースID(予想登録画面の推奨馬の「前年の同レース」用。2026-10-14)。race: { id, race_date }。無ければ null。
+// その重賞の year より前の最大 GRADED_PAST_YEARS 年のレースID(帯の要素の元の成績。2026-11-07)。日付が今回より前のものだけ
+function pastYearIdsOf(byYear, year, raceDate) {
+  const ids = [];
+  for (let y = year - GRADED_PAST_YEARS; y < year; y++) {
+    const p = byYear.get(y);
+    if (p && String(p.race_date) < String(raceDate)) ids.push(Number(p.id));
+  }
+  return ids;
+}
+
+// 前年の同じ重賞のレースID(予想登録画面の推奨馬の「前年の同レース」用。2026-10-14)と、過去の年のレースID(帯の要素用。2026-11-07)。
+// race: { id, race_date }。戻り値: { prevId(無ければ null), pastIds: [...] }。
 // D1の読み取り: 重賞1行(主キー)+ レース一覧のキャッシュ(約20行)。重賞のレースの展開・時計タブを開いたときだけ
-export async function prevYearGradedRaceId(db, gradedRaceId, race) {
+export async function gradedPastOf(db, gradedRaceId, race) {
   const master = await db.prepare("SELECT id, name, name_key FROM graded_races WHERE id = ?").bind(gradedRaceId).first();
-  if (!master) return null;
+  if (!master) return { prevId: null, pastIds: [] };
   const year = Number(String(race.race_date || "").slice(0, 4));
-  const p = gradedRacesByYear(await paceRaceIndex(db), master).get(year - 1);
-  return p ? Number(p.id) : null;
+  const byYear = gradedRacesByYear(await paceRaceIndex(db), master);
+  const p = byYear.get(year - 1);
+  return { prevId: p ? Number(p.id) : null, pastIds: pastYearIdsOf(byYear, year, race.race_date) };
 }
 
 // コースの直近2年(2026-10-18 ユーザー確認済み。以前は1年。ペース予想ごとの比率も作るため。今日より前・結果のあるレース・新しい順)。
@@ -385,7 +400,7 @@ export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
   const t = await gradedTargets(db, gradedRaceId);
   if (t.error) return t;
   if (!t.targets.length) return { error: "過去の結果が取り込まれていません" };
-  const scored = await scoreRaces(db, t.targets, { ...scoreOpts, prevOf: t.prevOf });
+  const scored = await scoreRaces(db, t.targets, { ...scoreOpts, prevOf: t.prevOf, pastOf: t.pastOf });
   const years = scored.map((x) => ({ ...x, year: Number(String(x.race.race_date).slice(0, 4)) }));
   const checkedRaceIds = t.targets.filter((r) => r.has_finish_order).map((r) => Number(r.id));
   return { master: t.master, targets: t.targets, checkedRaceIds, years };
@@ -396,13 +411,14 @@ export async function loadGradedBacktest(db, gradedRaceId, scoreOpts = {}) {
 // 戻り値: { error } | { kind, key, label, total, offset, missing_score, races: [{ race_id, race_date, pace_type,
 //   runners: [{ horse_number, place(1〜3。それ以外0), scores: [PACE_FACTORS の順。評価点は掛けない], adj: [初距離, 初競馬場, 継続騎乗, 前年掲示板, 前年1着](0/1) }] }] }
 export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
-  let targets, label, prevOf = null;
+  let targets, label, prevOf = null, pastOf = null;
   if (kind === "graded") {
     const t = await gradedTargets(db, Number(key));
     if (t.error) return t;
     targets = t.targets;
     label = t.master.name;
     prevOf = t.prevOf;
+    pastOf = t.pastOf;
   } else if (kind === "course") {
     const c = parseCourseKey(key);
     if (!c) return { error: "コースが不正です" };
@@ -417,7 +433,7 @@ export async function backtestChunk(db, kind, key, offset, limit, scoreOpts) {
   // scoreOpts.chunkMax(2026-10-18): 夜間の Node(scripts/pace-nightly.mjs)は CPU の上限が無いので一度に多く採点する。
   // 対象レースの IN は最大この数(100バインド上限より小さく。Node は30)、出走馬の IN は scoreRaces の中で90件ずつ
   const slice = targets.slice(offset, offset + Math.min(limit, Math.min(90, scoreOpts.chunkMax || BACKTEST_CHUNK_MAX)));
-  const scored = await scoreRaces(db, slice, { ...scoreOpts, prevOf });
+  const scored = await scoreRaces(db, slice, { ...scoreOpts, prevOf, pastOf });
   // next_offset(2026-10-18): 次の開始位置は「対象にした件数」で進める。採点できないレース(今日の重賞・結果の無い年)は races に入らないため、
   // 以前のように返した件数で進めると開始位置が手前にずれ、同じレースを2回採点していた(秋華賞で2021年が二重。比率がその年に偏った)
   return {

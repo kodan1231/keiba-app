@@ -8,7 +8,7 @@ import { getRaceTimes } from "./race-time-cache.js";
 import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEYS, isLocalRace } from "./race-factors.js";
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
-import { getPaceWeights, prevYearGradedRaceId, paceIndexOf, pickRecommended } from "./pace-score.js";
+import { getPaceWeights, gradedPastOf, paceIndexOf, pickRecommended } from "./pace-score.js";
 import { loadGradedRaceMapCached, gradedRaceOf } from "./race-classification.js";
 import { memoizedKeyed, textFingerprint } from "./memo-cache.js";
 
@@ -47,10 +47,11 @@ async function computeRaceFactorsBody(db, race, entries) {
     getDistanceRatios(db), // 同じ馬の組から出した距離の比(2026-10-16。app_settings 1行。10分使い回し)
   ]);
   const graded = gradedRaceOf(gradedMap, race);
-  const [weights, prevRaceId] = await Promise.all([
+  const [weights, past] = await Promise.all([
     getPaceWeights(db, graded ? graded.id : 0, race),
-    graded ? prevYearGradedRaceId(db, graded.id, race) : null,
+    graded ? gradedPastOf(db, graded.id, race) : null,
   ]);
+  const prevRaceId = past?.prevId ?? null;
   // 重賞・コースの評価点に無い項目(後から足した前年の同レース等)は設定の既定値
   // 間隔(2026-10-15)など全レース共通の項目は、いつも設定の既定値
   const adjust = { ...scoreSettings.adjust, ...(weights.adjust || {}) };
@@ -82,7 +83,7 @@ async function computeRaceFactorsBody(db, race, entries) {
   const keyOfEntry = (e) => horseAliasKeyOf(applyHorseAliasMap(horseAliasMap, e.horse_name));
   const runners = entries.map((e) => ({ key: keyOfEntry(e), horse_number: e.horse_number ?? null, jockey: e.jockey || null, sex_age: e.sex_age || null, weight_carried: e.weight_carried ?? null }));
   const ctx = createFactorContext(lineups, raceTimes, jockeyAliasMap);
-  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios });
+  const rf = computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore: scoreSettings.missing_score, adjust, prevRaceId, gradedPastIds: past?.pastIds || null, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios });
 
   const horses = entries.map((e, i) => {
     const key = runners[i].key;
