@@ -89,6 +89,11 @@ export function isSameCourse(run, race) {
 }
 // 初コース(今回の競馬場で今回の距離を完走したことがない)の馬に使う、同じ芝ダの過去の走の数(2026-10-16)
 export const PAST_RUNS_FOR_NEW_COURSE = 5;
+// 同コースの走がある馬の、同コースの平均の重み(同じ芝ダの過去5走の換算の平均を1として。2026-11-08 ユーザー要望・仕様確認済み)。
+// 11-02〜11-08 は同コースの走だけを使い、1年前の大敗1走だけで低い点になった(11/8 みやこS のヴァルツァーシャル: 同コースはカノープスS 13着の1走だけで
+// 43点、直近の重賞〈シリウスS 1着・平安S 2着〉は使われず)。試算(mirror。補正タイムの点の AUC・1位の3着内率): 同コースだけ 重賞 0.564・29.5% /
+// 全コース 0.664・49.1% → 2:1 で 0.572・30.2% / 0.672・50.5%(1:1 は 0.578・29.3% / 0.673・49.8%。同コースを重めにする要望で 2:1)
+export const TIME_SAME_COURSE_WEIGHT = 2;
 // opts.recent: false なら直近1年に絞らない(初コースの馬の過去5走。2026-10-16)
 // opts.dropFastest: false なら最速は除かず、3走以上のとき最遅だけ除く(同コースの走。2026-11-02 ユーザー要望)
 export function pickTimeRuns(cands, raceDate, { recent: useRecent = true, dropFastest = true } = {}) {
@@ -597,7 +602,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 間隔の評価点(2026-10-15): 前走(中止を含む)の6か月後の同じ日以降
     const layoffFrom = last ? addMonthsIso(last.race_date, LAYOFF_MONTHS) : null;
     const layoff = Boolean(layoffFrom && layoffFrom <= date);
-    let time = null, timeTier = 9, timeRun = null, timeKgAdj = 0, timeUsed = 0, timeTotal = 0, l3 = null, l3Tier = 9;
+    let time = null, timeTier = 9, timeRun = null, timeKgAdj = 0, timeUsed = 0, timeTotal = 0, timeMix = null, l3 = null, l3Tier = 9;
     const timeCands = []; // 補正タイムの候補の走 { tier, c(換算後), x, kgAdj, date }
     // 前走の馬体重(体重のある一番新しい走)と、同コースの掲示板(5着以内)の数
     const weightRun = runs.find((x) => x.status !== "scratched" && x.status !== "excluded" && Number(x.body_weight) > 0);
@@ -644,14 +649,22 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 別の走が強く効いた(JBCレディスクラシック〈金沢ダ1500〉のスカンジナビア: 同コースの1走より、44日前の高知ダ1400 の換算のほうが重かった)。
     // 補正タイム順位(horse-best)も同じ
     const courseRuns = timeCands.filter((c) => isSameCourse(c.x, race));
-    const lastRuns = courseRuns.length ? [] : timeCands.filter((c) => c.x.course_type === race.course_type).slice(0, PAST_RUNS_FOR_NEW_COURSE);
+    const lastRuns = timeCands.filter((c) => c.x.course_type === race.course_type).slice(0, PAST_RUNS_FOR_NEW_COURSE);
     // "same": 同コースの走だけ(2026-11-02)、"last": 初コースの過去5走、"course": 同じ芝ダの走が無い馬の従来の選び方
-    const timeMode = courseRuns.length ? "same" : lastRuns.length ? "last" : "course";
-    const sel = courseRuns.length ? pickTimeRuns(courseRuns.map((c) => ({ ...c, tier: 1 })), date, { dropFastest: false })
-      : lastRuns.length ? pickTimeRuns(lastRuns.map((c) => ({ ...c, tier: 1 })), date, { recent: false })
-      : pickTimeRuns(timeCands, date);
+    // "mix"(2026-11-08): 同コースの走の平均と、同じ芝ダの過去5走の換算の平均を TIME_SAME_COURSE_WEIGHT : 1 で混ぜる
+    const sameW = TIME_SAME_COURSE_WEIGHT;
+    const sameSel = courseRuns.length ? pickTimeRuns(courseRuns.map((c) => ({ ...c, tier: 1 })), date, { dropFastest: false }) : null;
+    const lastSel = lastRuns.length ? pickTimeRuns(lastRuns.map((c) => ({ ...c, tier: 1 })), date, { recent: false }) : null;
+    let timeMode, sel;
+    if (sameSel && lastSel && Number.isFinite(sameW)) {
+      timeMode = "mix";
+      sel = { ...sameSel, time: (sameW * sameSel.time + lastSel.time) / (sameW + 1), kgAdj: 0 };
+      timeMix = { same: sameSel, last: lastSel, w: sameW };
+    } else if (sameSel) { timeMode = "same"; sel = sameSel; }
+    else if (lastSel) { timeMode = "last"; sel = lastSel; }
+    else { timeMode = "course"; sel = pickTimeRuns(timeCands, date); }
     if (sel) ({ time, tier: timeTier, run: timeRun, kgAdj: timeKgAdj, used: timeUsed, total: timeTotal } = sel);
-    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, jraJockey, homeJockey, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal, timeMode };
+    return { key: h.key, h, time, timeTier, timeRun, l3, l3Tier, bodyWeight: weightRun ? Number(weightRun.body_weight) : null, boardIn, boardOut, ranDistance, ranTrack, rodeBefore, jraJockey, homeJockey, prevPos, paceStyle, layoff, timeKgAdj, timeUsed, timeTotal, timeMode, timeMix };
   });
   let nige = 0, senko = 0, unknown = 0;
   for (const s of styles) {
@@ -667,6 +680,11 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   // 何走の平均か(2026-10-16): 「3走平均〈5走中・最速最遅を除く〉」。1走ならその走の芝ダ・距離
   //   1走だけで距離が違えば、その走の芝ダ・距離と「同場換算」(同じ競馬場の ±200m。2026-10-16)か段の名前
   const usedText = (x) => {
+    // 同コースの走と過去5走の換算を混ぜた馬(2026-11-08): 「同コース1走1:54.5と過去5走の換算1:51.5を2:1」
+    if (x.timeMode === "mix") {
+      const m = x.timeMix;
+      return `同コース${m.same.used > 1 ? `${m.same.used}走平均` : "1走"}${fmtSec(m.same.time)}と過去${m.last.total}走の換算${fmtSec(m.last.time)}を${m.w}:1`;
+    }
     // 初コースの馬(2026-10-16): 「3走平均〈初コース・過去5走を換算・最速最遅を除く〉」
     if (x.timeMode === "last") {
       return `${x.timeUsed > 1 ? `${x.timeUsed}走平均` : "1走"}〈初コース・過去${x.timeTotal}走を換算${x.timeTotal > x.timeUsed ? "・最速最遅を除く" : ""}〉`;

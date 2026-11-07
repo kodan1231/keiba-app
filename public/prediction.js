@@ -1363,8 +1363,11 @@ function paceCorrectedSectionHtml(entries) {
         <td><strong>${secText(x.c.corrected_seconds)}</strong>${x.c.partial ? `<span title="補正値が出せない部分を0として計算">※</span>` : ""}${
           // 何走の平均か(2026-10-16。直近1年の走〈無ければ全期間〉の、最速と最遅を除いた平均)。右の列は使った中の最速の走
           // 初コース(この競馬場のこの距離を走ったことがない。2026-10-16): 同じ芝ダの過去5走を換算した平均。「初コース」と添える
-          x.c.mode === "last"
-            ? `<br><small class="pace-none" title="${escapeAttr(`この競馬場のこの距離は初めてのため、同じ芝ダの過去${x.c.runs_total}走をこの競馬場・距離に換算${x.c.runs_total > 2 ? "し、最速と最遅を除いた" : "した"}平均(新しい走ほど重く数える)。最速は ${secText(x.c.fastest_seconds)}`)}">初コース・${x.c.runs_used}走平均</small>`
+          // 同コースと過去5走の換算を混ぜた馬(2026-11-08): 「同コース+過去5走」
+          x.c.mode === "mix"
+            ? `<br><small class="pace-none" title="${escapeAttr(`このコースの${x.c.runs_used}走の平均 ${secText(x.c.course_seconds)} と、同じ芝ダの過去${x.c.last_total}走をこの競馬場・距離に換算した平均 ${secText(x.c.last_seconds)} を ${x.c.same_weight}:1 で混ぜた値(新しい走ほど重く数える)。右の列はこのコースの走の最速`)}">同コース+過去${x.c.last_total}走</small>`
+            : x.c.mode === "last"
+            ?`<br><small class="pace-none" title="${escapeAttr(`この競馬場のこの距離は初めてのため、同じ芝ダの過去${x.c.runs_total}走をこの競馬場・距離に換算${x.c.runs_total > 2 ? "し、最速と最遅を除いた" : "した"}平均(新しい走ほど重く数える)。最速は ${secText(x.c.fastest_seconds)}`)}">初コース・${x.c.runs_used}走平均</small>`
             : x.c.runs_used > 1 ? `<br><small class="pace-none" title="${escapeAttr(`${x.c.recent_only ? "直近1年" : "全期間"}のこのコースの${x.c.runs_total}走${x.c.runs_total > 2 ? "から最遅を除いた" : "の"}平均(新しい走ほど重く数える)。最速は ${secText(x.c.fastest_seconds)}`)}">${x.c.runs_used}走平均</small>` : ""}</td>
         <td>${i === 0 ? "—" : `+${(x.c.corrected_seconds - top).toFixed(1)}`}</td>
         <td>${escapeHtml(x.c.time_text)}${x.c.run_distance ? `<br><small class="pace-none" title="${x.c.run_distance}mの走をこの競馬場・距離に換算(補正の列は競馬場・馬場と距離の換算の合計)">${x.c.run_distance}m換算</small>` : ""}</td>

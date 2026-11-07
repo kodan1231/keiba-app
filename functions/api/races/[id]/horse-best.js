@@ -23,6 +23,7 @@ import {
   addMonthsIso,
   TIME_RECENT_MONTHS,
   PAST_RUNS_FOR_NEW_COURSE,
+  TIME_SAME_COURSE_WEIGHT,
   memoizedKeyed,
   textFingerprint,
 } from "../../_shared.js";
@@ -236,18 +237,22 @@ async function buildBest(env, race) {
     const courseRuns = cands.filter((r) => r.sameCourse);
     const ranCourse = courseRuns.length > 0;
     const newestFirst = [...cands].sort((a, b) => b.date.localeCompare(a.date) || b.num - a.num);
-    const pool = ranCourse ? courseRuns : newestFirst.slice(0, PAST_RUNS_FOR_NEW_COURSE);
-    const sel = ranCourse ? pickTimeRuns(pool, race.race_date, { dropFastest: false }) : pickTimeRuns(pool, race.race_date, { recent: false });
+    // 2026-11-08: 同コースの走がある馬は、同コースの平均と過去5走の換算の平均を TIME_SAME_COURSE_WEIGHT : 1 で混ぜる(mode "mix")
+    const lastPool = newestFirst.slice(0, PAST_RUNS_FOR_NEW_COURSE);
+    const sel = ranCourse ? pickTimeRuns(courseRuns, race.race_date, { dropFastest: false }) : pickTimeRuns(lastPool, race.race_date, { recent: false });
     if (!sel) continue;
+    const lastSel = ranCourse && Number.isFinite(TIME_SAME_COURSE_WEIGHT) ? pickTimeRuns(lastPool, race.race_date, { recent: false }) : null;
+    const time = lastSel ? (TIME_SAME_COURSE_WEIGHT * sel.time + lastSel.time) / (TIME_SAME_COURSE_WEIGHT + 1) : sel.time;
     const fastest = sel.runs[0].info;
     const from = addMonthsIso(race.race_date, -TIME_RECENT_MONTHS);
     horses[name].corrected = {
       ...fastest,
-      corrected_seconds: Math.round(sel.time * 100) / 100,
+      corrected_seconds: Math.round(time * 100) / 100,
       fastest_seconds: fastest.corrected_seconds,
       runs_used: sel.used, runs_total: sel.total,
-      recent_only: ranCourse && pool.some((r) => r.date >= from),
-      mode: ranCourse ? "course" : "last",
+      recent_only: ranCourse && courseRuns.some((r) => r.date >= from),
+      mode: lastSel ? "mix" : ranCourse ? "course" : "last",
+      ...(lastSel ? { course_seconds: Math.round(sel.time * 100) / 100, last_seconds: Math.round(lastSel.time * 100) / 100, last_used: lastSel.used, last_total: lastSel.total, same_weight: TIME_SAME_COURSE_WEIGHT } : {}),
     };
   }
 
