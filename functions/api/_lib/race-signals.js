@@ -9,7 +9,7 @@ import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEY
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getCourseHistory } from "./course-history.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
-import { getPaceWeights, gradedPastOf, paceIndexOf, pickRecommended } from "./pace-score.js";
+import { getPaceWeights, gradedPastOf, paceIndexOf } from "./pace-score.js";
 import { loadGradedRaceMapCached, gradedRaceOf } from "./race-classification.js";
 import { memoizedKeyed, textFingerprint } from "./memo-cache.js";
 
@@ -118,14 +118,14 @@ function dataShortageOf(race, rf, runners) {
 
 // ---- レース一覧の目印(2026-11-01 ユーザー要望。試算は docs/design/screens.md「レース一覧の目印(複・ワ)」) ----
 // 合計 = 軸指数+相手指数(予想登録画面の総合推奨馬の表と同じ計算)。◎〇は推奨馬の印(pickRecommended)
-//   複: ◎の合計が SIGNAL_FUKU_MIN 以上で、合計2位の馬と SIGNAL_FUKU_GAP 点以上の差(複勝◎・ワイド◎-〇向き)
-//   ワ: ◎〇の合計がどちらも SIGNAL_WIDE_MIN 以上で、ほかの馬は全部 ◎〇の低い方より SIGNAL_WIDE_GAP 点以上下
+//   (以前〈〜2026-11-07〉: 複 = ◎の合計125以上で合計2位と10点以上の差、ワ = ◎〇の合計がどちらも120以上でほかの馬は全部10点以上下)
 //   両方を満たせば両方。出走が SIGNAL_MIN_RUNNERS 頭未満のレースは出さない(試算の対象外)
-export const SIGNAL_FUKU_MIN = 125;
-export const SIGNAL_FUKU_GAP = 10;
-export const SIGNAL_WIDE_MIN = 120;
-export const SIGNAL_WIDE_GAP = 10;
+// 2026-11-07〜(ユーザー要望・仕様確認済み): 合計の数値の条件(◎125以上・◎〇120以上)をやめ、差だけにした
+//   複: 合計1位 − 合計2位 ≥ SIGNAL_FUKU_GAP、ワ: 合計2位 − 合計3位 ≥ SIGNAL_WIDE_GAP(以前は ◎〇 で見ていた。合計の1位・2位にした)
+export const SIGNAL_FUKU_GAP = 8;
+export const SIGNAL_WIDE_GAP = 6;
 export const SIGNAL_MIN_RUNNERS = 5;
+const SIGNAL_RULE_VERSION = 2; // 規則を変えたら上げる(保存済みの目印の指紋が変わり、全部計算し直しになる)
 
 // body: getRaceFactorsBody の戻り値、weights: getPaceWeights の戻り値 → "" | "複" | "ワ" | "複ワ"
 export function raceSignalsOf(body, weights) {
@@ -140,15 +140,14 @@ export function raceSignalsOf(body, weights) {
     pace: h.factors.pace?.score, time: h.factors.time?.score, timeMissing: Boolean(h.factors.time?.missing),
   }));
   const total = (x) => x.axis + x.partner;
-  const picked = pickRecommended(horses).map((p) => p.x);
-  const [hon, tai] = picked;
-  if (!hon || !tai) return "";
+  // 合計の高い順(1位は ◎ と同じ。pickRecommended の byTotal と同じ並び)
+  const num = (h) => (h.horse_number == null ? 999 : Number(h.horse_number));
+  const sorted = [...horses].sort((a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b));
+  if (sorted.length < 3) return "";
+  const [t1, t2, t3] = sorted.slice(0, 3).map(total);
   let out = "";
-  const second = Math.max(...horses.filter((x) => x !== hon).map(total));
-  if (total(hon) >= SIGNAL_FUKU_MIN && total(hon) - second >= SIGNAL_FUKU_GAP) out += "複";
-  const low = Math.min(total(hon), total(tai));
-  const rest = horses.filter((x) => x !== hon && x !== tai).map(total);
-  if (low >= SIGNAL_WIDE_MIN && rest.every((t) => t <= low - SIGNAL_WIDE_GAP)) out += "ワ";
+  if (t1 - t2 >= SIGNAL_FUKU_GAP) out += "複";
+  if (t2 - t3 >= SIGNAL_WIDE_GAP) out += "ワ";
   return out;
 }
 
@@ -156,7 +155,7 @@ export const todayJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString
 
 // 保存した目印が今のレースに合うかを見る指紋(出走馬表・コース・レース名・条件)
 export function raceSignalFingerprint(race) {
-  return textFingerprint(`${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}|${race.entries}`);
+  return textFingerprint(`r${SIGNAL_RULE_VERSION}|${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}|${race.entries}`);
 }
 
 // 保存した目印を計算し直すか。出走馬表等が変わった、または今日以降のレースで今日より前に計算した(比率・ほかのレースの結果が

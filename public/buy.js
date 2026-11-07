@@ -46,8 +46,8 @@ let signalPending = []; // 計算待ちのレースID
 let signalWorkers = 0;
 const SIGNAL_WORKERS_MAX = 2;
 const SIGNAL_TITLES = {
-  複: "複: ◎の合計が125以上で、2位と10点以上の差(複勝◎・ワイド◎-〇向き)",
-  ワ: "ワ: ◎〇の合計がどちらも120以上で、ほかの馬は全部10点以上下(〇の単複・◎-〇の馬連・馬単向き)",
+  複: "複: 合計1位が2位より8点以上上(複勝◎向き)",
+  ワ: "ワ: 合計2位が3位より6点以上上(ワイド 合計1位-2位向き)",
 };
 
 function normalizeHorseNameForMemoCheck(v) {
