@@ -248,6 +248,12 @@ function scoreOn(ruler, v) {
 const NUMBER_MIN_RIDES = 20;
 const TIME_RULER_MIN_GRADED = 5; // 補正タイムの物差し: 重賞の過去の年(同じコース)の数
 const TIME_RULER_MIN_RACES = 10; // 補正タイムの物差し: 同コースの過去のレースの数
+const PACE_LABEL = { high: "ハイ", middle: "ミドル", slow: "スロー" };
+// 同コースの合計 → 組("n" = 未出走。−2以下〜+3以上に丸める)。夜間の物差し(_lib/course-history.js)と同じ規則
+export function courseSumGroupOf(ran, sum) {
+  if (!ran) return "n";
+  return String(Math.max(-2, Math.min(3, sum)));
+}
 const JOCKEY_PRIOR_RIDES = 10;
 const NEAR_DISTANCE = 200;
 const NUMBER_GROUP_SIZE = 3;
@@ -571,7 +577,8 @@ function convertTimeRaw(ctx, sec, run, race, distanceRatios) {
 // opts.weightSecPerKg: 斤量1kgあたりの補正の秒数(設定 getPaceScoreSettings の weight_sec_per_kg。省略時は既定0.1)。runsByHorse の各走に weight_carried が要る
 // opts.distanceRatios: 同じ馬の組から出した距離の比(2026-10-16。_lib/distance-ratios.js の getDistanceRatios。省略可)
 // opts.gradedPastIds: 重賞のレースなら、その重賞の過去の年のレースID(最大10年。2026-11-07。帯の要素の元の成績。そのレースより前の年だけ数える)
-export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, gradedPastIds = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG, distanceRatios = null } = {}) {
+// opts.courseHistory: 夜間に数えた展開・同コースの物差し(2026-11-07。_lib/course-history.js の getCourseHistory。無ければ以前の方式)
+export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingScore = DEFAULT_MISSING_SCORE, adjust = null, prevRaceId = null, gradedPastIds = null, weightSecPerKg = DEFAULT_WEIGHT_SEC_PER_KG, distanceRatios = null, courseHistory = null } = {}) {
   const date = String(race.race_date);
   const n = runners.length;
   const localRace = isLocalRace(race);
@@ -917,7 +924,85 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   // 「補正タイム」要素の内訳(timeText)にだけ出す(斤量は 2026-10-18 に表示をやめた。timeText の注記参照)
   const shortTime = (x) => `補${fmtSec(x.time)}`;
   const shortL3 = (x) => `上${x.l3.toFixed(1)}`;
-  if (paceType === "high") {
+  // 第2段(2026-11-07 ユーザー要望・仕様確認済み): 夜間に数えた物差し(opts.courseHistory。_lib/course-history.js)があれば、
+  // 展開・同コースも過去の結果の物差しで出す。無ければ以前の方式(今回の出走馬の中の偏差値)
+  const ch = courseHistory;
+  const chCourse = ch?.courses.get(`${race.track}|${race.course_type}|${Number(race.distance)}`) || null;
+  const chTrack = ch?.tracks.get(`${race.track}|${race.course_type}`) || null;
+  const chAll = ch?.all.get(race.course_type) || null;
+  // 時計の点(展開の半分): ハイ=補正タイム(補正タイムの要素と同じ物差し)、スロー=上がり3F(同コースの勝ち馬の上がり。10レース未満なら
+  // 今回の出走馬の中の偏差値)、ミドル=両方の平均
+  const devMap = (list, valueOf) => {
+    const d = deviations(list.map(valueOf));
+    return new Map(list.map((x, i) => [x.key, d[i]]));
+  };
+  const timeDev = timeRuler ? null : devMap(withTime, (x) => -x.time);
+  const timeScoreOf = (x) => (x.time == null ? null : timeRuler ? scoreOn(timeRuler, -x.time) : timeDev.get(x.key));
+  const l3Ruler = chCourse?.l3 && chCourse.l3.n >= TIME_RULER_MIN_RACES ? { mean: -chCourse.l3.mean, sd: chCourse.l3.sd } : null;
+  const l3Dev = l3Ruler ? null : devMap(withL3, (x) => -x.l3);
+  const l3ScoreOf = (x) => (x.l3 == null ? null : l3Ruler ? scoreOn(l3Ruler, -x.l3) : l3Dev.get(x.key));
+  // 脚質の点(展開の半分): その段の「予想ペース|予想の脚質の組」の複勝率 ÷ 全部のペースの同じ組の複勝率。物差しはその段の全部の組の比
+  // (20騎乗以上)。段は 同コース → 同場 → 全場(今回の組が20騎乗以上ある最初の段)。脚質が分からない・成績が無ければ50
+  const paceLevels = [["course", chCourse], ["track", chTrack], ["all", chAll]].filter(([, v]) => v?.p?.size);
+  const paceRulers = new Map();
+  const paceRulerOf = (scope, m) => {
+    if (paceRulers.has(scope)) return paceRulers.get(scope);
+    const vals = [];
+    for (const [k, c] of m) {
+      if (k.startsWith("a|") || c.rides < NUMBER_MIN_RIDES) continue;
+      const a = m.get(`a|${k.split("|")[1]}`);
+      if (a?.rides && a.show) vals.push(c.show / c.rides / (a.show / a.rides));
+    }
+    const r = rulerOf(vals);
+    paceRulers.set(scope, r);
+    return r;
+  };
+  const styleScoreOf = (x) => {
+    const sg = styleGroupOf(x.paceStyle);
+    if (!sg) return { score: 50, text: "脚質不明(50)" };
+    for (const [scope, lv] of paceLevels) {
+      const c = lv.p.get(`${paceType}|${sg}`), a = lv.p.get(`a|${sg}`);
+      const ruler = paceRulerOf(scope, lv.p);
+      if (!c || c.rides < NUMBER_MIN_RIDES || !a?.show || !ruler) continue;
+      const ratio = c.show / c.rides / (a.show / a.rides);
+      return { score: scoreOn(ruler, ratio), text: `${PACE_LABEL[paceType]}の${STYLE_GROUP_LABELS[sg]} 複${pct(c.show / c.rides)}(全ペース${pct(a.show / a.rides)}・${c.rides}騎乗・${SCOPE_LABEL[scope]})` };
+    }
+    return { score: 50, text: "成績不足(50)" };
+  };
+  // 同コースの点(第2段): 過去にそのコースを走った馬を「その時点までの合計」の組(未出走・−2以下〜+3以上)に分けた複勝率で物差しを作る
+  // (同コース → 全場の同じ芝ダ障。組が2つ以上20騎乗ある段)。今回の馬は自分の組の複勝率(同コースで20騎乗未満なら全場)。物差しが無ければ以前の方式
+  const sumLevels = [["course", chCourse?.s], ["all", chAll?.s]].filter(([, m]) => m?.size);
+  const sumRulers = new Map();
+  const sumRulerOf = (scope, m) => {
+    if (!sumRulers.has(scope)) sumRulers.set(scope, rulerOf([...m.values()].filter((c) => c.rides >= NUMBER_MIN_RIDES).map((c) => c.show / c.rides)));
+    return sumRulers.get(scope);
+  };
+  const sumMemo = new Map();
+  const courseSumScoreOf = (x) => {
+    if (sumMemo.has(x.key)) return sumMemo.get(x.key);
+    let out = { v: x.boardIn - x.boardOut };
+    if (ch) {
+      const g = courseSumGroupOf(Boolean(x.boardIn || x.boardOut), x.boardIn - x.boardOut);
+      for (const [scope, m] of sumLevels) {
+        const c = m.get(g), ruler = sumRulerOf(scope, m);
+        if (!c || c.rides < NUMBER_MIN_RIDES || !ruler) continue;
+        out = { v: scoreOn(ruler, c.show / c.rides), direct: true, note: `・この組の複${pct(c.show / c.rides)}(${c.rides}騎乗・${SCOPE_LABEL[scope]})` };
+        break;
+      }
+      if (!out.direct) out = { v: 50, direct: true, note: "・成績不足(50)" };
+    }
+    sumMemo.set(x.key, out);
+    return out;
+  };
+  if (ch) {
+    const cand = paceType === "high" ? withTime : paceType === "slow" ? withL3 : horses.filter((x) => x.time != null && x.l3 != null);
+    paceRanked = rankBy(cand.map((x) => {
+      const t = paceType === "high" ? timeScoreOf(x) : paceType === "slow" ? l3ScoreOf(x) : (timeScoreOf(x) + l3ScoreOf(x)) / 2;
+      const st = styleScoreOf(x);
+      const clock = paceType === "high" ? shortTime(x) : paceType === "slow" ? shortL3(x) : `${shortTime(x)} ${shortL3(x)}`;
+      return { ...x, v: (st.score + t) / 2, direct: true, value: `${styleText(x)} ${clock}・${st.text}` };
+    }), (x) => -x.v);
+  } else if (paceType === "high") {
     paceRanked = paceFavoredRank(withTime.map((x) => ({ ...x, t: x.time, fav: isFavoredStyle("high", x.paceStyle) })))
       .map((x) => ({ ...x, value: `${styleText(x)} ${shortTime(x)}` }));
   } else if (paceType === "slow") {
@@ -946,8 +1031,8 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     // 同コース: 全頭を並べる(走っていない馬は0)。多い順
     course: rankBy(horses.map((x) => ({ ...x, sum: x.boardIn - x.boardOut })), (x) => -x.sum).map((x) => ({
       ...x,
-      v: x.sum,
-      value: x.boardIn || x.boardOut ? `同コース 5着以内${x.boardIn}回・6着以下${x.boardOut}回(${x.sum > 0 ? "+" : ""}${x.sum})` : "同コース未出走(0)",
+      ...courseSumScoreOf(x),
+      value: `${x.boardIn || x.boardOut ? `同コース 5着以内${x.boardIn}回・6着以下${x.boardOut}回(${x.sum > 0 ? "+" : ""}${x.sum})` : "同コース未出走(0)"}${courseSumScoreOf(x).note || ""}`,
     })),
   };
   const factors = {};

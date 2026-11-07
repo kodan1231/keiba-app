@@ -13,6 +13,7 @@
 //      (2a で保存した晩は何もしない。D1 を読めないときの予備)。
 //   2a'.(2026-11-05)2a と同じ読み取りで、馬情報検索タブの出走回数・勝利回数のトップ10を数えて POST /api/cron/horse-ranking で保存する
 //      (2a で計算する晩と、まだ一度も保存していない晩)。
+//   2a''.(2026-11-07)同じ読み取りで、総合推奨馬の展開・同コースの物差しを数えて POST /api/cron/course-history で保存する(同じ条件)。
 // 失敗した条件は計算待ちに残し、最後に1分待ってもう一度やり直す。それでも残ったものを一覧に出し、終了コード1(GitHub のメールで分かる)。
 // 環境変数: KEIBA_BASE_URL(管理者用アプリ)、KEIBA_CRON_SECRET(管理者用アプリの秘密情報 PACE_CRON_SECRET と同じ値。ヘッダー X-Cron-Secret)
 //   CF_D1_TOKEN(D1 を読める Cloudflare の API トークン)、CF_ACCOUNT_ID・CF_D1_DATABASE_ID(省略時は本番の値)
@@ -121,6 +122,7 @@ async function processItem(it) {
 // 2026-11-05〜 同じ読み取りで、馬情報検索タブの出走回数・勝利回数のトップ10も数えて POST /api/cron/horse-ranking で保存する
 let conversionFailed = null;
 let rankingFailed = null;
+let historyFailed = null;
 if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
   try {
     const { distanceRatiosState, computeConversionTables } = await import("../functions/api/_lib/distance-ratios.js");
@@ -130,6 +132,9 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
     // 馬情報検索タブの出走回数・勝利回数のトップ10(2026-11-05)は、同じ読み取りのついでに数える。
     // 換算の比を計算する晩に一緒に出し、まだ一度も保存していなければ換算の比を計算しない晩でも出す(主キーで1行読む)
     const rankingMissing = !(await loadHorseRanking(d1).catch(() => null));
+    // 総合推奨馬の展開・同コースの物差し(2026-11-07)も同じ読み取りのついでに数える(換算の比を計算する晩と、まだ保存していない晩)
+    const { computeCourseHistory, getCourseHistory } = await import("../functions/api/_lib/course-history.js");
+    const historyMissing = !(await getCourseHistory(d1, { fresh: true }).catch(() => null));
     const doConversion = !st.running && (st.stale || process.env.FORCE_CONVERSION === "1");
     if (st.running) {
       console.log("換算の比と偏り: Cloudflare 側の距離の比の計算の途中なので、今夜はそちらに任せる");
@@ -138,7 +143,7 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
     }
     const started = Date.now();
     let races = null, results = null, marker = 0;
-    if (doConversion || rankingMissing) {
+    if (doConversion || rankingMissing || historyMissing) {
       const readAll = async (sql, page) => {
         const out = [];
         for (let last = 0; ;) {
@@ -149,7 +154,8 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
         }
       };
       races = new Map((await readAll("SELECT id, race_date, race_number, track, course_type, distance, track_condition FROM races", 3000)).map((r) => [r.id, r]));
-      results = await readAll("SELECT id, horse_key, horse_name, race_id, status, finish_position, time_text FROM race_results", 5000);
+      // corner_positions・final_furlong_time(2026-11-07)は展開・同コースの物差し用(読む行は同じ)
+      results = await readAll("SELECT id, horse_key, horse_name, race_id, status, finish_position, time_text, corner_positions, final_furlong_time FROM race_results", 5000);
       marker = results.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
       // 出走回数・勝利回数のトップ10(失敗しても換算の比は続ける)
       try {
@@ -160,6 +166,15 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
       } catch (e) {
         rankingFailed = `失敗(次の晩にやり直す) ${e.message}`;
         console.error(`出走回数・勝利回数のトップ10: ${rankingFailed}`);
+      }
+      // 展開・同コースの物差し(失敗しても換算の比は続ける)。比率の計算(1)の採点が使うので 1 より先に保存する
+      try {
+        const history = computeCourseHistory(results, races);
+        const saved = await api("/api/cron/course-history", { method: "POST", body: JSON.stringify({ marker, history }) });
+        console.log(`展開・同コースの物差し: ${Object.keys(history.courses).length}コース(${(JSON.stringify(history).length / 1024).toFixed(0)}KB)を保存 ${saved.computed_at}`);
+      } catch (e) {
+        historyFailed = `失敗(次の晩にやり直す) ${e.message}`;
+        console.error(`展開・同コースの物差し: ${historyFailed}`);
       }
     }
     if (doConversion) {
@@ -264,6 +279,6 @@ if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
 
 // ---- まとめ ----
 if (d1) console.log(`D1 の読み取り: ${d1.stats().rowsRead}行(${d1.stats().queries}回)`);
-console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}${adjustFailed ? " / 評価点の既定値 失敗" : ""}`);
+console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}${historyFailed ? " / 展開・同コースの物差し 失敗" : ""}${adjustFailed ? " / 評価点の既定値 失敗" : ""}`);
 for (const [k, msg] of failures) console.log(`  残り: ${k} … ${msg}`);
-if (failures.size || distanceFailed || conversionFailed || rankingFailed || adjustFailed) process.exit(1);
+if (failures.size || distanceFailed || conversionFailed || rankingFailed || historyFailed || adjustFailed) process.exit(1);

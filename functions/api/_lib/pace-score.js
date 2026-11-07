@@ -17,6 +17,7 @@ import { parseCourseKey } from "./pace-queue.js";
 import { memoized } from "./memo-cache.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
 import { getDistanceRatios } from "./distance-ratios.js";
+import { getCourseHistory } from "./course-history.js";
 
 // レース一覧(races_index_cache)を同じ実行環境で60秒使い回す(2026-10-14)。読み込み〈約90万文字の解析〉に10ミリ秒以上かかり、
 // 比率の計算で6レースずつ採点を呼ぶたびに読み直すと、それだけで無料枠のCPU時間の上限(10ミリ秒)を超えて 503 になったため
@@ -246,7 +247,8 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
   // 騎手名エイリアスは使い回し版(読み取り専用。同じ Map なら race-factors API と下ごしらえ〈createFactorContext〉も共有される)
   // 斤量の補正の秒数(2026-10-15)は設定から(app_settings 1行。2分使い回し)
   // 同じ馬の組から出した距離の比(2026-10-16。app_settings 1行。10分使い回し)
-  const [lineups, aliasMap, raceTimes, scoreSettings, distanceRatios] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db), getPaceScoreSettings(db), getDistanceRatios(db)]);
+  // 展開・同コースの物差し(2026-11-07。app_settings 1行。10分使い回し。無ければ以前の方式)
+  const [lineups, aliasMap, raceTimes, scoreSettings, distanceRatios, courseHistory] = await Promise.all([getRaceLineups(db), loadJockeyAliasMapCached(db), getRaceTimes(db), getPaceScoreSettings(db), getDistanceRatios(db), getCourseHistory(db).catch(() => null)]);
   // 対象レースは呼び出し側で最大 BACKTEST_CHUNK_MAX(6)件または重賞の11件に絞る(100バインド上限に届かない)
   const ids = races.map((r) => Number(r.id));
   const { results: rrRows } = await db
@@ -293,7 +295,7 @@ async function scoreRaces(db, races, { missingScore = DEFAULT_MISSING_SCORE, pre
     const top3 = runnersAll.filter((r) => r.status === "finished" && r.finish_position >= 1 && r.finish_position <= 3);
     if (!runnersAll.length || !top3.length) continue;
     const rf = computeRaceFactors(ctx, race, runnersAll.map((h) => ({ key: h.horse_key, horse_number: h.horse_number, jockey: h.jockey, sex_age: h.sex_age, weight_carried: h.weight_carried })), runsByHorse, {
-      missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null, gradedPastIds: pastOf ? pastOf.get(Number(race.id)) || null : null, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios,
+      missingScore, prevRaceId: prevOf ? prevOf.get(Number(race.id)) ?? null : null, gradedPastIds: pastOf ? pastOf.get(Number(race.id)) || null : null, weightSecPerKg: scoreSettings.weight_sec_per_kg, distanceRatios, courseHistory,
     });
     out.push({
       race,

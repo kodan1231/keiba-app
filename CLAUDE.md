@@ -86,6 +86,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | `_lib/d1-usage.js` | `getD1Usage` `loadD1Usage` `d1UsageRatio`(今日の D1 使用量を Cloudflare の分析APIで取る。秘密情報 `CF_ANALYTICS_TOKEN`。2026-10-08追加) |
 | `_lib/service-guard.js` | `serviceGuardResponse`(`_middleware.js` から。使用量がしきい値を超えたら選んだ重い機能だけ 503。2026-11-02〜 読み取り〈`targets`〉と書き込み〈`writeTargets`。既定は取り込み・一括補正〉で別々に判定) `getServiceGuardSettings` `saveServiceGuardSettings` `getServiceGuardState` `SERVICE_GUARD_FEATURES`(止められる機能の一覧。重い機能を新しく足したらここに加える。2026-10-08追加) |
 | `_lib/race-time-cache.js` | `getRaceTimes`(勝ちタイムの小さいキャッシュ race_time_cache。競馬場・芝ダ障・距離・馬場・クラス・勝ちタイムだけ。範囲ごと。60秒使い回し。競馬場傾向タブ・補正タイム用。2026-10-13追加。集計用キャッシュは読み込みが約9.7ミリ秒と重いため分けた) |
+| `_lib/course-history.js` | `computeCourseHistory` `getCourseHistory` `saveCourseHistory`(総合推奨馬の展開・同コースの物差し。夜間の `pace-nightly.mjs` 2a が数えて `POST /api/cron/course-history` で app_settings の1行に保存、採点が読む。2026-11-07) |
 | `_lib/distance-ratios.js` | `getDistanceRatios` `pairDistanceRatioOf` `distanceRatiosStep` `distanceRatiosState`(同じ馬の組から出す、同じ競馬場の中の距離の換算の比。夜間に1歩ずつ計算し app_settings に1行。2026-10-16追加) |
 | `_lib/track-trends.js` | `buildTrackTrends` `trendDistanceOptions` `trackTimeOffsets` `correctRunTime` `TREND_MIN_RACES`(競馬場傾向タブ・補正タイム。DB不使用。2026-10-12追加。クラス判定は `_lib/race-classification.js` の `raceClassOf`) |
 | `_lib/guest.js` | `resolveGuest`(ミドルウェアから。ゲストのCookie〈kbg〉を確かめ、使えるAPI・期間内の中央のレースだけ通す) `guestRaceWindow` `isGuestRace` `getGuestSettings` `getGuestBlocks` `recordGuestAccess`(10分に1回まで書く)。**ゲストに新しいAPIを見せるときは `GUEST_API_RULES` に足す**(2026-10-14追加。docs/design/guest.md) |
