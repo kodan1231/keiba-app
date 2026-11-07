@@ -235,7 +235,19 @@ function deviations(vals) {
   const sd = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
   return vals.map((v) => (sd > 1e-9 ? 50 + (10 * (v - mean)) / sd : 50));
 }
+// 過去の結果の物差し(2026-11-07): 値の配列 → { mean, sd, n }(2つ未満なら null)。scoreOn: 物差しでの偏差値(物差しが無い・ばらつき0なら50)
+function rulerOf(vals) {
+  if (vals.length < 2) return null;
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sd = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length);
+  return { mean, sd, n: vals.length };
+}
+function scoreOn(ruler, v) {
+  return ruler && ruler.sd > 1e-9 ? 50 + (10 * (v - ruler.mean)) / ruler.sd : 50;
+}
 const NUMBER_MIN_RIDES = 20;
+const TIME_RULER_MIN_GRADED = 5; // 補正タイムの物差し: 重賞の過去の年(同じコース)の数
+const TIME_RULER_MIN_RACES = 10; // 補正タイムの物差し: 同コースの過去のレースの数
 const JOCKEY_PRIOR_RIDES = 10;
 const NEAR_DISTANCE = 200;
 const NUMBER_GROUP_SIZE = 3;
@@ -367,10 +379,12 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   for (const r of lineups) {
     if (!r.flat) continue;
     fieldSizeByRace.set(Number(r.id), r.size);
-    flatById.set(Number(r.id), { race_date: String(r.race_date), flat: r.flat });
+    // win・cond(2026-11-07): 勝ちタイム(秒)と馬場。補正タイムの物差し用
+    const win = Number(r.win_time) > 0 ? Number(r.win_time) : null;
+    flatById.set(Number(r.id), { race_date: String(r.race_date), flat: r.flat, track: r.track, course_type: r.course_type, distance: Number(r.distance), win, cond: r.track_condition });
     const g = `${r.track}|${r.course_type}`;
     if (!byTrackCt.has(g)) byTrackCt.set(g, []);
-    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)) });
+    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)), win, cond: r.track_condition });
   }
   // 全競馬場の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、初めて必要になったときに
   // 種類ごとに数える(2026-10-14: 4種類まとめて数えると本番の6.3万騎乗で約14ミリ秒かかったため、要る種類だけにした)。
@@ -666,22 +680,25 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   // 騎手は今回乗る騎手だけ数え、平均用に全騎乗の合計を別に数える(2026-10-14 CPU時間対策。結果は同じ)
   const numCourse = new Map(), numTrack = new Map(), jkCourse = new Map(), jkTrack = new Map();
   const sexCourse = new Map(), sexTrack = new Map(), wtCourse = new Map(), wtTrack = new Map();
-  // 週目(2026-10-15): 今回の週の帯と、同じ競馬場・芝ダ障の脚質の組ごとの成績(今回と同じ週の帯 / 全部の週)
+  // 週目(2026-10-15): 今回の週の帯と、同じ競馬場・芝ダ障の脚質の組ごとの成績(週の帯ごと〈"帯|組"〉/ 全部の週〈組〉)。
+  // 2026-11-07: 物差しを作るため、今回の帯だけでなく全部の帯を数える
   const weekBand = ctx.weekBandOf(race.track, date);
-  const weekSame = new Map(), weekAll = new Map();
-  const runnerJk = new Set(runners.map((h) => ctx.keyOf(h.jockey)).filter(Boolean));
+  const weekByBand = new Map(), weekAll = new Map();
+  const courseWins = []; // 同コースの過去のレース(勝ちタイムのあるもの。補正タイムの物差し。2026-11-07)
+  // 騎手(2026-11-07〜): 物差し(騎乗のある騎手全員の複勝率)を作るため全騎手を数える(以前は今回乗る騎手だけ)
   const jkTotal = { course: newCounts(), track: newCounts() };
   const addTotal = (c, pos) => { c.rides++; if (pos === 1) c.first++; if (pos >= 1 && pos <= 3) c.show++; };
   const S = LINEUP_STRIDE;
   for (const r of ctx.byTrackCt.get(`${race.track}|${race.course_type}`) || []) {
     if (r.race_date >= date) continue;
     const same = r.distance === Number(race.distance);
+    if (same && r.win != null) courseWins.push(r);
     const flat = r.flat;
     for (let i = 0; i < flat.length; i += S) {
       const hn = flat[i], ji = flat[i + 1], pos = flat[i + 2], sa = flat[i + 3], wb = flat[i + 4], sg = flat[i + 5];
       if (sg) {
         addRide(weekAll, sg, pos);
-        if (r.week === weekBand) addRide(weekSame, sg, pos);
+        if (r.week) addRide(weekByBand, `${r.week}|${sg}`, pos);
       }
       if (hn > 0) {
         const g = numberGroupOf(hn);
@@ -700,10 +717,8 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       if (jk) {
         addTotal(jkTotal.track, pos);
         if (same) addTotal(jkTotal.course, pos);
-        if (runnerJk.has(jk)) {
-          addRide(jkTrack, jk, pos);
-          if (same) addRide(jkCourse, jk, pos);
-        }
+        addRide(jkTrack, jk, pos);
+        if (same) addRide(jkCourse, jk, pos);
       }
     }
   }
@@ -763,19 +778,39 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const sexTable = bandTable(gradedSex, sexCourse, sexTrack, "sexAllByCt");
   const wtTable = bandTable(gradedWt, wtCourse, wtTrack, "weightAllByCt");
   const numberList = [], sexList = [], weightList = [], weekList = [];
-  // 週目: 同じ週の帯の複勝率 ÷ 全部の週の複勝率(同場で同じ週の帯の騎乗が NUMBER_MIN_RIDES 未満なら全場)
+  // 週目: 同じ週の帯の複勝率 ÷ 全部の週の複勝率(同場で同じ週の帯の騎乗が NUMBER_MIN_RIDES 未満なら全場)。
+  // 2026-11-07〜 点は物差し(その段の全部の「帯×脚質の組」の比のうち騎乗が足りるもの。平均・標準偏差)での偏差値(今回の出走馬の中で偏差値にしない)
   const rateOf = (c) => (c && c.rides ? c.show / c.rides : null);
+  const weekLevel = (scope) => {
+    if (scope === "track") return { band: (b, sg) => weekByBand.get(`${b}|${sg}`), all: (sg) => weekAll.get(Number(sg)), keys: () => [...weekByBand.keys()] };
+    const m = ctx.allOf("weekAllByCt").get(race.course_type) || new Map();
+    return { band: (b, sg) => m.get(`${b}|${sg}`), all: (sg) => m.get(`a|${sg}`), keys: () => [...m.keys()].filter((k) => !k.startsWith("a|")) };
+  };
+  const weekRulers = new Map();
+  const weekRulerOf = (scope) => {
+    if (weekRulers.has(scope)) return weekRulers.get(scope);
+    const L = weekLevel(scope), vals = [];
+    for (const k of L.keys()) {
+      const [b, sg] = k.split("|");
+      const c = L.band(b, sg), ra = rateOf(L.all(sg));
+      if (c && c.rides >= NUMBER_MIN_RIDES && ra) vals.push(c.show / c.rides / ra);
+    }
+    const r = rulerOf(vals);
+    weekRulers.set(scope, r);
+    return r;
+  };
   for (const x of horses) {
     const sg = styleGroupOf(x.paceStyle);
     if (!sg || !weekBand) continue;
-    let same = weekSame.get(sg), all = weekAll.get(sg), scope = "track";
-    if (!same || same.rides < NUMBER_MIN_RIDES || !rateOf(all)) {
-      const m = ctx.allOf("weekAllByCt").get(race.course_type) || new Map();
-      same = m.get(`${weekBand}|${sg}`); all = m.get(`a|${sg}`); scope = "all";
+    let scope = "track", L = weekLevel("track");
+    let same = L.band(weekBand, sg), all = L.all(sg);
+    if (!same || same.rides < NUMBER_MIN_RIDES || !rateOf(all) || !weekRulerOf("track")) {
+      scope = "all"; L = weekLevel("all");
+      same = L.band(weekBand, sg); all = L.all(sg);
     }
     const rs = rateOf(same), ra = rateOf(all);
     if (rs == null || !ra) continue;
-    weekList.push({ key: x.key, sg, show: rs, base: ra, ratio: rs / ra, rides: same.rides, scope });
+    weekList.push({ key: x.key, sg, show: rs, base: ra, ratio: rs / ra, rides: same.rides, scope, v: scoreOn(weekRulerOf(scope), rs / ra), direct: true });
   }
   for (const h of runners) {
     const hn = Number(h.horse_number);
@@ -805,19 +840,34 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     for (const c of ctx.allOf("jockeyAll").values()) { t.rides += c.rides; t.show += c.show; t.first += c.first; }
     return (jkAvg.all = avgOf(t));
   };
+  // 2026-11-07〜 点は物差し(その段で NUMBER_MIN_RIDES 騎乗以上の騎手全員の、平均に寄せた複勝率。平均・標準偏差)での偏差値
+  const jkMapOf = (scope) => (scope === "course" ? jkCourse : scope === "track" ? jkTrack : ctx.allOf("jockeyAll"));
+  const jkAvgOf = (scope) => (scope === "all" ? jkAllAvg() : jkAvg[scope]);
+  const shrunk = (c, a) => {
+    const K = JOCKEY_PRIOR_RIDES;
+    return { show: (c.show + K * a.show) / (c.rides + K), win: (c.first + K * a.win) / (c.rides + K) };
+  };
+  const jkRulers = new Map();
+  const jkRulerOf = (scope) => {
+    if (jkRulers.has(scope)) return jkRulers.get(scope);
+    const a = jkAvgOf(scope), vals = [];
+    for (const c of jkMapOf(scope).values()) if (c.rides >= NUMBER_MIN_RIDES) vals.push(shrunk(c, a).show);
+    const r = rulerOf(vals);
+    jkRulers.set(scope, r);
+    return r;
+  };
   const jockeyList = [];
   for (const h of runners) {
     const jk = ctx.keyOf(h.jockey);
     if (!jk) continue;
-    let c = jkCourse.get(jk), scope = "course";
-    if (!c || !c.rides) { c = jkTrack.get(jk); scope = "track"; }
-    if (!c || !c.rides) { c = ctx.allOf("jockeyAll").get(jk); scope = "all"; }
-    if (!c || !c.rides) continue;
-    const a = scope === "all" ? jkAllAvg() : jkAvg[scope], K = JOCKEY_PRIOR_RIDES;
-    jockeyList.push({
-      key: h.key, rides: c.rides, scope, rawShow: c.show / c.rides,
-      show: (c.show + K * a.show) / (c.rides + K), win: (c.first + K * a.win) / (c.rides + K),
-    });
+    let c = null, scope = null;
+    for (const s of ["course", "track", "all"]) {
+      const x = jkMapOf(s).get(jk);
+      if (x && x.rides && jkRulerOf(s)) { c = x; scope = s; break; }
+    }
+    if (!c) continue;
+    const r = shrunk(c, jkAvgOf(scope));
+    jockeyList.push({ key: h.key, rides: c.rides, scope, rawShow: c.show / c.rides, ...r, v: scoreOn(jkRulerOf(scope), r.show), direct: true });
   }
   const rateRank = (list) => {
     const sorted = [...list].sort((a, b) => b.show - a.show || b.win - a.win || b.rides - a.rides);
@@ -842,6 +892,20 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const bandText = (x) => (x.scope === "graded" && x.raw != null
     ? `複${pct(x.raw)}→${pct(x.show)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]}。同コースを混ぜた値)`
     : `複${pct(x.show)} 単${pct(x.win)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})`);
+
+  // 補正タイムの物差し(2026-11-07 ユーザー要望・仕様確認済み): 過去の勝ちタイムから馬場の補正を引いた値(補正タイムと同じ「良」の基準)の
+  // 平均・標準偏差。重賞はその重賞の過去の年(同じコースで行われた年。TIME_RULER_MIN_GRADED 年以上)→ 同コース(TIME_RULER_MIN_RACES 以上)。
+  // どちらも足りなければ今回の出走馬の中の偏差値(以前と同じ)。勝ちタイム並みの補正タイムなら50、物差しの1標準偏差だけ速ければ60
+  const condOffNow = (cond) => condOffOf(ctx.courseOf(race.course_type, race.distance).offsets, race.track, normalizeTrackConditionText(cond)) ?? 0;
+  const stdWin = (r) => r.win - condOffNow(r.cond);
+  const gradedWins = [];
+  for (const id of gradedPastIds || []) {
+    const L = ctx.flatById.get(Number(id));
+    if (L && L.race_date < date && L.win != null && L.track === race.track && L.course_type === race.course_type && L.distance === Number(race.distance)) gradedWins.push(L);
+  }
+  const timeRuler = gradedWins.length >= TIME_RULER_MIN_GRADED ? { scope: "graded", ...rulerOf(gradedWins.map((r) => -stdWin(r))) }
+    : courseWins.length >= TIME_RULER_MIN_RACES ? { scope: "course", ...rulerOf(courseWins.map((r) => -stdWin(r))) } : null;
+  const timeRulerText = timeRuler ? `・物差し${SCOPE_LABEL[timeRuler.scope]}${timeRuler.n}レースの勝ち${fmtSec(-timeRuler.mean)}` : "";
 
   // 並び(rank は表示用)と偏差値の元の値 v(大きいほど良い。2026-10-14〜)
   const withTime = horses.filter((x) => x.time != null);
@@ -868,12 +932,14 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   }
   const ranked = {
     pace: paceRanked,
-    time: rankBy(withTime, (x) => x.time).map((x) => ({ ...x, v: -x.time, value: timeText(x) })),
+    time: rankBy(withTime, (x) => x.time).map((x) => (timeRuler
+      ? { ...x, v: scoreOn(timeRuler, -x.time), direct: true, value: `${timeText(x)}${timeRulerText}` }
+      : { ...x, v: -x.time, value: timeText(x) })),
     number: bandRank(numberList).map((x) => ({ ...x, value: `${numberGroupLabel(x.group)} ${bandText(x)}` })),
-    jockey: rateRank(jockeyList).map((x) => ({ ...x, v: x.show, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    jockey: rateRank(jockeyList).map((x) => ({ ...x, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
     sexage: bandRank(sexList).map((x) => ({ ...x, value: `${sexAgeLabelOf(x.sa)} ${bandText(x)}` })),
-    week: rankBy(weekList, (x) => -x.ratio).map((x) => ({
-      ...x, v: x.ratio,
+    week: rankBy(weekList, (x) => -x.v).map((x) => ({
+      ...x,
       value: `${WEEK_BAND_LABELS[weekBand]} ${STYLE_GROUP_LABELS[x.sg]} 複${pct(x.show)}(全週${pct(x.base)}・${x.rides}騎乗・${SCOPE_LABEL[x.scope]})`,
     })),
     weight: bandRank(weightList).map((x) => ({ ...x, value: `前走${x.kg}kg(${WEIGHT_BAND_LABELS[x.wb]}) ${bandText(x)}` })),
