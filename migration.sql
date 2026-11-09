@@ -502,3 +502,26 @@ CREATE TABLE IF NOT EXISTS race_signals (
 );
 CREATE INDEX IF NOT EXISTS idx_race_signals_date ON race_signals(race_date);
 INSERT INTO schema_migrations (name) VALUES ('race_signals');
+
+-- @STEP: race_pick_records
+-- 結果を登録する直前の推奨馬の印を残す(2026-11-10。データ検索「推奨馬比較」タブ)。_lib/race-signals.js・_lib/pick-stats.js。
+-- race_signals に列 marks を足し(既存の行は書き換えない)、表 race_pick_records と、races.finish_order が空 → 値ありになったときに
+-- race_signals の印を写すトリガーを作る。データは読まない・書かない(ALTER TABLE ADD COLUMN は行を書き直さない)。
+-- 適用前は印を保存しない・記録しないだけ(race_signals の保存は以前の形に戻る)。
+ALTER TABLE race_signals ADD COLUMN marks TEXT;
+CREATE TABLE IF NOT EXISTS race_pick_records (
+  race_id INTEGER PRIMARY KEY,
+  race_date TEXT NOT NULL,
+  marks TEXT NOT NULL,
+  computed_on TEXT NOT NULL,
+  recorded_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS trg_race_pick_records AFTER UPDATE OF finish_order ON races
+WHEN (OLD.finish_order IS NULL OR OLD.finish_order IN ('', '[]', 'null'))
+ AND NEW.finish_order IS NOT NULL AND NEW.finish_order NOT IN ('', '[]', 'null')
+BEGIN
+  INSERT OR IGNORE INTO race_pick_records (race_id, race_date, marks, computed_on, recorded_at)
+  SELECT race_id, race_date, marks, computed_on, datetime('now') FROM race_signals
+   WHERE race_id = NEW.id AND marks IS NOT NULL AND marks <> '';
+END;
+INSERT INTO schema_migrations (name) VALUES ('race_pick_records');

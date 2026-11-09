@@ -125,7 +125,30 @@ export async function getPaceWeights(db, gradedRaceId, course = null) {
   }
   const byId = new Map(rows.map((r) => [Number(r.graded_race_id), r]));
   const g = gradedRaceId ? byId.get(Number(gradedRaceId)) || null : null;
+  return paceWeightsFromRows(byId.get(0) || null, g, courseRow);
+}
+
+// 比率の行を全部読む(2026-11-10。夜間の推奨馬比較〈_lib/pick-stats.js〉用。1晩1回。pace_weights 約140行+course_pace_weights 約210行)。
+// 戻り値: (gradedRaceId, course) => getPaceWeights と同じ形
+export async function loadPaceWeightsResolver(db) {
+  const [r1, r2] = await Promise.all([
+    db.prepare(`SELECT graded_race_id, ${ROW_COLS} FROM pace_weights`).all(),
+    db.prepare(`SELECT track, course_type, distance, ${ROW_COLS} FROM course_pace_weights`).all(),
+  ]);
+  const byId = new Map((r1.results || []).map((r) => [Number(r.graded_race_id), r]));
+  const courseKey = (t, ct, d) => `${t}|${ct}|${Number(d)}`;
+  const byCourse = new Map((r2.results || []).map((r) => [courseKey(r.track, r.course_type, r.distance), r]));
   const d = byId.get(0) || null;
+  return (gradedRaceId, course) => paceWeightsFromRows(
+    d,
+    gradedRaceId ? byId.get(Number(gradedRaceId)) || null : null,
+    course && course.track && course.course_type && Number(course.distance) > 0 ? byCourse.get(courseKey(course.track, course.course_type, course.distance)) || null : null,
+  );
+}
+
+// 読んだ行から比率を選ぶ(getPaceWeights の本体。2026-11-10 切り出し。夜間の推奨馬比較〈_lib/pick-stats.js〉がメモリ上の行で使う)。
+// d: 標準の行(pace_weights の graded_race_id=0)、g: 重賞の行、courseRow: コースの行(course_pace_weights)。無ければ null
+export function paceWeightsFromRows(d, g, courseRow) {
   const specific = (view) => [[view(g), "graded"], [view(courseRow), "course"]];
   const axisOf = (p) => resolvePaceWeights(specific((r) => r), d, p, "axis");
   // 相手指数: 相手の比率の選ぶ順で探し、どこにも無ければ軸指数の比率(2026-10-14)
@@ -370,6 +393,22 @@ export async function gradedPastOf(db, gradedRaceId, race) {
   const byYear = gradedRacesByYear(await paceRaceIndex(db), master);
   const p = byYear.get(year - 1);
   return { prevId: p ? Number(p.id) : null, pastIds: pastYearIdsOf(byYear, year, race.race_date) };
+}
+
+// gradedPastOf のメモリ版(2026-11-10。夜間の推奨馬比較〈_lib/pick-stats.js〉用)。allRaces: [{ id, race_date, race_name }]、
+// masters: graded_races の行 [{ id, name, name_key }]。戻り値: (gradedRaceId, race) => { prevId, pastIds }
+export function gradedPastResolver(allRaces, masters) {
+  const byId = new Map((masters || []).map((m) => [Number(m.id), m]));
+  const byYearOf = new Map();
+  return (gradedRaceId, race) => {
+    const master = byId.get(Number(gradedRaceId));
+    if (!master) return { prevId: null, pastIds: [] };
+    if (!byYearOf.has(master.id)) byYearOf.set(master.id, gradedRacesByYear(allRaces, master));
+    const byYear = byYearOf.get(master.id);
+    const year = Number(String(race.race_date || "").slice(0, 4));
+    const p = byYear.get(year - 1);
+    return { prevId: p ? Number(p.id) : null, pastIds: pastYearIdsOf(byYear, year, race.race_date) };
+  };
 }
 
 // コースの直近2年(2026-10-18 ユーザー確認済み。以前は1年。ペース予想ごとの比率も作るため。今日より前・結果のあるレース・新しい順)。

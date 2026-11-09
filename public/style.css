@@ -3428,6 +3428,18 @@ body.deep-link-purchase .buy-step { visibility: hidden; }
 .tt-empty { color: var(--ink-soft); }
 .tt-overall { background: rgba(0, 0, 0, .04); }
 
+/* データ検索: 推奨馬比較タブ(2026-11-10) */
+.pk-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; }
+.pk-filters .horse-index-rows { margin: 0; }
+.pk-table th, .pk-table td { text-align: center; white-space: nowrap; }
+.pk-table th[scope="row"] { text-align: left; }
+.pk-table td { font-family: var(--font-mono); }
+.pk-table .pk-mark-head { border-left: 2px solid var(--line, rgba(0, 0, 0, .15)); }
+.pk-table td.pk-first { border-left: 2px solid var(--line, rgba(0, 0, 0, .15)); }
+.pk-table .pk-plus { color: var(--hanko); font-weight: 700; }
+.pk-table .pk-total { background: rgba(0, 0, 0, .04); font-weight: 700; }
+.pk-table .pk-few td, .pk-table .pk-few th { opacity: .45; }
+
 /* 予想登録画面: 総合推奨馬(2026-10-13) */
 .pace-total-table td.pace-time-horse { min-width: 9em; }
 .pace-total-top { background: rgba(176, 48, 40, .06); }

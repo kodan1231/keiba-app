@@ -9,7 +9,7 @@ import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEY
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getCourseHistory } from "./course-history.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
-import { getPaceWeights, gradedPastOf, paceIndexOf } from "./pace-score.js";
+import { getPaceWeights, gradedPastOf, paceIndexOf, pickRecommended } from "./pace-score.js";
 import { loadGradedRaceMapCached, gradedRaceOf } from "./race-classification.js";
 import { memoizedKeyed, textFingerprint } from "./memo-cache.js";
 
@@ -125,20 +125,35 @@ function dataShortageOf(race, rf, runners) {
 export const SIGNAL_FUKU_GAP = 8;
 export const SIGNAL_WIDE_GAP = 6;
 export const SIGNAL_MIN_RUNNERS = 5;
-const SIGNAL_RULE_VERSION = 2; // 規則を変えたら上げる(保存済みの目印の指紋が変わり、全部計算し直しになる)
+// 規則を変えたら上げる(保存済みの目印の指紋が変わり、全部計算し直しになる)。
+// 3(2026-11-10): 推奨馬の印(列 marks)も保存するようにしたので、保存済みの行に印を入れるため計算し直す
+const SIGNAL_RULE_VERSION = 3;
 
-// body: getRaceFactorsBody の戻り値、weights: getPaceWeights の戻り値 → "" | "複" | "ワ" | "複ワ"
-export function raceSignalsOf(body, weights) {
-  if (!body.pace_type || body.horses.length < SIGNAL_MIN_RUNNERS) return "";
+// 総合推奨馬の表と同じ軸指数・相手指数(body: getRaceFactorsBody の戻り値、weights: getPaceWeights の戻り値)
+function indexedHorses(body, weights) {
   const pick = (d) => (body.pace_type && d.paces?.[body.pace_type]) || d;
   const wa = pick(weights), wp = pick(weights.partner || weights);
   const extra = (h) => Number(h.total_adjust?.value) || 0;
-  const horses = body.horses.map((h) => ({
+  return body.horses.map((h) => ({
     horse_number: h.horse_number,
+    horse_name: h.horse_name,
     axis: paceIndexOf(h.factors, wa) + extra(h),
     partner: paceIndexOf(h.factors, wp) + extra(h),
     pace: h.factors.pace?.score, time: h.factors.time?.score, timeMissing: Boolean(h.factors.time?.missing),
   }));
+}
+
+// 推奨馬の印(◎〇▲☆。予想登録画面と同じ pickRecommended)→ [[印, 馬番(未確定は null), 馬名], ...](2026-11-10。推奨馬比較タブの記録用)。
+// 点数を出せないレースは []
+export function racePicksOf(body, weights) {
+  if (!body.pace_type || !body.horses.length) return [];
+  return pickRecommended(indexedHorses(body, weights)).map((p) => [p.mark, p.x.horse_number ?? null, p.x.horse_name || ""]);
+}
+
+// body: getRaceFactorsBody の戻り値、weights: getPaceWeights の戻り値 → "" | "複" | "ワ" | "複ワ"
+export function raceSignalsOf(body, weights) {
+  if (!body.pace_type || body.horses.length < SIGNAL_MIN_RUNNERS) return "";
+  const horses = indexedHorses(body, weights);
   const total = (x) => x.axis + x.partner;
   // 合計の高い順(1位は ◎ と同じ。pickRecommended の byTotal と同じ並び)
   const num = (h) => (h.horse_number == null ? 999 : Number(h.horse_number));
@@ -165,34 +180,50 @@ export function raceSignalStale(race, saved, today = todayJst()) {
   return race.race_date >= today && saved.computed_on < today;
 }
 
-// body(getRaceFactorsBody の戻り値)から目印を出す。比率は主キーで最大3行
+// body(getRaceFactorsBody の戻り値)から目印と推奨馬の印を出す。比率は主キーで最大3行。
+// 戻り値: { signals: "" | "複" | …, marks: JSON 文字列(racePicksOf。点数を出せなければ "") }
 async function signalsOfBody(db, race, body) {
-  if (!body.pace_type) return "";
+  if (!body.pace_type) return { signals: "", marks: "" };
   const gradedMap = await loadGradedRaceMapCached(db);
   const graded = gradedRaceOf(gradedMap, race);
   const weights = await getPaceWeights(db, graded ? graded.id : 0, race);
-  return raceSignalsOf(body, weights);
+  const picks = racePicksOf(body, weights);
+  return { signals: raceSignalsOf(body, weights), marks: picks.length ? JSON.stringify(picks) : "" };
 }
 
-async function saveRaceSignal(db, race, signals) {
-  await db
-    .prepare(
-      `INSERT INTO race_signals (race_id, race_date, fp, signals, computed_on) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(race_id) DO UPDATE SET race_date = excluded.race_date, fp = excluded.fp, signals = excluded.signals, computed_on = excluded.computed_on`
-    )
-    .bind(Number(race.id), race.race_date, raceSignalFingerprint(race), signals, todayJst())
-    .run();
+// 推奨馬の印(列 marks。2026-11-10 @STEP: race_pick_records)も保存する。列がまだ無ければ(マイグレーション前)以前の形で保存する
+async function saveRaceSignal(db, race, { signals, marks }) {
+  const args = [Number(race.id), race.race_date, raceSignalFingerprint(race), signals, todayJst()];
+  try {
+    await db
+      .prepare(
+        `INSERT INTO race_signals (race_id, race_date, fp, signals, computed_on, marks) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(race_id) DO UPDATE SET race_date = excluded.race_date, fp = excluded.fp, signals = excluded.signals, computed_on = excluded.computed_on,
+           marks = excluded.marks`
+      )
+      .bind(...args, marks || null)
+      .run();
+  } catch (e) {
+    if (!/no column|no such column|has no column/i.test(String(e?.message || e))) throw e;
+    await db
+      .prepare(
+        `INSERT INTO race_signals (race_id, race_date, fp, signals, computed_on) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(race_id) DO UPDATE SET race_date = excluded.race_date, fp = excluded.fp, signals = excluded.signals, computed_on = excluded.computed_on`
+      )
+      .bind(...args)
+      .run();
+  }
 }
 
 // 1レースの目印を計算して保存する。保存は best-effort(失敗しても目印は返す)
 export async function computeAndSaveRaceSignal(db, race) {
-  const signals = await signalsOfBody(db, race, await getRaceFactorsBody(db, race));
+  const out = await signalsOfBody(db, race, await getRaceFactorsBody(db, race));
   try {
-    await saveRaceSignal(db, race, signals);
+    await saveRaceSignal(db, race, out);
   } catch (e) {
     console.error("race_signals save failed (ignored)", e);
   }
-  return signals;
+  return out.signals;
 }
 
 // 比率・点数の設定を保存したとき、影響する今日以降のレースの保存済みの目印に「計算し直しが要る」印を付ける(2026-11-04)。
@@ -237,12 +268,14 @@ export async function markRaceSignalsStale(db, scope) {
 // 読み取り: 保存済みの目印1行(主キー)+ 比率(主キーで最大3行)。書き込みは違ったときだけ1行。失敗は無視(表が無い等)
 export async function syncRaceSignal(db, race, body) {
   try {
-    const [signals, saved] = await Promise.all([
+    // 推奨馬の印(marks。2026-11-10)も比べる。列がまだ無ければ(マイグレーション前)saved.marks は undefined で、目印だけ比べる
+    const [out, saved] = await Promise.all([
       signalsOfBody(db, race, body),
-      db.prepare("SELECT fp, signals FROM race_signals WHERE race_id = ?").bind(Number(race.id)).first(),
+      db.prepare("SELECT * FROM race_signals WHERE race_id = ?").bind(Number(race.id)).first(),
     ]);
-    if (saved && saved.signals === signals && saved.fp === raceSignalFingerprint(race)) return;
-    await saveRaceSignal(db, race, signals);
+    const sameMarks = !saved || !("marks" in saved) || (saved.marks || "") === out.marks;
+    if (saved && saved.signals === out.signals && sameMarks && saved.fp === raceSignalFingerprint(race)) return;
+    await saveRaceSignal(db, race, out);
   } catch (e) {
     console.error("race_signals sync failed (ignored)", e);
   }

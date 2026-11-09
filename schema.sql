@@ -528,9 +528,30 @@ CREATE TABLE IF NOT EXISTS race_signals (
   race_date TEXT NOT NULL,
   fp TEXT NOT NULL,
   signals TEXT NOT NULL,
-  computed_on TEXT NOT NULL
+  computed_on TEXT NOT NULL,
+  marks TEXT                      -- 推奨馬の印 JSON [[印, 馬番|null, 馬名], ...](2026-11-10追加。@STEP: race_pick_records)
 );
 CREATE INDEX IF NOT EXISTS idx_race_signals_date ON race_signals(race_date);
+
+-- 結果を登録する直前の推奨馬の印(2026-11-10追加。@STEP: race_pick_records)。データ検索「推奨馬比較」タブの的中率・回収率の対象。
+-- races.finish_order が空 → 値ありになったとき(結果の取り込み・手での入力・CSV の的中の反映のどれでも)、トリガーが race_signals の
+-- そのときの印(最後に画面〈馬券購入画面の一覧・予想登録画面の展開・時計タブ〉で計算した印)を写す。1レース1回だけ(後で着順を直しても写し直さない)。
+-- race_signals に印が無いレース(誰も開かなかった)は記録しない(推奨馬比較は今の印で採点し直した値を使う)。docs/design/data-search.md「推奨馬比較タブ」
+CREATE TABLE IF NOT EXISTS race_pick_records (
+  race_id INTEGER PRIMARY KEY,
+  race_date TEXT NOT NULL,
+  marks TEXT NOT NULL,
+  computed_on TEXT NOT NULL,      -- 写した印を計算した日(race_signals.computed_on。比率の変更で '' のことがある)
+  recorded_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS trg_race_pick_records AFTER UPDATE OF finish_order ON races
+WHEN (OLD.finish_order IS NULL OR OLD.finish_order IN ('', '[]', 'null'))
+ AND NEW.finish_order IS NOT NULL AND NEW.finish_order NOT IN ('', '[]', 'null')
+BEGIN
+  INSERT OR IGNORE INTO race_pick_records (race_id, race_date, marks, computed_on, recorded_at)
+  SELECT race_id, race_date, marks, computed_on, datetime('now') FROM race_signals
+   WHERE race_id = NEW.id AND marks IS NOT NULL AND marks <> '';
+END;
 
 -- 重賞メモ(2026-10-12追加。@STEP: graded_race_notes)。重賞1つ×年ごとに1件、ユーザーごとに持つ
 -- (他ユーザーには見えない)。今年の予想根拠・結果の振り返りを来年以降の予想で読み返す用途。

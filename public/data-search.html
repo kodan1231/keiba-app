@@ -25,6 +25,7 @@
       <button type="button" class="stats-tab" data-tab="graded-race">重賞検索</button>
       <button type="button" class="stats-tab" data-tab="jockey">騎手検索</button>
       <button type="button" class="stats-tab" data-tab="track-trends">競馬場傾向</button>
+      <button type="button" class="stats-tab" data-tab="pick-stats">推奨馬比較</button>
     </nav>
 
     <section class="stats-section stats-panel" data-panel="race-stats">
@@ -217,6 +218,36 @@
       <div class="table-wrap"><table class="stats-table tt-table" id="tt-table"></table></div>
     </section>
 
+    <!-- 推奨馬比較タブ(2026-11-10追加)。仕様はdocs/design/data-search.md「推奨馬比較タブ」。
+         競馬場ごとに、推奨馬の印(◎〇▲☆)別の単勝・複勝の的中率と回収率。夜間の計算が保存した集計を読むだけ。 -->
+    <section class="stats-section stats-panel" data-panel="pick-stats" hidden>
+      <div class="pk-filters">
+        <label class="ds-filter">
+          <span class="ds-filter-label">期間</span>
+          <select id="pk-year"><option value="">全期間</option></select>
+        </label>
+        <div class="horse-index-rows" id="pk-course-filter">
+          <button type="button" class="horse-row-btn active" data-value="">芝・ダート</button>
+          <button type="button" class="horse-row-btn" data-value="芝">芝</button>
+          <button type="button" class="horse-row-btn" data-value="ダート">ダート</button>
+        </div>
+        <div class="horse-index-rows" id="pk-bet-filter">
+          <button type="button" class="horse-row-btn active" data-value="tan">単勝</button>
+          <button type="button" class="horse-row-btn" data-value="fuku">複勝</button>
+        </div>
+        <div class="horse-index-rows" id="pk-source-filter">
+          <button type="button" class="horse-row-btn active" data-value="">すべて</button>
+          <button type="button" class="horse-row-btn" data-value="r">記録した印のみ</button>
+        </div>
+      </div>
+      <p class="stats-note" id="pk-note">予想登録画面の総合推奨馬の印(◎〇▲☆)で数えています。結果を登録する直前の印を記録したレースはその印
+        (購入時に参考にできた印)、記録の無い過去のレースは、そのレースより前のデータだけ・今の比率で採点し直した印です
+        (比率を選ぶのに使ったレースでは実際より良く出やすくなります)。回収率は印の馬を毎レース100円ずつ買ったときの値で、
+        印の馬が取消・除外になったレースはその印だけ数えません(返還)。レース数が30未満の行は薄く表示します。</p>
+      <p class="ds-status" id="pk-status" hidden></p>
+      <div class="table-wrap"><table class="stats-table pk-table" id="pk-table"></table></div>
+    </section>
+
     <!-- 騎手検索タブ(2026-10-03追加)。仕様はdocs/design/data-search.md「騎手検索タブ」。
          騎手名の一部入力→候補から選択→通算・年度別・コース別の成績表。 -->
     <section class="stats-section stats-panel" data-panel="jockey" hidden>
@@ -266,5 +297,6 @@
 <script src="graded-race-search.js"></script>
 <script src="jockey-search.js"></script>
 <script src="track-trends.js"></script>
+<script src="pick-stats.js"></script>
 </body>
 </html>
