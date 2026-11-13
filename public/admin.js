@@ -867,6 +867,70 @@ async function loadGradedRaces() {
   });
 }
 
+// 過去10年の登録状況(2026-11-13追加。docs/design/graded-races.md「登録状況」)。
+// 折りたたみを開いたときに読む(開くたびに読み直す。1回あたり約250行の読み取り)。
+let gradedCoverageData = null;
+
+async function loadGradedCoverage() {
+  const table = document.getElementById("graded-coverage-table");
+  if (!table) return;
+  table.innerHTML = "<tr><td>読み込み中…</td></tr>";
+  const res = await authedFetch("/api/admin/graded-races/coverage");
+  if (!res.ok) { table.innerHTML = "<tr><td>読み込みに失敗しました</td></tr>"; setCollapsibleCount("graded-coverage-table", null); return; }
+  gradedCoverageData = await res.json();
+  renderGradedCoverage();
+}
+
+function renderGradedCoverage() {
+  const table = document.getElementById("graded-coverage-table");
+  const data = gradedCoverageData;
+  if (!table || !data) return;
+  const missingOnly = document.getElementById("graded-coverage-missing-only")?.checked;
+  const sort = document.getElementById("graded-coverage-sort")?.value || "schedule";
+  let items = (data.items || []).slice();
+  const allCount = items.length;
+  const completeCount = items.filter((g) => g.missing === 0).length;
+  if (missingOnly) items = items.filter((g) => g.missing > 0);
+  const bySchedule = (a, b) =>
+    (a.schedule_md == null) - (b.schedule_md == null) ||
+    String(a.schedule_md || "").localeCompare(String(b.schedule_md || "")) ||
+    String(a.name).localeCompare(String(b.name), "ja");
+  items.sort((a, b) =>
+    sort === "missing-desc" ? b.missing - a.missing || bySchedule(a, b)
+      : sort === "missing-asc" ? a.missing - b.missing || bySchedule(a, b)
+      : bySchedule(a, b));
+  const countEl = document.querySelector('.admin-collapsible-count[data-count-for="graded-coverage-table"]');
+  if (countEl) countEl.textContent = `(10年そろい ${completeCount}/${allCount}件)`;
+  if (!items.length) { table.innerHTML = "<tr><td>該当する重賞はありません</td></tr>"; return; }
+  const years = data.years || [];
+  const mark = (s) => (s === "result" ? "●" : s === "entries" ? "△" : "");
+  table.innerHTML = `
+    <thead><tr><th>レース名</th><th>G</th><th>開催</th><th>登録</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr></thead>
+    <tbody>
+      ${items.map((g) => `
+        <tr>
+          <td>${escapeHtml(g.name)}${g.is_jump ? " <span class=\"ticket-sub\">障</span>" : ""}</td>
+          <td>${escapeHtml(g.grade)}</td>
+          <td>${escapeHtml(g.schedule_md || "—")}</td>
+          <td>${g.registered}/${data.past_years}</td>
+          ${years.map((y) => {
+            const s = g.years?.[y] || null;
+            const cls = s === "result" ? "is-result" : s === "entries" ? "is-entries" : (y === data.current_year ? "" : "is-missing");
+            return `<td class="graded-coverage-cell ${cls}">${mark(s)}</td>`;
+          }).join("")}
+        </tr>`).join("")}
+    </tbody>
+  `;
+}
+
+function setupGradedCoverage() {
+  const details = document.getElementById("graded-coverage-details");
+  if (!details) return;
+  details.addEventListener("toggle", () => { if (details.open) loadGradedCoverage(); });
+  document.getElementById("graded-coverage-missing-only")?.addEventListener("change", renderGradedCoverage);
+  document.getElementById("graded-coverage-sort")?.addEventListener("change", renderGradedCoverage);
+}
+
 // 編集中の行。手入力フォームに無い参考情報(競馬場・コース・距離・年齢条件)を
 // PUT時にそのまま送り返して保持するために使う(PUTは全項目を上書きするため、
 // 送らないとPDFインポートで入った参考情報が消える。2026-10-02に開催月日の項目を
@@ -1805,6 +1869,7 @@ async function onReady() {
   setupServiceGuardForm();
   setupGradedRaceForm();
   setupGradedRacesImport();
+  setupGradedCoverage();
   setupTrainerAliasForm();
   setupPaceWeightsFilter();
   setupPaceCompute();

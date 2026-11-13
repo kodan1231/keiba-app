@@ -285,6 +285,19 @@
           </form>
           <p id="graded-race-form-message" class="submit-message" hidden></p>
           <details class="admin-collapsible"><summary>登録済みの重賞 <span class="admin-collapsible-count" data-count-for="graded-races-table"></span></summary><div class="table-wrap"><table class="stats-table" id="graded-races-table"></table></div></details>
+          <!-- 過去10年の登録状況(2026-11-13追加。docs/design/graded-races.md「登録状況」)。開いたときだけ読む -->
+          <details class="admin-collapsible" id="graded-coverage-details"><summary>過去10年の登録状況 <span class="admin-collapsible-count" data-count-for="graded-coverage-table"></span></summary>
+            <div class="form-row graded-coverage-controls">
+              <label><input type="checkbox" id="graded-coverage-missing-only" checked /> 足りない年がある重賞だけ</label>
+              <label>並び <select id="graded-coverage-sort">
+                <option value="schedule">開催月日順</option>
+                <option value="missing-desc">足りない年が多い順</option>
+                <option value="missing-asc">足りない年が少ない順</option>
+              </select></label>
+            </div>
+            <p class="ticket-sub">●=結果まで登録済み、△=出走馬だけ、空欄=未登録。「登録」は今年を除く過去10年のうち結果まで入っている年数。新設の重賞は新設前の年も空欄になる。</p>
+            <div class="table-wrap"><table class="stats-table graded-coverage-table" id="graded-coverage-table"></table></div>
+          </details>
         </div>
       </section>
 

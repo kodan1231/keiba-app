@@ -3612,3 +3612,11 @@ label.inline-check { flex-direction: row; align-items: center; gap: 6px; }
 .d1-limit-notice{position:sticky;top:0;z-index:10000;display:flex;gap:10px;align-items:flex-start;padding:12px 16px;background:#fff4e5;color:#7a3e00;border-bottom:2px solid #f0a040;font-size:14px;line-height:1.6}
 .d1-limit-notice-text{flex:1}
 .d1-limit-notice-close{flex:none;background:none;border:none;color:inherit;font-size:20px;line-height:1;cursor:pointer;padding:0 4px}
+
+/* 管理画面「過去10年の登録状況」(2026-11-13) */
+.graded-coverage-controls { gap: 12px; flex-wrap: wrap; align-items: center; }
+.graded-coverage-table th, .graded-coverage-table td { white-space: nowrap; }
+.graded-coverage-cell { text-align: center; }
+.graded-coverage-cell.is-result { color: var(--accent, #2a7a3b); }
+.graded-coverage-cell.is-entries { color: #b07a00; }
+.graded-coverage-cell.is-missing { background: rgba(200, 60, 60, 0.08); }
