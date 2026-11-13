@@ -65,7 +65,7 @@ export async function onRequestGet(context) {
   const { id: raceId, error } = parsePositiveIntId(params.id);
   if (error) return error;
 
-  const race = await env.DB.prepare("SELECT entries FROM races WHERE id = ?").bind(raceId).first();
+  const race = await env.DB.prepare("SELECT entries, race_date FROM races WHERE id = ?").bind(raceId).first();
   if (!race) return jsonError("レースが見つかりません", 404);
 
   // ?debug=1(切り分け用)は race_results の全件を数え、馬ごとに部分一致で全件を探す(1回で数十万〜百万行超の読み取り)ため、
@@ -74,7 +74,7 @@ export async function onRequestGet(context) {
   if (!debug) {
     // 同じ実行環境で60秒、同じレース・同じ出走馬表の結果を使い回す(2026-10-16。D1 の負荷軽減。週末は同じレースを何人も開く)。
     // 出走馬表が変われば名前が変わる。他のレースの結果の取り込みは最大60秒遅れて反映される
-    const body = await memoizedKeyed(`horse_history:${raceId}:${textFingerprint(race.entries)}`, async () => (await buildHistory(env, raceId, race)).out, 60 * 1000);
+    const body = await memoizedKeyed(`horse_history:${raceId}:${race.race_date || ""}:${textFingerprint(race.entries)}`, async () => (await buildHistory(env, raceId, race)).out, 60 * 1000);
     return Response.json(body);
   }
   const { entries, keyMap, searchKeys, aliasMap, rows } = await buildHistory(env, raceId, race);
@@ -137,6 +137,10 @@ async function buildHistory(env, raceId, race) {
   // IN句のキー数は出走馬の馬名+逆引きエイリアス。重賞の特別登録を手で入れると頭数に上限が無い(2026-10-15)ため、
   // 90件ずつ(+レースID 1)に分ける。直近5走は馬ごと(PARTITION BY horse_key)なので分けても結果は同じ
   const rankedRows = [];
+  // 2026-11-13: そのレースの開催日より前の走だけ(過去のレースを開いたとき、そのレース時点の過去5走を出す。
+  // 以前は今日までの最新5走で、後のレースが並んでいた)。同じ日に2走はしないので「日付が前」で足りる。
+  // 持ちタイム(horse-best.js)・総合推奨馬はもともと開催日より前だけ。開催日の無いレースは今までどおり全部から
+  const beforeDate = race.race_date || null;
   for (const keysChunk of chunk(searchKeys, 90)) {
     if (!keysChunk.length) continue;
     const placeholders = keysChunk.map(() => "?").join(",");
@@ -155,11 +159,11 @@ async function buildHistory(env, raceId, race) {
            FROM race_results rr
            JOIN races r ON r.id = rr.race_id
           WHERE rr.horse_key IN (${placeholders})
-            AND rr.race_id <> ?
+            AND rr.race_id <> ?${beforeDate ? "\n            AND r.race_date < ?" : ""}
        )
        SELECT * FROM ranked WHERE rn <= ${MAX_PAST_RACES_PER_HORSE}
        ORDER BY horse_key, race_date DESC, race_number DESC`
-    ).bind(...keysChunk, raceId).all();
+    ).bind(...keysChunk, raceId, ...(beforeDate ? [beforeDate] : [])).all();
     rankedRows.push(...(chunkRows || []));
   }
 
