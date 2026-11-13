@@ -421,7 +421,7 @@ function renderGrid() {
                 <button class="race-column-row ${r.entries.length ? "has-entries" : "empty-race"} ${purchased ? "purchased" : ""}"
                   data-id="${r.id}" type="button">
                   <b>${i+1}R</b>
-                  <span>${escapeHtml(r.race_name || "")}</span>
+                  <span>${escapeHtml(r.race_name || "")}${raceConditionBadgesHtml(r) ? `<span class="race-cond-mini">${raceConditionBadgesHtml(r)}</span>` : ""}</span>
                   <small>${infoParts.join(" ・ ")}${hasMemo ? `<span class="memo-mark" title="メモ登録済みの馬が出走しています">▼</span>` : ""}<span class="race-signal" data-signal-race="${r.id}">${raceSignalHtml(r.id)}</span></small>
                 </button>
                 <button type="button" class="key-race-mini ${isKey ? "active" : ""}" data-key-race-id="${r.id}"

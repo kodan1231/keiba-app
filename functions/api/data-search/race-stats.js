@@ -62,6 +62,11 @@ export async function onRequestGet(context) {
   const track = (url.searchParams.get("track") || "").trim();
   const surface = (url.searchParams.get("course_type") || "").trim();
   const distanceRaw = (url.searchParams.get("distance") || "").trim();
+  // 年(2026-11-13。"2025" 等。空なら全期間)。過去の重賞を取り込んだ年が混ざるのを年で分けて見られるように
+  const year = (url.searchParams.get("year") || "").trim();
+  if (year && !/^\d{4}$/.test(year)) {
+    return jsonError("yearが不正です", 400);
+  }
 
   if (surface && !SURFACES.has(surface)) {
     return jsonError("course_typeが不正です", 400);
@@ -87,6 +92,7 @@ export async function onRequestGet(context) {
   const raceRows = await getRaceLineups(env.DB);
 
   const trackOptionSet = new Set();
+  const yearOptionSet = new Set();
   const distanceOptionSet = new Set();
   const winValues = [];
   const umarenValues = [];
@@ -96,6 +102,9 @@ export async function onRequestGet(context) {
 
   for (const race of raceRows || []) {
     const ct = race.course_type || null;
+    const raceYear = race.race_date ? String(race.race_date).slice(0, 4) : "";
+    if (raceYear) yearOptionSet.add(raceYear);
+    if (year && raceYear !== year) continue;
     if (race.track) trackOptionSet.add(race.track);
 
     // 距離セレクトの選択肢: 芝/ダートのレースに実在する距離。競馬場・コース種別の
@@ -176,8 +185,9 @@ export async function onRequestGet(context) {
     }));
 
   return Response.json({
-    filters: { track, course_type: surface, distance },
+    filters: { track, course_type: surface, distance, year },
     trackOptions: [...trackOptionSet],
+    yearOptions: [...yearOptionSet].sort((a, b) => b.localeCompare(a)),
     distanceOptions: [...distanceOptionSet].sort((a, b) => a - b),
     win: {
       median: median(winValues),

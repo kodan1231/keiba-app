@@ -49,6 +49,30 @@ function formatDate(dateStr) {
 }
 
 /**
+ * レース条件の「牝馬限定」「ハンデ戦」(2026-11-13 に prediction.js から共通化。予想登録画面の見出し・馬券購入画面と
+ * レース管理画面のレース一覧で使う)。class_flags・weight_type は構造化されていない生テキストのため部分一致で見る
+ * (docs/design/data-model.md「レース条件の詳細カラム」)。「牡・牝」(牡馬・牝馬とも出られる)は牝馬限定ではない(2026-10-25)。
+ * @param {{class_flags?: string, weight_type?: string}} race
+ * @returns {{fillyOnly: boolean, handicap: boolean}}
+ */
+function raceConditionFlags(race) {
+  const classFlags = String((race && race.class_flags) || "");
+  return {
+    fillyOnly: classFlags.includes("牝") && !classFlags.includes("牡"),
+    handicap: String((race && race.weight_type) || "").includes("ハンデ") || classFlags.includes("ハンデ"),
+  };
+}
+
+/** 牝馬限定「牝」・ハンデ戦「H」の印の HTML(どちらでもなければ空文字) */
+function raceConditionBadgesHtml(race) {
+  const f = raceConditionFlags(race);
+  return (
+    (f.fillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : "") +
+    (f.handicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : "")
+  );
+}
+
+/**
  * 日付文字列を「8/24(日)」形式(年なし)へ。admin.html「未登録レース一覧」用。
  * @param {string} dateStr - YYYY-MM-DD形式(先頭10文字のみ使用)
  * @returns {string} 例: "8/24(日)"。パース不能時は入力をそのまま返す

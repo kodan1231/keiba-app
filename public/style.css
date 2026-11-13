@@ -576,6 +576,14 @@ textarea { resize: vertical; }
 .stats-table td { padding: 9px 12px; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); }
 .stats-table td.table-name { font-family: var(--font-body); font-weight: 600; }
 .stats-table tr:last-child td { border-bottom: none; }
+/* 集計画面 レース別の4階層(2026-11-13): 年月 → 日付 → 競馬場 → レース。下の階層ほど字下げ */
+.race-tree-toggle { cursor: pointer; }
+.race-tree-toggle:hover td { background: var(--paper-raised); }
+.race-tree-mark { display: inline-block; width: 1.1em; color: var(--ink-soft); }
+.race-tree-l1 td { font-weight: 700; }
+.race-tree-l2 .race-tree-name { padding-left: 24px; }
+.race-tree-l3 .race-tree-name { padding-left: 40px; }
+.race-tree-l4 .race-tree-name { padding-left: 58px; font-weight: 400; }
 .stats-table th.sortable-th { cursor: pointer; user-select: none; }
 .stats-table th.sortable-th:hover { background: rgba(28,27,24,0.08); }
 .table-empty { text-align: center; color: var(--ink-soft); padding: 20px; font-family: var(--font-body); }
@@ -1964,6 +1972,10 @@ body.history-selection-mode .group-detail-actions {
   background: #fff;
   color: var(--ink);
 }
+/* レース一覧(馬券購入・レース管理)の「牝」「H」(2026-11-13)。行の中なので小さく */
+.race-cond-mini { margin-left: 4px; white-space: nowrap; }
+.race-cond-mini .race-cond-badge,
+.race-list-card > .race-cond-badge { padding: 0 4px; font-size: 10px; line-height: 1.5; margin-right: 2px; vertical-align: 1px; }
 
 /* 勝負レーストグル(2026-09-12追加)。.race-cond-badge をボタンにも流用するための
    リセット+ON/OFFの見た目。 */

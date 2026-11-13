@@ -134,6 +134,23 @@ function splitRefundUnits(refundUnitText){
   const s=clean(refundUnitText); if(!s) return [];
   return s.split(/[／\/]/).map(toInt);
 }
+// 「的中／返還」列の返還の馬番。例: "返還11" → [11]、"的中04―12／返還11" → [11](2026-11-13)
+function splitRefundNumbers(hitText){
+  return clean(hitText).split(/[／\/]/).map(clean).filter(s=>/^返還/.test(s)).flatMap(s=>parseNumbers(s.replace(/^返還/,'')));
+}
+// 買い目ごとの返還額を返す関数(返還でなければ null)。docs/design/csv-import.md「返還」
+function refundedItemsOf(type,items,hitText,returnAmount,totalAmount,perAmount){
+  const nums=new Set(splitRefundNumbers(hitText));
+  if(!returnAmount&&!nums.size) return ()=>null;
+  // 全部返還(返還金額=購入額)、または買い目が1点: 返還金額そのもの
+  if(returnAmount>0&&(returnAmount===totalAmount||items.length===1)){
+    const each=items.length===1?returnAmount:perAmount;
+    return ()=>each;
+  }
+  // 枠連は馬番から買い目(枠番)を決められない(レース結果の払戻の表 payouts.refunds の再計算に任せる)
+  if(type==='wakuren'||!nums.size) return ()=>null;
+  return (sel)=>sel.some(n=>nums.has(n))?perAmount:null;
+}
 // 的中組み合わせごとの払戻額(rate=100円あたりの払戻)を Map<comboKey, rate> として組み立てる。
 // 組み合わせ数と払戻単価の数が一致しない場合(想定外の表記ゆれ)は、安全側に倒して
 // 空Mapを返し、呼び出し側で従来通りの一括判定にフォールバックする。
@@ -303,7 +320,11 @@ export async function onRequestPost(context){
       }
       const groupId=group.meta.last_row_id; const items=combos.length?combos:[[]]; const perAmount=items.length&&totalAmount?Math.floor(totalAmount/items.length):0;
       const statements=[];
-      for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const isHit=hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1);const inferred=inferFinish(type,nums);
+      // 返還(出走取消・除外。2026-11-13): 「的中／返還」列の「返還11」の馬番を含む買い目は、購入額をそのまま払い戻す(的中には数えない)。
+      // 枠連は枠の馬が全部いなくならない限り返還にならず、列の馬番から買い目(枠番)を決められないため、
+      // 「返還金額」列が購入額と同じ(全部返還)か買い目が1点のときだけ、その値を使う。
+      const refundedOf=refundedItemsOf(type,items,hitText,cols.returnAmount>=0?toInt(row[cols.returnAmount]):0,totalAmount,perAmount);
+      for(const nums of items){const key=nums.join(type==='sanrentan'?'→':'-');const refundAmount=refundedOf(nums);const isHit=refundAmount===null&&(hitKeys.has(key)||(hit && /的中/.test(hit) && items.length===1));const inferred=inferFinish(type,nums);
         // Club JRA-Net購入履歴CSVは既に決着済みの購入履歴であり、「未確定(結果待ち)」は存在しない。
         // 「的中／返還」列の値の有無にかかわらず、常に確定させる(2026-08-14〜。以前は
         // hitText===''(列が完全に空)の場合のみpayout=null(未確定)のまま残していたが、
@@ -312,7 +333,9 @@ export async function onRequestPost(context){
         // 的中買い目の払戻額は、組み合わせごとの払戻レート(100円あたり)×その買い目の購入金額で計算する。
         // レートが個別に取得できない場合は、的中1件のみなら従来通りrefund全額、複数件なら均等割りにフォールバックする。
         let payout;
-        if(isHit){
+        if(refundAmount!==null){
+          payout=refundAmount;
+        } else if(isHit){
           if(hitRateMap.has(key)) payout=Math.round((perAmount/100)*hitRateMap.get(key));
           else if(hitCombos.length<=1) payout=refund||0;
           else payout=Math.round((refund||0)/hitCombos.length);

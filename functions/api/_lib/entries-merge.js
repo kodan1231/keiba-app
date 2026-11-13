@@ -1,6 +1,22 @@
 // races.entries(出走馬情報)のマージ・バックフィル・CSV未登録データの紐付けに関するヘルパー。
 // 2026-09-01: functions/api/_shared.js から分割(リファクタリング。詳細は_lib/auth.js冒頭の注記参照)。
 
+// 出走馬表の馬番の重複(2026-11-13): レース管理画面の出走馬表の保存(POST /api/races・PUT /api/races/:id)で、
+// 同じ馬番が2頭以上にあれば保存せずにエラーにする。馬番未確定(null・空)の馬は見ない。取り込み(entries-import 等)は対象外。
+// 戻り値: エラーの文言(重複なしなら null)。画面側(public/races-entries-modal.js)にも同じ確認がある
+export function duplicateHorseNumberError(entries) {
+  const byNumber = new Map();
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const n = Number(e && e.horse_number);
+    if (!e || e.horse_number == null || e.horse_number === "" || !Number.isInteger(n)) continue;
+    if (!byNumber.has(n)) byNumber.set(n, []);
+    byNumber.get(n).push(String(e.horse_name || "").trim() || "(馬名なし)");
+  }
+  const dups = [...byNumber.entries()].filter(([, names]) => names.length > 1).sort((a, b) => a[0] - b[0]);
+  if (!dups.length) return null;
+  return `馬番が重複しています: ${dups.map(([n, names]) => `${n}番(${names.join("・")})`).join("、")}`;
+}
+
 // レースが未登録の間にインポートされた imported_ticket_groups / imported_ticket_items は
 // race_id が NULL のまま保存されている。管理者がそのレースを登録(または編集)したタイミングで、
 // 日付・競馬場・レース番号が一致する未紐付けデータを探してレースに紐付ける。

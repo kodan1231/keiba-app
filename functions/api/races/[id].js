@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute, enqueuePaceRecomputeForResults, raceCourseTypeOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, recomputeTicketPayoutsForRace, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, parsePositiveIntId, jsonError, changedPairs, raceBaseNameOf, loadJockeyAliasMapCached, loadHorseAliasMapCached, horseAliasKeyOf, loadGradedRaceMapCached, gradedRaceOf, enqueuePaceRecompute, enqueuePaceRecomputeForResults, raceCourseTypeOf, duplicateHorseNumberError } from "../_shared.js";
 
 // GET: レース1件だけを返す(2026-09-13追加)。GET /api/races?since=... で範囲を
 // 絞った一覧に対象レースが含まれない場合(深リンク・古い購入履歴の金額再計算等)や、
@@ -85,6 +85,9 @@ export async function onRequestPut(context) {
     if (!Array.isArray(data.entries)) {
       return jsonError("entriesの形式が不正です", 400);
     }
+    // 馬番の重複は保存しない(2026-11-13。_lib/entries-merge.js)
+    const dupError = duplicateHorseNumberError(data.entries);
+    if (dupError) return jsonError(dupError, 400);
     // 2026-08-16追加: 手動編集(出走馬表フォーム経由。netkeibaテキスト貼り付け一括入力を
     // 含む)された騎手名を、保存前にjockey_aliasesテーブルで正規化する。
     // docs/design/jockey-aliases.md「騎手名エイリアス管理」参照。

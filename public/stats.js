@@ -104,20 +104,18 @@ function groupBy(items, keyFn) {
 
 // ---------- 表の列ソート ----------
 // 各テーブルの現在のソート状態(キー・方向)を保持する。列ヘッダーをクリックするたびに更新する。
-// key: "date"(レース別のみ)/"name"(競馬場別・騎手別)/"amount"/"payout"/"profit"/"rate"/"hitRate"
+// key: "name"(競馬場別・騎手別)/"amount"/"payout"/"profit"/"rate"/"hitRate"
 //
 // 騎手別収支の初期ソートは「回収率(rate)の高い順」とする(以前は購入金額の多い順だったが、
 // 収支効率を優先して確認したいという要望に合わせて変更した)。回収率が未確定(null)の行は
 // compareValues() の仕様により、ソート方向によらず常に末尾に表示される。
 const sortState = {
-  race: { key: "date", dir: "desc" },
   track: { key: "totalAmount", dir: "desc" },
   course: { key: "totalAmount", dir: "desc" },
   jockey: { key: "rate", dir: "desc" },
 };
 
 // ソート対象の行データ(再計算せず並べ替えだけで再描画できるようキャッシュしておく)
-let raceRows = [];
 let trackRows = [];
 let courseRows = [];
 let jockeyRows = [];
@@ -130,10 +128,9 @@ const STAT_COLUMNS = [
   { key: "hitRate", label: "的中率" },
 ];
 
-// レース別収支は1レースあたりの的中率が0%か100%にしかならず表示する意味が薄いため、
-// 的中率列を除外する。競馬場別・騎手別は複数レースにまたがる集計のため引き続き表示する。
+// レース別収支(2026-11-13〜4階層。renderRaceTree)は年月・日付・競馬場の行に的中率を出し、
+// 1レースの行は的中率が0%か100%にしかならないため「-」にする。
 const STAT_COLUMNS_BY_TABLE = {
-  race: STAT_COLUMNS.filter((c) => c.key !== "hitRate"),
   track: STAT_COLUMNS,
   course: STAT_COLUMNS,
   jockey: STAT_COLUMNS,
@@ -289,7 +286,7 @@ function sortIndicator(tableKey, key) {
 
 function renderTable(elId, tableKey, labelHeader, labelKey) {
   const table = document.getElementById(elId);
-  const rowsCache = { race: raceRows, track: trackRows, course: courseRows, jockey: jockeyRows }[tableKey];
+  const rowsCache = { track: trackRows, course: courseRows, jockey: jockeyRows }[tableKey];
   const state = sortState[tableKey];
   const rows = sortRows(rowsCache, state.key, state.dir);
 
@@ -347,18 +344,104 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
 // 表示に反映されない・結果PDF解析のズレでグレードバッジが混入したままになる、
 // という問題があったため(2026-09-24。docs/design/data-model.md「races.race_base_name」参照)。
 function renderRaceTable(items) {
-  const groups = groupBy(items, (t) => `${t.race_date}__${t.track}__${t.race_number}`);
-  raceRows = Array.from(groups.entries()).map(([key, tickets]) => {
-    const t0 = tickets[0];
-    const displayName = t0.race_base_name || t0.race_name;
+  raceTreeItems = items;
+  renderRaceTree();
+}
+
+// ---------- レース別収支の4階層(2026-11-13): 年月 → 日付 → 競馬場 → レース ----------
+// 各階層の行にその合計(購入・払戻・収支・回収率・的中率)を出し、行を押すと1つ下の階層を開閉する。
+// 並びは新しい順(レースは R の順)。最初は最新の年月だけ開く(開いた状態はこの画面を開いている間だけ覚える)。
+// 列の見出しでの並べ替えはこのタブではしない(以前は1行1レースの表で列の並べ替えがあった。docs/design/screens.md「集計画面」)。
+let raceTreeItems = [];
+let raceTreeOpen = null; // Set<key>。null = まだ初期化していない
+// 競馬場の並び(中央10場 → それ以外は名前順)
+const RACE_TREE_TRACK_ORDER = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"];
+
+function raceTreeTrackIndex(track) {
+  const i = RACE_TREE_TRACK_ORDER.indexOf(track);
+  return i === -1 ? RACE_TREE_TRACK_ORDER.length : i;
+}
+
+// [{ key, level, label, tickets, children }] の木を作る
+function buildRaceTree(items) {
+  const desc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
+  const byMonth = groupBy(items, (t) => String(t.race_date || "").slice(0, 7));
+  return [...byMonth.keys()].sort(desc).map((ym) => {
+    const monthTickets = byMonth.get(ym);
+    const [y, m] = ym.split("-");
+    const byDay = groupBy(monthTickets, (t) => t.race_date || "");
     return {
-      name: `${formatDateMd(t0.race_date)} ${t0.track} ${t0.race_number}R${displayName ? " " + displayName : ""}`,
-      // 初期表示は「日付・競馬場・レース番号」の順でソートするため、この3つを連結したキーで比較する。
-      dateKey: `${t0.race_date}_${t0.track}_${String(t0.race_number).padStart(2, "0")}`,
-      stats: computeGroupStats(tickets),
+      key: `m:${ym}`, level: 1, label: ym ? `${y}年${Number(m)}月` : "日付なし", tickets: monthTickets,
+      children: [...byDay.keys()].sort(desc).map((date) => {
+        const dayTickets = byDay.get(date);
+        const byTrack = groupBy(dayTickets, (t) => t.track || "");
+        const tracks = [...byTrack.keys()].sort(
+          (a, b) => raceTreeTrackIndex(a) - raceTreeTrackIndex(b) || a.localeCompare(b, "ja")
+        );
+        return {
+          key: `d:${date}`, level: 2, label: formatDateMdW(date), tickets: dayTickets,
+          children: tracks.map((track) => {
+            const trackTickets = byTrack.get(track);
+            const byRace = groupBy(trackTickets, (t) => Number(t.race_number) || 0);
+            return {
+              key: `t:${date}|${track}`, level: 3, label: track || "競馬場なし", tickets: trackTickets,
+              children: [...byRace.keys()].sort((a, b) => a - b).map((no) => {
+                const raceTickets = byRace.get(no);
+                const t0 = raceTickets[0];
+                const displayName = t0.race_base_name || t0.race_name;
+                return {
+                  key: `r:${date}|${track}|${no}`, level: 4,
+                  label: `${no}R${displayName ? " " + displayName : ""}`, tickets: raceTickets, children: [],
+                };
+              }),
+            };
+          }),
+        };
+      }),
     };
   });
-  renderTable("race-table", "race", "レース", "date");
+}
+
+function renderRaceTree() {
+  const table = document.getElementById("race-table");
+  const tree = buildRaceTree(raceTreeItems);
+  if (!tree.length) {
+    table.innerHTML = `<tr><td class="table-empty">データがありません</td></tr>`;
+    return;
+  }
+  if (!raceTreeOpen) raceTreeOpen = new Set([tree[0].key]);
+  const cells = (s, level) =>
+    `<td>${formatYen(s.totalAmount)}</td>` +
+    `<td>${formatYen(s.settledPayout)}</td>` +
+    `<td class="${s.profit >= 0 ? "profit-plus" : "profit-minus"}">${formatSignedYen(s.profit)}</td>` +
+    `<td>${s.rate !== null ? s.rate + "%" : "-"}</td>` +
+    `<td>${level < 4 && s.hitRate !== null ? s.hitRate + "%" : "-"}</td>`;
+  const rows = [];
+  const walk = (nodes) => {
+    for (const n of nodes) {
+      const hasChildren = n.children.length > 0;
+      const open = hasChildren && raceTreeOpen.has(n.key);
+      const mark = hasChildren ? `<span class="race-tree-mark">${open ? "▾" : "▸"}</span>` : "";
+      const cls = `race-tree-row race-tree-l${n.level}${hasChildren ? " race-tree-toggle" : ""}`;
+      const keyAttr = hasChildren ? ` data-key="${escapeAttr(n.key)}"` : "";
+      rows.push(
+        `<tr class="${cls}"${keyAttr}><td class="table-name race-tree-name">${mark}${escapeHtml(n.label)}</td>` +
+          `${cells(computeGroupStats(n.tickets), n.level)}</tr>`
+      );
+      if (open) walk(n.children);
+    }
+  };
+  walk(tree);
+  const head = `<tr><th>年月・日付・競馬場・レース</th>${STAT_COLUMNS.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
+  table.innerHTML = head + rows.join("");
+  table.querySelectorAll(".race-tree-toggle").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const key = tr.dataset.key;
+      if (raceTreeOpen.has(key)) raceTreeOpen.delete(key);
+      else raceTreeOpen.add(key);
+      renderRaceTree();
+    });
+  });
 }
 
 // 競馬場別収支: trackのみでまとめる(コース種別・距離では分けない。コース別収支より

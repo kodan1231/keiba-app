@@ -21,7 +21,8 @@ const JRA_RESULT_HTML_BET_TYPE_BY_CLASS = {
   tierce: "sanrentan",
 };
 
-const JRA_RESULT_HTML_STATUS_BY_PLACE_TEXT = { 取消: "scratched", 除外: "excluded", 中止: "stopped" };
+// 失格は中止と同じ扱い(着順なし。2026-11-13。降着は確定後の着順の数字が出るのでそのまま)
+const JRA_RESULT_HTML_STATUS_BY_PLACE_TEXT = { 取消: "scratched", 除外: "excluded", 中止: "stopped", 失格: "stopped" };
 
 function jraResultHtmlText(el) {
   return el ? el.textContent.replace(/\s+/g, " ").trim() : "";

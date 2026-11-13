@@ -185,11 +185,31 @@ function closeEntriesModal() {
 // ESCキーでキャンセル相当(保存せず閉じる)にする(docs/BACKLOG.md クラスタK対応)。
 registerEscToClose(entriesModal, closeEntriesModal);
 
+// 同じ馬番が2頭以上なら文言を返す(馬番未確定の馬は見ない)。重複なしなら null
+function entriesDuplicateNumberMessage(entries) {
+  const byNumber = new Map();
+  for (const e of entries || []) {
+    const n = Number(e && e.horse_number);
+    if (!e || e.horse_number == null || e.horse_number === "" || !Number.isInteger(n)) continue;
+    if (!byNumber.has(n)) byNumber.set(n, []);
+    byNumber.get(n).push(String(e.horse_name || "").trim() || "(馬名なし)");
+  }
+  const dups = [...byNumber.entries()].filter(([, names]) => names.length > 1).sort((a, b) => a[0] - b[0]);
+  if (!dups.length) return null;
+  return `馬番が重複しています: ${dups.map(([n, names]) => `${n}番(${names.join("・")})`).join("、")}\n馬番を直してから保存してください。`;
+}
+
 entriesForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const id = document.getElementById("entries-race-id").value;
   const entries = readEntryRows();
+  // 馬番の重複は保存しない(2026-11-13。サーバーも同じ確認をする: functions/api/_lib/entries-merge.js の duplicateHorseNumberError)
+  const dupMessage = entriesDuplicateNumberMessage(entries);
+  if (dupMessage) {
+    alert(dupMessage);
+    return;
+  }
 
   const payload = {
     race_date: document.getElementById("r-race-date").value,

@@ -402,10 +402,8 @@ function renderRaceHeader() {
   // 牝馬限定は class_flags の生テキストに「牝」を含むか、ハンデ戦は weight_type
   // (または class_flags)に「ハンデ」を含むかで判定する(docs/design/data-model.md
   // 「レース条件の詳細カラム」参照。構造化されていない生テキストのため部分一致で見る)。
-  const classFlags = String(selectedRace.class_flags || "");
-  // 2026-10-25: 「牡・牝」(牡馬・牝馬とも出られる。菊花賞など)は牝馬限定ではない。「牝」があって「牡」が無いときだけ牝馬限定
-  const isFillyOnly = classFlags.includes("牝") && !classFlags.includes("牡");
-  const isHandicap = String(selectedRace.weight_type || "").includes("ハンデ") || classFlags.includes("ハンデ");
+  // 判定は utils.js の raceConditionFlags(2026-11-13 にレース一覧と共通化)
+  const condBadges = raceConditionBadgesHtml(selectedRace);
   // 勝負レースフラグ(prediction.is_key_race)は selectRace() が /api/predictions を
   // 取得し終えるまでは前のレースの値が残っているため、初回描画時は常にOFF扱いにする
   // (取得完了後に renderRaceHeader() を再度呼び直して正しい状態に更新する)。
@@ -432,8 +430,7 @@ function renderRaceHeader() {
         const k = selectedRace.entries.filter(e => e && e.scratched).length;
         return k ? `${selectedRace.entries.length - k}頭(取消${k})` : `${selectedRace.entries.length}頭`;
       })()}</span>
-      ${isFillyOnly ? `<span class="race-cond-badge race-cond-filly" title="牝馬限定">牝</span>` : ""}
-      ${isHandicap ? `<span class="race-cond-badge race-cond-handi" title="ハンデ戦">H</span>` : ""}
+      ${condBadges}
       ${selectedRace.graded ? `<a class="race-cond-badge graded-past-link" href="${appUrl("search", `data-search.html?graded=${encodeURIComponent(selectedRace.graded.id)}`)}" target="_blank" rel="noopener" title="データ検索「重賞検索」でこの重賞の過去10年の成績を別タブで開きます">過去のデータ</a>` : ""}
       ${selectedRace.graded && !GUEST_VIEW ? `<button type="button" id="graded-memo-btn" class="race-cond-badge graded-memo-btn ${gradedNotesHaveMemo() ? "has-memo" : ""}" title="この重賞の年ごとのメモ(予想の根拠・結果の振り返り。自分だけに表示)">重賞メモ</button>` : ""}
     </div>

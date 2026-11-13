@@ -331,6 +331,7 @@ function renderRaceRow(r) {
   row.innerHTML = `
     <span class="r-num">${r.race_number}R</span>
     ${r.race_name ? `<span class="meta">${escapeHtml(r.race_name)}</span>` : ""}
+    ${raceConditionBadgesHtml(r)}
     ${courseText ? `<span class="meta course-meta">${escapeHtml(courseText)}</span>` : ""}
     ${isAdmin
       ? `<button type="button" class="entries-badge ${hasEntries ? "done" : ""}" data-id="${r.id}">${entriesLabel}</button>`

@@ -168,6 +168,7 @@ function dsRender(data) {
   const tracks = [...(data.trackOptions || [])].sort(
     (a, b) => dsTrackSortIndex(a) - dsTrackSortIndex(b) || a.localeCompare(b, "ja")
   );
+  dsSetSelectOptions(dsEls.year, data.yearOptions || [], { formatLabel: (v) => `${v}年` });
   dsSetSelectOptions(dsEls.track, tracks);
   dsSetSelectOptions(dsEls.distance, data.distanceOptions || [], {
     formatLabel: (v) => `${v}m`,
@@ -192,6 +193,7 @@ async function dsLoad() {
   dsEls.status.textContent = "集計中…";
 
   const params = new URLSearchParams();
+  if (dsEls.year.value) params.set("year", dsEls.year.value);
   if (dsEls.track.value) params.set("track", dsEls.track.value);
   if (dsEls.surface.value) params.set("course_type", dsEls.surface.value);
   if (dsEls.distance.value) params.set("distance", dsEls.distance.value);
@@ -216,6 +218,7 @@ async function dsLoad() {
 }
 
 function dsInit() {
+  dsEls.year = document.getElementById("ds-year");
   dsEls.track = document.getElementById("ds-track");
   dsEls.surface = document.getElementById("ds-surface");
   dsEls.distance = document.getElementById("ds-distance");
@@ -238,6 +241,11 @@ function dsInit() {
     dsLoad();
   });
   dsEls.distance.addEventListener("change", dsLoad);
+  // 年(2026-11-13)。その年に無い距離もあるため、距離の選択はリセットする
+  dsEls.year.addEventListener("change", () => {
+    dsEls.distance.value = "";
+    dsLoad();
+  });
 
   if (/^\d+$/.test(dsGradedLinkId || "")) {
     dsRaceStatsDeferred = true;

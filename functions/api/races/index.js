@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace, enqueuePaceRecompute, raceCourseTypeOf } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace, enqueuePaceRecompute, raceCourseTypeOf, duplicateHorseNumberError } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // (以前は全件を races_cache〈2026-09-12追加〉から返していたが、2026-10-08に全件取得とともに廃止した)
@@ -94,6 +94,9 @@ export async function onRequestPost(context) {
   if (!race_date || !track || !race_number || !Array.isArray(entries)) {
     return jsonError("開催日・競馬場・レース番号は必須です", 400);
   }
+  // 馬番の重複は保存しない(2026-11-13。_lib/entries-merge.js)
+  const dupError = duplicateHorseNumberError(entries);
+  if (dupError) return jsonError(dupError, 400);
 
   // 2026-08-16追加: 手動登録(netkeibaテキスト貼り付けからの一括入力を含む)された
   // 出走馬の騎手名を、保存前にjockey_aliasesテーブルで正規化する。これにより、

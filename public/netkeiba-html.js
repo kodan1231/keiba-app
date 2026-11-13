@@ -22,7 +22,8 @@ const NK_BET_TYPE_BY_LABEL = {
   // 枠単(地方のみ)はアプリに券種が無いため読まない
 };
 
-const NK_STATUS_BY_RANK_TEXT = { 取消: "scratched", 除外: "excluded", 中止: "stopped" };
+// 失格は中止と同じ扱い(着順なし。2026-11-13。降着「5(降)」は先頭の数字=確定後の着順)
+const NK_STATUS_BY_RANK_TEXT = { 取消: "scratched", 除外: "excluded", 中止: "stopped", 失格: "stopped", 失: "stopped" };
 
 function nkText(el) {
   return el ? el.textContent.replace(/\s+/g, " ").trim() : "";
@@ -381,6 +382,7 @@ function nkDbStatusOf(rankText) {
   if (/取/.test(rankText)) return "scratched";
   if (/除/.test(rankText)) return "excluded";
   if (/中/.test(rankText)) return "stopped";
+  if (/失/.test(rankText)) return "stopped"; // 失格は中止と同じ扱い(2026-11-13)
   return "finished";
 }
 
