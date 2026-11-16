@@ -907,6 +907,70 @@ csvImportInput?.addEventListener("change", async () => {
   }
 });
 
+// ---------- CSV取り込み分の削除(開催日ごと。2026-11-16) ----------
+// 別の人の CSV を間違えて取り込んだとき等に、開催日ごとにまとめて消す。CSV の元の行も消すので、取り込み直せる。
+// 仕様は docs/design/csv-import.md「取り込みの削除」。
+const importDeleteOverlay = document.createElement("div");
+importDeleteOverlay.className = "modal-overlay";
+importDeleteOverlay.hidden = true;
+importDeleteOverlay.innerHTML = `
+  <div class="modal import-delete-dialog">
+    <div class="ticket-dialog-toolbar"><button type="button" class="dialog-close" id="import-delete-close-btn" aria-label="閉じる">×</button></div>
+    <h2>CSV取り込みの削除</h2>
+    <p class="ticket-sub">開催日ごとに、CSVで取り込んだ購入履歴をまとめて消します(手で登録した購入は消えません)。消した日は同じCSVを取り込み直せます。</p>
+    <div class="table-wrap"><table class="stats-table" id="import-delete-table"></table></div>
+  </div>`;
+document.getElementById("app-screen")?.appendChild(importDeleteOverlay);
+function closeImportDeleteDialog() { importDeleteOverlay.hidden = true; document.body.classList.remove("modal-open"); }
+importDeleteOverlay.addEventListener("click", (e) => { if (e.target === importDeleteOverlay) closeImportDeleteDialog(); });
+importDeleteOverlay.querySelector("#import-delete-close-btn").addEventListener("click", closeImportDeleteDialog);
+if (typeof registerEscToClose === "function") registerEscToClose(importDeleteOverlay, closeImportDeleteDialog);
+
+async function renderImportDeleteTable() {
+  const table = importDeleteOverlay.querySelector("#import-delete-table");
+  table.innerHTML = "<tr><td>読み込み中…</td></tr>";
+  const res = await authedFetch("/api/ticket-imports/by-date");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { table.innerHTML = `<tr><td>${escapeHtml(data.error || "読み込みに失敗しました")}</td></tr>`; return; }
+  const items = data.items || [];
+  if (!items.length) { table.innerHTML = "<tr><td>CSVで取り込んだ購入履歴はありません</td></tr>"; return; }
+  table.innerHTML = `
+    <thead><tr><th>開催日</th><th>行数</th><th>購入額</th><th>取り込み日時</th><th></th></tr></thead>
+    <tbody>${items.map((r) => `
+      <tr data-date="${escapeHtml(r.race_date)}">
+        <td>${escapeHtml(r.race_date)}</td>
+        <td>${r.rows_count}</td>
+        <td>${Number(r.amount || 0).toLocaleString()}円</td>
+        <td>${escapeHtml(r.imported_at ? formatUtcToJst(r.imported_at) : "—")}</td>
+        <td><button type="button" class="icon-btn delete import-delete-row-btn" title="この日の取り込みを削除">×</button></td>
+      </tr>`).join("")}</tbody>`;
+  table.querySelectorAll(".import-delete-row-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const date = btn.closest("tr")?.dataset.date;
+      if (!date || !confirm(`${date} のCSV取り込み分をすべて削除しますか？(元に戻せません)`)) return;
+      btn.disabled = true;
+      const r = await authedFetch(`/api/ticket-imports/by-date?race_date=${encodeURIComponent(date)}`, { method: "DELETE" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(d.error || "削除に失敗しました。"); btn.disabled = false; return; }
+      await renderImportDeleteTable();
+      await loadTickets();
+    });
+  });
+}
+// imported_at は SQLite の datetime('now')(UTC "YYYY-MM-DD HH:MM:SS")。日本時間で出す
+function formatUtcToJst(s) {
+  const d = new Date(String(s).replace(" ", "T") + "Z");
+  if (Number.isNaN(d.getTime())) return String(s);
+  const j = new Date(d.getTime() + 9 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${j.getUTCMonth() + 1}/${j.getUTCDate()} ${p(j.getUTCHours())}:${p(j.getUTCMinutes())}`;
+}
+document.getElementById("csv-import-delete-btn")?.addEventListener("click", () => {
+  importDeleteOverlay.hidden = false;
+  document.body.classList.add("modal-open");
+  renderImportDeleteTable();
+});
+
 // ---------- 一括削除(選択モード) ----------
 // 通常購入(tickets)のみが対象。CSV取込分(imported_ticket_items 等)はチェックボックスを
 // 出さない。着順・払戻は削除の影響を受けないため、サーバ側でも recomputeTicketPayouts* は呼ばない。

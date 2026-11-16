@@ -29,6 +29,8 @@
       <!-- 購入履歴のCSVインポート(各ユーザーが自分の分を取り込む)。2026-10-15 にヘッダー(かごと退場の間)から移した(ヘッダーの段がずれるため) -->
       <input type="file" id="csv-import-input" accept=".csv,text/csv" hidden />
       <button type="button" id="csv-import-btn" class="ghost-btn history-csv-import-btn">CSVインポート</button>
+      <!-- CSV取り込み分を開催日ごとに消す(2026-11-16。app.js の openImportDeleteDialog。docs/design/csv-import.md「取り込みの削除」) -->
+      <button type="button" id="csv-import-delete-btn" class="ghost-btn">取込の削除</button>
     </div>
     <!-- 年・月を選んで移動(2026-10-29。レース管理画面と同じ。app.js の syncHistoryMonthJump) -->
     <div id="history-month-jump" class="race-calendar-jump" hidden>

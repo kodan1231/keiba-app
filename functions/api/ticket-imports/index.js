@@ -68,7 +68,16 @@ function dedupeCombos(list){
 //   - 全角スラッシュ区切りの軸ながし(群数2・軸+相手群): 相手群から不足分を選んで軸と組み合わせ
 //     (「マルチ」等、着順を問わない式別では全順列を生成する)
 //   - スラッシュなしのセミコロン区切りのみ(BOX): 全馬番からのC(n,式別の点数)
-function splitCombinations(text,type){
+// 式別の「1着ながし」「2着ながし」「1・2着ながし」等から、軸を置く着順(1始まり)を返す(2026-11-16)。
+// 「マルチ」や着の指定が無い式別は null(従来どおり、着順を問わない全順列)。
+function nagashiAxisPositions(betText){
+  const s=clean(betText).normalize('NFKC');
+  if(/マルチ/.test(s)) return null;
+  const m=s.match(/([123])(?:[・･,、]([123]))?着ながし/);
+  if(!m) return null;
+  return [Number(m[1]),...(m[2]?[Number(m[2])]:[])];
+}
+function splitCombinations(text,type,betText=''){
   const raw=clean(text); if(!raw)return [];
   const size=comboSize(type);
   const isOrdered=ordered(type);
@@ -90,6 +99,21 @@ function splitCombinations(text,type){
       // 軸(1頭以上)+相手群のながし。相手群から不足分を選んで軸と組み合わせる。
       const [axisGroup,partnerGroup]=groups;
       const need=size-axisGroup.length;
+      // 馬単・3連単の着順指定のながし(「3連単1着ながし」等。2026-11-16): 軸は指定の着に固定し、相手だけを並べ替える。
+      // 以前はマルチと同じ全順列にしていたため、3連単1着ながし 相手2頭(2点)が6点になり、金額も6等分されていた
+      const axisPositions=isOrdered?nagashiAxisPositions(betText):null;
+      if(axisPositions&&axisPositions.length===axisGroup.length&&axisPositions.every(p=>p<=size)&&need>0&&need<=partnerGroup.length){
+        const out=[];
+        for(const pick of kCombinations(partnerGroup,need)){
+          if(pick.some(n=>axisGroup.includes(n))) continue;
+          for(const perm of permutations(pick)){
+            const combo=new Array(size); axisPositions.forEach((p,i)=>{combo[p-1]=axisGroup[i];});
+            let j=0; for(let k=0;k<size;k++) if(combo[k]===undefined) combo[k]=perm[j++];
+            out.push(combo);
+          }
+        }
+        if(out.length) return dedupeCombos(out);
+      }
       if(need>0&&need<=partnerGroup.length){
         const picks=kCombinations(partnerGroup,need);
         let combos=picks.map(p=>[...axisGroup,...p]);
@@ -297,7 +321,7 @@ export async function onRequestPost(context){
         raceCache.set(raceKey,race||null);
       }
       const raceNameForGroup=cols.raceName>=0?clean(row[cols.raceName]):null;
-      const combos=splitCombinations(comboText,type);
+      const combos=splitCombinations(comboText,type,cols.betType>=0?row[cols.betType]:'');
       const hitKeys=new Set(hitCombos.map(a=>a.join(type==='sanrentan'?'→':'-')));
       let group;
       try{
