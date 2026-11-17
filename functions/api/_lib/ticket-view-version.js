@@ -22,7 +22,8 @@
 // 6: 2026-11-14 阪神ジュベナイルフィリーズ・アメリカジョッキークラブC・東京スポーツ杯2歳S を重賞一覧の略称へ
 // 7: 2026-11-17 2024年以前の「府中牝馬S」(10月)をアイルランドT に数える(resolveGradedKeyOfRace)
 // 8: 2026-11-17 「産経大阪杯」→大阪杯、末尾の「(重賞)」を外す(葵S)
-export const TICKET_VIEW_SHAPE = "8";
+// 9: 2026-11-17 「夕刊フジオーシャンS」→オーシャンS
+export const TICKET_VIEW_SHAPE = "9";
 
 // 今の ETag を返す。取れなければ null(ETag を使わない)。
 // 2026-10-16〜(@STEP: user_data_versions): 利用者ごとの版数(user_data_versions)と、全員共通の版数(重賞一覧の変更だけで上がる)の
