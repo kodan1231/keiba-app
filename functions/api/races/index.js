@@ -1,4 +1,4 @@
-import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace, enqueuePaceRecompute, raceCourseTypeOf, duplicateHorseNumberError } from "../_shared.js";
+import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin, loadJockeyAliasMap, applyJockeyAliasesToEntries, loadHorseAliasMap, applyHorseAliasesToEntries, readJsonBody, jsonError, raceBaseNameOf, getRaceIndexRows, getRaceIndexSnapshot, RACE_INDEX_FIELDS, loadJockeyAliasMapCached, loadHorseAliasMapCached, loadGradedRaceMapCached, gradedRaceOf, guestRaceWindow, isGuestRace, enqueuePaceRecompute, raceCourseTypeOf, duplicateHorseNumberError } from "../_shared.js";
 
 // GET: レース情報は全ユーザー共有の閲覧データなので、ログインしていれば誰でも見られる。
 // (以前は全件を races_cache〈2026-09-12追加〉から返していたが、2026-10-08に全件取得とともに廃止した)
@@ -10,6 +10,9 @@ import { backfillHorseNamesForRace, linkUnregisteredImportsToRace, requireAdmin,
 // (自然にバウンドされる範囲の直接SELECTはCLAUDE.mdの不変条件上も許容される)。
 // 未指定時の全件取得(races_cache経由)は2026-10-08に廃止(400を返す)。詳細は
 // docs/design/data-model.md「GET /api/races の範囲限定」参照。
+// GET ?index=1 の本文・ETag の使い回し(2026-11-18)。キー: キャッシュの中身の署名|絞り込み。最大4件
+const indexBodyMemo = new Map();
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const params = new URL(request.url).searchParams;
@@ -21,19 +24,29 @@ export async function onRequestGet(context) {
   // GET /api/races/:id で取る。races_cache(約10MB)の解析・全出走馬の送信をやめるため
   // (CPU時間上限超過と利用者の通信量の対策。docs/design/data-model.md「レース一覧用の軽いキャッシュ」)。
   if (params.get("index") === "1") {
-    let rows = await getRaceIndexRows(env.DB);
+    const snap = await getRaceIndexSnapshot(env.DB);
     // ゲスト(2026-10-14。docs/design/guest.md)は次の開催週末の中央のレースだけ。
     // ゲスト画面からの取得(&guest=1)も、ログイン中でも同じに絞る(管理者がゲスト画面をゲストと同じ見え方で確認するため)
-    if (context.data?.isGuest || params.get("guest") === "1") {
-      const win = guestRaceWindow();
-      const di = RACE_INDEX_FIELDS.indexOf("race_date"), ti = RACE_INDEX_FIELDS.indexOf("track");
-      rows = rows.filter((r) => isGuestRace({ race_date: r[di], track: r[ti] }, win));
+    const guestView = Boolean(context.data?.isGuest || params.get("guest") === "1");
+    const win = guestView ? guestRaceWindow() : null;
+    // 本文と ETag は、キャッシュの中身(snap.sig)と絞り込みが前回と同じなら使い回す(2026-11-18。JSON 化とハッシュに毎回数ミリ秒かかっていた)
+    const memoKey = `${snap.sig}|${guestView ? `${win.from}~${win.to}` : "all"}`;
+    let built = indexBodyMemo.get(memoKey);
+    if (!built) {
+      let rows = snap.rows;
+      if (guestView) {
+        const di = RACE_INDEX_FIELDS.indexOf("race_date"), ti = RACE_INDEX_FIELDS.indexOf("track");
+        rows = rows.filter((r) => isGuestRace({ race_date: r[di], track: r[ti] }, win));
+      }
+      // 内容のハッシュを ETag にし、ブラウザが前回と同じ値を送ってきたら 304(本文なし)を返す(2026-10-08)。
+      // 一覧は約39万文字あり、開くたびに送り直していた。読み取りはキャッシュ約20行のままで変わらない。
+      const body = JSON.stringify({ fields: RACE_INDEX_FIELDS, rows });
+      const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(body));
+      built = { body, etag: `W/"ri-${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")}"` };
+      indexBodyMemo.set(memoKey, built);
+      while (indexBodyMemo.size > 4) indexBodyMemo.delete(indexBodyMemo.keys().next().value);
     }
-    // 内容のハッシュを ETag にし、ブラウザが前回と同じ値を送ってきたら 304(本文なし)を返す(2026-10-08)。
-    // 一覧は約39万文字あり、開くたびに送り直していた。読み取りはキャッシュ約20行のままで変わらない。
-    const body = JSON.stringify({ fields: RACE_INDEX_FIELDS, rows });
-    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(body));
-    const etag = `W/"ri-${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")}"`;
+    const { body, etag } = built;
     const headers = { "Cache-Control": "private, no-cache", ETag: etag };
     const sent = request.headers.get("If-None-Match") || "";
     if (sent.split(",").some((v) => v.trim() === etag)) return new Response(null, { status: 304, headers });

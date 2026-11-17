@@ -525,3 +525,38 @@ BEGIN
    WHERE race_id = NEW.id AND marks IS NOT NULL AND marks <> '';
 END;
 INSERT INTO schema_migrations (name) VALUES ('race_pick_records');
+
+-- @STEP: horse_notes_versions
+-- 馬メモの「変更なし(304)」のための版数(2026-11-18。functions/api/horse-notes/index.js)。表とトリガーを作るだけ(既存の行は読まない・書かない)。
+-- 適用前は ETag を付けず、以前どおり毎回返す。
+CREATE TABLE IF NOT EXISTS user_note_versions (
+  user_id INTEGER PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 0
+);
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_ins AFTER INSERT ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT NEW.user_id, 1 WHERE NEW.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_upd AFTER UPDATE ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT u, 1 FROM (SELECT NEW.user_id AS u UNION SELECT OLD.user_id) WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_del AFTER DELETE ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT OLD.user_id, 1 WHERE OLD.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+INSERT OR IGNORE INTO data_versions (name, version) VALUES ('horse_aliases', 1);
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_ins AFTER INSERT ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_upd AFTER UPDATE ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_del AFTER DELETE ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+INSERT INTO schema_migrations (name) VALUES ('horse_notes_versions');
+
+-- @STEP: race_factors_cache
+-- 展開・時計の点数の保存(2026-11-18。_lib/race-signals.js の getRaceFactorsBody)。表を作るだけ。適用前は以前どおり毎回計算する。
+CREATE TABLE IF NOT EXISTS race_factors_cache (
+  race_id INTEGER PRIMARY KEY,
+  fp TEXT NOT NULL,
+  body TEXT NOT NULL,
+  computed_at TEXT NOT NULL
+);
+INSERT INTO schema_migrations (name) VALUES ('race_factors_cache');

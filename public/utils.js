@@ -1,5 +1,20 @@
 // 共通ユーティリティ関数
 
+// GET /api/ticket-imports?compact=1 の応答(グループごとにまとめた形。2026-11-18)を、以前の明細ごとの items の配列へ戻す。
+// 以前の形(items だけ)の応答もそのまま受け付ける。購入履歴画面・集計画面の全期間の取得で使う
+function expandTicketImports(payload) {
+  if (Array.isArray(payload)) return payload;
+  const out = [];
+  for (const g of Array.isArray(payload?.groups) ? payload.groups : []) {
+    const { it, ...common } = g;
+    for (const [id, selections, amount, payout, isHit, inferred] of it || []) {
+      out.push({ ...common, id: `import-${id}`, selections, amount, payout, is_hit: Boolean(isHit), result_inferred: Boolean(inferred) });
+    }
+  }
+  for (const x of Array.isArray(payload?.items) ? payload.items : []) out.push(x);
+  return out;
+}
+
 /**
  * HTML特殊文字をエスケープ
  * @param {string} str - エスケープ対象文字列

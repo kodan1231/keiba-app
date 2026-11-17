@@ -72,6 +72,45 @@ if (D1_TOKEN) {
   ({ backtestChunk } = await import("../functions/api/_lib/pace-score.js"));
   ({ getPaceScoreSettings } = await import("../functions/api/_lib/pace-settings.js"));
 }
+// ---- 使用量による打ち切り(2026-11-18 ユーザー要望・仕様確認済み。docs/design/ops.md「夜間の計算の使用量による打ち切り」) ----
+// 処理(換算の比の 2a・比率の1条件・距離の比の10歩)を始める前に、今日(UTC。日本時間9時に切り替わる)の D1 の読み取りの見込みが
+// NIGHTLY_READ_LIMIT_PERCENT 以上なら、残りは始めずに次の回(次の定時起動・翌晩)へ回す(計算待ちに残る。失敗にはしない)。
+// 見込み = 分析API の今日の読み取り(数分遅れる。10分ごとに取り直す)+ その後にこの実行が読んだ行数。
+// 日本時間の8時台は判定しない(9時に使用量がリセットされるため。ユーザー判断)。使用量が取れないときは止めない(以前どおり)。
+// 既定 75%: 昼の画面の重い機能を止める自動一時停止(_lib/service-guard.js。既定 80%)より手前で止め、夜間の計算のせいで利用者の機能が止まらないようにする。
+// 実績(11/10〜11/17): 夜間の計算の読み取りは1日平均 約58万行(約12%)、最大 約158万行(約32%。11/13。手動の「今すぐ計算」13回を含む)。
+const READ_LIMIT_PERCENT = Number(process.env.NIGHTLY_READ_LIMIT_PERCENT) || 75;
+const USAGE_TOKEN = process.env.CF_ANALYTICS_TOKEN || D1_TOKEN;
+const USAGE_REFRESH_MS = 10 * 60 * 1000;
+let usageBase = null; // { at, rowsRead(分析API), localAt(そのときこの実行が読んだ行数) }
+let budgetStopped = null; // 打ち切った理由(まとめに出す)
+const localRowsRead = () => (d1 ? d1.stats().rowsRead : 0);
+async function readUsagePercent() {
+  if (!USAGE_TOKEN) return null;
+  if (!usageBase || Date.now() - usageBase.at > USAGE_REFRESH_MS) {
+    try {
+      const { loadD1Usage } = await import("../functions/api/_lib/d1-usage.js");
+      const u = await loadD1Usage(USAGE_TOKEN);
+      if (u?.ok) usageBase = { at: Date.now(), rowsRead: u.total.rowsRead, limit: u.limits.rowsRead, localAt: localRowsRead() };
+    } catch (e) {
+      console.error(`使用量の取得に失敗(止めずに続ける) ${e.message}`);
+    }
+  }
+  if (!usageBase) return null;
+  return ((usageBase.rowsRead + (localRowsRead() - usageBase.localAt)) / usageBase.limit) * 100;
+}
+// 続けてよいか。打ち切るときは理由を覚えて false
+async function withinBudget(what) {
+  if (budgetStopped) return false;
+  const jstHour = new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
+  if (jstHour === 8) return true;
+  const pct = await readUsagePercent();
+  if (pct === null || pct < READ_LIMIT_PERCENT) return true;
+  budgetStopped = `D1 の読み取りの見込み ${pct.toFixed(1)}% が ${READ_LIMIT_PERCENT}% 以上のため、${what}から先は次の回へ回す`;
+  console.log(budgetStopped);
+  return false;
+}
+
 // 出走馬の全戦績を1回の実行の間使い回す(2026-10-27。D1 の読み取りを減らす。_lib/pace-score.js の scoreRaces の runsCache)
 const runsCache = new Map();
 async function fetchChunk(kind, key, offset) {
@@ -127,7 +166,7 @@ let conversionFailed = null;
 let rankingFailed = null;
 let historyFailed = null;
 let pickStatsFailed = null;
-if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
+if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true" && (await withinBudget("換算の比と偏り(2a)"))) {
   try {
     const { distanceRatiosState, computeConversionTables } = await import("../functions/api/_lib/distance-ratios.js");
     const { computeHorseRanking, loadHorseRanking } = await import("../functions/api/_lib/horse-ranking.js");
@@ -250,7 +289,7 @@ if (d1 && SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
 // 以前は管理画面のブラウザが Cloudflare の採点の API を呼んでいたが、11/5 に CPU 時間の上限を続けて超えて止められた(15時台に43回)。
 // 保存の内容は以前の admin.js の paceAdjustDefaultAuto と同じ(前年の同レースは今の既定値のまま、4つだけ置き換える)。
 let adjustFailed = null;
-if (process.env.ADJUST_DEFAULT === "true") {
+if (process.env.ADJUST_DEFAULT === "true" && (await withinBudget("評価点の既定値の計算"))) {
   try {
     if (!d1) throw new Error("CF_D1_TOKEN が要ります");
     const started = Date.now();
@@ -281,6 +320,7 @@ const items = await loadQueue();
 console.log(`比率の計算待ち ${items.length}件(採点: ${d1 ? "Node〈D1 を API で読む〉" : "採点の API"})`);
 let pending = items;
 const failures = new Map();
+const doneKeys = new Set(); // 計算し終えた条件(2026-11-18。打ち切りで始めなかった条件を「完了」に数えないため)
 for (let round = 0; round < 2 && pending.length; round++) {
   if (round) {
     console.log(`失敗した ${pending.length}件を1分後にやり直す`);
@@ -288,9 +328,11 @@ for (let round = 0; round < 2 && pending.length; round++) {
   }
   const next = [];
   for (const it of pending) {
+    if (!(await withinBudget(`比率の計算(${it.kind} ${it.key})`))) break; // 残りは計算待ちに残る
     try {
       console.log(await processItem(it));
       failures.delete(`${it.kind} ${it.key}`);
+      doneKeys.add(`${it.kind} ${it.key}`);
     } catch (e) {
       failures.set(`${it.kind} ${it.key}`, e.message);
       console.error(`${it.kind} ${it.key}: 失敗(${round ? "計算待ちに残す" : "後でやり直す"}) ${e.message}`);
@@ -308,6 +350,7 @@ if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
   let steps = 0;
   try {
     for (; steps < DISTANCE_STEPS_MAX; steps++) {
+      if (steps % 10 === 0 && !(await withinBudget("距離の換算の比"))) break; // 次の晩に続きから
       const r = await api("/api/cron/pace-step", { method: "POST" });
       if (r.idle) break;
       if (steps % 10 === 0 || /done|cleared/.test(r.did || "")) console.log(`pace-step: ${r.did}`);
@@ -321,6 +364,7 @@ if (SECRET && !DRY_RUN && process.env.SKIP_DISTANCE !== "true") {
 
 // ---- まとめ ----
 if (d1) console.log(`D1 の読み取り: ${d1.stats().rowsRead}行(${d1.stats().queries}回)`);
-console.log(`まとめ: 比率 ${items.length - failures.size}/${items.length}件 完了${failures.size ? ` / 残り ${failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}${historyFailed ? " / 展開・同コースの物差し 失敗" : ""}${pickStatsFailed ? " / 推奨馬比較 失敗" : ""}${adjustFailed ? " / 評価点の既定値 失敗" : ""}`);
+if (budgetStopped) console.log(`打ち切り: ${budgetStopped}`);
+console.log(`まとめ: 比率 ${doneKeys.size}/${items.length}件 完了${failures.size ? ` / 失敗 ${failures.size}件` : ""}${items.length - doneKeys.size - failures.size > 0 ? ` / 次の回へ ${items.length - doneKeys.size - failures.size}件` : ""}${distanceFailed ? " / 距離の換算の比 失敗" : ""}${conversionFailed ? " / 換算の比と偏り 失敗" : ""}${rankingFailed ? " / 出走回数・勝利回数のトップ10 失敗" : ""}${historyFailed ? " / 展開・同コースの物差し 失敗" : ""}${pickStatsFailed ? " / 推奨馬比較 失敗" : ""}${adjustFailed ? " / 評価点の既定値 失敗" : ""}`);
 for (const [k, msg] of failures) console.log(`  残り: ${k} … ${msg}`);
 if (failures.size || distanceFailed || conversionFailed || rankingFailed || historyFailed || pickStatsFailed || adjustFailed) process.exit(1);

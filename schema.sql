@@ -877,3 +877,36 @@ CREATE TRIGGER IF NOT EXISTS trg_snap_jockey_aliases_del AFTER DELETE ON jockey_
 CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_ins AFTER INSERT ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
 CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_upd AFTER UPDATE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
 CREATE TRIGGER IF NOT EXISTS trg_snap_graded_races_del AFTER DELETE ON graded_races BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'snap:graded_races'; END;
+
+-- 馬メモの「変更なし(304)」のための版数(2026-11-18追加。@STEP: horse_notes_versions)。functions/api/horse-notes/index.js。
+-- 利用者ごとの馬メモの版(user_note_versions)と、馬名エイリアスの版(data_versions の 'horse_aliases')をトリガーで上げる。
+-- 書き込み: 馬メモ・馬名エイリアスの1行の変更ごとに1行。
+CREATE TABLE IF NOT EXISTS user_note_versions (
+  user_id INTEGER PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 0
+);
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_ins AFTER INSERT ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT NEW.user_id, 1 WHERE NEW.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_upd AFTER UPDATE ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT u, 1 FROM (SELECT NEW.user_id AS u UNION SELECT OLD.user_id) WHERE u IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_unv_notes_del AFTER DELETE ON horse_notes BEGIN
+  INSERT INTO user_note_versions (user_id, version) SELECT OLD.user_id, 1 WHERE OLD.user_id IS NOT NULL
+    ON CONFLICT(user_id) DO UPDATE SET version = version + 1;
+END;
+INSERT OR IGNORE INTO data_versions (name, version) VALUES ('horse_aliases', 1);
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_ins AFTER INSERT ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_upd AFTER UPDATE ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+CREATE TRIGGER IF NOT EXISTS trg_ver_horse_aliases_del AFTER DELETE ON horse_aliases BEGIN UPDATE data_versions SET version = version + 1 WHERE name = 'horse_aliases'; END;
+
+-- 展開・時計の点数の保存(2026-11-18追加。@STEP: race_factors_cache)。_lib/race-signals.js の getRaceFactorsBody。
+-- レースごとに1行(約15KB)。fp(出走馬表・比率・設定・換算の比・物差し・エイリアスの版の指紋)が同じ間は計算せずに body を使う。
+CREATE TABLE IF NOT EXISTS race_factors_cache (
+  race_id INTEGER PRIMARY KEY,
+  fp TEXT NOT NULL,
+  body TEXT NOT NULL,
+  computed_at TEXT NOT NULL
+);

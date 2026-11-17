@@ -1692,6 +1692,17 @@ body.history-selection-mode .group-detail-actions {
 .hi-admin-panel { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule); }
 .hi-admin-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .hi-edit-form { margin-top: 12px; }
+/* 管理画面「重い機能の自動一時停止」(2026-11-18。全体の label{flex-direction:column} でチェックボックスが文言の上に離れていた) */
+.guard-form { margin-top: 12px; }
+.guard-form label.guard-check { flex-direction: row; align-items: flex-start; gap: 8px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.guard-form label.guard-check input { width: auto; padding: 0; margin: 2px 0 0; flex: 0 0 auto; }
+.guard-form .guard-master { font-weight: 700; }
+.guard-form .guard-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; margin: 10px 0; }
+.guard-form .guard-group { border: 1px solid var(--rule-strong); background: var(--paper-raised); padding: 8px 14px 12px; margin: 0; min-width: 0; }
+.guard-form .guard-group legend { font-weight: 700; color: var(--ink); padding: 0 6px; font-size: 13.5px; }
+.guard-form .guard-threshold { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.guard-form .guard-threshold input { width: 4.5em; padding: 4px 6px; }
+.guard-form .guard-targets { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--rule); padding-top: 8px; }
 .hi-edit-field {
   display: flex; flex-direction: column; gap: 6px;
   background: var(--paper-raised); border: 1px solid var(--rule-strong);

@@ -352,7 +352,7 @@ function renderServiceGuard(d) {
   document.getElementById("guard-write-threshold").value = s.writeThresholdPercent;
   document.getElementById("guard-manual").checked = s.manualPause;
   const checks = (name, selected) => d.features.map((f) => `
-    <label style="display:block"><input type="checkbox" name="${name}" value="${escapeAttr(f.key)}" ${selected.includes(f.key) ? "checked" : ""}/> ${escapeHtml(f.label)}</label>`).join("");
+    <label class="guard-check"><input type="checkbox" name="${name}" value="${escapeAttr(f.key)}" ${selected.includes(f.key) ? "checked" : ""}/><span>${escapeHtml(f.label)}</span></label>`).join("");
   document.getElementById("guard-targets").innerHTML = checks("guard-target", s.targets);
   document.getElementById("guard-write-targets").innerHTML = checks("guard-write-target", s.writeTargets);
   document.getElementById("guard-clear-override-btn").hidden = !overriding;

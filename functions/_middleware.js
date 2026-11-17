@@ -40,7 +40,7 @@ import {
 // そうなら案内の 503 に置き換える。成功した応答では何もしない
 export async function onRequest(context) {
   const isApi = new URL(context.request.url).pathname.startsWith("/api/");
-  if (!isApi) return handle(context);
+  if (!isApi) return handlePage(context);
   try {
     const res = await handle(context);
     const suspicious = (res.status >= 500 && res.headers.get("X-Service-Guard") !== "1") ||
@@ -50,6 +50,96 @@ export async function onRequest(context) {
   } catch (e) {
     if (isD1LimitError(e) || (await isD1LimitReached(context.env.DB))) return d1LimitResponse();
     throw e;
+  }
+}
+
+// ---- 画面の JS・CSS に版を付けてブラウザに長く保存させる(2026-11-18。docs/design/ops.md「JS・CSS の版付け」) ----
+// 以前は JS・CSS をすべて Cache-Control: no-cache(public/_headers)にしており、画面を開くたびに 9〜14 個のファイルについて
+// 「変わったか」をサーバーへ確かめていた(1つずつ Functions の呼び出しにもなる)。スマホの回線ではこの往復が数百ミリ秒になる。
+// 今は画面(HTML)を返すときに、同じサイトの <script src> と <link rel=stylesheet href> に ?v=<そのファイルの版> を付け、
+// ?v= の付いた JS・CSS は1年間ブラウザに保存させる(immutable)。ファイルを変えると版が変わり URL が変わるので、新しいものを取りに行く。
+// 版はそのファイルの ETag(無ければ中身の指紋)。同じ実行環境は同じデプロイの中身なので、ファイルごとに1回だけ調べて覚える。
+// ブックマークレット・ユーザースクリプトが読むファイル(?v= なし)は今までどおり no-cache。
+// HTML は版を書き換えるので、Pages の ETag(元のファイルの)では 304 を返さず、書き換えた後の中身の指紋を ETag にする
+// (元の ETag のまま 304 を返すと、ブラウザが古い版の HTML を使い続け、古い JS を読む)。
+const assetVersions = new Map(); // パス -> 版(文字列)。空文字は「調べたが版が取れない」
+const ASSET_LONG_CACHE = "public, max-age=31536000, immutable";
+const PAGE_ASSET_RE = /(<script\b[^>]*?\bsrc=")([^"?#:]+\.js)(")|(<link\b[^>]*?\bhref=")([^"?#:]+\.css)(")/g;
+
+function isVersionedAsset(url) {
+  return url.searchParams.has("v") && /\.(js|css)$/.test(url.pathname);
+}
+function looksLikePage(url) {
+  return /\.html$/.test(url.pathname) || !/\.[a-z0-9]+$/i.test(url.pathname);
+}
+function fingerprint(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return `${text.length.toString(36)}${(h >>> 0).toString(36)}`;
+}
+async function assetVersion(env, origin, path) {
+  if (assetVersions.has(path)) return assetVersions.get(path);
+  let v = "";
+  try {
+    const res = await env.ASSETS.fetch(new Request(new URL(path, origin)));
+    if (res.ok) {
+      const etag = (res.headers.get("ETag") || "").replace(/^W\//, "").replace(/"/g, "");
+      v = etag ? fingerprint(etag) : fingerprint(await res.text());
+    }
+  } catch (e) {
+    console.error("asset version failed (ignored)", path, e);
+  }
+  assetVersions.set(path, v);
+  return v;
+}
+async function versionPageAssets(context, url, res) {
+  if (res.status !== 200 || !/text\/html/i.test(res.headers.get("Content-Type") || "") || !context.env.ASSETS) return res;
+  const html = await res.text();
+  const paths = new Set();
+  for (const m of html.matchAll(PAGE_ASSET_RE)) paths.add(new URL(m[2] || m[5], url).pathname);
+  const versions = new Map(await Promise.all([...paths].map(async (p) => [p, await assetVersion(context.env, url.origin, p)])));
+  const out = html.replace(PAGE_ASSET_RE, (all, s1, src, e1, l1, href, e2) => {
+    const ref = src || href;
+    const v = versions.get(new URL(ref, url).pathname);
+    if (!v) return all;
+    return src ? `${s1}${src}?v=${v}${e1}` : `${l1}${href}?v=${v}${e2}`;
+  });
+  const etag = `W/"pg-${fingerprint(out)}"`;
+  const sent = context.request.headers.get("If-None-Match") || "";
+  const notModified = sent.split(",").some((x) => x.trim() === etag);
+  // 応答の見出し(Set-Cookie〈ゲストの Cookie〉・X-Robots-Tag 等)はそのまま引き継ぐ
+  const r = new Response(notModified ? null : out, { status: notModified ? 304 : 200, statusText: notModified ? "Not Modified" : "OK", headers: res.headers });
+  r.headers.set("ETag", etag);
+  r.headers.set("Cache-Control", "no-cache");
+  r.headers.delete("Content-Length");
+  r.headers.delete("Last-Modified");
+  return r;
+}
+
+// 画面・静的ファイル(/api/ 以外)
+async function handlePage(context) {
+  const url = new URL(context.request.url);
+  if (context.request.method !== "GET") return handle(context);
+  if (isVersionedAsset(url)) {
+    const res = await handle(context);
+    if (res.status !== 200) return res;
+    const out = new Response(res.body, res);
+    out.headers.set("Cache-Control", ASSET_LONG_CACHE);
+    return out;
+  }
+  if (!looksLikePage(url)) return handle(context);
+  // 画面は条件付きの問い合わせを外して読み(Pages に元の ETag で 304 を返させない)、書き換えた中身で 304 を判定する
+  const headers = new Headers(context.request.headers);
+  headers.delete("If-None-Match");
+  headers.delete("If-Modified-Since");
+  const plain = new Request(context.request, { headers });
+  const next = (input, init) => context.next(input ?? plain, init);
+  try {
+    const res = await handle(Object.assign(Object.create(context), { request: plain, next }));
+    return await versionPageAssets(context, url, res);
+  } catch (e) {
+    console.error("page asset versioning failed; serving as-is", e);
+    return handle(context);
   }
 }
 

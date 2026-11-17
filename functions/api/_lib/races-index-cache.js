@@ -18,7 +18,7 @@
 // 2026-10-08: 以前は1行に詰められるだけ詰め、レースを1件変えると丸ごと作り直していた(1回約5.8万行の読み取り。
 // json_each で展開した要素も読み取り行数に数えられる)。変わった範囲だけ作り直すようにした。
 
-import { loadRangeChunks, rangeCondition, rangeIndexOf, patchRowsById } from "./range-chunk-cache.js";
+import { loadRangeChunks, rangeCondition, rangeIndexOf, patchRowsById, chunksSignature } from "./range-chunk-cache.js";
 
 // 画面・APIに返すときの列名(保存形式の並びと同じ)
 export const RACE_INDEX_FIELDS = [
@@ -28,15 +28,26 @@ export const RACE_INDEX_FIELDS = [
 ];
 
 // キャッシュを読み、保存形式の配列(行の配列)を返す。並びは 開催日の新しい順→競馬場→R(以前の作り直しの SQL と同じ)。
+// 戻り値の配列と行は使い回すので書き換えないこと(2026-11-18〜。絞り込みは filter 等で新しい配列を作る)
 export async function getRaceIndexRows(db) {
+  return (await getRaceIndexSnapshot(db)).rows;
+}
+
+// { rows, sig }。sig は中身の署名(同じ実行環境で、中身が前回と同じなら同じ値。_lib/range-chunk-cache.js の chunksSignature)。
+// 2026-11-18: 並べ替え(約1.5万行)を中身が変わらない間は使い回す。GET /api/races?index=1 は sig で応答の本文・ETag も使い回す
+let lastSnapshot = null;
+export async function getRaceIndexSnapshot(db) {
   const chunks = await loadRangeChunks(db, "races_index_cache", buildRaceIndexChunks, { patch: patchRowsById }); // 変わったレースだけ差し替える(2026-10-16)
+  const sig = chunksSignature(chunks);
+  if (lastSnapshot && lastSnapshot.sig === sig) return lastSnapshot;
   const rows = [];
   for (const c of chunks) for (const r of c.r || []) rows.push(r);
   // [1]=race_date, [2]=track, [3]=race_number。SQLite の並び(文字コード順)と同じになるよう < で比べる
   rows.sort((a, b) =>
     a[1] === b[1] ? (a[2] === b[2] ? (a[3] ?? 0) - (b[3] ?? 0) : String(a[2] ?? "") < String(b[2] ?? "") ? -1 : 1)
       : String(a[1] ?? "") < String(b[1] ?? "") ? 1 : -1);
-  return rows;
+  lastSnapshot = { rows, sig };
+  return lastSnapshot;
 }
 
 // 行(配列)をオブジェクトへ。サーバー内で使う側(購入履歴のコース付与・重賞検索等)向け。

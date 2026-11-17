@@ -1,4 +1,4 @@
-import { requireAdmin, trainerAliasKeyOf, readJsonBody, jsonError } from "../../_shared.js";
+import { requireAdmin, trainerAliasKeyOf, readJsonBody, jsonError, invalidateMemo, MEMO_TRAINER_ALIASES } from "../../_shared.js";
 
 // 管理者向け: 調教師名エイリアス(略称・表記ゆれ→正しい調教師名)の一覧取得・追加。2026-10-06追加。
 // 騎手名エイリアス(functions/api/admin/jockey-aliases/index.js)と同じ形。
@@ -37,6 +37,7 @@ export async function onRequestPost(context) {
       `INSERT INTO trainer_aliases (alias_key, alias_display, canonical_name, created_at)
        VALUES (?, ?, ?, ?)`
     ).bind(aliasKey, aliasDisplay, canonicalName, now).run();
+    invalidateMemo(MEMO_TRAINER_ALIASES); // 2026-11-18 使い回し(_lib/trainer-alias.js)を捨てる
     return Response.json({
       ok: true,
       id: result.meta.last_row_id,

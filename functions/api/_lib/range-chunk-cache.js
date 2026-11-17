@@ -143,13 +143,60 @@ function clearDirtyStatements(db, table, ids, guard = null) {
 // minRebuildMs: 控えのある範囲を差し替えずに作り直すとき(patch が無い・変わったレースが多すぎる)、作り直すのは行の保存から
 //   この時間が過ぎてから(既定0=すぐ)。
 // 戻り値: 範囲の番号順の payload オブジェクトの配列。
+// 読み込んで解析した範囲の行の使い回し(2026-11-18)。table -> Map<chunk_index, { token, version, payload }>。
+// 以前は読むたびに全範囲の行の中身(レース一覧で約150万文字・集計用で約440万文字)を D1 から受け取って JSON を解析しており、
+// 1回あたり30〜40ミリ秒かかっていた(7日でレース一覧3,510回・107秒、集計用1,030回・43秒)。
+// 今は先に各行の版(updated_at)だけを読み、前回と同じ版の行はこの実行環境で解析済みのものを使い、版が変わった行の中身だけを読む。
+// 行の中身は版(updated_at)が同じなら同じ(保存のたびに新しい版を付ける)ので、古い中身を使うことはない。読み取りの行数は変わらない。
+// payload は書き換えないこと(差し替えの関数は新しいオブジェクトを返す)
+const parsedChunks = new Map();
+function parsedOf(table) {
+  if (!parsedChunks.has(table)) parsedChunks.set(table, new Map());
+  return parsedChunks.get(table);
+}
+function rememberParsed(table, entries, token, version) {
+  const m = parsedOf(table);
+  for (const [i, payload] of entries) m.set(i, { token, version, payload });
+}
+
+// 範囲の行を読む。版が前回と同じ行は解析済みのものを使い、違う行だけ中身を読む。表が読めなければ null
+async function readChunkRows(db, table, version) {
+  let heads;
+  try {
+    heads = (await db.prepare(`SELECT chunk_index, updated_at FROM ${table}`).all()).results || [];
+  } catch (e) {
+    console.error(`${table}: read failed (ignored)`, e); // 表が無い等。作り直した結果をそのまま使う
+    return null;
+  }
+  const memo = parsedOf(table);
+  const rows = [];
+  const need = [];
+  for (const h of heads) {
+    const m = memo.get(h.chunk_index);
+    if (m && m.token != null && m.token === h.updated_at && m.version === version) rows.push({ chunk_index: h.chunk_index, updated_at: h.updated_at, parsed: m.payload });
+    else need.push(h.chunk_index);
+  }
+  // 中身を読む行の番号は IN に渡す(範囲の数は races 1.5万件で約80。90件ずつ)
+  for (let k = 0; k < need.length; k += PATCH_IDS_PER_QUERY) {
+    const part = need.slice(k, k + PATCH_IDS_PER_QUERY);
+    const { results } = await db
+      .prepare(`SELECT chunk_index, payload, updated_at FROM ${table} WHERE chunk_index IN (${part.map(() => "?").join(",")})`)
+      .bind(...part)
+      .all();
+    for (const r of results || []) {
+      let p = null;
+      try { p = JSON.parse(r.payload); } catch { /* 壊れた行は作り直す */ }
+      rows.push({ chunk_index: r.chunk_index, updated_at: r.updated_at, parsed: p });
+      if (p && p.v === version && r.updated_at != null) memo.set(r.chunk_index, { token: r.updated_at, version, payload: p });
+    }
+  }
+  return { results: rows };
+}
+
 export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERSION, patch = null, minRebuildMs = 0 } = {}) {
   const dirtyIds = await claimDirty(db, table);
   const [cacheRes, maxRes] = await Promise.all([
-    db.prepare(`SELECT chunk_index, payload, updated_at FROM ${table}`).all().catch((e) => {
-      console.error(`${table}: read failed (ignored)`, e); // 表が無い等。作り直した結果をそのまま使う
-      return null;
-    }),
+    readChunkRows(db, table, version),
     db.prepare("SELECT MAX(id) AS m FROM races").first(),
   ]);
   const maxIndex = maxRes && maxRes.m !== null && maxRes.m !== undefined ? rangeIndexOf(maxRes.m) : -1;
@@ -158,8 +205,7 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
   const tokens = new Map(); // chunk_index -> updated_at(読んだときの版)
   let legacy = false;
   for (const r of cacheRes?.results || []) {
-    let p = null;
-    try { p = JSON.parse(r.payload); } catch { /* 壊れた行は作り直す */ }
+    const p = r.parsed;
     if (!p || p.v !== version) { legacy = true; continue; }
     if (r.chunk_index <= maxIndex) { have.set(r.chunk_index, p); tokens.set(r.chunk_index, r.updated_at); }
   }
@@ -201,6 +247,7 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
     // 末尾のレースが消えて範囲が減った場合の残りも消す
     stmts.push(db.prepare(`DELETE FROM ${table} WHERE chunk_index > ?`).bind(maxIndex));
     const clearedIds = [];
+    const savedEntries = [];
     for (const i of missing) {
       const p = { v: version, ...(built.get(i) || {}) };
       have.set(i, p);
@@ -211,6 +258,7 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
         continue;
       }
       stmts.push(db.prepare(`INSERT OR REPLACE INTO ${table} (chunk_index, payload, updated_at) VALUES (?, ?, ?)`).bind(i, text, token));
+      savedEntries.push([i, p]);
       clearedIds.push(...(dirtyByChunk.get(i) || []));
     }
     // 作り直した範囲の控えは、作り直しの読み取りより前に処理中の印を付けているので、印が1のままなら消してよい
@@ -218,6 +266,7 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
     try {
       // 1回に積む文は「足りない範囲の数+2+控えの文」。全範囲でも races 4,000件で約20、10万件でも約500件なので分割して送る
       for (let k = 0; k < stmts.length; k += 100) await db.batch(stmts.slice(k, k + 100));
+      rememberParsed(table, savedEntries, token, version); // 保存できた行は次回その版のまま使い回す(2026-11-18)
       if (!cacheRes) fallbackPut(table, builtEntries); // 表が読めなかった(無い等)ときも次回の作り直しを避ける
     } catch (e) {
       console.error(`${table}: failed to persist (ignored)`, e);
@@ -243,6 +292,18 @@ export async function loadRangeChunks(db, table, build, { version = PAYLOAD_VERS
   const out = [];
   for (let i = 0; i <= maxIndex; i++) if (have.has(i)) out.push(have.get(i));
   return out;
+}
+
+// loadRangeChunks の戻り値の「中身の署名」(2026-11-18)。同じ実行環境で、範囲の行がどれも前回と同じオブジェクト
+// (=同じ版を使い回した)なら同じ文字列になる。中身が変わった範囲は新しいオブジェクトになるので署名も変わる。
+// 呼び出し側で、並べ替え・JSON 化などの後処理の結果を使い回すために使う
+const chunkIds = new WeakMap();
+let nextChunkId = 1;
+export function chunksSignature(chunks) {
+  return chunks.map((c) => {
+    if (!chunkIds.has(c)) chunkIds.set(c, nextChunkId++);
+    return chunkIds.get(c);
+  }).join(".");
 }
 
 // 変わったレースだけを読み直して、範囲の行の中のそのレースの分を差し替える(2026-10-16)
@@ -276,6 +337,7 @@ async function applyPatches(db, table, build, patch, version, have, tokens, patc
     try {
       const res = await db.batch(stmts);
       if (!res?.[0]?.meta?.changes) console.warn(`${table}: chunk ${ci} changed concurrently; will retry`);
+      else rememberParsed(table, [[ci, next]], token, version); // 保存できた版を使い回す(2026-11-18)
     } catch (e) {
       console.warn(`${table}: chunk ${ci} patched in memory only (${e?.message || e})`);
     }

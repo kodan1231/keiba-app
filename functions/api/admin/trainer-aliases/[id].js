@@ -1,4 +1,4 @@
-import { requireAdmin, parsePositiveIntId, jsonError } from "../../_shared.js";
+import { requireAdmin, parsePositiveIntId, jsonError, invalidateMemo, MEMO_TRAINER_ALIASES } from "../../_shared.js";
 
 // 管理者向け: 調教師名エイリアスの削除。2026-10-06追加。
 export async function onRequestDelete(context) {
@@ -13,5 +13,6 @@ export async function onRequestDelete(context) {
   if (!existing) return jsonError("エイリアスが見つかりません", 404);
 
   await env.DB.prepare("DELETE FROM trainer_aliases WHERE id = ?").bind(id).run();
+  invalidateMemo(MEMO_TRAINER_ALIASES); // 2026-11-18 使い回し(_lib/trainer-alias.js)を捨てる
   return Response.json({ ok: true });
 }

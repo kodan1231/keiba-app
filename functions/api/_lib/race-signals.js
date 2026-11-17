@@ -30,29 +30,83 @@ export function canScoreRace(race) {
 // 何人も(ゲストを含む)開き、1回あたり数百行の戦績を読んでいた。出走馬表やコースが変われば名前が変わるので、
 // 出馬表の取り込み直しはすぐ反映される。他のレースの結果の取り込み・比率の変更は最大60秒遅れる。
 // 2026-11-01: レース一覧の目印(race-signal)と同じ使い回しにするため、race-factors.js からここへ移した
+// 2026-11-18〜 計算した結果は表 race_factors_cache(@STEP: race_factors_cache)にレースごとに保存し、指紋が同じ間は計算せずに使う。
 export async function getRaceFactorsBody(db, race) {
   const entries = raceFactorEntries(race);
   if (!entries.length || !race.course_type || !race.distance || !race.race_date) return { pace_type: null, counts: null, horses: [] };
   const memoName = `race_factors:${race.id}:${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}:${textFingerprint(race.entries)}`;
-  return memoizedKeyed(memoName, () => computeRaceFactorsBody(db, race, entries), 60 * 1000);
+  return memoizedKeyed(memoName, () => loadOrComputeRaceFactorsBody(db, race, entries), 60 * 1000);
 }
 
-async function computeRaceFactorsBody(db, race, entries) {
-  const [horseAliasMap, jockeyAliasMap, lineups, raceTimes, scoreSettings, gradedMap, distanceRatios, courseHistory] = await Promise.all([
-    loadHorseAliasMapCached(db),
-    loadJockeyAliasMapCached(db),
-    getRaceLineups(db),
-    getRaceTimes(db),
+// ---- 点数の保存(2026-11-18 ユーザー要望・仕様確認済み。docs/design/screens.md「展開・時計の点数の保存」) ----
+// 以前は開くたびに出走馬の全戦績(1回約1,800行。7日で約1,000回・約190万行)を読んで計算していた。週末は同じレースを何人も開く。
+// 保存した点数を使い回し、次のどれかが変わったときだけ計算し直す(指紋 race_factors_cache.fp):
+//   - 出走馬表・コース・距離・日付・レース名・条件
+//   - 比率・評価点(getPaceWeights)・点数の設定(getPaceScoreSettings)・重賞の過去の年
+//   - 距離の換算の比・展開の物差し(夜間の計算〈scripts/pace-nightly.mjs 2a〉が新しい結果を入れて作り直したとき = 他のレースの結果の反映)
+//   - 騎手名・馬名エイリアス(data_versions の版)
+//   - FACTOR_BODY_VERSION(点数の規則〈_lib/race-factors.js〉・応答の形を変えたら必ず上げる。上げないと古い規則の点数が残る)
+// 他のレースの結果(騎手の成績・勝ちタイム等)は、夜間の計算が物差しを作り直したときに反映する(ユーザー判断。その日のうちは反映しない)。
+// 表が無い(マイグレーション前)・読めない・保存できないときは、以前どおり毎回計算する(保存は best-effort)。
+const FACTOR_BODY_VERSION = 1;
+
+async function factorInputs(db, race) {
+  const [scoreSettings, gradedMap, distanceRatios, courseHistory, versions] = await Promise.all([
     getPaceScoreSettings(db), // データ無しの点・評価点の既定値(2026-10-14。app_settings 1行。2分使い回し)
     loadGradedRaceMapCached(db),
     getDistanceRatios(db), // 同じ馬の組から出した距離の比(2026-10-16。app_settings 1行。10分使い回し)
     getCourseHistory(db).catch(() => null), // 展開・同コースの物差し(2026-11-07。app_settings 1行。10分使い回し)
+    db.prepare("SELECT name, version FROM data_versions WHERE name IN ('snap:jockey_aliases', 'horse_aliases')").all().then((r) => r.results || []).catch(() => []),
   ]);
   const graded = gradedRaceOf(gradedMap, race);
   const [weights, past] = await Promise.all([
     getPaceWeights(db, graded ? graded.id : 0, race),
     graded ? gradedPastOf(db, graded.id, race) : null,
   ]);
+  const key = JSON.stringify([
+    FACTOR_BODY_VERSION, scoreSettings, graded ? graded.id : 0, weights, past,
+    distanceRatios?.computedAt || null, courseHistory?.computedAt || null,
+    versions.map((v) => `${v.name}=${v.version}`).sort(),
+  ]);
+  return { scoreSettings, distanceRatios, courseHistory, weights, past, key };
+}
+
+export function raceFactorsFingerprint(race, inputsKey) {
+  return textFingerprint(`${race.race_date}|${race.track}|${race.course_type}|${race.distance}|${race.race_name}|${race.class_flags}|${race.entries}|${inputsKey}`);
+}
+
+async function loadOrComputeRaceFactorsBody(db, race, entries) {
+  const inputs = await factorInputs(db, race);
+  const fp = raceFactorsFingerprint(race, inputs.key);
+  try {
+    const row = await db.prepare("SELECT fp, body FROM race_factors_cache WHERE race_id = ?").bind(Number(race.id)).first();
+    if (row && row.fp === fp) return JSON.parse(row.body);
+  } catch {
+    // 表が無い等。計算する
+  }
+  const body = await computeRaceFactorsBody(db, race, entries, inputs);
+  try {
+    await db
+      .prepare(
+        `INSERT INTO race_factors_cache (race_id, fp, body, computed_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(race_id) DO UPDATE SET fp = excluded.fp, body = excluded.body, computed_at = excluded.computed_at`
+      )
+      .bind(Number(race.id), fp, JSON.stringify(body), new Date().toISOString())
+      .run();
+  } catch (e) {
+    console.error("race_factors_cache save failed (ignored)", e?.message || e);
+  }
+  return body;
+}
+
+async function computeRaceFactorsBody(db, race, entries, inputs) {
+  const [horseAliasMap, jockeyAliasMap, lineups, raceTimes] = await Promise.all([
+    loadHorseAliasMapCached(db),
+    loadJockeyAliasMapCached(db),
+    getRaceLineups(db),
+    getRaceTimes(db),
+  ]);
+  const { scoreSettings, distanceRatios, courseHistory, weights, past } = inputs;
   const prevRaceId = past?.prevId ?? null;
   // 重賞・コースの評価点に無い項目(後から足した前年の同レース等)は設定の既定値
   // 間隔(2026-10-15)など全レース共通の項目は、いつも設定の既定値

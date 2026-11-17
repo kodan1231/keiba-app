@@ -167,7 +167,7 @@ function applyHistoryFilter() {
 async function loadTickets() {
   const [ticketsRes, importedRes] = await Promise.all([
     authedFetch("/api/tickets"),
-    authedFetch("/api/ticket-imports"),
+    authedFetch("/api/ticket-imports?compact=1"), // 2026-11-18 グループごとにまとめた形(importedItemsOf で戻す)
   ]);
   if (!ticketsRes.ok) return;
   const items = await ticketsRes.json();
@@ -177,8 +177,7 @@ async function loadTickets() {
 }
 
 function importedItemsOf(payload) {
-  if (Array.isArray(payload)) return payload;
-  return Array.isArray(payload?.items) ? payload.items : [];
+  return expandTicketImports(payload); // utils.js(以前の items だけの形も受け付ける)
 }
 
 // 編集・削除の後に、そのレースの購入だけを取り直して差し替える(2026-10-18)。

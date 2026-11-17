@@ -632,11 +632,12 @@ function setupCategoryFilter(elId, tabKey, onChange) {
 let allTickets = [];
 
 async function loadAndRender() {
-  const [ticketRes, importedRes] = await Promise.all([authedFetch("/api/tickets"), authedFetch("/api/ticket-imports")]);
+  // ?compact=1(2026-11-18): グループごとにまとめた形で受け取り、utils.js の expandTicketImports で明細ごとへ戻す
+  const [ticketRes, importedRes] = await Promise.all([authedFetch("/api/tickets"), authedFetch("/api/ticket-imports?compact=1")]);
   if (!ticketRes.ok) return;
   const items = await ticketRes.json();
   const importedPayload = importedRes.ok ? await importedRes.json() : {items: []};
-  const imported = Array.isArray(importedPayload.items) ? importedPayload.items : [];
+  const imported = expandTicketImports(importedPayload);
   allTickets = [...(Array.isArray(items) ? items : []), ...imported];
 
   renderOverall(filterByCategory(allTickets, categoryFilterState.overall));

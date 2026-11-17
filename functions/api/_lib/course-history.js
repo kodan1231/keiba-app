@@ -131,5 +131,6 @@ export function toCourseHistory(o) {
   if (!o || o.v !== 1) return null;
   const counts = (arr) => new Map((arr || []).map(([k, rides, show, first]) => [String(k), { rides, show, first }]));
   const level = (obj) => new Map(Object.entries(obj || {}).map(([k, v]) => [k, { s: counts(v.s), p: counts(v.p), l3: v.l3 ? { mean: v.l3[0], sd: v.l3[1], n: v.l3[2] } : null }]));
-  return { courses: level(o.courses), tracks: level(o.tracks), all: level(o.all) };
+  // computedAt(2026-11-18): 展開・時計の点数の保存(race_factors_cache)の指紋に入れる(物差しが変われば計算し直す)
+  return { courses: level(o.courses), tracks: level(o.tracks), all: level(o.all), computedAt: o.computed_at || null };
 }

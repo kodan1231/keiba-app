@@ -5,7 +5,8 @@ import {
   loadHorseAliasMap,
   applyHorseAliasMap,
   horseAliasKeyOf,
-  loadTrainerAliasMap,
+  loadTrainerAliasMapCached,
+  loadKnownTrainersCached,
   resolveTrainerAlias,
   trainerAliasKeyOf,
 } from "../../_shared.js";
@@ -61,7 +62,7 @@ export async function onRequestPost(context) {
   if (input.length > MAX_HORSES) return jsonError(`一度に取り込めるのは${MAX_HORSES}頭までです`, 400);
   const choices = body?.choices && typeof body.choices === "object" ? body.choices : {};
 
-  const [horseAliasMap, trainerAliasMap] = await Promise.all([loadHorseAliasMap(db), loadTrainerAliasMap(db)]);
+  const [horseAliasMap, trainerAliasMap] = await Promise.all([loadHorseAliasMap(db), loadTrainerAliasMapCached(db)]);
 
   // 貼り付け側の値を整える(馬名は馬名エイリアスで正しい表記へ、調教師はエイリアスで変換)
   const items = [];
@@ -105,8 +106,7 @@ export async function onRequestPost(context) {
   // 未登録の調教師略称の候補用に、保存済みの調教師名を集める(horses はオンデマンドで小さいため全件で足りる)
   let knownTrainers = [];
   if (items.some((i) => i.trainer_abbr && !i.trainer_resolved)) {
-    const { results: tr } = await db.prepare("SELECT DISTINCT trainer FROM horses WHERE trainer IS NOT NULL").all();
-    knownTrainers = (tr || []).map((r) => r.trainer).filter(Boolean);
+    knownTrainers = await loadKnownTrainersCached(db); // 2026-11-18〜 10分使い回す(候補の表示用)
   }
 
   const now = new Date().toISOString();

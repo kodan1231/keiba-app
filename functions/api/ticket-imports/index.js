@@ -501,9 +501,21 @@ export async function onRequestGet(context){
       for(const item of itemRows){ const list=itemsByGroup.get(item.group_id)||[]; list.push(item); itemsByGroup.set(item.group_id,list); }
     }
     const represented=new Set();
+    // ?compact=1(2026-11-18。全期間の取得のときだけ): 明細ごとにグループ・レースの項目を繰り返さず、グループごとにまとめて返す
+    // { ok, compact:1, groups:[{ ...グループ共通の項目, it:[[明細id, selections, amount, payout, is_hit, result_inferred], ...] }], items:[以前の形の旧形式の行] }。
+    // 画面は public/utils.js の expandTicketImports で以前の items の形へ戻す。明細約1.1万件で応答が約5MB → 約1/3 になる
+    const compact=url.searchParams.get("compact")==="1"&&!raceIdFilter&&!sinceFilter;
+    const compactGroups=[];
     for(const g of groups){
       const items=itemsByGroup.get(g.id)||[];
       const rc=raceCourseById.get(g.race_id)||null;
+      if(compact){
+        if(!items.length) continue;
+        represented.add(Number(g.source_row_id));
+        compactGroups.push({imported:true,import_group_id:g.id,group_id:`import-${g.id}`,race_id:g.race_id,race_date:g.race_date,track:g.track,race_number:g.race_number,race_name:(rc&&rc.race_name)||g.race_name,race_base_name:rc?rc.race_base_name:null,race_course_type:rc?rc.course_type:null,race_distance:rc?rc.distance:null,race_category:rc?rc.category:"other",bet_type:g.bet_type,method:g.method,source:g.source,total_group_amount:g.total_amount,
+          it:items.map(item=>[item.id,JSON.parse(item.selections||'[]'),item.amount,item.payout,item.is_hit?1:0,item.result_inferred?1:0])});
+        continue;
+      }
       // race_name は、レースと紐付いていればレース情報(races)の今のレース名を優先する(2026-10-06)。
       // imported_ticket_groups.race_name は取込時点のスナップショットで、レース登録前にCSVを取り込むと
       // 空(またはCSV上の名前)のまま残る。後からレースを登録して race_id が紐付いても
@@ -521,6 +533,6 @@ export async function onRequestGet(context){
     // (2026-09-29追加。範囲限定の一環)。
     const legacy=(raceIdFilter||sinceFilter)?[]:(await db.prepare(`SELECT * FROM imported_tickets WHERE user_id=? ORDER BY race_date DESC,id DESC`).bind(userId).all()).results||[];
     for(const r of legacy){ if(represented.has(Number(r.id))) continue; const type=betType(r.bet_type); const nums=splitCombinations(r.combination,type); const refund=Number(r.refund_amount||r.refund_unit||0); for(const numsOne of (nums.length?nums:[[]])) out.push({id:`legacy-import-${r.id}-${numsOne.join('-')}`,imported:true,legacy_import:true,group_id:`legacy-import-${r.id}`,race_id:null,race_date:r.race_date,track:r.venue,race_number:Number(r.race_number)||null,race_name:null,race_base_name:null,race_course_type:null,race_distance:null,race_category:"other",bet_type:type,method:'import',selections:selectionsFromNums(numsOne),amount:nums.length?Math.floor(Number(r.purchase_amount||0)/nums.length):Number(r.purchase_amount||0),payout:refund||0,is_hit:/的中/.test(r.hit_refund||'')||refund>0,source:r.source,total_group_amount:Number(r.purchase_amount||0)}); }
-    return jsonWithEtag({ok:true,items:out},etag);
+    return jsonWithEtag(compact?{ok:true,compact:1,groups:compactGroups,items:out}:{ok:true,items:out},etag);
   }catch(error){return Response.json({ok:false,error:error?.message||String(error)},{status:500});}
 }
