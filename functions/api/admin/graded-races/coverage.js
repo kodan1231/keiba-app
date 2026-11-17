@@ -1,4 +1,4 @@
-import { requireAdmin, getRaceIndex, gradedRaceNameKey, resolveGradedKey, jstYear } from "../../_shared.js";
+import { requireAdmin, getRaceIndex, gradedRaceNameKey, resolveGradedKeyOfRace, jstYear } from "../../_shared.js";
 
 // 管理者向け: 重賞ごとの過去10年の登録状況(2026-11-13追加。docs/design/graded-races.md「登録状況」)。
 // 「登録済み」= その年に、その重賞に当たるレースがあり、着順(finish_order)まで入っていること。
@@ -36,7 +36,7 @@ export async function onRequestGet(context) {
     if (!r.race_name) continue;
     const year = Number(String(r.race_date || "").slice(0, 4));
     if (!year || year < firstYear || year > currentYear) continue;
-    const key = resolveGradedKey(gradedRaceNameKey(r.race_name), hasKey);
+    const key = resolveGradedKeyOfRace(r, hasKey);
     if (!key) continue;
     const st = r.has_finish_order ? "result" : "entries";
     for (const id of mastersByKey.get(key)) {

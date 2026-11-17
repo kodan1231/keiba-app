@@ -2,7 +2,7 @@
 // 向けの共通ロジック。DBアクセスは持たない(呼び出し側が races_cache / race_stats_cache /
 // race_results から読んだものを渡す)。仕様は docs/design/graded-race-search.md。
 
-import { gradedRaceNameKey, resolveGradedKey } from "./race-classification.js";
+import { resolveGradedKeyOfRace } from "./race-classification.js";
 
 // 着別度数・走数として数えるステータス(取消・除外は数えない。中止は「着外」)
 export const RAN_STATUSES = new Set(["finished", "stopped"]);
@@ -117,7 +117,7 @@ export function findRacesByGradedKey(allRaces, nameKeys) {
   const keys = nameKeys instanceof Set ? nameKeys : new Set([nameKeys].filter(Boolean));
   if (!keys.size) return [];
   const hasKey = (k) => keys.has(k);
-  return allRaces.filter((r) => r.race_name && resolveGradedKey(gradedRaceNameKey(r.race_name), hasKey));
+  return allRaces.filter((r) => r.race_name && resolveGradedKeyOfRace(r, hasKey)); // 開催日での付け替え込み(2026-11-17)
 }
 
 // 画面表示用のレース概要

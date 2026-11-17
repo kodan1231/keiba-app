@@ -169,13 +169,32 @@ export function courseTypeToUpdate(incoming, race, existing, take) {
   return take(v) ? v : null;
 }
 
+// 名前だけでは決まらず、開催日で付け替える重賞(2026-11-17)。
+// 10月の東京芝1800の牝馬重賞は 2016年まで「府中牝馬S」、2017〜2024年「アイルランドトロフィー府中牝馬S」、2025年〜「アイルランドT」。
+// 2025年〜の6月の「府中牝馬S」はマーメイドS の後身で別のレース。JRA もアイルランドT の過去として 2024年以前の府中牝馬S を載せるため、
+// 2024年以前の「府中牝馬S」はアイルランドT に数える(以前は名前が同じなので6月の府中牝馬S の2016年になっていた)。
+// マーメイドS(阪神芝2000)は条件が違うので6月の府中牝馬S の過去に入れない(ユーザー判断)
+const GRADED_KEY_BY_DATE = [{ key: "府中牝馬S", before: "2025-01-01", to: "アイルランドT" }];
+
+// レース(race_name・race_date)が当たる重賞一覧のキー。resolveGradedKey に開催日での付け替えを足したもの。当たらなければ null
+// hasKey は「探している重賞のキーか」(一覧全体でも、1つの重賞のキーだけでもよい)。付け替え先だけを探しているときも
+// 元の名前のキーを解決できるよう、探す途中では付け替え元のキーも当たりとみなし、最後に付け替え後のキーで確かめる
+export function resolveGradedKeyOfRace(race, hasKey) {
+  const lookup = (k) => hasKey(k) || GRADED_KEY_BY_DATE.some((r) => r.key === k && hasKey(r.to));
+  let key = resolveGradedKey(gradedRaceNameKey(race?.race_name), lookup);
+  if (!key) return null;
+  const date = String(race?.race_date || "");
+  for (const r of GRADED_KEY_BY_DATE) if (key === r.key && date && date < r.before) key = r.to;
+  return hasKey(key) ? key : null;
+}
+
 // gradedMap: Map<name_key, { grade, is_jump }>(loadGradedRaceMap() の戻り値)
 // race: { race_name, class_flags }
 // 戻り値: { category: "condition"|"graded"|"other", grade: "G1"|"G2"|"G3"|null }
 export function classifyRace(gradedMap, race) {
   if (isConditionRace(race?.class_flags)) return { category: "condition", grade: null };
   // 冠(スポンサー名)付きのレース名も重賞一覧のキーへ解決する(2026-10-06。resolveGradedKey 参照)
-  const key = gradedMap ? resolveGradedKey(gradedRaceNameKey(race?.race_name), (k) => gradedMap.has(k)) : null;
+  const key = gradedMap ? resolveGradedKeyOfRace(race, (k) => gradedMap.has(k)) : null; // 開催日での付け替え込み(2026-11-17)
   const hit = key ? gradedMap.get(key) : null;
   if (hit) return { category: "graded", grade: hit.grade };
   return { category: "other", grade: null };
@@ -186,7 +205,7 @@ export function classifyRace(gradedMap, race) {
 // 馬券購入画面の「開催予定の重賞」から、データ検索「重賞検索」を開くために使う(2026-10-08)。
 export function gradedRaceOf(gradedMap, race) {
   if (!gradedMap || isConditionRace(race?.class_flags)) return null;
-  const key = resolveGradedKey(gradedRaceNameKey(race?.race_name), (k) => gradedMap.has(k));
+  const key = resolveGradedKeyOfRace(race, (k) => gradedMap.has(k));
   const hit = key ? gradedMap.get(key) : null;
   return hit ? { id: hit.id, name: hit.name, grade: hit.grade, is_jump: hit.is_jump } : null;
 }
