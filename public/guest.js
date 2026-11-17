@@ -14,12 +14,14 @@ function showGuestRaceList(races, message) {
     if (!byDate.has(r.race_date)) byDate.set(r.race_date, []);
     byDate.get(r.race_date).push(r);
   }
-  const head = `<h2 class="guest-list-title">今週のレース</h2>${message ? `<p class="error-text">${escapeHtml(message)}</p>` : ""}`;
+  // 今日の分は中央・地方を問わず、明日以降は中央だけ(2026-11-17。サーバーの isGuestRace で絞る)
+  const head = `<h2 class="guest-list-title">今日のレース・今週の中央のレース</h2>${message ? `<p class="error-text">${escapeHtml(message)}</p>` : ""}`;
   if (!byDate.size) {
     listEl.innerHTML = `${head}<p class="ticket-sub">表示できるレースはまだありません(出走馬が登録されると表示されます)。</p>`;
     return;
   }
   const dates = [...byDate.keys()].sort();
+  const todayJst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   listEl.innerHTML = head + dates.map((d) => {
     const byTrack = new Map();
     for (const r of byDate.get(d)) {
@@ -29,7 +31,7 @@ function showGuestRaceList(races, message) {
     const tracks = [...byTrack.keys()].sort((a, b) => trackDisplayOrderIndex(a) - trackDisplayOrderIndex(b));
     return `
       <section class="guest-day">
-        <h3 class="guest-day-title">${escapeHtml(formatDateMdW(d))}</h3>
+        <h3 class="guest-day-title">${escapeHtml(formatDateMdW(d))}${d === todayJst ? "(今日)" : ""}</h3>
         <div class="guest-tracks">
           ${tracks.map((t) => `
             <div class="guest-track">

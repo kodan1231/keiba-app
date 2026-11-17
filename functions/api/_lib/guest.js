@@ -157,9 +157,11 @@ export function guestRaceWindow(now = Date.now()) {
   return { from, to };
 }
 
+// 期間内の中央のレース、または今日(日本時間)のレース(中央・地方を問わない。2026-11-17 ユーザー要望。地方競馬を見に行く日用)
 export function isGuestRace(race, win = guestRaceWindow()) {
   if (!race) return false;
   const d = String(race.race_date || "");
+  if (d === win.from) return true;
   return d >= win.from && d <= win.to && JRA_TRACKS.includes(String(race.track || "").trim());
 }
 
