@@ -3620,3 +3620,6 @@ label.inline-check { flex-direction: row; align-items: center; gap: 6px; }
 .graded-coverage-cell.is-result { color: var(--accent, #2a7a3b); }
 .graded-coverage-cell.is-entries { color: #b07a00; }
 .graded-coverage-cell.is-missing { background: rgba(200, 60, 60, 0.08); }
+.graded-coverage-cell.is-excluded { color: var(--muted, #999); }
+.graded-coverage-cell.is-toggle { cursor: pointer; }
+.graded-coverage-cell.is-toggle:hover { outline: 1px dashed currentColor; outline-offset: -3px; }

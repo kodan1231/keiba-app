@@ -903,24 +903,55 @@ function renderGradedCoverage() {
   if (countEl) countEl.textContent = `(10年そろい ${completeCount}/${allCount}件)`;
   if (!items.length) { table.innerHTML = "<tr><td>該当する重賞はありません</td></tr>"; return; }
   const years = data.years || [];
-  const mark = (s) => (s === "result" ? "●" : s === "entries" ? "△" : "");
+  const mark = (s) => (s === "result" ? "●" : s === "entries" ? "△" : s === "excluded" ? "—" : "");
   table.innerHTML = `
     <thead><tr><th>レース名</th><th>G</th><th>開催</th><th>登録</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr></thead>
     <tbody>
       ${items.map((g) => `
-        <tr>
+        <tr data-id="${g.id}">
           <td>${escapeHtml(g.name)}${g.is_jump ? " <span class=\"ticket-sub\">障</span>" : ""}</td>
           <td>${escapeHtml(g.grade)}</td>
           <td>${escapeHtml(g.schedule_md || "—")}</td>
-          <td>${g.registered}/${data.past_years}</td>
+          <td>${g.registered}/${g.target}</td>
           ${years.map((y) => {
             const s = g.years?.[y] || null;
-            const cls = s === "result" ? "is-result" : s === "entries" ? "is-entries" : (y === data.current_year ? "" : "is-missing");
-            return `<td class="graded-coverage-cell ${cls}">${mark(s)}</td>`;
+            // 今年より前の空欄・対象外は押して切り替えられる(2026-11-17)
+            const toggle = y !== data.current_year && (s === null || s === "excluded");
+            const cls = s === "result" ? "is-result" : s === "entries" ? "is-entries" : s === "excluded" ? "is-excluded" : (y === data.current_year ? "" : "is-missing");
+            return `<td class="graded-coverage-cell ${cls}${toggle ? " is-toggle" : ""}"${toggle ? ` data-year="${y}" title="${s === "excluded" ? "未登録に戻す" : "対象外(未開催・新設前)にする"}"` : ""}>${mark(s)}</td>`;
           }).join("")}
         </tr>`).join("")}
     </tbody>
   `;
+  table.querySelectorAll(".graded-coverage-cell.is-toggle").forEach((td) => {
+    td.addEventListener("click", () => toggleGradedExcludedYear(Number(td.closest("tr").dataset.id), Number(td.dataset.year)));
+  });
+}
+
+// 対象外の年の切り替え(2026-11-17。新設の重賞の新設前の年・未開催の年〈みやこS の2018年等〉)。
+// 空欄を押したとき、それより前の年も全部空欄なら、まとめて対象外にするか聞く(新設の重賞向け)
+async function toggleGradedExcludedYear(id, year) {
+  const data = gradedCoverageData;
+  const g = (data?.items || []).find((x) => x.id === id);
+  if (!g) return;
+  const excludedNow = new Set((data.years || []).filter((y) => g.years[y] === "excluded"));
+  if (excludedNow.has(year)) {
+    excludedNow.delete(year);
+  } else {
+    const older = (data.years || []).filter((y) => y < year);
+    const olderBlank = older.filter((y) => g.years[y] === null);
+    excludedNow.add(year);
+    if (olderBlank.length && olderBlank.length === older.filter((y) => g.years[y] !== "excluded").length &&
+        confirm(`${g.name}: ${year}年より前の未登録の年(${Math.min(...olderBlank)}〜${Math.max(...olderBlank)}年)もまとめて対象外にしますか？\n(キャンセルで ${year}年だけ)`)) {
+      for (const y of olderBlank) excludedNow.add(y);
+    }
+  }
+  const res = await authedFetch("/api/admin/graded-races/coverage", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, years: [...excludedNow] }),
+  });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || "保存に失敗しました。"); return; }
+  await loadGradedCoverage();
 }
 
 function setupGradedCoverage() {
