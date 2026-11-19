@@ -80,6 +80,10 @@
     <section class="stats-section stats-panel" data-panel="jockey" hidden>
       <h2 class="stats-heading">騎手別収支</h2>
       <div id="jockey-region-filter" class="region-filter stats-region-filter"></div>
+      <!-- 騎手名で絞り込み(2026-11-19。stats.js の renderTable) -->
+      <div class="horse-stats-search">
+        <input type="search" id="jockey-stats-search" placeholder="騎手名で検索" autocomplete="off" />
+      </div>
       <div class="table-wrap"><table class="stats-table" id="jockey-table"></table></div>
     </section>
 

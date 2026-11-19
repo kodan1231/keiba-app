@@ -288,7 +288,16 @@ function renderTable(elId, tableKey, labelHeader, labelKey) {
   const table = document.getElementById(elId);
   const rowsCache = { track: trackRows, course: courseRows, jockey: jockeyRows }[tableKey];
   const state = sortState[tableKey];
-  const rows = sortRows(rowsCache, state.key, state.dir);
+  let rows = sortRows(rowsCache, state.key, state.dir);
+  // 騎手名で絞り込み(2026-11-19 ユーザー要望): 入力を含む騎手だけ(全角半角・空白をそろえて比べる。馬名検索と同じ)
+  const q = tableKey === "jockey" ? horseStatsKeyOf(document.getElementById("jockey-stats-search")?.value) : "";
+  if (q) {
+    rows = rows.filter((r) => horseStatsKeyOf(r.name).includes(q));
+    if (rows.length === 0 && rowsCache.length > 0) {
+      table.innerHTML = `<tr><td class="table-empty">当てはまる騎手がいません</td></tr>`;
+      return;
+    }
+  }
 
   if (rows.length === 0) {
     table.innerHTML = `<tr><td class="table-empty">データがありません</td></tr>`;
@@ -503,6 +512,7 @@ function renderJockeyTable(items) {
   jockeyRows = Array.from(jockeyMap.entries()).map(([jockey, tickets]) => ({ name: jockey, stats: computeGroupStats(tickets) }));
   renderTable("jockey-table", "jockey", "騎手", "name");
 }
+document.getElementById("jockey-stats-search")?.addEventListener("input", () => renderTable("jockey-table", "jockey", "騎手", "name"));
 
 // ---------- 馬別収支(2026-10-15追加。docs/design/stats-rules.md「馬別収支」) ----------
 // 1枚の馬券に複数の馬が絡む場合、関係する馬それぞれに全額を計上する(騎手別と同じ。按分しない)。

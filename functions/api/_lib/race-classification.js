@@ -85,6 +85,9 @@ const GRADED_NAME_SYNONYMS = new Map([
   ["アーリントンC", "チャーチルダウンズC"],
   // 2016〜2023年の結果は「阪神スプリングJ」(「ジャンプ」の略記。8回。2026-11-18。ユーザー指摘)
   ["阪神スプリングJ", "阪神スプリングジャンプ"],
+  // 6月の牝馬重賞は2024年まで「マーメイドS」(阪神・京都芝2000)、2025年に「府中牝馬S」(東京芝1800)へ(2026-11-18。ユーザー指摘)。
+  // 10月の「府中牝馬S」(2016年)の付け替えは GRADED_KEY_BY_DATE(10月だけ)
+  ["マーメイドS", "府中牝馬S"],
 ]);
 
 // races.race_name → graded_races.name_key と同じ形へ正規化する。
@@ -184,8 +187,10 @@ export function courseTypeToUpdate(incoming, race, existing, take) {
 // 10月の東京芝1800の牝馬重賞は 2016年まで「府中牝馬S」、2017〜2024年「アイルランドトロフィー府中牝馬S」、2025年〜「アイルランドT」。
 // 2025年〜の6月の「府中牝馬S」はマーメイドS の後身で別のレース。JRA もアイルランドT の過去として 2024年以前の府中牝馬S を載せるため、
 // 2024年以前の「府中牝馬S」はアイルランドT に数える(以前は名前が同じなので6月の府中牝馬S の2016年になっていた)。
-// マーメイドS(阪神芝2000)は条件が違うので6月の府中牝馬S の過去に入れない(ユーザー判断)
-const GRADED_KEY_BY_DATE = [{ key: "府中牝馬S", before: "2025-01-01", to: "アイルランドT" }];
+// マーメイドS(阪神芝2000)は条件が違うので6月の府中牝馬S の過去に入れない(ユーザー判断)としていたが、2026-11-18 に
+// 「府中牝馬S は2024年までマーメイドS だった」(ユーザー指摘)として GRADED_NAME_SYNONYMS で府中牝馬S に数えるよう変えた。
+// マーメイドS は名前の対応で「府中牝馬S」のキーになるため、付け替えは10月の開催だけにする(months。6月のマーメイドS をアイルランドT にしない)
+const GRADED_KEY_BY_DATE = [{ key: "府中牝馬S", before: "2025-01-01", months: ["10"], to: "アイルランドT" }];
 
 // レース(race_name・race_date)が当たる重賞一覧のキー。resolveGradedKey に開催日での付け替えを足したもの。当たらなければ null
 // hasKey は「探している重賞のキーか」(一覧全体でも、1つの重賞のキーだけでもよい)。付け替え先だけを探しているときも
@@ -195,7 +200,9 @@ export function resolveGradedKeyOfRace(race, hasKey) {
   let key = resolveGradedKey(gradedRaceNameKey(race?.race_name), lookup);
   if (!key) return null;
   const date = String(race?.race_date || "");
-  for (const r of GRADED_KEY_BY_DATE) if (key === r.key && date && date < r.before) key = r.to;
+  for (const r of GRADED_KEY_BY_DATE) {
+    if (key === r.key && date && date < r.before && (!r.months || r.months.includes(date.slice(5, 7)))) key = r.to;
+  }
   return hasKey(key) ? key : null;
 }
 
