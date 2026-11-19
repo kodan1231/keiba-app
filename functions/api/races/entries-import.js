@@ -148,6 +148,8 @@ export async function onRequestPost(context) {
       }
       const { entries: mergedEntries, conflicts, removed } = mergeEntriesByHorseName(currentEntries, it.incomingEntries, it.scratched.map((x) => x.horse_name), {
         authoritative: true,
+        // JRA公式の出走馬一覧は枠順確定前(馬番なし)でも出走が決まった馬の一覧。無い馬番未確定の馬(特別登録の除外・回避)を消す(2026-11-19)
+        fullField: body.source === "jra",
         cancelledNames: it.scratched.filter((x) => x.label === "取消").map((x) => x.horse_name), // 出走取消の印(2026-10-15)
       });
       toUpdate.push({ ...it, existing, mergedEntries, conflicts, removed });

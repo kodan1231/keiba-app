@@ -173,6 +173,10 @@ function computeWakuNumberFromHorseNumber(horseNumber, horseCount) {
 //   結果PDFインポート(results-import.js)は取消馬の情報を渡さず頭数が不正確になるため
 //   このオプションを使わない
 //
+// opts.fullField(2026-11-19追加。JRA公式の出走馬一覧〈body.source === "jra"〉の取り込みで true):
+//   取込側に馬番が無くても(枠順確定前の出馬表)、出走が決まった馬の完全な一覧として扱い、取込側に無い馬名で馬番が未確定の
+//   既存項目を取り除く(特別登録を手で入れた後、出走しない〈除外・回避〉馬が残っていた。2026-11-21 福島記念。ユーザー指摘)。
+//   枠番の振り直しは今までどおり全馬に馬番があるときだけ(authoritative)
 // opts.cancelledNames(2026-10-15追加。出走馬一覧PDFで「取消」と印字されていた馬の馬名。除外は含めない):
 //   既存の entries に同名で**馬番がある**項目があれば、出走取消の印 scratched: true を付ける
 //   (馬番確定後・レース前の取消。docs/design/entries-import.md「出走取消の印」)。印は外さない(手で外す)
@@ -184,6 +188,8 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratc
   const authoritative =
     !!opts.authoritative && incomingList.length > 0 && incomingList.every((e) => Number.isInteger(e?.horse_number));
   const incomingNames = new Set(incomingList.map((e) => normalizeHorseNameForMerge(e?.horse_name)).filter(Boolean));
+  // 一覧に無い馬番未確定の馬を消すか: 馬番の付いた完全な一覧(authoritative)か、JRA公式の出走馬一覧(fullField。馬番が無くてもよい)
+  const dropMissing = authoritative || (!!opts.fullField && incomingNames.size > 0);
   const removed = [];
   const cleanedExisting = (Array.isArray(existingEntries) ? existingEntries : [])
     .filter((e) => normalizeHorseNameForMerge(e?.horse_name))
@@ -192,7 +198,7 @@ export function mergeEntriesByHorseName(existingEntries, incomingEntries, scratc
       const unnumbered = !Number.isInteger(e.horse_number);
       const garbage = /^(取消|除外)\s/.test(name);
       const scratchedUnnumbered = scratchedSet.has(name) && unnumbered;
-      const droppedUnnumbered = authoritative && unnumbered && !incomingNames.has(name);
+      const droppedUnnumbered = dropMissing && unnumbered && !incomingNames.has(name);
       if (garbage || scratchedUnnumbered || droppedUnnumbered) { removed.push(e.horse_name); return false; }
       return true;
     });
