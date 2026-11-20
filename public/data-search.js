@@ -332,6 +332,13 @@ function hiStatusLabel(row) {
   return row.finish_position != null ? `${row.finish_position}着` : "-";
 }
 
+// コース条件(芝ダ障+距離+馬場。例「芝1600 良」)。分からない部分は省く。
+function hiCourseLabel(row) {
+  const course = `${row.course_type || ""}${row.distance ? row.distance : ""}`;
+  const text = [course, row.track_condition || ""].filter(Boolean).join(" ");
+  return text || "-";
+}
+
 function hiRenderHistoryTable(rows) {
   const table = hiEls.historyTable;
   if (!rows || rows.length === 0) {
@@ -339,7 +346,7 @@ function hiRenderHistoryTable(rows) {
     return;
   }
   const head =
-    `<tr><th>日付</th><th>開催</th><th>レース名</th><th>着順</th><th>頭数</th>` +
+    `<tr><th>日付</th><th>開催</th><th>レース名</th><th>コース</th><th>着順</th><th>頭数</th>` +
     `<th>騎手</th><th>斤量</th><th>馬体重</th><th>タイム</th><th>人気</th></tr>`;
   const body = rows
     .map((r) => {
@@ -350,6 +357,7 @@ function hiRenderHistoryTable(rows) {
         <td>${escapeHtml(r.race_date || "-")}</td>
         <td class="table-name">${escapeHtml(r.track || "-")}${r.race_number ? `${r.race_number}R` : ""}</td>
         <td class="table-name">${escapeHtml(r.race_name || "-")}</td>
+        <td class="table-name">${escapeHtml(hiCourseLabel(r))}</td>
         <td>${hiStatusLabel(r)}</td>
         <td>${r.field_size ?? "-"}</td>
         <td>${escapeHtml(r.jockey || "-")}</td>

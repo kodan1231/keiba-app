@@ -71,7 +71,7 @@ export async function onRequestGet(context) {
       `SELECT rr.horse_number, rr.status, rr.finish_position, rr.win_popularity, rr.jockey,
               rr.weight_carried, rr.body_weight, rr.body_weight_change, rr.time_text, rr.margin,
               rr.final_furlong_time, rr.sex_age, rr.race_id,
-              r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance
+              r.race_date, r.track, r.race_number, r.race_name, r.course_type, r.distance, r.track_condition
          FROM race_results rr
          JOIN races r ON r.id = rr.race_id
         WHERE rr.horse_key IN (${placeholders})
@@ -128,6 +128,7 @@ export async function onRequestGet(context) {
       race_name: r.race_name || null,
       course_type: r.course_type || null,
       distance: r.distance ?? null,
+      track_condition: r.track_condition || null,
       status: r.status || "finished",
       finish_position: r.finish_position ?? null,
       field_size: fieldSizeByRaceId.get(r.race_id) ?? null,
