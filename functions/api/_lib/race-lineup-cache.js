@@ -26,6 +26,8 @@
 //    反映後に1回だけ全件作り直す〈races と race_results を全件読む〉)
 //   (2026-10-27: 騎手検索タブの「脚質別成績」用に lineup を7つ組にし、7つ目に脚質〈1=逃げ・2=先行・3=差し・4=追込、0=不明。
 //    styleCodeOf〉を足して v を 6 にした。6つ目の脚質の組はそのまま。反映後に1回だけ全件作り直す)
+//   (2026-11-20: 総合推奨馬の騎手の点〈人気から見込む3着内率との差〉用に lineup を8つ組にし、8つ目に単勝人気〈不明0〉を足して v を 7 にした。
+//    entries で補うレースは0。反映後に1回だけ全件作り直す)
 //
 // 作り直しは DB から必要な列だけを読む(重いJSON解析をしない)。保存の失敗は握りつぶす(best-effort)。
 // 無効化は DB トリガー(@STEP: range_chunk_caches。変わったレース・結果のレースの範囲の行だけ消す)。
@@ -37,8 +39,8 @@ import { memoized } from "./memo-cache.js";
 import { raceClassOf } from "./race-classification.js";
 import { timeTextToSeconds, runningStyleOf } from "./graded-race-search.js";
 
-const LINEUP_CACHE_VERSION = 6;
-const LINEUP_STRIDE = 7; // lineup の1頭あたりの数(v6〜。v5 は6、v4 は5)
+const LINEUP_CACHE_VERSION = 7;
+const LINEUP_STRIDE = 8; // lineup の1頭あたりの数(v7〜。v6 は7、v5 は6、v4 は5)
 
 // 脚質 → 脚質の組(1=逃げ・先行、2=差し・追込、0=不明)。総合推奨馬の「週目」で使う(2026-10-15)
 export const STYLE_GROUP_LABELS = ["", "逃げ・先行", "差し・追込"];
@@ -103,7 +105,7 @@ function winnerTimeOf(rr) {
 
 // キャッシュを読み、レースの配列を返す(races.id の順)。
 // 各要素: { id, race_date, track, course_type, distance, tan, umaren,
-//           lineup: [[horse_number, jockey, pos, sexAgeCode, weightBand, styleGroup, styleCode], ...] | null, win_time, track_condition, race_class }
+//           lineup: [[horse_number, jockey, pos, sexAgeCode, weightBand, styleGroup, styleCode, popularity], ...] | null, win_time, track_condition, race_class }
 //   lineup は出走した馬だけ。pos は 1/2/3(3着以内)または null(着外)。sexAgeCode・weightBand・styleGroup・styleCode は不明なら0。
 // 2026-10-13: 読み込み(JSON の解析と展開)に約9ミリ秒かかるため、同じ実行環境で60秒使い回す(_lib/memo-cache.js)。
 // 取り込みの反映は最大60秒遅れる。戻り値の配列・要素は書き換えないこと(使い回すため)。
@@ -125,7 +127,7 @@ export function getRaceLineups(db) {
 }
 
 // 1レース分。lineup は読まれたときに展開して持つ。
-//   flat: [馬番, 騎手の辞書番号, 着順(1〜3、着外0), 性齢コード, 馬体重帯, 脚質の組, 脚質のコード] の繰り返し(LINEUP_STRIDE ずつ)か null
+//   flat: [馬番, 騎手の辞書番号, 着順(1〜3、着外0), 性齢コード, 馬体重帯, 脚質の組, 脚質のコード, 単勝人気(不明0)] の繰り返し(LINEUP_STRIDE ずつ)か null
 //   dict: 騎手名の辞書(同じ範囲のレースで共有する配列)、size: 出走した頭数(flat が無ければ0)
 class LineupRace {
   constructor(x, dict) {
@@ -146,7 +148,7 @@ class LineupRace {
     this._lineup = undefined;
   }
 
-  // [[horse_number, jockey, pos, sexAgeCode, weightBand, styleGroup, styleCode], ...] | null
+  // [[horse_number, jockey, pos, sexAgeCode, weightBand, styleGroup, styleCode, popularity], ...] | null
   get lineup() {
     if (this._lineup !== undefined) return this._lineup;
     const flat = this.flat;
@@ -156,7 +158,7 @@ class LineupRace {
       lineup = [];
       for (let i = 0; i < flat.length; i += LINEUP_STRIDE) {
         const ji = flat[i + 1];
-        lineup.push([flat[i] || null, ji >= 0 ? dict[ji] : null, flat[i + 2] || null, flat[i + 3] || 0, flat[i + 4] || 0, flat[i + 5] || 0, flat[i + 6] || 0]);
+        lineup.push([flat[i] || null, ji >= 0 ? dict[ji] : null, flat[i + 2] || null, flat[i + 3] || 0, flat[i + 4] || 0, flat[i + 5] || 0, flat[i + 6] || 0, flat[i + 7] || 0]);
       }
     }
     return (this._lineup = lineup);
@@ -217,7 +219,8 @@ async function buildLineupChunks(db, indices) {
               group_concat(IFNULL(horse_number, '') || char(31) || IFNULL(jockey, '') || char(31) ||
                            IFNULL(status, '') || char(31) || IFNULL(finish_position, '') || char(31) ||
                            IFNULL(time_text, '') || char(31) || IFNULL(sex_age, '') || char(31) ||
-                           IFNULL(body_weight, '') || char(31) || IFNULL(corner_positions, ''), char(30)) AS packed
+                           IFNULL(body_weight, '') || char(31) || IFNULL(corner_positions, '') || char(31) ||
+                           IFNULL(win_popularity, ''), char(30)) AS packed
          FROM race_results${rrCond ? ` WHERE ${rrCond.sql}` : ""} GROUP BY race_id`
     ).bind(...(rrCond ? rrCond.binds : [])).all(),
   ]);
@@ -251,13 +254,13 @@ async function buildLineupChunks(db, indices) {
     if (!out.has(ci)) { out.set(ci, { j: [], r: [] }); dictIndexByChunk.set(ci, new Map()); }
     const chunk = out.get(ci);
     const dictIndex = dictIndexByChunk.get(ci);
-    const pushHorse = (flat, hn, jockey, pos, sexAge, bodyWeight, style = null) => {
+    const pushHorse = (flat, hn, jockey, pos, sexAge, bodyWeight, style = null, popularity = 0) => {
       let ji = -1;
       if (jockey) {
         ji = dictIndex.get(jockey);
         if (ji === undefined) { ji = chunk.j.length; dictIndex.set(jockey, ji); chunk.j.push(jockey); }
       }
-      flat.push(hn > 0 ? hn : 0, ji, pos, sexAgeCodeOf(sexAge), weightBandOf(bodyWeight), styleGroupOf(style), styleCodeOf(style));
+      flat.push(hn > 0 ? hn : 0, ji, pos, sexAgeCodeOf(sexAge), weightBandOf(bodyWeight), styleGroupOf(style), styleCodeOf(style), popularity > 0 ? popularity : 0);
     };
 
     const rr = rrByRace.get(race.id);
@@ -278,17 +281,20 @@ async function buildLineupChunks(db, indices) {
         const f5 = packed.indexOf(FIELD_SEP, f4 + 1); // 以降は性齢・馬体重(2026-10-14追加)
         const f6 = packed.indexOf(FIELD_SEP, f5 + 1);
         const f7 = packed.indexOf(FIELD_SEP, f6 + 1); // 以降は通過順(2026-10-15追加)
+        const f8 = f7 >= 0 && f7 < end ? packed.indexOf(FIELD_SEP, f7 + 1) : -1; // 以降は単勝人気(2026-11-20追加)
+        const cornerEnd = f8 >= 0 && f8 < end ? f8 : end;
         const status = packed.slice(f2 + 1, f3) || "finished";
         if (RIDDEN_STATUSES.has(status)) {
           const fp = Number(packed.slice(f3 + 1, f4));
           const bwEnd = f7 >= 0 && f7 < end ? f7 : end;
           ridden.push([Number(packed.slice(start, f1)) || 0, packed.slice(f1 + 1, f2), fp >= 1 && fp <= 3 ? fp : 0,
-            packed.slice(f5 + 1, f6), packed.slice(f6 + 1, bwEnd), bwEnd < end ? packed.slice(bwEnd + 1, end) : ""]);
+            packed.slice(f5 + 1, f6), packed.slice(f6 + 1, bwEnd), bwEnd < end ? packed.slice(bwEnd + 1, cornerEnd) : "",
+            cornerEnd < end ? Number(packed.slice(cornerEnd + 1, end)) || 0 : 0]);
         }
         start = end + 1;
       }
-      for (const [hn, jockey, pos, sexAge, bodyWeight, corners] of ridden) {
-        pushHorse(flat, hn, jockey, pos, sexAge, bodyWeight, runningStyleOf(corners, ridden.length));
+      for (const [hn, jockey, pos, sexAge, bodyWeight, corners, popularity] of ridden) {
+        pushHorse(flat, hn, jockey, pos, sexAge, bodyWeight, runningStyleOf(corners, ridden.length), popularity);
       }
     } else if (entriesById.has(race.id)) {
       const finishOrder = parseJson(race.finish_order, null);

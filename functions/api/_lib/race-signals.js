@@ -48,7 +48,8 @@ export async function getRaceFactorsBody(db, race) {
 //   - FACTOR_BODY_VERSION(点数の規則〈_lib/race-factors.js〉・応答の形を変えたら必ず上げる。上げないと古い規則の点数が残る)
 // 他のレースの結果(騎手の成績・勝ちタイム等)は、夜間の計算が物差しを作り直したときに反映する(ユーザー判断。その日のうちは反映しない)。
 // 表が無い(マイグレーション前)・読めない・保存できないときは、以前どおり毎回計算する(保存は best-effort)。
-const FACTOR_BODY_VERSION = 1;
+// 2: 2026-11-20 騎手の点を「人気から見込む3着内率との差」に変えた
+const FACTOR_BODY_VERSION = 2;
 
 async function factorInputs(db, race) {
   const [scoreSettings, gradedMap, distanceRatios, courseHistory, versions] = await Promise.all([

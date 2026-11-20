@@ -296,6 +296,35 @@ const contextCache = new WeakMap(); // lineups 配列 -> { raceTimes, ctx }
 function newCounts() {
   return { rides: 0, first: 0, show: 0 };
 }
+// 騎手の騎乗(2026-11-20〜): 人気のある騎乗だけ別に数える。pr: 人気のある騎乗、ps: そのうち3着内、ex: その人気から見込む3着内率の合計
+function addJockeyRide(m, k, pos, ex) {
+  addRide(m, k, pos);
+  if (ex == null) return;
+  const c = m.get(k);
+  c.pr = (c.pr || 0) + 1;
+  c.ex = (c.ex || 0) + ex;
+  if (pos >= 1 && pos <= 3) c.ps = (c.ps || 0) + 1;
+}
+// 人気から見込む3着内率(2026-11-20): 中央・地方 × 単勝人気ごとの、全レース(全期間)の3着内率。騎乗が POP_MIN_RIDES 未満の人気は null
+const POP_MIN_RIDES = 30;
+function buildPopShowRates(lineups) {
+  const n = [new Map(), new Map()], sh = [new Map(), new Map()];
+  const S = LINEUP_STRIDE;
+  for (const r of lineups) {
+    const flat = r.flat;
+    if (!flat) continue;
+    const j = JRA_TRACKS.includes(String(r.track || "").trim()) ? 1 : 0;
+    for (let i = 0; i < flat.length; i += S) {
+      const pop = flat[i + 7];
+      if (!(pop > 0)) continue;
+      n[j].set(pop, (n[j].get(pop) || 0) + 1);
+      if (flat[i + 2] >= 1 && flat[i + 2] <= 3) sh[j].set(pop, (sh[j].get(pop) || 0) + 1);
+    }
+  }
+  const rates = [new Map(), new Map()];
+  for (const j of [0, 1]) for (const [pop, c] of n[j]) if (c >= POP_MIN_RIDES) rates[j].set(pop, (sh[j].get(pop) || 0) / c);
+  return rates;
+}
 function addRide(m, k, pos) {
   let c = m.get(k);
   if (!c) m.set(k, (c = newCounts()));
@@ -384,6 +413,9 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     weekMemo.set(mk, v);
     return v;
   };
+  const popRates = buildPopShowRates(lineups);
+  // 単勝人気 → 見込む3着内率(人気が無い・騎乗が少ない人気は null)。jra: 中央10場のレースか
+  const expectedShowOf = (jra, pop) => (pop > 0 ? popRates[jra ? 1 : 0].get(pop) ?? null : null);
   const fieldSizeByRace = new Map();
   const byTrackCt = new Map(); // "競馬場|芝ダ障" -> [{ race_date, distance, flat, jk, week }]
   const flatById = new Map(); // レースID -> { race_date, flat }(重賞の過去の年の帯の成績用。2026-11-07)
@@ -395,7 +427,7 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
     flatById.set(Number(r.id), { race_date: String(r.race_date), flat: r.flat, track: r.track, course_type: r.course_type, distance: Number(r.distance), win, cond: r.track_condition });
     const g = `${r.track}|${r.course_type}`;
     if (!byTrackCt.has(g)) byTrackCt.set(g, []);
-    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)), win, cond: r.track_condition });
+    byTrackCt.get(g).push({ race_date: String(r.race_date), distance: Number(r.distance), flat: r.flat, jk: keysOfDict(r.dict), week: weekBandOf(r.track, String(r.race_date)), win, cond: r.track_condition, jra: JRA_TRACKS.includes(String(r.track || "").trim()) });
   }
   // 全競馬場の成績(全期間)。同コース・同場に記録が無いときの最後の補いにしか使わないため、初めて必要になったときに
   // 種類ごとに数える(2026-10-14: 4種類まとめて数えると本番の6.3万騎乗で約14ミリ秒かかったため、要る種類だけにした)。
@@ -411,9 +443,10 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
       if (!flat) continue;
       if (kind === "jockeyAll") {
         const jk = keysOfDict(r.dict);
+        const jra = JRA_TRACKS.includes(String(r.track || "").trim());
         for (let i = 0; i < flat.length; i += S) {
           const ji = flat[i + 1];
-          if (ji >= 0 && jk[ji]) addRide(out, jk[ji], flat[i + 2]);
+          if (ji >= 0 && jk[ji]) addJockeyRide(out, jk[ji], flat[i + 2], expectedShowOf(jra, flat[i + 7]));
         }
         continue;
       }
@@ -493,7 +526,7 @@ export function createFactorContext(lineups, raceTimes, aliasMap) {
   // 芝ダ障・距離ごとの勝ちタイム(補正値と平均)
   const courseOf = makeCourseOf(raceTimes);
 
-  const ctx = { fieldSizeByRace, byTrackCt, flatById, allOf, keyOf, courseOf, weekBandOf, jockeyHomeOf };
+  const ctx = { fieldSizeByRace, byTrackCt, flatById, allOf, keyOf, courseOf, weekBandOf, jockeyHomeOf, expectedShowOf };
   contextCache.set(lineups, { raceTimes, aliasMap, ctx });
   return ctx;
 }
@@ -710,9 +743,7 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
   const weekBand = ctx.weekBandOf(race.track, date);
   const weekByBand = new Map(), weekAll = new Map();
   const courseWins = []; // 同コースの過去のレース(勝ちタイムのあるもの。補正タイムの物差し。2026-11-07)
-  // 騎手(2026-11-07〜): 物差し(騎乗のある騎手全員の複勝率)を作るため全騎手を数える(以前は今回乗る騎手だけ)
-  const jkTotal = { course: newCounts(), track: newCounts() };
-  const addTotal = (c, pos) => { c.rides++; if (pos === 1) c.first++; if (pos >= 1 && pos <= 3) c.show++; };
+  // 騎手(2026-11-07〜): 物差し(騎乗のある騎手全員の値)を作るため全騎手を数える(以前は今回乗る騎手だけ)
   const S = LINEUP_STRIDE;
   for (const r of ctx.byTrackCt.get(`${race.track}|${race.course_type}`) || []) {
     if (r.race_date >= date) continue;
@@ -740,10 +771,9 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       }
       const jk = ji >= 0 ? r.jk[ji] : "";
       if (jk) {
-        addTotal(jkTotal.track, pos);
-        if (same) addTotal(jkTotal.course, pos);
-        addRide(jkTrack, jk, pos);
-        if (same) addRide(jkCourse, jk, pos);
+        const ex = ctx.expectedShowOf(r.jra, flat[i + 7]);
+        addJockeyRide(jkTrack, jk, pos, ex);
+        if (same) addJockeyRide(jkCourse, jk, pos, ex);
       }
     }
   }
@@ -856,27 +886,17 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     const r = bandScore(wtTable, wb);
     if (r) weightList.push({ key: x.key, ...r, wb, kg: x.bodyWeight });
   }
-  // 騎手: 段ごとの平均(そのコース等の全騎乗の複勝率・単勝率)に、騎乗が少ないほど寄せる
-  const avgOf = (c) => ({ show: c.rides ? c.show / c.rides : 0, win: c.rides ? c.first / c.rides : 0 });
-  const jkAvg = { course: avgOf(jkTotal.course), track: avgOf(jkTotal.track) };
-  const jkAllAvg = () => {
-    if (jkAvg.all) return jkAvg.all;
-    const t = newCounts();
-    for (const c of ctx.allOf("jockeyAll").values()) { t.rides += c.rides; t.show += c.show; t.first += c.first; }
-    return (jkAvg.all = avgOf(t));
-  };
-  // 2026-11-07〜 点は物差し(その段で NUMBER_MIN_RIDES 騎乗以上の騎手全員の、平均に寄せた複勝率。平均・標準偏差)での偏差値
+  // 騎手(2026-11-20〜 ユーザー要望・仕様確認済み): 人気から見込む3着内率との差。人気のある騎乗ごとに「3着内なら1・着外0」から
+  // その人気の見込み(中央・地方 × 人気の全レースの3着内率)を引いて足し、「人気のある騎乗 + JOCKEY_PRIOR_RIDES」で割る(騎乗が少ないほど0〈見込みどおり〉に寄せる)。
+  // 以前(2026-11-07〜11-19)は複勝率を段の平均へ寄せた値だったため、人気馬に多く乗る騎手が高く出た(大井の矢野騎手が偏差値約80+加点で90)。
+  // 点は物差し(その段で NUMBER_MIN_RIDES 騎乗〈人気のある騎乗〉以上の騎手全員の値。平均・標準偏差)での偏差値。人気のある騎乗の無い段は使わない
   const jkMapOf = (scope) => (scope === "course" ? jkCourse : scope === "track" ? jkTrack : ctx.allOf("jockeyAll"));
-  const jkAvgOf = (scope) => (scope === "all" ? jkAllAvg() : jkAvg[scope]);
-  const shrunk = (c, a) => {
-    const K = JOCKEY_PRIOR_RIDES;
-    return { show: (c.show + K * a.show) / (c.rides + K), win: (c.first + K * a.win) / (c.rides + K) };
-  };
+  const residualOf = (c) => ((c.ps || 0) - (c.ex || 0)) / ((c.pr || 0) + JOCKEY_PRIOR_RIDES);
   const jkRulers = new Map();
   const jkRulerOf = (scope) => {
     if (jkRulers.has(scope)) return jkRulers.get(scope);
-    const a = jkAvgOf(scope), vals = [];
-    for (const c of jkMapOf(scope).values()) if (c.rides >= NUMBER_MIN_RIDES) vals.push(shrunk(c, a).show);
+    const vals = [];
+    for (const c of jkMapOf(scope).values()) if ((c.pr || 0) >= NUMBER_MIN_RIDES) vals.push(residualOf(c));
     const r = rulerOf(vals);
     jkRulers.set(scope, r);
     return r;
@@ -888,18 +908,18 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
     let c = null, scope = null;
     for (const s of ["course", "track", "all"]) {
       const x = jkMapOf(s).get(jk);
-      if (x && x.rides && jkRulerOf(s)) { c = x; scope = s; break; }
+      if (x && x.pr && jkRulerOf(s)) { c = x; scope = s; break; }
     }
     if (!c) continue;
-    const r = shrunk(c, jkAvgOf(scope));
-    jockeyList.push({ key: h.key, rides: c.rides, scope, rawShow: c.show / c.rides, ...r, v: scoreOn(jkRulerOf(scope), r.show), direct: true });
+    const res = residualOf(c);
+    jockeyList.push({ key: h.key, rides: c.pr, scope, rawShow: (c.ps || 0) / c.pr, expShow: c.ex / c.pr, res, v: scoreOn(jkRulerOf(scope), res), direct: true });
   }
-  const rateRank = (list) => {
-    const sorted = [...list].sort((a, b) => b.show - a.show || b.win - a.win || b.rides - a.rides);
+  // 騎手: 点(v)の高い順。同じ点は同じ順位
+  const jockeyRank = (list) => {
+    const sorted = [...list].sort((a, b) => b.v - a.v || b.rides - a.rides);
     let rank = 0;
     return sorted.map((x, i) => {
-      const p = sorted[i - 1];
-      if (i === 0 || x.show !== p.show || x.win !== p.win) rank = i + 1;
+      if (i === 0 || x.v !== sorted[i - 1].v) rank = i + 1;
       return { ...x, rank };
     });
   };
@@ -1039,7 +1059,11 @@ export function computeRaceFactors(ctx, race, runners, runsByHorse, { missingSco
       ? { ...x, v: scoreOn(timeRuler, -x.time), direct: true, value: `${timeText(x)}${timeRulerText}` }
       : { ...x, v: -x.time, value: timeText(x) })),
     number: bandRank(numberList).map((x) => ({ ...x, value: `${numberGroupLabel(x.group)} ${bandText(x)}` })),
-    jockey: rateRank(jockeyList).map((x) => ({ ...x, value: `複${pct(x.rawShow)}(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` })),
+    // 内訳(2026-11-20〜): 実際の複勝率・人気から見込む複勝率(差はポイント)
+    jockey: jockeyRank(jockeyList).map((x) => {
+      const d = (x.rawShow - x.expShow) * 100;
+      return { ...x, value: `複${pct(x.rawShow)}・期待${pct(x.expShow)}(${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(1)})(${x.rides}騎乗・${SCOPE_LABEL[x.scope]})` };
+    }),
     sexage: bandRank(sexList).map((x) => ({ ...x, value: `${sexAgeLabelOf(x.sa)} ${bandText(x)}` })),
     week: rankBy(weekList, (x) => -x.v).map((x) => ({
       ...x,
