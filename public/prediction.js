@@ -1184,7 +1184,7 @@ function paceEffectiveWeights(d, pace) {
 
 // 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。推奨馬の印(2026-10-25。2026-10-31 変更。「推奨馬の印(◎〇▲☆)」)は
 // サーバーの _lib/pace-score.js の pickRecommended と同じ規則: ◎ = 合計1位(同じなら軸指数)、〇 = 残りの軸指数1位(同じなら相手指数)、
-// ▲ = 残りの相手指数1位(同じなら軸指数)、☆ = 残りのうち補正タイムの点が40以上(データ無しも含める)の馬の展開の点1位
+// ▲ = 残りの「補正タイムの点+軸指数」1位(同じなら軸指数。2026-11-23〜。以前は残りの相手指数1位)、☆ = 残りのうち補正タイムの点が40以上(データ無しも含める)の馬の展開の点1位
 // (同じなら合計。そういう馬がいなければ残りの展開の点1位)、すべて同じなら馬番の小さい方。
 // 以前(2026-10-25〜10-31)は ◎〇▲ = 軸指数の1・2・3位・☆ = 残りの相手指数1位。それより前は ◎軸 = 軸指数1位・○相手 = 軸を除いた相手指数の上位3頭
 const PACE_MARKS = ["◎", "〇", "▲", "☆"];
@@ -1204,7 +1204,8 @@ function paceRecommendMarks(rows) {
   const paceOf = (x) => Number(x.f.pace?.score) || 0;
   const byTotal = (a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b);
   const byAxis = (a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b);
-  const byPartner = (a, b) => b.partner - a.partner || b.axis - a.axis || num(a) - num(b);
+  const timeAxis = (x) => (Number(x.f.time?.score) || 0) + x.axis;
+  const byTimeAxis = (a, b) => timeAxis(b) - timeAxis(a) || b.axis - a.axis || num(a) - num(b);
   const byPace = (a, b) => paceOf(b) - paceOf(a) || total(b) - total(a) || num(a) - num(b);
   const used = [];
   const take = (list, cmp) => {
@@ -1213,7 +1214,7 @@ function paceRecommendMarks(rows) {
   };
   take(rows, byTotal);
   take(rows, byAxis);
-  take(rows, byPartner);
+  take(rows, byTimeAxis);
   // 補正タイムの点(評価点を引いた後)が40以上か、データ無し
   const timeOk = rows.filter(x => x.f.time?.missing || Number(x.f.time?.score) >= PACE_STAR_TIME_MIN);
   if (timeOk.some(x => !used.includes(x))) take(timeOk, byPace);

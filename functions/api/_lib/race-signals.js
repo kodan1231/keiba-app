@@ -182,7 +182,8 @@ export const SIGNAL_WIDE_GAP = 6;
 export const SIGNAL_MIN_RUNNERS = 5;
 // 規則を変えたら上げる(保存済みの目印の指紋が変わり、全部計算し直しになる)。
 // 3(2026-11-10): 推奨馬の印(列 marks)も保存するようにしたので、保存済みの行に印を入れるため計算し直す
-const SIGNAL_RULE_VERSION = 3;
+// 4(2026-11-23): ▲の選び方を「残りの補正タイムの点+軸指数の1位」に変えたので、保存済みの印を計算し直す
+const SIGNAL_RULE_VERSION = 4;
 
 // 総合推奨馬の表と同じ軸指数・相手指数(body: getRaceFactorsBody の戻り値、weights: getPaceWeights の戻り値)
 function indexedHorses(body, weights) {
