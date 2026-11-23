@@ -1,4 +1,5 @@
 import { jsonError, getRaceLineups } from "../_shared.js";
+import { STYLE_CODE_LABELS } from "../_lib/race-lineup-cache.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
 // レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
@@ -98,6 +99,19 @@ export async function onRequestGet(context) {
   const umarenValues = [];
   const jockeyMap = new Map(); // key -> { display, rides, wins, shows }
   const byHorseNumber = new Map(); // number -> { starts, win, second, third }
+  // 脚質別(2026-11-23)。lineup の7つ目〈1=逃げ・2=先行・3=差し・4=追込、0=不明〉ごと
+  const byStyle = new Map(); // code -> { starts, win, second, third }
+  const addPlacing = (map, k, pos) => {
+    let b = map.get(k);
+    if (!b) {
+      b = { starts: 0, win: 0, second: 0, third: 0 };
+      map.set(k, b);
+    }
+    b.starts++;
+    if (pos === 1) b.win++;
+    else if (pos === 2) b.second++;
+    else if (pos === 3) b.third++;
+  };
   let resultRaceCount = 0;
 
   for (const race of raceRows || []) {
@@ -131,7 +145,8 @@ export async function onRequestGet(context) {
     if (!race.lineup) continue;
 
     resultRaceCount++;
-    for (const [horse_number, jockey, pos] of race.lineup) {
+    for (const [horse_number, jockey, pos, , , , styleCode] of race.lineup) {
+      addPlacing(byStyle, styleCode || 0, pos);
       const h = { horse_number, jockey, pos };
 
       const rawJockey = h.jockey;
@@ -150,17 +165,7 @@ export async function onRequestGet(context) {
       }
 
       const hn = h.horse_number;
-      if (Number.isInteger(hn) && hn >= 1 && hn <= 18) {
-        let b = byHorseNumber.get(hn);
-        if (!b) {
-          b = { starts: 0, win: 0, second: 0, third: 0 };
-          byHorseNumber.set(hn, b);
-        }
-        b.starts++;
-        if (h.pos === 1) b.win++;
-        else if (h.pos === 2) b.second++;
-        else if (h.pos === 3) b.third++;
-      }
+      if (Number.isInteger(hn) && hn >= 1 && hn <= 18) addPlacing(byHorseNumber, hn, h.pos);
     }
   }
 
@@ -171,18 +176,22 @@ export async function onRequestGet(context) {
   const rateUnder = (limit) =>
     winCount ? winValues.filter((v) => v <= limit).length / winCount : null;
 
+  const placingOut = (b) => ({
+    starts: b.starts,
+    win: b.win,
+    second: b.second,
+    third: b.third,
+    winRate: b.starts ? b.win / b.starts : 0,
+    quinellaRate: b.starts ? (b.win + b.second) / b.starts : 0,
+    showRate: b.starts ? (b.win + b.second + b.third) / b.starts : 0,
+  });
   const byHorseNumberOut = [...byHorseNumber.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([horseNumber, b]) => ({
-      horseNumber,
-      starts: b.starts,
-      win: b.win,
-      second: b.second,
-      third: b.third,
-      winRate: b.starts ? b.win / b.starts : 0,
-      quinellaRate: b.starts ? (b.win + b.second) / b.starts : 0,
-      showRate: b.starts ? (b.win + b.second + b.third) / b.starts : 0,
-    }));
+    .map(([horseNumber, b]) => ({ horseNumber, ...placingOut(b) }));
+  // 並びは 逃げ → 先行 → 差し → 追込 → 不明(騎手検索タブの脚質別と同じ)
+  const byStyleOut = [1, 2, 3, 4, 0]
+    .filter((code) => byStyle.has(code))
+    .map((code) => ({ style: STYLE_CODE_LABELS[code], ...placingOut(byStyle.get(code)) }));
 
   return Response.json({
     filters: { track, course_type: surface, distance, year },
@@ -207,5 +216,6 @@ export async function onRequestGet(context) {
       topShow: topByRate(jockeyEntries, minRides, "shows", 5),
     },
     byHorseNumber: byHorseNumberOut,
+    byStyle: byStyleOut,
   });
 }

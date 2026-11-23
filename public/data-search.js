@@ -136,20 +136,20 @@ function dsRenderJockeyTable(table, rows, rateHeader, countHeader) {
   table.innerHTML = head + body;
 }
 
-function dsRenderHorseNumberTable(rows) {
-  const table = dsEls.horseNumberTable;
+// 馬番別・脚質別(2026-11-23)で共通の表。labelHead は先頭列の見出し、labelOf は先頭列の値。
+function dsRenderPlacingTable(table, rows, labelHead, labelOf) {
   if (!rows || rows.length === 0) {
     table.innerHTML = `<tr><td class="table-empty">該当データなし</td></tr>`;
     return;
   }
   const head =
-    `<tr><th>馬番</th><th>出走</th><th>1着</th><th>2着</th><th>3着</th>` +
+    `<tr><th>${labelHead}</th><th>出走</th><th>1着</th><th>2着</th><th>3着</th>` +
     `<th>勝率</th><th>連対率</th><th>複勝率</th></tr>`;
   const body = rows
     .map(
       (r) => `
       <tr>
-        <td class="table-name">${r.horseNumber}</td>
+        <td class="table-name">${escapeHtml(String(labelOf(r)))}</td>
         <td>${r.starts}</td>
         <td>${r.win}</td>
         <td>${r.second}</td>
@@ -183,7 +183,9 @@ function dsRender(data) {
   dsRenderJockeyTable(dsEls.jockeyWinTable, j.topWin, "勝率", "勝利");
   dsRenderJockeyTable(dsEls.jockeyShowTable, j.topShow, "複勝率", "複勝");
 
-  dsRenderHorseNumberTable(data.byHorseNumber);
+  dsRenderPlacingTable(dsEls.horseNumberTable, data.byHorseNumber, "馬番", (r) => r.horseNumber);
+  // 脚質別(2026-11-23。そのレースで最初のコーナーを何番手で通ったか)
+  dsRenderPlacingTable(dsEls.styleTable, data.byStyle, "脚質", (r) => r.style);
 }
 
 async function dsLoad() {
@@ -230,6 +232,7 @@ function dsInit() {
   dsEls.jockeyWinTable = document.getElementById("ds-jockey-win-table");
   dsEls.jockeyShowTable = document.getElementById("ds-jockey-show-table");
   dsEls.horseNumberTable = document.getElementById("ds-horse-number-table");
+  dsEls.styleTable = document.getElementById("ds-style-table");
 
   // 競馬場・コース種別を変えたら距離セレクトの選択肢が変わるため、距離の選択はリセットする。
   dsEls.track.addEventListener("change", () => {
