@@ -18,6 +18,7 @@ import { memoized } from "./memo-cache.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getCourseHistory } from "./course-history.js";
+import { paceIndexOf, indexedHorse, pickRecommended, RECOMMEND_MARKS, STAR_TIME_MIN } from "../../../public/recommend-marks.js";
 
 // レース一覧(races_index_cache)を同じ実行環境で60秒使い回す(2026-10-14)。読み込み〈約90万文字の解析〉に10ミリ秒以上かかり、
 // 比率の計算で6レースずつ採点を呼ぶたびに読み直すと、それだけで無料枠のCPU時間の上限(10ミリ秒)を超えて 503 になったため
@@ -560,49 +561,9 @@ export async function saveAutoPaceResult(db, kind, key, result) {
 
 // ---- 軸・相手の選び方(画面 prediction.js の paceAxisPartner と同じ規則) ----
 
-// 指数 = Σ 比率 × 点 ÷ 比率の合計(画面と同じ)。factors: { f: { score } }
-export function paceIndexOf(factors, w) {
-  const wOf = (f) => Number(w[`w_${f}`] ?? 0);
-  const wSum = PACE_FACTORS.reduce((a, f) => a + wOf(f), 0) || 1;
-  return PACE_FACTORS.reduce((a, f) => a + wOf(f) * factors[f].score, 0) / wSum;
-}
-
-// 推奨馬の4頭を選ぶ(2026-10-25 ユーザー要望。2026-10-31 選び方を変更。docs/design/screens.md「推奨馬の印(◎〇▲☆)」)。
-// horses: [{ horse_number, axis, partner, pace, time, timeMissing }] → [{ mark: "◎"|"〇"|"▲"|"☆", x: 要素 }](頭数が足りなければ短い)
-//   pace・time = 展開・補正タイムの点(評価点を掛けた後。初距離・初競馬場の減点は 2026-11-04 にやめた)、timeMissing = 補正タイムのデータが無い
-//   ◎ = 合計(軸指数+相手指数)の1位(同じなら軸指数の高い方)
-//   〇 = 残りの軸指数の1位(同じなら相手指数の高い方)
-//   ▲ = 残りの「補正タイムの点+軸指数」の1位(同じなら軸指数の高い方)。2026-11-23〜(以前は残りの相手指数の1位。
-//       手元の写し約1.45万レースで ▲の複勝圏 中央 31.3%→31.5%・地方 33.2%→39.2%)
-//   ☆ = 残りのうち補正タイムの点が STAR_TIME_MIN 以上(データ無しの馬も含める)の馬の展開の点の1位(同じなら合計の高い方)。
-//       そういう馬がいなければ、残りの展開の点の1位
-//   すべて同じなら馬番の小さい方
-// 以前(2026-10-25〜10-31)は「◎〇▲ = 軸指数の1・2・3位、☆ = 残りの相手指数の1位」。それより前(2026-10-14〜10-25)は
-// 「軸 = 軸指数1位、相手 = 軸を除いた相手指数の上位3頭」(pickAxisPartners)。
-// ☆の物差し(コース巧者・馬場巧者・一発・距離が合う)も試算したが、相手指数1位を上回らなかった(screens.md の同じ節)
-export const RECOMMEND_MARKS = ["◎", "〇", "▲", "☆"];
-export const STAR_TIME_MIN = 40;
-export function pickRecommended(horses) {
-  const num = (h) => (h.horse_number == null ? 999 : Number(h.horse_number));
-  const total = (h) => h.axis + h.partner;
-  const byTotal = (a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b);
-  const byAxis = (a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b);
-  const timeAxis = (h) => (Number(h.time) || 0) + h.axis;
-  const byTimeAxis = (a, b) => timeAxis(b) - timeAxis(a) || b.axis - a.axis || num(a) - num(b);
-  const byPace = (a, b) => (Number(b.pace) || 0) - (Number(a.pace) || 0) || total(b) - total(a) || num(a) - num(b);
-  const used = [];
-  const take = (list, cmp) => {
-    const x = list.filter((h) => !used.includes(h)).sort(cmp)[0];
-    if (x) used.push(x);
-  };
-  take(horses, byTotal);
-  take(horses, byAxis);
-  take(horses, byTimeAxis);
-  const timeOk = horses.filter((h) => h.timeMissing || Number(h.time) >= STAR_TIME_MIN);
-  if (timeOk.some((h) => !used.includes(h))) take(timeOk, byPace);
-  else take(horses, byPace);
-  return used.map((x, i) => ({ mark: RECOMMEND_MARKS[i], x }));
-}
+// 指数・推奨馬の印(◎〇▲☆)の規則は画面と共用の public/recommend-marks.js に1か所(2026-11-24。以前はここと画面 prediction.js に同じ規則を書いていた)。
+// docs/design/screens.md「推奨馬の印(◎〇▲☆)」
+export { paceIndexOf, indexedHorse, pickRecommended, RECOMMEND_MARKS, STAR_TIME_MIN };
 
 // 重賞検索タブの「総合推奨馬の検証」(2026-10-13追加。2026-10-14 軸・相手に変更): 過去の各年を、指定の比率で採点した
 // 軸1頭・相手3頭と実際の着順。weights は getPaceWeights の戻り値。各年はその年のペース予想の比率で採点する。
@@ -615,8 +576,7 @@ export function gradedPicksOf(bt, weights, adjust = null) {
     const wp = (y.pace_type && pw.paces?.[y.pace_type]) || pw;
     // 間隔(2026-10-15)は総合点から直接引く
     const extra = (h) => (adjust ? totalAdjustOf(h.flags, adjust).value : 0);
-    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, axis: paceIndexOf(h.factors, wa) + extra(h), partner: paceIndexOf(h.factors, wp) + extra(h),
-      pace: h.factors.pace?.score, time: h.factors.time?.score, timeMissing: Boolean(h.factors.time?.missing) }));
+    const horses = y.runners.map((h) => ({ h, horse_number: h.horse_number, ...indexedHorse(h.factors, extra(h), wa, wp) }));
     const picked = pickRecommended(horses); // ◎〇▲☆(2026-10-25)
     const finished = (x) => (x && x.h.status === "finished" && x.h.finish_position >= 1 ? x.h.finish_position : null);
     const axisPos = finished(picked[0]?.x);

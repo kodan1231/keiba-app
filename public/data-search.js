@@ -335,10 +335,10 @@ function hiStatusLabel(row) {
   return row.finish_position != null ? `${row.finish_position}着` : "-";
 }
 
-// コース条件(芝ダ障+距離+馬場。例「芝1600 良」)。分からない部分は省く。
+// コース条件(芝ダ障+距離+馬場。例「芝1600m 良」)。分からない部分は省く。
+// コースは他の画面と同じ formatCourseText(utils.js。例「芝1600m」「ダ1200m」。2026-11-24〜。以前は「ダート1200」と独自に組み立てていた)
 function hiCourseLabel(row) {
-  const course = `${row.course_type || ""}${row.distance ? row.distance : ""}`;
-  const text = [course, row.track_condition || ""].filter(Boolean).join(" ");
+  const text = [formatCourseText(row.course_type, row.distance), row.track_condition || ""].filter(Boolean).join(" ");
   return text || "-";
 }
 

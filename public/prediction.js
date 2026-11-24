@@ -1068,12 +1068,17 @@ function ensureRaceFactors() {
   const rid = selectedRace.id;
   if (raceFactors && raceFactors.raceId === rid) return; // 取得済み・取得中・失敗済み
   raceFactors = { raceId: rid, status: "loading", data: null };
-  authedFetch(`/api/data-search/race-factors?race_id=${encodeURIComponent(rid)}`)
-    .then(res => {
-      if (res.status === 503) return { paused: true };
-      return res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`));
-    })
-    .then(data => {
+  const marksModule = recommendMarksModule ? Promise.resolve(recommendMarksModule) : import("./recommend-marks.js");
+  Promise.all([
+    authedFetch(`/api/data-search/race-factors?race_id=${encodeURIComponent(rid)}`)
+      .then(res => {
+        if (res.status === 503) return { paused: true };
+        return res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`));
+      }),
+    marksModule,
+  ])
+    .then(([data, mod]) => {
+      recommendMarksModule = mod;
       if (!raceFactors || raceFactors.raceId !== rid) return;
       raceFactors = data.paused ? { raceId: rid, status: "paused", data: null } : { raceId: rid, status: "done", data };
       if (selectedRace && selectedRace.id === rid) renderPace();
@@ -1182,47 +1187,11 @@ function paceEffectiveWeights(d, pace) {
   return (pace && d.paces?.[pace]) || d;
 }
 
-// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)。推奨馬の印(2026-10-25。2026-10-31 変更。「推奨馬の印(◎〇▲☆)」)は
-// サーバーの _lib/pace-score.js の pickRecommended と同じ規則: ◎ = 合計1位(同じなら軸指数)、〇 = 残りの軸指数1位(同じなら相手指数)、
-// ▲ = 残りの「補正タイムの点+軸指数」1位(同じなら軸指数。2026-11-23〜。以前は残りの相手指数1位)、☆ = 残りのうち補正タイムの点が40以上(データ無しも含める)の馬の展開の点1位
-// (同じなら合計。そういう馬がいなければ残りの展開の点1位)、すべて同じなら馬番の小さい方。
-// 以前(2026-10-25〜10-31)は ◎〇▲ = 軸指数の1・2・3位・☆ = 残りの相手指数1位。それより前は ◎軸 = 軸指数1位・○相手 = 軸を除いた相手指数の上位3頭
-const PACE_MARKS = ["◎", "〇", "▲", "☆"];
-const PACE_STAR_TIME_MIN = 40; // ☆の候補にする補正タイムの点の下限(サーバーの STAR_TIME_MIN と同じ)
+// 軸指数・相手指数(2026-10-14。docs/design/screens.md「軸指数・相手指数」)と推奨馬の印(◎〇▲☆。「推奨馬の印(◎〇▲☆)」)の規則は
+// サーバーと共用の public/recommend-marks.js に1か所(2026-11-24。以前はここに paceIndexOf・paceRecommendMarks として同じ規則を書いていた)。
+// race-factors の取得と一緒に動的 import する(ensureRaceFactors。このファイルは ES モジュールではないため)
+let recommendMarksModule = null;
 let paceTotalSort = "total"; // 表の並び "total" | "axis" | "partner"(レースを切り替えても保つ。既定は合計〈2026-11-04 ユーザー要望。以前は軸指数〉)
-
-function paceIndexOf(factors, w) {
-  const wOf = (f) => Number(w[`w_${f}`] ?? 0);
-  const wSum = PACE_FACTOR_KEYS.reduce((a, f) => a + wOf(f), 0) || 1;
-  return PACE_FACTOR_KEYS.reduce((acc, f) => acc + wOf(f) * factors[f].score, 0) / wSum;
-}
-
-// 戻り値: Map(行 -> 印)(◎〇▲☆の順に入る)
-function paceRecommendMarks(rows) {
-  const num = (x) => (x.e.horse_number === null || x.e.horse_number === undefined ? 999 : Number(x.e.horse_number));
-  const total = (x) => x.axis + x.partner;
-  const paceOf = (x) => Number(x.f.pace?.score) || 0;
-  const byTotal = (a, b) => total(b) - total(a) || b.axis - a.axis || num(a) - num(b);
-  const byAxis = (a, b) => b.axis - a.axis || b.partner - a.partner || num(a) - num(b);
-  const timeAxis = (x) => (Number(x.f.time?.score) || 0) + x.axis;
-  const byTimeAxis = (a, b) => timeAxis(b) - timeAxis(a) || b.axis - a.axis || num(a) - num(b);
-  const byPace = (a, b) => paceOf(b) - paceOf(a) || total(b) - total(a) || num(a) - num(b);
-  const used = [];
-  const take = (list, cmp) => {
-    const x = list.filter(r => !used.includes(r)).sort(cmp)[0];
-    if (x) used.push(x);
-  };
-  take(rows, byTotal);
-  take(rows, byAxis);
-  take(rows, byTimeAxis);
-  // 補正タイムの点(評価点を引いた後)が40以上か、データ無し
-  const timeOk = rows.filter(x => x.f.time?.missing || Number(x.f.time?.score) >= PACE_STAR_TIME_MIN);
-  if (timeOk.some(x => !used.includes(x))) take(timeOk, byPace);
-  else take(rows, byPace);
-  const marks = new Map();
-  used.forEach((x, i) => marks.set(x, PACE_MARKS[i]));
-  return marks;
-}
 
 // 軸・相手それぞれの比率(このレースのペース予想の比率)
 function paceKindWeights(ws, pace) {
@@ -1244,10 +1213,10 @@ function paceTotalSectionHtml(entries) {
   if (!rf) return `${head}<p class="pace-none">${escapeHtml(message)}</p>`;
   // 点数(偏差値)はサーバー(race-factors)で計算済み。データの無い要素は設定の点で入っている(missing)
   // 総合点へ直接足す評価点(間隔。2026-10-15。サーバーの total_adjust)
-  const extraOf = (h) => Number(h.total_adjust?.value) || 0;
-  const rows = rf.horses.map(h => ({ e: h, f: h.factors, extra: h.total_adjust, axis: paceIndexOf(h.factors, kw.axis) + extraOf(h), partner: paceIndexOf(h.factors, kw.partner) + extraOf(h) }));
+  const { indexedHorse, pickRecommended } = recommendMarksModule;
+  const rows = rf.horses.map(h => ({ e: h, f: h.factors, extra: h.total_adjust, horse_number: h.horse_number, ...indexedHorse(h.factors, h.total_adjust?.value, kw.axis, kw.partner) }));
   rows.forEach(x => { x.total = x.axis + x.partner; });
-  const marks = paceRecommendMarks(rows);
+  const marks = new Map(pickRecommended(rows).map(({ mark, x }) => [x, mark])); // 行 -> 印(◎〇▲☆の順)
   const markOf = (x) => marks.get(x) || "";
   paceRecommendForApply = [...marks].map(([x, m]) => ({ horse_number: x.e.horse_number, mark: m }));
   // 推奨馬は印だけ(2026-10-25 ユーザー要望。根拠の指数は出さない。指数は下の表)

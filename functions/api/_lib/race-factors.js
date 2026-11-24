@@ -51,9 +51,11 @@ import { normalizeTrackConditionText, sexAgeCodeOf, sexAgeLabelOf, weightBandOf,
 import { applyJockeyAliasMap, jockeyAliasKeyOf } from "./jockey-alias.js";
 import { pairDistanceRatioOf, pairBiasOf } from "./distance-ratios.js";
 import { JRA_TRACKS } from "./guest.js";
+import { PACE_FACTOR_KEYS } from "../../../public/recommend-marks.js";
 
 // 2026-10-14: sexage(性齢)・weight(馬体重)・course(同コース)を追加。2026-10-15: week(週目)を追加
-export const FACTOR_KEYS = ["pace", "number", "jockey", "time", "sexage", "weight", "course", "week"];
+// 2026-11-24〜 一覧は画面と共用の public/recommend-marks.js に1か所
+export const FACTOR_KEYS = PACE_FACTOR_KEYS;
 // 週目(2026-10-15)
 const MEETING_GAP_DAYS = 14;
 export const WEEK_BAND_LABELS = ["", "開幕1-2週", "3-4週", "5-6週", "7週〜"];

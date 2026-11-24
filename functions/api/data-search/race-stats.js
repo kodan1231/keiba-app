@@ -1,5 +1,8 @@
 import { jsonError, getRaceLineups } from "../_shared.js";
 import { STYLE_CODE_LABELS } from "../_lib/race-lineup-cache.js";
+import { jockeyAliasKeyOf } from "../_lib/jockey-alias.js";
+import { jockeyDisplayName } from "../_lib/race-lineup.js";
+import { emptyRideCounts, addRide, finalizeRideCounts } from "../_lib/jockey-stats.js";
 
 // データ検索画面「レース成績」タブ用の集計API。
 // レース確定データ(races.payouts / races.finish_order / races.entries と、あれば race_results)
@@ -16,17 +19,8 @@ import { STYLE_CODE_LABELS } from "../_lib/race-lineup-cache.js";
 //     レースごとに選ぶ(手入力・CSV・PDF未取込のレースもカバーするため)。
 
 const SURFACES = new Set(["芝", "ダート"]);
-const JOCKEY_MARK_RE = /^[☆▲△★◇]/;
-
-// 騎手名の名寄せキー: 先頭の見習い減量記号を除去し、空白(全角/半角)を畳み込む
-// (jockey_aliases の alias_key と同じ考え方)。
-function jockeyKey(name) {
-  return String(name ?? "").replace(JOCKEY_MARK_RE, "").replace(/[　\s]+/g, "").trim();
-}
-// 表示名: 記号を除いて空白は1つに畳む。
-function jockeyDisplay(name) {
-  return String(name ?? "").replace(JOCKEY_MARK_RE, "").replace(/[　\s]+/g, " ").trim();
-}
+// 騎手名の名寄せキーは jockeyAliasKeyOf(先頭の見習い減量記号と空白を除く)、表示名は jockeyDisplayName(記号を除き空白を1つに)。
+// 2026-11-24 にこのファイルの書き写し(jockeyKey・jockeyDisplay)から共通の関数に置き換えた(中身は同じ)
 
 // 中央値(件数が偶数なら真ん中2つの平均)。空なら null。
 // 2026-10-03: 単勝・馬連の代表値を平均から中央値に変更(まれな高配当に引っ張られにくくするため)。
@@ -98,19 +92,12 @@ export async function onRequestGet(context) {
   const winValues = [];
   const umarenValues = [];
   const jockeyMap = new Map(); // key -> { display, rides, wins, shows }
-  const byHorseNumber = new Map(); // number -> { starts, win, second, third }
+  const byHorseNumber = new Map(); // number -> emptyRideCounts()(騎手検索タブと同じ数え方。_lib/jockey-stats.js)
   // 脚質別(2026-11-23)。lineup の7つ目〈1=逃げ・2=先行・3=差し・4=追込、0=不明〉ごと
-  const byStyle = new Map(); // code -> { starts, win, second, third }
+  const byStyle = new Map(); // code -> emptyRideCounts()
   const addPlacing = (map, k, pos) => {
-    let b = map.get(k);
-    if (!b) {
-      b = { starts: 0, win: 0, second: 0, third: 0 };
-      map.set(k, b);
-    }
-    b.starts++;
-    if (pos === 1) b.win++;
-    else if (pos === 2) b.second++;
-    else if (pos === 3) b.third++;
+    if (!map.has(k)) map.set(k, emptyRideCounts());
+    addRide(map.get(k), pos);
   };
   let resultRaceCount = 0;
 
@@ -151,11 +138,11 @@ export async function onRequestGet(context) {
 
       const rawJockey = h.jockey;
       if (rawJockey && String(rawJockey).trim()) {
-        const key = jockeyKey(rawJockey);
+        const key = jockeyAliasKeyOf(rawJockey);
         if (key) {
           let e = jockeyMap.get(key);
           if (!e) {
-            e = { display: jockeyDisplay(rawJockey), rides: 0, wins: 0, shows: 0 };
+            e = { display: jockeyDisplayName(rawJockey), rides: 0, wins: 0, shows: 0 };
             jockeyMap.set(key, e);
           }
           e.rides++;
@@ -176,15 +163,11 @@ export async function onRequestGet(context) {
   const rateUnder = (limit) =>
     winCount ? winValues.filter((v) => v <= limit).length / winCount : null;
 
-  const placingOut = (b) => ({
-    starts: b.starts,
-    win: b.win,
-    second: b.second,
-    third: b.third,
-    winRate: b.starts ? b.win / b.starts : 0,
-    quinellaRate: b.starts ? (b.win + b.second) / b.starts : 0,
-    showRate: b.starts ? (b.win + b.second + b.third) / b.starts : 0,
-  });
+  // 応答の形(starts・win 等)は以前のまま
+  const placingOut = (c) => {
+    const f = finalizeRideCounts(c);
+    return { starts: f.rides, win: f.first, second: f.second, third: f.third, winRate: f.winRate, quinellaRate: f.quinellaRate, showRate: f.showRate };
+  };
   const byHorseNumberOut = [...byHorseNumber.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([horseNumber, b]) => ({ horseNumber, ...placingOut(b) }));

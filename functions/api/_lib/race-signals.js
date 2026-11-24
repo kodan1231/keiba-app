@@ -9,7 +9,7 @@ import { createFactorContext, computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEY
 import { getDistanceRatios } from "./distance-ratios.js";
 import { getCourseHistory } from "./course-history.js";
 import { getPaceScoreSettings } from "./pace-settings.js";
-import { getPaceWeights, gradedPastOf, paceIndexOf, pickRecommended } from "./pace-score.js";
+import { getPaceWeights, gradedPastOf, indexedHorse, pickRecommended } from "./pace-score.js";
 import { loadGradedRaceMapCached, gradedRaceOf } from "./race-classification.js";
 import { memoizedKeyed, textFingerprint } from "./memo-cache.js";
 
@@ -189,13 +189,10 @@ const SIGNAL_RULE_VERSION = 4;
 function indexedHorses(body, weights) {
   const pick = (d) => (body.pace_type && d.paces?.[body.pace_type]) || d;
   const wa = pick(weights), wp = pick(weights.partner || weights);
-  const extra = (h) => Number(h.total_adjust?.value) || 0;
   return body.horses.map((h) => ({
     horse_number: h.horse_number,
     horse_name: h.horse_name,
-    axis: paceIndexOf(h.factors, wa) + extra(h),
-    partner: paceIndexOf(h.factors, wp) + extra(h),
-    pace: h.factors.pace?.score, time: h.factors.time?.score, timeMissing: Boolean(h.factors.time?.missing),
+    ...indexedHorse(h.factors, h.total_adjust?.value, wa, wp),
   }));
 }
 

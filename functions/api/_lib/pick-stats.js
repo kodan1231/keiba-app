@@ -8,7 +8,7 @@
 // POST /api/cron/pick-stats で app_settings の1行(key = pick_stats)に保存する。画面(GET /api/data-search/pick-stats)はその1行を読むだけ。
 // 1行の大きさ: 組(今は約190。記録が増えると最大その2倍)× 21個の数。今は約15KB で、1年で数KB増えるだけ(D1 の1行の上限 200万バイトに届かない)。
 import { computeRaceFactors, FACTOR_KEYS, GLOBAL_ADJUST_KEYS } from "./race-factors.js";
-import { paceIndexOf, pickRecommended, RECOMMEND_MARKS } from "./pace-score.js";
+import { indexedHorse, pickRecommended, RECOMMEND_MARKS } from "./pace-score.js";
 import { gradedRaceOf } from "./race-classification.js";
 import { horseAliasKeyOf } from "./horse-alias.js";
 
@@ -92,11 +92,7 @@ export function computePickStats({ races, results, records = new Map(), ctx, sco
     const wa = pick(weights), wp = pick(weights.partner || weights);
     const horses = runners.map((h) => {
       const factors = Object.fromEntries(FACTOR_KEYS.map((f) => [f, rf.factors[f].get(h.key)]));
-      const extra = Number(rf.totalAdjust.get(h.key)?.value) || 0;
-      return {
-        horse_number: h.horse_number, axis: paceIndexOf(factors, wa) + extra, partner: paceIndexOf(factors, wp) + extra,
-        pace: factors.pace?.score, time: factors.time?.score, timeMissing: Boolean(factors.time?.missing),
-      };
+      return { horse_number: h.horse_number, ...indexedHorse(factors, rf.totalAdjust.get(h.key)?.value, wa, wp) };
     });
     const picked = pickRecommended(horses);
     return RECOMMEND_MARKS.map((mark) => picked.find((p) => p.mark === mark)?.x.horse_number ?? null);
