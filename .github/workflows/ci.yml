@@ -1,0 +1,62 @@
+# push のたびの自動チェック(2026-11-27)。D1 も秘密情報も使わない。
+#   1. 全部の JS の構文チェック(scripts/check-syntax.mjs)
+#   2. テスト(tests/*.test.mjs。払戻の計算・買い目の生成・推奨馬の印)
+#   3. main への push なら、3つのアプリ(Cloudflare Pages)の公開が揃ったか(deploy-check)
+# 失敗すると GitHub から push した人へメールが届く。Cloudflare Pages の公開はこれと関係なく進む(止めはしない)。
+# 手元では `node scripts/check-syntax.mjs` と `node --test "tests/*.test.mjs"`
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 構文チェック
+        run: node scripts/check-syntax.mjs
+      - name: テスト
+        run: node --test "tests/*.test.mjs"
+
+  # 3つのアプリ(Cloudflare Pages)の公開が揃ったか(2026-11-27)。10/17 に GitHub アプリの許可が外れて公開されず、気づくのが遅れた。
+  # Cloudflare が commit に付ける「Cloudflare Pages: <プロジェクト>」の結果を30秒ごとに見て、25分以内に3つとも success にならなければ失敗(メールが届く)
+  deploy-check:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      checks: read
+    steps:
+      - name: 3つのアプリの公開を待つ
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -u
+          projects="keiba-yosou-app keiba-search keiba-admin"
+          for i in $(seq 1 50); do
+            runs=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" -q '.check_runs[] | select(.name | startswith("Cloudflare Pages: ")) | "\(.name|sub("Cloudflare Pages: ";""))=\(.conclusion // .status)"')
+            ok=0; bad=""
+            for p in $projects; do
+              st=$(echo "$runs" | grep "^$p=" | head -1 | cut -d= -f2)
+              case "$st" in
+                success) ok=$((ok+1)) ;;
+                failure|cancelled|timed_out|action_required) bad="$bad $p($st)" ;;
+              esac
+            done
+            if [ -n "$bad" ]; then echo "公開に失敗:$bad"; exit 1; fi
+            if [ "$ok" = 3 ]; then echo "3つとも公開済み"; exit 0; fi
+            echo "待機中($ok/3): $(echo $runs)"
+            sleep 30
+          done
+          echo "25分たっても3つの公開が揃わない(GitHub アプリの許可が外れていないか、Cloudflare の画面を確かめる)"
+          echo "$runs"
+          exit 1

@@ -1591,6 +1591,8 @@ async function runPaceQueue(btn) {
       return;
     }
     const why = g.via === "github" ? `GitHub の計算が失敗し、${g.remaining}件残ったため` : g.reason;
+    // ブラウザでの計算は D1 の読み取りが多いので聞いてから(2026-11-27。pace-runner.js の paceConfirmBrowserFallback)
+    if (!paceConfirmBrowserFallback(why)) { paceWeightsMsg(`${why}。計算待ちに残しました(夜間に計算します)`, false); return; }
     const r = await runPaceQueueInBrowser((text) => { btn.textContent = `${text}(ブラウザ)`; });
     if (r.busy) { paceWeightsMsg("別の計算が動いています。終わってからもう一度押してください", false); return; }
     paceWeightsMsg(`${why}、このブラウザで計算しました(計算${r.done}件・手で決めた比率のため省略${r.skipped}件${r.failed ? `・失敗${r.failed}件(計算待ちに残しました)` : ""})`, !r.failed);
@@ -1737,6 +1739,12 @@ async function paceComputeAdminRun(kind, key, btn, { reload }) {
     return true;
   }
   const why = g.via === "github" ? `GitHub の計算が失敗したため(${g.conclusion})` : g.reason;
+  // ブラウザでの計算は D1 の読み取りが多いので聞いてから(2026-11-27)。断ったら計算待ちに残す(夜間に計算する)
+  if (!paceConfirmBrowserFallback(why)) {
+    paceWeightsMsg(`${why}。計算待ちに残しました(夜間に計算します)`, false);
+    if (reload) await loadPaceWeights();
+    return false;
+  }
   paceWeightsMsg(`${why}、このブラウザで計算します`, true);
   const ok = await paceComputeAdminInBrowser(kind, key, btn, { reload: false });
   if (ok) {

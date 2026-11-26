@@ -112,7 +112,8 @@ export function addResultRefunds(payouts, raceResults) {
 //                      的中組み合わせを算出できない)
 //   payout === 0    … 不的中(確定)
 //   payout  >  0    … 的中(確定)/ 返還(= amount と同額)
-function computeSettledPayout(betType, selections, amount, finishOrder, payoutsObj, entries) {
+// export はテスト用(tests/payout.test.mjs。2026-11-27)
+export function computeSettledPayout(betType, selections, amount, finishOrder, payoutsObj, entries) {
   // レースの取りやめ(2026-10-23。payouts.race_cancelled。docs/design/payout-refund.md「レースの取りやめ」): 券種によらず全部返還
   if (payoutsObj && payoutsObj.race_cancelled === true) return { payout: Number(amount), refunded: 1 };
   const refunds = (payoutsObj && Array.isArray(payoutsObj.refunds)) ? payoutsObj.refunds : [];

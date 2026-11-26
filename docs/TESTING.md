@@ -6,6 +6,17 @@
 チェックリストです。新しい機能を追加したら、対応する `docs/testing/` のファイルに追記してください。
 過去の日付単位の追記履歴は`archive/documents/pre-fix-v1.0/TESTING.md`を参照してください。
 
+## 自動テスト(2026-11-27〜)
+
+このファイルの手動チェックとは別に、壊れるとお金・的中の表示に直接響く規則だけは自動テストがある(`tests/`。追加のライブラリなし)。
+
+- `tests/payout.test.mjs` … 払戻の計算。画面(`public/payout.js`)とサーバー(`_lib/ticket-payout.js`)が同じ答えになるか、同着・返還・レースの取りやめ
+- `tests/combos.test.mjs` … 馬券購入画面の買い目の生成(ボックス・フォーメーション・流し・マルチの点数)
+- `tests/recommend-marks.test.mjs` … 総合推奨馬の指数と ◎〇▲☆ の選び方
+
+手元では `node --test "tests/*.test.mjs"`、全ファイルの構文チェックは `node scripts/check-syntax.mjs`。
+push のたびに GitHub Actions(`.github/workflows/ci.yml`)が両方を流し、失敗するとメールが届く(公開は止めない)。
+
 ## この索引の使い方(トークン節約)
 
 2026-09-07に、肥大化した本ファイル(912行)を`docs/testing/`配下へ**機能単位で分割**しました。

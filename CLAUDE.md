@@ -56,6 +56,7 @@ Cloudflare Pages + Pages Functions + D1 で動く、疑似馬券購入・収支�
 | race_results 詳細記録 | `functions/api/_lib/race-results.js` |
 | 管理画面(先頭に「D1の使用量(今日)」。`functions/api/admin/d1-usage.js`。秘密情報 `CF_ANALYTICS_TOKEN` が必要) | `public/admin.js`, `public/admin.html`, `functions/api/admin/*` |
 | DBスキーマ変更 | `schema.sql`, `migration.sql`(`archive/migrations` は不要) |
+| 自動テスト・push 時のチェック・週1回のバックアップ(2026-11-27。`docs/design/ops.md`) | `tests/*.test.mjs`, `scripts/check-syntax.mjs`, `.github/workflows/ci.yml`, `scripts/backup.mjs`(**作り直せない表を足したら `BACKUP_TABLES` に足す**), `scripts/backup-restore-sql.mjs`, `.github/workflows/backup.yml` |
 
 ## 共有ヘルパーの構成(重要)
 
@@ -200,7 +201,8 @@ URLの文字列のIDを渡してインデックスが使われない・キャッ
 1. 要望の仕様矛盾・不足を確認 → 承認を得る
 2. `docs/design/<機能>.md`(該当ファイル)を新仕様に合わせて更新(経緯記述は削らない)
 3. 実装
-4. 構文チェック(`node --check <file>`)
+4. 構文チェック(`node --check <file>`)と自動テスト(`node --test "tests/*.test.mjs"`。2026-11-27〜。払戻・買い目の生成・推奨馬の印。
+   これらの規則を変えたらテストの期待値も直す。push のたびに `.github/workflows/ci.yml` が全ファイルの構文チェック〈`scripts/check-syntax.mjs`〉とテストを流す)
 5. `docs/BACKLOG.md` のタスク表を更新(完了分は `archive/documents/BACKLOG_HISTORY.md` へ要約移動)
 
 実機(wrangler dev / 本番)での動作確認は基本ユーザー側が行う。検証状況は報告時に明示する。

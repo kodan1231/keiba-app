@@ -100,8 +100,11 @@ export async function onRequestGet(context) {
     // busy: 自分より前の実行(定時実行・前の手動実行)が動いている。同じ計算は同時に1つしか動かない(ワークフローの concurrency)ので、
     // その間は自分の実行が順番待ちになる。画面はこのとき「動き出さない」とみなさずに待つ(2026-10-25 12:35 に取り違えてブラウザに切り替えた)
     const busy = runs.some((r) => r !== mine && r.status === "in_progress");
+    // active(2026-11-27): 自分以外に、終わっていない実行(動いている・順番待ち)がある。自分の実行が順番待ちの間に次の実行に
+    // 押し出されて取り消された(cancelled)とき、画面はこれが無くなるまで待つ(計算待ちはその実行がまとめて計算する)
+    const active = runs.some((r) => r !== mine && r.status !== "completed");
     return Response.json({
-      ok: true, remaining, busy,
+      ok: true, remaining, busy, active,
       run: mine ? { status: mine.status, conclusion: mine.conclusion, html_url: mine.html_url } : null,
     });
   } catch (e) {

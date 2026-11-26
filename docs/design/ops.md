@@ -163,3 +163,38 @@ D1 の使用量(読み取り・書き込みそれぞれの割合。アカウン�
   アクセスしてください。」(日本時間の0時〜9時は「今日」)。
 - 画面(`authedFetch`)はこの応答を受けたら、画面の上に案内を固定で出す(閉じるまで出し続ける)。ログインの確認(`/api/auth/check`)が
   この応答のときは、ログイン画面の代わりに案内だけを出す(ログインしても使えないため)。
+
+## 自動テストと push 時の自動チェック(2026-11-27〜。ユーザー要望)
+
+- `tests/*.test.mjs`(払戻の計算・買い目の生成・推奨馬の印)と、全部の JS の構文チェック(`scripts/check-syntax.mjs`)を、
+  push のたびに GitHub Actions(`.github/workflows/ci.yml`)が流す。D1 も秘密情報も使わない。失敗すると GitHub からメール。
+  Cloudflare Pages の公開はこれと別に進む(止めはしない)。詳しくは `docs/TESTING.md`「自動テスト」。
+- **公開の確認**(同じワークフローの deploy-check。main への push だけ): Cloudflare が commit に付ける「Cloudflare Pages: <プロジェクト>」を
+  30秒ごとに見て、25分以内に3つ(keiba-yosou-app・keiba-search・keiba-admin)とも success にならなければ失敗にする(メールが届く)。
+  2026-10-17 に GitHub アプリのリポジトリの許可が外れて公開されず、気づくのが遅れたため。
+- 夜間の計算(pace-nightly)は、どれかの段が失敗すると終了コード1で終わるので、同じく GitHub からメールが届く(以前から)。
+
+## バックアップ(2026-11-27〜。ユーザー要望・仕様確認済み)
+
+D1 の Time Travel(無料プランは7日前まで戻せる)より前に気づいた場合に備え、**作り直せない表だけ**を週1回保存する。
+
+- **いつ**: 毎週 水曜 4:37(日本時間。`.github/workflows/backup.yml`。夜間の計算・週末の開催と重ならない時間)。Actions タブの Run workflow で手動でも。
+- **何を**: `scripts/backup.mjs` の `BACKUP_TABLES`。購入(tickets・CSV 取り込みの3表)・予想印・馬メモ・レースメモ・重賞メモ・ユーザー・
+  推奨馬の印の記録(race_pick_records)・エイリアス3種・重賞一覧・馬情報(horses)・比率(pace_weights・course_pace_weights)・
+  ゲストのブロック・app_settings。**レース・結果・各種キャッシュは入れない**(取り込み直し・作り直しができる)。表を足したらここも直す。
+- **読み取り**: 対象の表の行数の合計だけ(2026-11-27 に手元から1回実行して 44,188 行・47回の問い合わせ。1日の上限の約0.9%)。
+  rowid の順に区切って読む(OFFSET は飛ばした行も読み取りに数えるので使わない)。
+- **どこへ**: Actions の保存ファイル(Artifacts)に90日。リポジトリが公開なので、**合言葉(Secrets の `BACKUP_PASSPHRASE`)で暗号化したものだけ**を置く
+  (合言葉が無ければ中止する。暗号化の直後に復号できるかも確かめる)。大きさは暗号化後で約1.2MB(2026-11-27)。
+- **必要な Secrets**: `CF_D1_TOKEN`(夜間の計算と同じ)・`BACKUP_PASSPHRASE`(長いランダムな文字列。控えは手元。無くすと復号できない)。
+
+### 戻し方
+
+1. Actions の backup の実行結果から `keiba-backup-YYYYMMDD` をダウンロードして展開(zip の中に `.tar.gz.enc`)。
+2. 復号: `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in keiba-backup-YYYYMMDD.tar.gz.enc | tar xzf -`(合言葉を聞かれる。Git Bash で可)。
+   `backup-out/<表>.json`(`{ table, columns, rows }`)と `_summary.json`(件数)ができる。
+3. INSERT 文にする: `node scripts/backup-restore-sql.mjs backup-out/tickets.json [--where user_id=2] > restore.sql`
+   (`INSERT OR REPLACE`。同じ主キーの行は置き換え)。
+4. 中身と件数を確かめてから `npx wrangler d1 execute keiba-yosou-db --remote --file restore.sql`。
+   - 書き込みは行数ぶん(1日の上限10万行)。大きい表は日を分ける。
+   - 外部キーがあるので users → tickets 等の順に流す。tickets 等の race_id は今の races を指す(races は消して作り直さないので同じ ID のまま)。

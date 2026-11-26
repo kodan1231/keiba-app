@@ -1,0 +1,53 @@
+# 週1回のバックアップ(2026-11-27。docs/design/ops.md「バックアップ」)。scripts/backup.mjs で作り直せない表だけを読み、
+# 合言葉で暗号化して Actions の保存ファイル(Artifacts)に90日残す。リポジトリが公開なので、暗号化しないものは置かない。
+# 必要な Secrets:
+#   CF_D1_TOKEN        … 夜間の計算と同じ(D1 を読める Cloudflare の API トークン)
+#   BACKUP_PASSPHRASE  … 暗号化の合言葉(長いランダムな文字列。控えは手元に。無くすと復号できない)
+# 読み取りは約4.4万行(1日の上限の約0.9%。2026-11-27)。手動でも実行できる(Actions タブの Run workflow)。
+name: backup
+
+on:
+  schedule:
+    - cron: "37 19 * * 2" # 毎週 火曜 UTC 19:37 = 日本時間 水曜 4:37(夜間の計算・週末の開催と重ならない)
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 合言葉があるか
+        run: test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE が登録されていません(暗号化できないので中止)"; exit 1; }
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 作り直せない表を書き出す
+        run: node scripts/backup.mjs
+        env:
+          CF_D1_TOKEN: ${{ secrets.CF_D1_TOKEN }}
+          BACKUP_DIR: backup-out
+      - name: 暗号化して、復号できるか確かめる
+        id: pack
+        run: |
+          set -euo pipefail
+          name="keiba-backup-$(date -u +%Y%m%d)"
+          tar czf - backup-out | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE -out "$name.tar.gz.enc"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$name.tar.gz.enc" | tar tzf - > /dev/null
+          rm -rf backup-out
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -l "$name.tar.gz.enc"
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: ${{ steps.pack.outputs.name }}.tar.gz.enc
+          retention-days: 90
+          if-no-files-found: error

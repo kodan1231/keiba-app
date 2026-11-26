@@ -64,6 +64,7 @@ async function runPaceViaGithub(item, onStatus = () => {}) {
   if (!d.dispatched) return { via: "fallback", reason: d.reason || "GitHub に頼めませんでした" };
   const t0 = Date.now();
   let started = false;
+  let merged = false; // 自分の実行が順番待ちの間に次の実行に押し出されて取り消された(2026-11-27)
   let waitFrom = t0; // 「動き出さない」を数え始めた時刻(前の計算が動いている間は数えない)
   while (Date.now() - t0 < PACE_GITHUB_MAX_MS) {
     await new Promise((r) => setTimeout(r, PACE_GITHUB_POLL_MS));
@@ -73,6 +74,15 @@ async function runPaceViaGithub(item, onStatus = () => {}) {
       s = r.ok ? await r.json() : null;
     } catch { /* 次の回にまた見る */ }
     const run = s?.run;
+    // 取り消された(cancelled)のは失敗ではない(2026-11-27): 同じ計算は同時に1つ+順番待ち1つまでで、続けて頼むと順番待ちの古い方が
+    // GitHub に取り消される。計算待ちは残っている実行がまとめて計算するので、それが終わるまで待つ。
+    // 以前はこれを失敗とみなしてブラウザで計算し(採点の API が出走馬の全戦績を何度も読む)、11/21 の夜に約90万行を余分に読んだ
+    if (run?.status === "completed" && run.conclusion === "cancelled" && !started) merged = true;
+    if (merged) {
+      if (s && !s.active) return { via: "github", ok: !s.remaining, conclusion: s.remaining ? "merged_remaining" : "success", url: run?.html_url, remaining: s.remaining };
+      onStatus(`GitHub の別の計算にまとめました。終わるのを待っています…(計算待ち 残り${s?.remaining ?? "?"}件・${Math.round((Date.now() - t0) / 1000)}秒)`);
+      continue;
+    }
     if (run?.status === "completed") {
       return { via: "github", ok: run.conclusion === "success", conclusion: run.conclusion, url: run.html_url, remaining: s.remaining };
     }
@@ -89,6 +99,12 @@ async function runPaceViaGithub(item, onStatus = () => {}) {
     }
   }
   return { via: "fallback", reason: "GitHub の計算が30分で終わりませんでした" };
+}
+
+// GitHub で計算できなかったとき、ブラウザで計算するかを聞く(2026-11-27)。ブラウザでの計算は採点の API(Cloudflare)が数レースごとに
+// 出走馬の全戦績を読み直すため、D1 の読み取りが GitHub の何倍にもなる(11/21 の夜に約90万行)。以前は聞かずに切り替えていた
+function paceConfirmBrowserFallback(why) {
+  return confirm(`${why}。\nこのブラウザで計算しますか?\n(D1 の読み取りが多くなります。急がなければ「キャンセル」で、夜間の計算に任せられます)`);
 }
 
 // 計算待ちを全部処理する。onStatus(text) で進み具合を知らせる。戻り値: { done, skipped, failed, total }
